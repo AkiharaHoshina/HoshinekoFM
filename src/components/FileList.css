@@ -73,6 +73,10 @@
     transform: scale(0.98);
 }
 
+.file-list-item:has(.file-rename-input:focus) {
+    transform: none !important;
+}
+
 .file-list-item:focus-visible {
     outline: 2px solid var(--md-sys-color-primary);
     background-color: var(--md-sys-color-surface-container-highest);
@@ -143,4 +147,6 @@
     outline: none;
     padding: 2px 4px;
     margin: 0;
+    user-select: text;
+    -webkit-user-select: text;
 }

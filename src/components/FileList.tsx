@@ -166,6 +166,13 @@ const HEADER_HEIGHT = 48;
 function Row({ index, style, ...data }: RowComponentProps<RowData>) {
   const item = data.items[index];
 
+  const renameInputRef = useCallback((el: HTMLInputElement | null) => {
+    if (!el) return;
+    el.addEventListener('dragstart', (e) => {
+      e.stopImmediatePropagation();
+    }, true);
+  }, []);
+
   if (item.kind === "header") {
     return (
       <div
@@ -210,6 +217,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
           onClick={(e) => data.onItemClick(e, file)}
           onDoubleClick={() => data.onItemDoubleClick(file)}
           onContextMenu={(e) => {
+            if ((e.target as HTMLElement).closest?.('.file-rename-input')) return;
             e.preventDefault();
             e.stopPropagation();
             data.onContextMenu?.(e, file);
@@ -253,6 +261,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
           </span>
           {isRenaming ? (
             <input
+              ref={renameInputRef}
               className="file-rename-input"
               type="text"
               value={data.renameValue}
@@ -267,7 +276,6 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                 }
               }}
               onBlur={() => data.onRenameSubmit()}
-              onContextMenu={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
               onDoubleClick={(e) => e.stopPropagation()}
               style={{ flex: 1, minWidth: 0 }}
@@ -322,11 +330,12 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
             onClick={(e) => data.onItemClick(e, file)}
             onDoubleClick={() => data.onItemDoubleClick(file)}
             onContextMenu={(e) => {
+              if ((e.target as HTMLElement).closest?.('.file-rename-input')) return;
               e.preventDefault();
               e.stopPropagation();
               data.onContextMenu?.(e, file);
             }}
-            draggable={true}
+            draggable={!isRenaming}
             onDragStart={(e) => data.onFileDragStart(e, file)}
             tabIndex={0}
             role="button"
@@ -380,6 +389,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
             </span>
             {isRenaming ? (
               <input
+                ref={renameInputRef}
                 className="file-rename-input"
                 type="text"
                 value={data.renameValue}
@@ -394,7 +404,6 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                   }
                 }}
                 onBlur={() => data.onRenameSubmit()}
-                onContextMenu={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
                 style={{
@@ -563,6 +572,7 @@ export const FileList: React.FC<FileListProps> = ({
     <div
       style={{ width: "100%", height: "100%" }}
       onContextMenu={(e) => {
+        if ((e.target as HTMLElement).closest?.('.file-rename-input')) return;
         e.preventDefault();
         if (
           !(e.target as HTMLElement).closest(
