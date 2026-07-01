@@ -9,34 +9,34 @@ interface ToastContextType {
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
 
-    const showToast = useCallback((message: string, type: ToastType = 'info') => {
-        setToast({ message, type });
-    }, []);
+  const showToast = useCallback((message: string, type: ToastType = 'info') => {
+    setToast({ message, type });
+  }, []);
 
-    const hideToast = useCallback(() => {
-        setToast(null);
-    }, []);
+  const hideToast = useCallback(() => {
+    setToast(null);
+  }, []);
 
-    return (
-        <ToastContext.Provider value={{ showToast }}>
-            {children}
-            {toast && (
-                <Toast
-                    message={toast.message}
-                    type={toast.type}
-                    onClose={hideToast}
-                />
-            )}
-        </ToastContext.Provider>
-    );
+  return (
+    <ToastContext.Provider value={{ showToast }}>
+      {children}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={hideToast}
+        />
+      )}
+    </ToastContext.Provider>
+  );
 };
 
 export const useToast = () => {
-    const context = useContext(ToastContext);
-    if (!context) {
-        throw new Error('useToast must be used within a ToastProvider');
-    }
-    return context;
+  const context = useContext(ToastContext);
+  if (!context) {
+    throw new Error('useToast must be used within a ToastProvider');
+  }
+  return context;
 };

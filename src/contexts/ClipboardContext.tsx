@@ -17,31 +17,31 @@ interface ClipboardContextType {
 const ClipboardContext = createContext<ClipboardContextType | undefined>(undefined);
 
 export const ClipboardProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [clipboard, setClipboard] = useState<ClipboardItem | null>(null);
+  const [clipboard, setClipboard] = useState<ClipboardItem | null>(null);
 
-    const copy = (files: IFile[]) => {
-        setClipboard({ files, operation: 'copy' });
-    };
+  const copy = (files: IFile[]) => {
+    setClipboard({ files, operation: 'copy' });
+  };
 
-    const cut = (files: IFile[]) => {
-        setClipboard({ files, operation: 'cut' });
-    };
+  const cut = (files: IFile[]) => {
+    setClipboard({ files, operation: 'cut' });
+  };
 
-    const clear = () => {
-        setClipboard(null);
-    };
+  const clear = () => {
+    setClipboard(null);
+  };
 
-    return (
-        <ClipboardContext.Provider value={{ clipboard, copy, cut, clear }}>
-            {children}
-        </ClipboardContext.Provider>
-    );
+  return (
+    <ClipboardContext.Provider value={{ clipboard, copy, cut, clear }}>
+      {children}
+    </ClipboardContext.Provider>
+  );
 };
 
 export const useClipboard = () => {
-    const context = useContext(ClipboardContext);
-    if (!context) {
-        throw new Error('useClipboard must be used within a ClipboardProvider');
-    }
-    return context;
+  const context = useContext(ClipboardContext);
+  if (!context) {
+    throw new Error('useClipboard must be used within a ClipboardProvider');
+  }
+  return context;
 };

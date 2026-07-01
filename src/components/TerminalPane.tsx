@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -9,126 +9,148 @@ interface TerminalPaneProps {
 }
 
 export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd }) => {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const terminalRef = useRef<Terminal | null>(null);
-    const fitAddonRef = useRef<FitAddon | null>(null);
-    const pidRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const terminalRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
+  const pidRef = useRef<number | null>(null);
+  const ptyCleanupRef = useRef<(() => void) | null>(null);
 
-    useEffect(() => {
-        if (!containerRef.current) return;
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-        // 保持你原本完全正确的同步初始化逻辑
-        const term = new Terminal({
-            cursorBlink: true,
-            fontFamily: 'Consolas, monospace',
-            fontSize: 14,
-            theme: {
-                background: '#1e1e1e',
-                foreground: '#ffffff'
-            }
-        });
+    let disposed = false;
 
-        const fitAddon = new FitAddon();
-        term.loadAddon(fitAddon);
-        term.open(containerRef.current);
-        fitAddon.fit();
+    const term = new Terminal({
+      cursorBlink: true,
+      fontFamily: 'Consolas, monospace',
+      fontSize: 14,
+      theme: {
+        background: '#1e1e1e',
+        foreground: '#ffffff'
+      }
+    });
 
-        terminalRef.current = term;
-        fitAddonRef.current = fitAddon;
+    const fitAddon = new FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(container);
 
-        // 保持你原本完全打通提示符的 Promise 底层链式结构不变
-        window.electron.ptySpawn(cwd || '').then((pid) => {
-            pidRef.current = pid;
+    terminalRef.current = term;
+    fitAddonRef.current = fitAddon;
 
-            // 进程就绪后，立刻聚焦终端
-            term.focus();
+    const doFit = () => {
+      if (disposed) return;
+      fitAddon.fit();
+      if (pidRef.current) {
+        window.electron.ptyResize(pidRef.current, term.cols, term.rows);
+      }
+    };
 
-            // Handle incoming data
-            const cleanup = window.electron.ptyOnData(pid, (data: string) => {
-                term.write(data);
-            });
+    // Wait until the browser has fully laid out the container before fit()
+    requestAnimationFrame(doFit);
 
-            // Handle exit
-            window.electron.ptyOnExit(pid, () => {
-                term.write('\r\nProcess exited.\r\n');
-                cleanup();
-                pidRef.current = null;
-            });
+    // ResizeObserver — handles any parent resize (split pane drag, etc.)
+    const ro = new ResizeObserver(() => {
+      requestAnimationFrame(doFit);
+    });
+    ro.observe(container);
 
-            return cleanup;
-        }).then((cleanup) => {
-            // Send input to PTY
-            term.onData((data: string) => {
-                if (pidRef.current) {
-                    window.electron.ptyWrite(pidRef.current, data);
-                }
-            });
+    // Spawn PTY
+    window.electron.ptySpawn(cwd || '').then((pid) => {
+      if (disposed) {
+        window.electron.ptyKill(pid);
+        return;
+      }
 
-            // Handle resize
-            const handleResize = () => {
-                fitAddon.fit();
-                if (pidRef.current) {
-                    window.electron.ptyResize(pidRef.current, term.cols, term.rows);
-                }
-            };
+      pidRef.current = pid;
+      term.focus();
 
-            window.addEventListener('resize', handleResize);
-            term.onResize((size: { cols: number; rows: number }) => {
-                if (pidRef.current) {
-                    window.electron.ptyResize(pidRef.current, size.cols, size.rows);
-                }
-            });
+      const cleanupData = window.electron.ptyOnData(pid, (data: string) => {
+        term.write(data);
+      });
 
-            // Initial resize sync
-            if (pidRef.current) {
-                window.electron.ptyResize(pidRef.current, term.cols, term.rows);
-            }
+      window.electron.ptyOnExit(pid, () => {
+        term.write('\r\nProcess exited.\r\n');
+        cleanupData();
+        pidRef.current = null;
+      });
 
-            return () => {
-                window.removeEventListener('resize', handleResize);
-                cleanup && cleanup();
-                term.dispose();
-                if (pidRef.current) window.electron.ptyKill(pidRef.current);
-            };
-        });
-
-        return () => {};
-    }, []); // Only mount once
-
-    useEffect(() => {
-        if (cwd && pidRef.current) {
-            const safePath = cwd.replace(/'/g, "'\\''");
-            const cmd = `cd '${safePath}'\r`; 
-            window.electron.ptyWrite(pidRef.current, cmd);
+      const disposeOnData = term.onData((data: string) => {
+        if (pidRef.current) {
+          window.electron.ptyWrite(pidRef.current, data);
         }
-    }, [cwd]);
+      });
 
-    return (
-        <div 
-            style={{ 
-                width: '100%', 
-                height: '100%', 
-                background: '#1e1e1e', 
-                overflow: 'hidden',
-                position: 'relative',
-                zIndex: 10 // 提高层级，防止点击事件穿透到下方的文件列表背景上
-            }} 
-            ref={containerRef} 
-            // 在鼠标按下阶段截击，阻止事件向上传播给文件浏览器背景，从而保住焦点
-            onMouseDown={(e) => {
-                e.stopPropagation();
-            }}
-            // 点击黑框的任意地方时，强制让 xterm.js 内部的隐藏输入域重新获取焦点
-            onClick={(e) => {
-                e.stopPropagation();
-                if (terminalRef.current) {
-                    terminalRef.current.focus();
-                }
-            }}
-            // 阻止键盘输入事件向外泄露，防止触发文件浏览器的全局快捷键
-            onKeyDown={(e) => {
-                e.stopPropagation();
-            }}
-        />
-    );
+      const disposeOnResize = term.onResize((size: { cols: number; rows: number }) => {
+        if (pidRef.current) {
+          window.electron.ptyResize(pidRef.current, size.cols, size.rows);
+        }
+      });
+
+      // Re-fit in case RAF hasn't fired yet, then sync PTY
+      fitAddon.fit();
+      if (pidRef.current) {
+        window.electron.ptyResize(pidRef.current, term.cols, term.rows);
+      }
+
+      ptyCleanupRef.current = () => {
+        disposeOnData.dispose();
+        disposeOnResize.dispose();
+        cleanupData();
+      };
+    });
+
+    return () => {
+      disposed = true;
+      ro.disconnect();
+      ptyCleanupRef.current?.();
+      ptyCleanupRef.current = null;
+      if (pidRef.current) {
+        window.electron.ptyKill(pidRef.current);
+        pidRef.current = null;
+      }
+      term.dispose();
+      terminalRef.current = null;
+      fitAddonRef.current = null;
+    };
+  }, []); // Only mount once
+
+  useEffect(() => {
+    if (cwd && pidRef.current) {
+      const safePath = cwd.replace(/'/g, "'\\''");
+      const cmd = `cd '${safePath}'\r`; 
+      window.electron.ptyWrite(pidRef.current, cmd);
+    }
+  }, [cwd]);
+
+  return (
+    <div 
+      style={{ 
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: '#1e1e1e', 
+        overflow: 'hidden',
+        zIndex: 10 // 提高层级，防止点击事件穿透到下方的文件列表背景上
+      }} 
+      ref={containerRef} 
+      // 在鼠标按下阶段截击，阻止事件向上传播给文件浏览器背景，从而保住焦点
+      onMouseDown={(e) => {
+        e.stopPropagation();
+      }}
+      // 点击黑框的任意地方时，强制让 xterm.js 内部的隐藏输入域重新获取焦点
+      onClick={(e) => {
+        e.stopPropagation();
+        if (terminalRef.current) {
+          terminalRef.current.focus();
+        }
+      }}
+      // 阻止键盘输入事件向外泄露，防止触发文件浏览器的全局快捷键
+      onKeyDown={(e) => {
+        e.stopPropagation();
+      }}
+    />
+  );
 };
