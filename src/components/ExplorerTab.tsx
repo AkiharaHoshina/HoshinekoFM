@@ -23,6 +23,7 @@ import { Omnibar } from './Omnibar';
 import { Dashboard } from './Dashboard';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { getSemanticGroup, GROUP_ORDER } from '../utils/fileUtils';
+import type { ContextMenuItem } from './ContextMenu';
 
 interface ExplorerTabProps {
     tabId: string;
@@ -30,6 +31,9 @@ interface ExplorerTabProps {
     initialPath: string;
     onPathChange: (id: string, path: string) => void;
     onContextMenu: (e: React.MouseEvent, file: IFile | null) => void;
+    onBgMenuItems: (items: ContextMenuItem[]) => void;
+    onOpenWithFile: (file: IFile) => void;
+    onPropertiesFile: (file: IFile) => void;
     showHiddenFiles: boolean;
     iconSize: number;
     viewMode: 'grid' | 'list';
@@ -37,7 +41,7 @@ interface ExplorerTabProps {
     refreshSignal: number;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const { showToast } = useToast();
@@ -323,15 +327,13 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       mime: null
     };
 
-    // 拦截全局右键事件总线，重新渲染自定义菜单项目列表
-    // 通过挂载在外部 ContextMenu 上的自定义 label 字段进行动态渲染
     const customItems = [
       {
         label: 'Refresh',
         icon: 'refresh',
         action: () => loadPath(currentPath)
       },
-      { divider: true },
+      { label: '', divider: true, action: () => {} },
       {
         label: 'New Folder',
         icon: 'create_new_folder',
@@ -342,13 +344,13 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         icon: 'note_add',
         action: () => createFile(currentPath + '/新建文本文档.txt', showToast, () => loadPath(currentPath)),
       },
-      { divider: true },
+      { label: '', divider: true, action: () => {} },
       {
         label: 'Paste',
         icon: 'content_paste',
         action: () => executePasteAction()
       },
-      { divider: true },
+      { label: '', divider: true, action: () => {} },
       {
         label: 'Open in Terminal',
         icon: 'terminal',
@@ -359,26 +361,24 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         }
       },
       {
-        label: 'Open with...',
-        icon: 'open_in_new',
+        label: 'Open With...',
+        icon: 'apps',
         action: () => {
-          if (window.electron && window.electron.openPath) {
-            window.electron.openPath(currentPath);
-          }
+          onOpenWithFile(currentFolderAsFile);
         }
       },
-      { divider: true },
+      { label: '', divider: true, action: () => {} },
       {
         label: 'Properties',
         icon: 'info',
         action: () => {
-          (window as any).__pendingPropertiesFile = currentFolderAsFile;
+          onPropertiesFile(currentFolderAsFile);
         }
       }
     ];
 
     onContextMenu(e, null);
-    (window as any).__lastBgMenuOpts = customItems;
+    onBgMenuItems(customItems);
   };
 
   return (

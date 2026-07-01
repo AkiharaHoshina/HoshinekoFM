@@ -214,7 +214,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
             e.stopPropagation();
             data.onContextMenu?.(e, file);
           }}
-          draggable={true}
+          draggable={!isRenaming}
           onDragStart={(e) => data.onFileDragStart(e, file)}
           tabIndex={0}
           role="button"

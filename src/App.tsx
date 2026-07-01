@@ -49,6 +49,7 @@ function AppContent() {
 
   // Context Menu State
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: IFile | null } | null>(null);
+  const [bgMenuItems, setBgMenuItems] = useState<ContextMenuItem[] | null>(null);
 
   // Rename Dialog State
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
@@ -212,6 +213,19 @@ function AppContent() {
     setContextMenu({ x: e.clientX, y: e.clientY, item: file });
   }, []);
 
+  const handleBgMenuItems = useCallback((items: ContextMenuItem[]) => {
+    setBgMenuItems(items);
+  }, []);
+
+  const handleOpenWithFile = useCallback((file: IFile) => {
+    setOpenWithFile(file);
+  }, []);
+
+  const handlePropertiesFile = useCallback((file: IFile) => {
+    setPropertiesFile(file);
+    setPropertiesDialogOpen(true);
+  }, []);
+
   const handleCopy = (file: IFile) => {
     copy([file]);
     setContextMenu(null);
@@ -284,27 +298,12 @@ function AppContent() {
         setContextMenu(null);
       }
     }
-  ] : (() => {
-    const bgItems = (window as any).__lastBgMenuOpts as ContextMenuItem[] | undefined;
-    if (bgItems) return bgItems;
-    return [
-      { label: 'Paste', icon: 'content_paste', action: handlePaste },
-    ].filter(item => {
-      if (item.label === 'Paste' && (!clipboard || clipboard.files.length === 0)) return false;
-      return true;
-    });
-  })();
-
-  useEffect(() => {
-    if (!contextMenu) {
-      const pendingProps = (window as any).__pendingPropertiesFile as IFile | undefined;
-      if (pendingProps) {
-        (window as any).__pendingPropertiesFile = undefined;
-        setPropertiesFile(pendingProps);
-        setPropertiesDialogOpen(true);
-      }
-    }
-  }, [contextMenu]);
+  ] : (bgMenuItems ?? [
+    { label: 'Paste', icon: 'content_paste', action: handlePaste },
+  ].filter(item => {
+    if (item.label === 'Paste' && (!clipboard || clipboard.files.length === 0)) return false;
+    return true;
+  }));
 
   const handleRename = async () => {
     if (renameFile && newName && newName !== renameFile.name) {
@@ -408,6 +407,9 @@ function AppContent() {
                 initialPath={tab.path}
                 onPathChange={handleTabPathUpdate}
                 onContextMenu={handleContextMenu}
+                onBgMenuItems={handleBgMenuItems}
+                onOpenWithFile={handleOpenWithFile}
+                onPropertiesFile={handlePropertiesFile}
                 showHiddenFiles={showHiddenFiles}
                 iconSize={iconSize}
                 viewMode={viewMode}
@@ -497,9 +499,12 @@ function AppContent() {
             open={!!openWithFile}
             path={openWithFile.path}
             onClose={() => setOpenWithFile(null)}
-            onSelect={(exec) => {
+            onSelect={async (exec) => {
               if (openWithFile) {
-                window.electron.openWith(exec, openWithFile.path);
+                const result = await window.electron.openWith(exec, openWithFile.path);
+                if (result !== true) {
+                  showToast(`打开方式：${exec} 启动失败（${result}）`, 'error');
+                }
               }
               setOpenWithFile(null);
             }}

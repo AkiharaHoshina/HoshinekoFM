@@ -230,16 +230,43 @@ ipcMain.handle('system:get-apps', async () => {
 });
 
 ipcMain.handle('system:open-with', async (_, execPath: string, filePath: string) => {
-  try {
-    // e.g. "code" "/path/to/file"
-    // Should use spawn for detached process
-    const child = spawn(execPath, [filePath], { detached: true, stdio: 'ignore' });
-    child.unref();
-    return true;
-  } catch (e) {
-    console.error('Open With failed', e);
-    return false;
-  }
+  return new Promise((resolve) => {
+    // Insert file path where field codes were stripped.
+    // Flatpak --file-forwarding uses @@u %u @@ → after %u removal → @@u  @@
+    let cmdLine = execPath;
+    if (cmdLine.includes('@@')) {
+      cmdLine = cmdLine.replace(/@@u\s*@@/g, `@@u ${filePath} @@`);
+      cmdLine = cmdLine.replace(/@@\s*@@/g, `@@ ${filePath} @@`);
+    } else {
+      cmdLine += ` "${filePath}"`;
+    }
+
+    const parts: string[] = [];
+    let current = '';
+    let inQuote = false;
+    for (const ch of cmdLine) {
+      if (ch === '"') { inQuote = !inQuote; continue; }
+      if (ch === ' ' && !inQuote) {
+        if (current) { parts.push(current); current = ''; }
+        continue;
+      }
+      current += ch;
+    }
+    if (current) parts.push(current);
+    const cmd = parts[0];
+    const args = parts.slice(1);
+
+    try {
+      const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+      child.on('error', (err: any) => {
+        resolve((err?.message || err) as string);
+      });
+      child.unref();
+      child.on('spawn', () => resolve(true));
+    } catch (e: any) {
+      resolve((e?.message || e) as string);
+    }
+  });
 });
 
 ipcMain.handle('fs:get-parent', (_, dirPath: string) => {
