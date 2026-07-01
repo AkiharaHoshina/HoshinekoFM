@@ -1,15 +1,20 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Breadcrumbs } from './Breadcrumbs';
-import { Icon } from './Icon';
-import './Omnibar.css';
+import React, { useState, useEffect, useRef } from "react";
+import { Breadcrumbs } from "./Breadcrumbs";
+import { Icon } from "./Icon";
+import { IconButton } from "./IconButton";
+import "./Omnibar.css";
 
 interface OmnibarProps {
-    currentPath: string;
-    onNavigate: (path: string) => void;
-    onSearch: (query: string, options?: any) => void;
+  currentPath: string;
+  onNavigate: (path: string) => void;
+  onSearch: (query: string, options?: any) => void;
 }
 
-export const Omnibar: React.FC<OmnibarProps> = ({ currentPath, onNavigate, onSearch }) => {
+export const Omnibar: React.FC<OmnibarProps> = ({
+  currentPath,
+  onNavigate,
+  onSearch,
+}) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState(currentPath);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -37,7 +42,11 @@ export const Omnibar: React.FC<OmnibarProps> = ({ currentPath, onNavigate, onSea
     // If starts with '/' or contains separator -> Path Navigation
     // Else -> Search
 
-    if (trimmed.startsWith('/') || trimmed.startsWith('~') || trimmed.includes('/')) {
+    if (
+      trimmed.startsWith("/") ||
+      trimmed.startsWith("~") ||
+      trimmed.includes("/")
+    ) {
       onNavigate(trimmed);
     } else {
       // It's a search!
@@ -46,20 +55,23 @@ export const Omnibar: React.FC<OmnibarProps> = ({ currentPath, onNavigate, onSea
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleSubmit();
     }
-    if (e.key === 'Escape') {
+    if (e.key === "Escape") {
       setIsEditing(false);
       setInputValue(currentPath);
     }
   };
 
   return (
-    <div className={`omnibar ${isEditing ? 'editing' : ''}`}>
+    <div className={`omnibar ${isEditing ? "editing" : ""}`}>
       {isEditing ? (
         <div className="omnibar-input-wrapper">
-          <Icon name={inputValue.startsWith('/') ? 'folder_open' : 'search'} className="omnibar-icon" />
+          <Icon
+            name={inputValue.startsWith("/") ? "folder_open" : "search"}
+            className="omnibar-icon"
+          />
           <input
             ref={inputRef}
             type="text"
@@ -68,7 +80,7 @@ export const Omnibar: React.FC<OmnibarProps> = ({ currentPath, onNavigate, onSea
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onBlur={() => {
-              // Optional: Cancel on blur? 
+              // Optional: Cancel on blur?
               // Or Submit? Usually Cancel or Keep if waiting.
               // Let's keeps editing unless empty or escape.
               // Actually better UX: Click outside -> Cancel back to breadcrumbs.
@@ -80,9 +92,14 @@ export const Omnibar: React.FC<OmnibarProps> = ({ currentPath, onNavigate, onSea
       ) : (
         <div className="omnibar-breadcrumbs">
           <Breadcrumbs currentPath={currentPath} onNavigate={onNavigate} />
-          <div className="omnibar-trigger" onClick={() => setIsEditing(true)} title="Click to edit path or search">
+          <IconButton
+            variant="standard"
+            className="omnibar-trigger"
+            onClick={() => setIsEditing(true)}
+            title="Click to edit path or search"
+          >
             <Icon name="edit" className="edit-icon" />
-          </div>
+          </IconButton>
         </div>
       )}
     </div>

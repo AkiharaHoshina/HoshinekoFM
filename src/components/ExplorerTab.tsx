@@ -112,6 +112,19 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     }
   };
 
+  const handleRename = async (file: IFile, newName: string) => {
+    const lastSlash = file.path.lastIndexOf('/');
+    const parentDir = file.path.substring(0, lastSlash);
+    const newPath = `${parentDir}/${newName}`;
+    try {
+      await FileSystemService.rename(file.path, newPath);
+      showToast(`已重命名为 ${newName}`, 'success');
+      loadPath(currentPath);
+    } catch {
+      showToast('重命名失败', 'error');
+    }
+  };
+
   const handleUp = async () => {
     if (window.electron && currentPath) {
       const parent = await window.electron.getParentPath(currentPath);
@@ -486,6 +499,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               selectedFiles={selectedFiles}
               onSelect={handleSelect}
               onNavigate={handleNavigate}
+              onRename={handleRename}
               onContextMenu={(e, file) => {
                 if (file && !selectedFiles.has(file.path)) {
                   handleSelect(file, false, false);

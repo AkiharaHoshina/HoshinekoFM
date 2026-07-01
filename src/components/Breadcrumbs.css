@@ -1,6 +1,7 @@
 .breadcrumb-item.m3-button--text {
     height: auto;
     min-width: 0;
+    flex-shrink: 0;
     padding: 4px 8px;
     border-radius: 8px;
     color: var(--md-sys-color-on-surface);
@@ -10,16 +11,17 @@
     background: transparent;
 }
 
-.breadcrumb-root {
-    padding: 4px 8px;
+.breadcrumb-root.m3-icon-button {
+    flex-shrink: 0;
+    width: auto;
+    height: auto;
+    padding: 4px 4px;
     border-radius: 8px;
     color: var(--md-sys-color-on-surface);
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
 
 .breadcrumb-separator {
+    flex-shrink: 0;
     color: var(--md-sys-color-on-surface-variant);
     margin: 0 4px;
     font-size: 16px;

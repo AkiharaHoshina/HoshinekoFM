@@ -5,7 +5,7 @@
     border-radius: 20px;
     display: flex;
     align-items: center;
-    padding: 0 16px;
+    padding: 0 8px;
     position: relative;
     transition: all 0.2s ease;
     overflow: hidden;
@@ -40,21 +40,23 @@
 
 .omnibar-breadcrumbs {
     flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     overflow: hidden;
     height: 100%;
 }
 
-.omnibar-trigger {
-    margin-left: auto;
+.omnibar-trigger.m3-icon-button {
+    width: auto;
+    height: auto;
+    padding: 4px;
     opacity: 0;
+    margin-left: auto;
     transition: opacity 0.2s;
-    display: flex;
-    align-items: center;
 }
 
-.omnibar:hover .omnibar-trigger {
+.omnibar:hover .omnibar-trigger.m3-icon-button {
     opacity: 0.5;
 }
 

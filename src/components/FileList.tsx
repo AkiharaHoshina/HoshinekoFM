@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import type { IFile } from "../types/files";
 import { Icon } from "./Icon";
 import "./FileList.css";
@@ -12,6 +12,7 @@ interface FileListProps {
   selectedFiles: Set<string>;
   onSelect: (file: IFile, toggle: boolean, range: boolean) => void;
   onNavigate: (file: IFile) => void;
+  onRename?: (file: IFile, newName: string) => void;
   onContextMenu?: (e: React.MouseEvent, file: IFile) => void;
   onBackgroundContextMenu?: (e: React.MouseEvent) => void;
   onDeselectAll?: () => void;
@@ -20,6 +21,8 @@ interface FileListProps {
   filledIcons: boolean;
   groupingEnabled?: boolean;
 }
+
+const DOUBLE_CLICK_THRESHOLD = 500;
 
 const groupLocaleMap: Record<string, string> = {
   Today: "今天",
@@ -49,33 +52,33 @@ function getFileIconFromMime(
   if (!mime) return "insert_drive_file";
   const cat = mime.split("/")[0];
   switch (cat) {
-    case "image":
-      return "image";
-    case "audio":
-      return "audio_file";
-    case "video":
-      return "movie";
-    case "text":
-      return "article";
-    case "inode":
-      return "folder";
+  case "image":
+    return "image";
+  case "audio":
+    return "audio_file";
+  case "video":
+    return "movie";
+  case "text":
+    return "article";
+  case "inode":
+    return "folder";
   }
   switch (mime) {
-    case "application/pdf":
-      return "picture_as_pdf";
-    case "application/zip":
-    case "application/gzip":
-    case "application/x-bzip2":
-    case "application/x-xz":
-    case "application/x-7z-compressed":
-    case "application/vnd.rar":
-    case "application/x-rar-compressed":
-    case "application/x-tar":
-      return "folder_zip";
-    case "application/x-elf":
-    case "application/x-executable":
-    case "application/x-sharedlib":
-      return "terminal";
+  case "application/pdf":
+    return "picture_as_pdf";
+  case "application/zip":
+  case "application/gzip":
+  case "application/x-bzip2":
+  case "application/x-xz":
+  case "application/x-7z-compressed":
+  case "application/vnd.rar":
+  case "application/x-rar-compressed":
+  case "application/x-tar":
+    return "folder_zip";
+  case "application/x-elf":
+  case "application/x-executable":
+  case "application/x-sharedlib":
+    return "terminal";
   }
   return "insert_drive_file";
 }
@@ -137,10 +140,18 @@ interface RowData {
   items: ListItem[];
   selectedFiles: Set<string>;
   failedImages: Set<string>;
+  renamingPath: string | null;
+  renameValue: string;
   onSelect: (file: IFile, toggle: boolean, range: boolean) => void;
   onNavigate: (file: IFile) => void;
+  onRename?: (file: IFile, newName: string) => void;
   onContextMenu?: (e: React.MouseEvent, file: IFile) => void;
   onImageError: (path: string) => void;
+  onItemClick: (e: React.MouseEvent, file: IFile) => void;
+  onItemDoubleClick: (file: IFile) => void;
+  onRenameInputChange: (value: string) => void;
+  onRenameSubmit: () => void;
+  onRenameCancel: () => void;
   iconSize: number;
   filledIcons: boolean;
   viewMode: "grid" | "list";
@@ -176,6 +187,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
     const isSelected = data.selectedFiles.has(file.path);
     const isImg = file.mime?.startsWith("image/") ?? false;
     const hasFailed = data.failedImages.has(file.path);
+    const isRenaming = data.renamingPath === file.path;
 
     return (
       <div style={style}>
@@ -194,16 +206,8 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
             height: `calc(100% - 4px)`,
           }}
           className={`file-list-item ${isSelected ? "selected" : ""}`}
-          onClick={(e) => {
-            const isModifier = e.ctrlKey || e.metaKey || e.shiftKey;
-            const isSel = data.selectedFiles.has(file.path);
-            if (!isModifier && isSel) {
-              data.onNavigate(file);
-            } else {
-              data.onSelect(file, e.ctrlKey || e.metaKey, e.shiftKey);
-            }
-          }}
-          onDoubleClick={() => data.onNavigate(file)}
+          onClick={(e) => data.onItemClick(e, file)}
+          onDoubleClick={() => data.onItemDoubleClick(file)}
           onContextMenu={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -251,17 +255,39 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
               />
             )}
           </span>
-          <span
-            className="file-name"
-            style={{
-              flex: 1,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {file.name}
-          </span>
+          {isRenaming ? (
+            <input
+              className="file-rename-input"
+              type="text"
+              value={data.renameValue}
+              autoFocus
+              onChange={(e) => data.onRenameInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") {
+                  data.onRenameSubmit();
+                } else if (e.key === "Escape") {
+                  data.onRenameCancel();
+                }
+              }}
+              onBlur={() => data.onRenameSubmit()}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              style={{ flex: 1, minWidth: 0 }}
+            />
+          ) : (
+            <span
+              className="file-name"
+              style={{
+                flex: 1,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {file.name}
+            </span>
+          )}
           <span
             className="file-size"
             style={{ flexShrink: 0, width: "100px", textAlign: "right" }}
@@ -290,20 +316,14 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
         const isSelected = data.selectedFiles.has(file.path);
         const isImg = file.mime?.startsWith("image/") ?? false;
         const hasFailed = data.failedImages.has(file.path);
+        const isRenaming = data.renamingPath === file.path;
+
         return (
           <div
             key={file.path}
             className={`file-list-item ${isSelected ? "selected" : ""}`}
-            onClick={(e) => {
-              const isModifier = e.ctrlKey || e.metaKey || e.shiftKey;
-              const isSel = data.selectedFiles.has(file.path);
-              if (!isModifier && isSel) {
-                data.onNavigate(file);
-              } else {
-                data.onSelect(file, e.ctrlKey || e.metaKey, e.shiftKey);
-              }
-            }}
-            onDoubleClick={() => data.onNavigate(file)}
+            onClick={(e) => data.onItemClick(e, file)}
+            onDoubleClick={() => data.onItemDoubleClick(file)}
             onContextMenu={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -366,22 +386,51 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                 />
               )}
             </span>
-            <span
-              className="file-name"
-              style={{
-                textAlign: "center",
-                fontSize: "12px",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                maxWidth: "100%",
-                width: "100%",
-                marginTop: "2px",
-                display: "block",
-              }}
-            >
-              {file.name}
-            </span>
+            {isRenaming && !file.isDirectory ? (
+              <input
+                className="file-rename-input"
+                type="text"
+                value={data.renameValue}
+                autoFocus
+                onChange={(e) => data.onRenameInputChange(e.target.value)}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Enter") {
+                    data.onRenameSubmit();
+                  } else if (e.key === "Escape") {
+                    data.onRenameCancel();
+                  }
+                }}
+                onBlur={() => data.onRenameSubmit()}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                style={{
+                  textAlign: "center",
+                  fontSize: "12px",
+                  marginTop: "2px",
+                  width: "100%",
+                  maxWidth: "100%",
+                  boxSizing: "border-box",
+                }}
+              />
+            ) : (
+              <span
+                className="file-name"
+                style={{
+                  textAlign: "center",
+                  fontSize: "12px",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  maxWidth: "100%",
+                  width: "100%",
+                  marginTop: "2px",
+                  display: "block",
+                }}
+              >
+                {file.name}
+              </span>
+            )}
           </div>
         );
       })}
@@ -396,6 +445,7 @@ export const FileList: React.FC<FileListProps> = ({
   selectedFiles,
   onSelect,
   onNavigate,
+  onRename,
   onContextMenu,
   onBackgroundContextMenu,
   onDeselectAll,
@@ -405,6 +455,20 @@ export const FileList: React.FC<FileListProps> = ({
   groupingEnabled = false,
 }) => {
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const lastClickRef = useRef<{ path: string; time: number } | null>(null);
+  const isDraggingRef = useRef(false);
+  const renameTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (renameTimeoutRef.current !== null) {
+        clearTimeout(renameTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleImageError = useCallback((path: string) => {
     setFailedImages((prev) => {
@@ -413,6 +477,75 @@ export const FileList: React.FC<FileListProps> = ({
       next.add(path);
       return next;
     });
+  }, []);
+
+  const handleItemClick = useCallback(
+    (e: React.MouseEvent, file: IFile) => {
+      if (renamingPath) return;
+
+      const isModifier = e.ctrlKey || e.metaKey || e.shiftKey;
+      if (isModifier) {
+        onSelect(file, e.ctrlKey || e.metaKey, e.shiftKey);
+        return;
+      }
+
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+        return;
+      }
+
+      const now = Date.now();
+      const last = lastClickRef.current;
+
+      if (last?.path === file.path) {
+        if (now - last.time < DOUBLE_CLICK_THRESHOLD) {
+          lastClickRef.current = null;
+          onNavigate(file);
+          return;
+        }
+        lastClickRef.current = null;
+        renameTimeoutRef.current = setTimeout(() => {
+          renameTimeoutRef.current = null;
+          setRenamingPath(file.path);
+          setRenameValue(file.name);
+        }, 0);
+        return;
+      }
+
+      onSelect(file, false, false);
+      lastClickRef.current = { path: file.path, time: now };
+    },
+    [onSelect, onNavigate, renamingPath],
+  );
+
+  const handleItemDoubleClick = useCallback(
+    (file: IFile) => {
+      if (renameTimeoutRef.current !== null) {
+        clearTimeout(renameTimeoutRef.current);
+        renameTimeoutRef.current = null;
+      }
+      onNavigate(file);
+    },
+    [onNavigate],
+  );
+
+  const handleRenameInputChange = useCallback((value: string) => {
+    setRenameValue(value);
+  }, []);
+
+  const handleRenameSubmit = useCallback(() => {
+    if (!renamingPath) return;
+    const file = files.find((f) => f.path === renamingPath);
+    if (file && renameValue && renameValue !== file.name) {
+      onRename?.(file, renameValue);
+    }
+    setRenamingPath(null);
+    setRenameValue("");
+  }, [renamingPath, renameValue, files, onRename]);
+
+  const handleRenameCancel = useCallback(() => {
+    setRenamingPath(null);
+    setRenameValue("");
   }, []);
 
   const rowHeight = useCallback((_index: number, rowProps: RowData) => {
@@ -459,10 +592,18 @@ export const FileList: React.FC<FileListProps> = ({
             items,
             selectedFiles,
             failedImages,
+            renamingPath,
+            renameValue,
             onSelect,
             onNavigate,
+            onRename,
             onContextMenu,
             onImageError: handleImageError,
+            onItemClick: handleItemClick,
+            onItemDoubleClick: handleItemDoubleClick,
+            onRenameInputChange: handleRenameInputChange,
+            onRenameSubmit: handleRenameSubmit,
+            onRenameCancel: handleRenameCancel,
             iconSize,
             filledIcons,
             viewMode,

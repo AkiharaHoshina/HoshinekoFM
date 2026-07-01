@@ -1,30 +1,60 @@
-import React from 'react';
-import './Breadcrumbs.css';
-import { Button } from './Button';
-import { Icon } from './Icon';
+import React, { useRef, useEffect } from "react";
+import "./Breadcrumbs.css";
+import { Button } from "./Button";
+import { IconButton } from "./IconButton";
+import { Icon } from "./Icon";
 
 interface BreadcrumbsProps {
-    currentPath: string;
-    onNavigate: (path: string) => void;
+  currentPath: string;
+  onNavigate: (path: string) => void;
 }
 
-export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ currentPath, onNavigate }) => {
+export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
+  currentPath,
+  onNavigate,
+}) => {
   // Normalize path
-  const sanitizedPath = currentPath.startsWith('/') ? currentPath : '/' + currentPath;
-  const parts = sanitizedPath.split('/').filter(Boolean);
+  const sanitizedPath = currentPath.startsWith("/")
+    ? currentPath
+    : "/" + currentPath;
+  const parts = sanitizedPath.split("/").filter(Boolean);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+    }
+  }, [currentPath]);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', overflowX: 'auto', whiteSpace: 'nowrap', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
-      <div
-        onClick={() => onNavigate('/')}
+    <div
+      ref={scrollRef}
+      onWheel={(e) => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollLeft += e.deltaY;
+        }
+      }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        overflowX: "auto",
+        overflowY: "hidden",
+        whiteSpace: "nowrap",
+        scrollbarWidth: "none",
+        WebkitOverflowScrolling: "touch",
+      }}
+    >
+      <IconButton
+        variant="standard"
+        onClick={() => onNavigate("/")}
         className="breadcrumb-root"
         title="Root"
       >
-        <Icon name="home" style={{ fontSize: '18px' }} />
-      </div>
+        <Icon name="home" style={{ fontSize: "18px" }} />
+      </IconButton>
 
       {parts.map((p, i) => {
-        const path = '/' + parts.slice(0, i + 1).join('/');
+        const path = "/" + parts.slice(0, i + 1).join("/");
         return (
           <React.Fragment key={path}>
             <span className="breadcrumb-separator">/</span>
@@ -37,8 +67,8 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({ currentPath, onNavigat
               {p}
             </Button>
           </React.Fragment>
-        )
+        );
       })}
     </div>
   );
-}
+};
