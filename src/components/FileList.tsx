@@ -149,6 +149,7 @@ interface RowData {
   onImageError: (path: string) => void;
   onItemClick: (e: React.MouseEvent, file: IFile) => void;
   onItemDoubleClick: (file: IFile) => void;
+  onFileDragStart: (e: React.DragEvent, file: IFile) => void;
   onRenameInputChange: (value: string) => void;
   onRenameSubmit: () => void;
   onRenameCancel: () => void;
@@ -214,12 +215,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
             data.onContextMenu?.(e, file);
           }}
           draggable={true}
-          onDragStart={(e) => {
-            e.preventDefault();
-            if (window.electron?.startDrag) {
-              window.electron.startDrag(file.path);
-            }
-          }}
+          onDragStart={(e) => data.onFileDragStart(e, file)}
           tabIndex={0}
           role="button"
         >
@@ -330,12 +326,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
               data.onContextMenu?.(e, file);
             }}
             draggable={true}
-            onDragStart={(e) => {
-              e.preventDefault();
-              if (window.electron?.startDrag) {
-                window.electron.startDrag(file.path);
-              }
-            }}
+            onDragStart={(e) => data.onFileDragStart(e, file)}
             tabIndex={0}
             role="button"
             style={{
@@ -459,7 +450,7 @@ export const FileList: React.FC<FileListProps> = ({
   const [renameValue, setRenameValue] = useState("");
 
   const lastClickRef = useRef<{ path: string; time: number } | null>(null);
-  const isDraggingRef = useRef(false);
+  const lastDragRef = useRef<{ path: string; time: number } | null>(null);
   const renameTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -489,12 +480,14 @@ export const FileList: React.FC<FileListProps> = ({
         return;
       }
 
-      if (isDraggingRef.current) {
-        isDraggingRef.current = false;
+      const now = Date.now();
+
+      // Skip click that immediately follows a drag on the same file
+      if (lastDragRef.current?.path === file.path && now - lastDragRef.current.time < 100) {
+        lastDragRef.current = null;
         return;
       }
-
-      const now = Date.now();
+      lastDragRef.current = null;
       const last = lastClickRef.current;
 
       if (last?.path === file.path) {
@@ -504,11 +497,13 @@ export const FileList: React.FC<FileListProps> = ({
           return;
         }
         lastClickRef.current = null;
-        renameTimeoutRef.current = setTimeout(() => {
-          renameTimeoutRef.current = null;
-          setRenamingPath(file.path);
-          setRenameValue(file.name);
-        }, 0);
+        if (!file.isDirectory) {
+          renameTimeoutRef.current = setTimeout(() => {
+            renameTimeoutRef.current = null;
+            setRenamingPath(file.path);
+            setRenameValue(file.name);
+          }, 0);
+        }
         return;
       }
 
@@ -517,6 +512,14 @@ export const FileList: React.FC<FileListProps> = ({
     },
     [onSelect, onNavigate, renamingPath],
   );
+
+  const handleFileDragStart = useCallback((e: React.DragEvent, file: IFile) => {
+    e.preventDefault();
+    lastDragRef.current = { path: file.path, time: Date.now() };
+    if (window.electron?.startDrag) {
+      window.electron.startDrag(file.path);
+    }
+  }, []);
 
   const handleItemDoubleClick = useCallback(
     (file: IFile) => {
@@ -575,6 +578,13 @@ export const FileList: React.FC<FileListProps> = ({
             ".file-list-item, .file-group-header",
           )
         ) {
+          lastClickRef.current = null;
+          lastDragRef.current = null;
+          if (renameTimeoutRef.current !== null) {
+            clearTimeout(renameTimeoutRef.current);
+            renameTimeoutRef.current = null;
+          }
+          if (renamingPath) setRenamingPath(null);
           onDeselectAll?.();
         }
       }}
@@ -601,6 +611,7 @@ export const FileList: React.FC<FileListProps> = ({
             onImageError: handleImageError,
             onItemClick: handleItemClick,
             onItemDoubleClick: handleItemDoubleClick,
+            onFileDragStart: handleFileDragStart,
             onRenameInputChange: handleRenameInputChange,
             onRenameSubmit: handleRenameSubmit,
             onRenameCancel: handleRenameCancel,

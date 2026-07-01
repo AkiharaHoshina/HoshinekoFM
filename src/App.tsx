@@ -288,13 +288,27 @@ function AppContent() {
         setContextMenu(null);
       }
     }
-  ] : [
-    // Background Context Menu
-    { label: 'Paste', icon: 'content_paste', action: handlePaste },
-  ].filter(item => {
-    if (item.label === 'Paste' && (!clipboard || clipboard.files.length === 0)) return false;
-    return true;
-  });
+  ] : (() => {
+    const bgItems = (window as any).__lastBgMenuOpts as ContextMenuItem[] | undefined;
+    if (bgItems) return bgItems;
+    return [
+      { label: 'Paste', icon: 'content_paste', action: handlePaste },
+    ].filter(item => {
+      if (item.label === 'Paste' && (!clipboard || clipboard.files.length === 0)) return false;
+      return true;
+    });
+  })();
+
+  useEffect(() => {
+    if (!contextMenu) {
+      const pendingProps = (window as any).__pendingPropertiesFile as IFile | undefined;
+      if (pendingProps) {
+        (window as any).__pendingPropertiesFile = undefined;
+        setPropertiesFile(pendingProps);
+        setPropertiesDialogOpen(true);
+      }
+    }
+  }, [contextMenu]);
 
   const handleRename = async () => {
     if (renameFile && newName && newName !== renameFile.name) {

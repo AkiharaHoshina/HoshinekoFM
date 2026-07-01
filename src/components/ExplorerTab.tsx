@@ -373,29 +373,13 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         label: 'Properties',
         icon: 'info',
         action: () => {
-          // 间接穿透路由，拉起外层的属性弹窗结构
-          onContextMenu(e, currentFolderAsFile);
+          (window as any).__pendingPropertiesFile = currentFolderAsFile;
         }
       }
     ];
 
-    // Using native context menu handler
-        
-    // 自定义一个局部菜单状态结构覆盖父组件的默认列表
-    onContextMenu(e, currentFolderAsFile); 
-        
-    // 如果你的项目的外部系统菜单组件不允许覆盖项，可以直接派发事件：
-    // 这将允许主界面识别 null 并自动渲染空白选项
-    // 这里采用标准注入：
-    // @ts-ignore
-    if (typeof onContextMenu === 'function') {
-      // 通过将 file 设为 null 显式声明其为“空白区域上下文点击事件”
-      onContextMenu(e, null);
-            
-      // 劫持传递：为了将我们在上一步构造出的带有特定附加项的 customItems 顺利派发到 ContextMenu，
-      // 可以在 window 全局线程挂载一个共享影子。外层的 ContextMenu 只需要读取这个变量就能无缝拉起
-      (window as any).__lastBgMenuOpts = customItems;
-    }
+    onContextMenu(e, null);
+    (window as any).__lastBgMenuOpts = customItems;
   };
 
   return (
