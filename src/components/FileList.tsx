@@ -126,7 +126,7 @@ interface RowData {
 }
 
 const LIST_ROW_HEIGHT = (iconSize: number) => Math.max(52, iconSize + 16);
-const GRID_ROW_HEIGHT = (iconSize: number) => iconSize + 80;
+const GRID_ROW_HEIGHT = (iconSize: number) => iconSize + 38;
 const HEADER_HEIGHT = 48;
 
 function Row({ index, style, ...data }: RowComponentProps<RowData>) {
@@ -137,12 +137,10 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
             <div
                 style={{
                     ...style,
-                    padding: '16px 8px 8px',
+                    padding: '24px 24px 8px',
                     fontWeight: 500,
                     color: 'var(--md-sys-color-primary)',
                     borderBottom: '1px solid var(--md-sys-color-outline-variant)',
-                    marginBottom: '8px',
-                    marginTop: index > 0 ? '16px' : '0',
                     boxSizing: 'border-box',
                 }}
             >
@@ -163,10 +161,10 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                 style={{
                     ...style,
                     height: `${rowHeight}px`,
-                    display: 'grid',
-                    gridTemplateColumns: `${data.iconSize + 16}px 1fr 100px`,
+                    display: 'flex',
                     alignItems: 'center',
-                    padding: '0 16px',
+                    gap: '16px',
+                    padding: '0px 16px',
                     cursor: 'pointer',
                     borderRadius: '12px',
                     background: isSelected ? 'var(--md-sys-color-secondary-container)' : 'transparent',
@@ -230,8 +228,8 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                         />
                     )}
                 </span>
-                <span className="file-name">{file.name}</span>
-                <span className="file-size">{file.isDirectory ? '' : formatSize(file.size)}</span>
+                <span className="file-name" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                <span className="file-size" style={{ flexShrink: 0, width: '100px', textAlign: 'right' }}>{file.isDirectory ? '' : formatSize(file.size)}</span>
             </div>
         );
     }
@@ -243,9 +241,10 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                 ...style,
                 display: 'grid',
                 gridTemplateColumns: `repeat(${data.columns}, 1fr)`,
-                gap: '8px',
-                padding: '4px 0',
+                gap: '10px',
+                padding: '2px 10px',
                 boxSizing: 'border-box',
+                overflow: 'hidden',
             }}
         >
             {files.map((file) => {
@@ -284,12 +283,16 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
-                            padding: '8px',
+                            padding: '4px',
                             cursor: 'pointer',
                             borderRadius: '8px',
                             background: isSelected
                                 ? 'var(--md-sys-color-secondary-container)'
                                 : 'transparent',
+                            overflow: 'hidden',
+                            width: '100%',
+                            height: 'auto',
+                            minHeight: 'auto',
                         }}
                     >
                         <span
@@ -333,7 +336,9 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                                 textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap',
                                 maxWidth: '100%',
-                                marginTop: '4px',
+                                width: '100%',
+                                marginTop: '2px',
+                                display: 'block',
                             }}
                         >
                             {file.name}
@@ -418,7 +423,7 @@ export const FileList: React.FC<FileListProps> = ({
 
                     return (
                         <List
-                            style={{ height, width }}
+                            style={{ height, width, maxHeight: height }}
                             rowComponent={Row}
                             rowProps={rowPropsData}
                             rowCount={items.length}
