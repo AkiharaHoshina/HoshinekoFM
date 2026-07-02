@@ -5,6 +5,9 @@
 </p>
 
 # Hoshineko File Manager
+<p align="center">
+  <img src="Screenshot_for_HoshinekoFM.png" alt="Hoshineko">
+</p>
 
 Hoshineko File Manager is a modern, "Performance-First" file manager built using Material 3 Design, Electron, and React.
 The Hoshineko file explorer is a modification and reconstruction of [bhimio1](https://github.com/bhimio1)'s [material-3-file-explorer](https://github.com/bhimio1/material-3-file-explorer) project. This project was initiated because the original repository is no longer actively maintained, and we aimed to develop a file manager fully compliant with Material 3 Design standards.
