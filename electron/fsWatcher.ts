@@ -14,18 +14,27 @@ export function startWatching(
 ): void {
   if (watchers.has(dir)) return;
 
-  const watcher = watch(dir, (_event, _filename) => {
-    const entry = watchers.get(dir);
-    if (!entry) return;
+  try {
+    const watcher = watch(dir, (_event, _filename) => {
+      const entry = watchers.get(dir);
+      if (!entry) return;
 
-    if (entry.timer) clearTimeout(entry.timer);
-    entry.timer = setTimeout(() => {
-      entry.timer = null;
-      onChange(dir);
-    }, 300);
-  });
+      if (entry.timer) clearTimeout(entry.timer);
+      entry.timer = setTimeout(() => {
+        entry.timer = null;
+        onChange(dir);
+      }, 300);
+    });
 
-  watchers.set(dir, { watcher, timer: null });
+    watcher.on('error', (err: Error) => {
+      console.warn(`[fsWatcher] error on "${dir}":`, err.message);
+      stopWatching(dir);
+    });
+
+    watchers.set(dir, { watcher, timer: null });
+  } catch (err) {
+    console.warn(`[fsWatcher] cannot watch "${dir}":`, (err as Error).message);
+  }
 }
 
 export function stopWatching(dir: string): void {

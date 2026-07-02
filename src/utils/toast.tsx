@@ -4,7 +4,7 @@ import "./toast.css";
 
 export function showToast(
   message: string,
-  type: "success" | "error" | "info" = "info",
+  type: "success" | "error" | "info" | "warning" = "info",
 ) {
   toast(<span className="toast-message">{message}</span>, {
     type: type as ToastOptions["type"],

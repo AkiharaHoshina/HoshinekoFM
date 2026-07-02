@@ -5,7 +5,7 @@ import os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
-import { EXT_TO_MIME, ZIP_CONTAINER_EXTS, BASENAME_TO_MIME, DOTFILE_TO_MIME } from './mimeMap';
+import { EXT_TO_MIME, ZIP_CONTAINER_EXTS, EXT_PREFERRED, BASENAME_TO_MIME, DOTFILE_TO_MIME } from './mimeMap';
 
 const execFileAsync = promisify(execFile);
 
@@ -177,8 +177,9 @@ const CONTAINER_TYPES = new Set([
  *   ③ Basename map   →  extensionless files (Makefile, Dockerfile, dotfiles)
  *   ④ `file --mime-type` command  →  shell fallback
  *
- * Conflict resolution:
+  * Conflict resolution:
  *   - Magic=zip + extension in ZIP_CONTAINER_EXTS (.docx, etc.) → trust extension
+ *   - Extension in EXT_PREFERRED (.nef, .avif, .rar, etc.) → trust extension
  *   - All other magic/ext conflicts → trust magic bytes, warn to console
  */
 export async function detectMime(filePath: string): Promise<string | null> {
@@ -210,6 +211,9 @@ export async function detectMime(filePath: string): Promise<string | null> {
       }
     } else if (magicMime === 'application/zip' && ZIP_CONTAINER_EXTS.has(ext)) {
       // ZIP-backed document/package → trust extension
+      mime = extMime;
+    } else if (EXT_PREFERRED.has(ext)) {
+      // Extension-specific MIME is more precise/standard than generic magic
       mime = extMime;
     } else {
       // Extension disagrees with magic bytes → trust content
@@ -354,15 +358,79 @@ export async function getDragIcon(filePath: string, filled = false): Promise<str
 function getIconNameForMime(mime: string | null, isDirectory: boolean): string {
   if (isDirectory || mime === 'inode/directory') return 'folder';
   if (!mime) return 'insert_drive_file';
-  const cat = mime.split('/')[0];
-  switch (cat) {
-  case 'image': return 'image';
-  case 'audio': return 'audio_file';
-  case 'video': return 'movie';
-  case 'text': return 'article';
-  }
+
+  if (mime.startsWith('font/')) return 'font_download';
+
   switch (mime) {
-  case 'application/pdf': return 'picture_as_pdf';
+  // ── Text — markup ──
+  case 'text/markdown':
+    return 'markdown';
+  case 'text/x-tex':
+    return 'article';
+
+  // ── Text — code (specific languages) ──
+  case 'text/javascript':
+    return 'javascript';
+  case 'text/html':
+    return 'html';
+  case 'text/css':
+  case 'text/x-scss':
+    return 'css';
+  case 'text/x-shell':
+    return 'terminal';
+  case 'text/x-sql':
+    return 'database';
+
+  // ── Text — data/config ──
+  case 'text/x-yaml':
+  case 'text/x-toml':
+    return 'data_object';
+
+  // ── Text — table data ──
+  case 'text/csv':
+  case 'text/tab-separated-values':
+    return 'csv';
+
+  // ── Text — plain ──
+  case 'text/plain':
+    return 'article';
+
+  // ── Images (overrides) ──
+  case 'image/vnd.djvu':
+    return 'book_2';
+
+  // ── Documents ──
+  case 'application/pdf':
+    return 'picture_as_pdf';
+  case 'application/msword':
+  case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+  case 'application/vnd.oasis.opendocument.text':
+  case 'application/vnd.oasis.opendocument.formula':
+    return 'description';
+  case 'application/vnd.ms-excel':
+  case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+  case 'application/vnd.oasis.opendocument.spreadsheet':
+    return 'table';
+  case 'application/vnd.ms-powerpoint':
+  case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+  case 'application/vnd.oasis.opendocument.presentation':
+    return 'slideshow';
+  case 'application/vnd.oasis.opendocument.graphics':
+    return 'stylus';
+  case 'application/rtf':
+    return 'article';
+
+  // ── Ebooks ──
+  case 'application/epub+zip':
+  case 'application/x-mobipocket-ebook':
+    return 'import_contacts';
+
+  // ── Archives ──
+  case 'application/x-iso9660-image':
+    return 'album';
+  case 'application/x-rpm':
+  case 'application/vnd.debian.binary-package':
+    return 'package_2';
   case 'application/zip':
   case 'application/gzip':
   case 'application/x-bzip2':
@@ -371,12 +439,59 @@ function getIconNameForMime(mime: string | null, isDirectory: boolean): string {
   case 'application/vnd.rar':
   case 'application/x-rar-compressed':
   case 'application/x-tar':
+  case 'application/x-lzip':
+  case 'application/x-lzop':
+  case 'application/x-lz4':
+  case 'application/zstd':
+  case 'application/vnd.ms-cab-compressed':
+  case 'application/x-arj':
+  case 'application/x-lzh':
     return 'folder_zip';
+
+  // ── Executables ──
+  case 'application/x-msdownload':
+    return 'deployed_code';
+  case 'application/java-archive':
+    return 'deployed_code';
+  case 'application/vnd.android.package-archive':
+    return 'android';
+  case 'application/wasm':
+  case 'application/x-python-bytecode':
+  case 'application/x-java-bytecode':
+    return 'code';
   case 'application/x-elf':
   case 'application/x-executable':
   case 'application/x-sharedlib':
     return 'terminal';
+
+  // ── Data ──
+  case 'application/json':
+    return 'file_json';
+  case 'application/xml':
+    return 'data_object';
+  case 'application/graphql':
+    return 'data_object';
+  case 'application/x-sqlite3':
+    return 'database';
+  case 'application/x-pem-file':
+  case 'application/x-x509-ca-cert':
+    return 'key';
+  case 'application/x-bittorrent':
+    return 'cloud_download';
+
+  // ── Fonts (non-font/* MIMEs) ──
+  case 'application/vnd.ms-fontobject':
+    return 'font_download';
   }
+
+  const cat = mime.split('/')[0];
+  switch (cat) {
+  case 'image': return 'image';
+  case 'audio': return 'audio_file';
+  case 'video': return 'movie';
+  case 'text': return 'code';
+  }
+
   return 'insert_drive_file';
 }
 

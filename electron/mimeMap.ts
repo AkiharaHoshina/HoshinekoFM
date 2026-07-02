@@ -292,7 +292,7 @@ export const EXT_TO_MIME: Record<string, string> = {
   '.wasm': 'application/wasm',
   '.pyc': 'application/x-python-bytecode',
   '.pyo': 'application/x-python-bytecode',
-  '.appimage': 'application/x-executable',
+  '.appimage': 'application/x-elf',
   '.apk': 'application/vnd.android.package-archive',
   '.whl': 'application/zip',
 
@@ -409,4 +409,22 @@ export const ZIP_CONTAINER_EXTS = new Set([
   '.3mf',             // 3D Manufacturing Format
   '.sxc', '.sxd', '.sxi', '.sxg', '.sxm', // StarOffice / OpenOffice
   '.gltf',            // Could be ZIP-backed
+]);
+
+/**
+ * Extensions where the extension-derived MIME is more precise/standard
+ * than what magic bytes detect. Used in detectMime conflict resolution.
+ *
+ * Examples:
+ *   - .nef (Nikon RAW) → TIFF-based, magic says image/tiff, but image/x-nikon-nef is more useful
+ *   - .avif → ISOBMFF-based, magic may say video/mp4, but image/avif is IANA standard
+ *   - .rar → magic detects legacy application/x-rar-compressed, but IANA says application/vnd.rar
+ */
+export const EXT_PREFERRED = new Set([
+  // TIFF-based raw formats (magic says image/tiff, subtype is more specific)
+  '.nef', '.cr2', '.dng', '.arw',
+  // ISOBMFF-based image formats (magic may say video/mp4)
+  '.avif', '.heic', '.heif', '.heifs',
+  // IANA vnd.rar > legacy x-rar-compressed from magic
+  '.rar',
 ]);

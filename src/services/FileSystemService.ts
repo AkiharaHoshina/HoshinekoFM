@@ -29,7 +29,7 @@ export const FileSystemService = {
     return window.electron.openPath(path);
   },
 
-  async listDir(path: string): Promise<{ data: IFile[]; actualPath: string }> {
+  async listDir(path: string): Promise<{ data: IFile[]; actualPath: string; error?: { code: string; originalPath: string } }> {
     if (window.electron && window.electron.listDir) {
       try {
         return await window.electron.listDir(path);
@@ -39,5 +39,9 @@ export const FileSystemService = {
       }
     }
     return { data: [], actualPath: path };
-  }
+  },
+
+  async exists(path: string): Promise<boolean> {
+    return window.electron?.exists?.(path) ?? false;
+  },
 };

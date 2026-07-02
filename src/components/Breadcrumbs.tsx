@@ -52,6 +52,9 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       >
         <Icon name="home" style={{ fontSize: "18px" }} />
       </IconButton>
+      {parts.length === 0 && (
+        <span style={{ fontWeight: 600, padding: '0 2px' }}>/</span>
+      )}
 
       {parts.map((p, i) => {
         const path = "/" + parts.slice(0, i + 1).join("/");

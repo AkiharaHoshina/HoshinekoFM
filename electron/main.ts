@@ -187,12 +187,17 @@ ipcMain.handle('fs:list-dir', async (_, dirPath: string) => {
     const data = await listDirectoryContents(targetPath);
     return { data, actualPath: targetPath };
   } catch (error) {
-    console.error('Failed to list dir', targetPath, error);
+    const err = error as NodeJS.ErrnoException;
+    console.error('Failed to list dir', targetPath, err);
     const resolvedPath = await resolveAccessibleParent(targetPath);
     if (resolvedPath) {
       console.warn(`[fs:list-dir] resolved "${targetPath}" → "${resolvedPath}"`);
       const data = await listDirectoryContents(resolvedPath);
-      return { data, actualPath: resolvedPath };
+      return {
+        data,
+        actualPath: resolvedPath,
+        error: { code: err.code || 'UNKNOWN', originalPath: targetPath },
+      };
     }
     throw error;
   }
@@ -404,11 +409,15 @@ ipcMain.handle('fs:exists', async (_, filePath: string) => {
 });
 
 ipcMain.handle('fs:watch-dir', (_event, dir: string) => {
-  startWatching(dir, (changedDir) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('fs:dir-changed', changedDir);
-    }
-  });
+  try {
+    startWatching(dir, (changedDir) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('fs:dir-changed', changedDir);
+      }
+    });
+  } catch {
+    // directory already gone or inaccessible — silently skip
+  }
 });
 
 ipcMain.handle('fs:unwatch-dir', (_event, dir: string) => {

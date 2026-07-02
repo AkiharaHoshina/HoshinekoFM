@@ -77,6 +77,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   const currentPathRef = useRef(currentPath);
   currentPathRef.current = currentPath;
 
+  const lastToastKeyRef = useRef('');
+
   const [searchActive, setSearchActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -107,11 +109,27 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     suppressWatchRef.current = true;
     setTimeout(() => { suppressWatchRef.current = false; }, 1000);
     try {
-      const { data, actualPath } = await FileSystemService.listDir(path);
+      const { data, actualPath, error } = await FileSystemService.listDir(path);
       setFiles(data);
       setCurrentPath(actualPath);
       onPathChange(tabId, actualPath);
-      addToRecents(actualPath); // Track it
+      addToRecents(actualPath);
+
+      if (error && actualPath !== path) {
+        const toastKey = `${error.code}:${error.originalPath}`;
+        if (lastToastKeyRef.current !== toastKey) {
+          lastToastKeyRef.current = toastKey;
+          const reason = error.code === 'EACCES' || error.code === 'EPERM'
+            ? '权限不足'
+            : error.code === 'ENOENT'
+              ? '不存在'
+              : '无法访问';
+          showToast(
+            `"${error.originalPath}" ${reason}，已切换到 "${actualPath}"`,
+            'warning',
+          );
+        }
+      }
     } catch (e) {
       console.error('Failed to load path', path, e);
       showToast(`无法打开目录: ${(e as any)?.message || e || '未知错误'}`, 'error');
@@ -134,6 +152,18 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   useEffect(() => {
     if (!isActive || currentPath === 'app://dashboard') return;
 
+    let cancelled = false;
+
+    // If the directory was deleted while tab was inactive,
+    // the inotify watch was silently removed. Check existence first;
+    // if gone, trigger the walk-up fallback immediately.
+    FileSystemService.exists(currentPath).then((exists) => {
+      if (cancelled) return;
+      if (!exists) {
+        loadPath(currentPath);
+      }
+    });
+
     window.electron?.watchDirectory?.(currentPath);
     const cleanup = window.electron?.onDirChanged?.((dir: string) => {
       if (suppressWatchRef.current) return;
@@ -143,6 +173,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     });
 
     return () => {
+      cancelled = true;
       cleanup?.();
       window.electron?.unwatchDirectory?.(currentPath);
     };
