@@ -17,6 +17,9 @@ interface ConflictDialogProps {
   existingNames: string[];
   onConfirm: (result: ConflictResult) => void;
   onCancel: () => void;
+  title?: string;
+  sourcePath?: string;
+  operation?: "move" | "copy";
 }
 
 type Mode = 'skip' | 'auto-rename' | 'manual-rename';
@@ -27,6 +30,9 @@ export const ConflictDialog: React.FC<ConflictDialogProps> = ({
   existingNames,
   onConfirm,
   onCancel,
+  title,
+  sourcePath,
+  operation,
 }) => {
   const existingSet = useMemo(() => new Set(existingNames), [existingNames]);
   const [mode, setMode] = useState<Mode>('auto-rename');
@@ -91,9 +97,15 @@ export const ConflictDialog: React.FC<ConflictDialogProps> = ({
 
   const dirPath = destDir.endsWith('/') ? destDir : destDir + '/';
 
+  const dialogTitle =
+    title ??
+    (operation
+      ? `${operation === "copy" ? "复制" : "移动"}重名 — ${conflicts.length} 个项目`
+      : `${conflicts.length} 个项目重名`);
+
   return (
     <Dialog
-      title={`${conflicts.length} 个项目重名`}
+      title={dialogTitle}
       open={true}
       onClose={onCancel}
       actions={
@@ -108,6 +120,30 @@ export const ConflictDialog: React.FC<ConflictDialogProps> = ({
       }
     >
       <div className="conflict-dialog-content">
+        {sourcePath && (
+          <div className="conflict-info-section">
+            <div className="conflict-info-row">
+              <span className="conflict-info-label">来源</span>
+              <span className="conflict-info-path" title={sourcePath}>
+                {truncateDirPath(sourcePath, 48)}
+              </span>
+            </div>
+            {operation && (
+              <div className="conflict-info-row">
+                <span className="conflict-info-label">操作</span>
+                <span className="conflict-info-value">
+                  {operation === "copy" ? "复制" : "移动"}
+                </span>
+              </div>
+            )}
+            <div className="conflict-info-row">
+              <span className="conflict-info-label">目标</span>
+              <span className="conflict-info-path" title={destDir}>
+                {truncateDirPath(destDir, 48)}
+              </span>
+            </div>
+          </div>
+        )}
         <label className="conflict-radio">
           <input
             type="radio"

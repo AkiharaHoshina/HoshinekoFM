@@ -702,6 +702,10 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
 let _draggedPaths: Set<string> = new Set();
 let _pendingNativeDragPaths: string[] | null = null;
 
+export function clearPendingNativeDrag() {
+  _pendingNativeDragPaths = null;
+}
+
 export const FileList: React.FC<FileListProps> = ({
   files,
   selectedFiles,

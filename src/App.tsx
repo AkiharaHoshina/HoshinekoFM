@@ -101,6 +101,9 @@ function AppContent() {
   const [singleConflict, setSingleConflict] = useState<{
     conflict: ConflictEntry;
     existingNames: string[];
+    destDir: string;
+    sourcePath?: string;
+    operation?: "move" | "copy";
     resolve: (result: ConflictResult) => void;
   } | null>(null);
 
@@ -109,6 +112,8 @@ function AppContent() {
     destDir: string;
     existingNames: string[];
     resolve: (result: ConflictResult) => void;
+    sourcePath?: string;
+    operation?: "move" | "copy";
   } | null>(null);
 
   // -- Dialog helpers (passed as props to ExplorerTab) --
@@ -123,12 +128,12 @@ function AppContent() {
   );
 
   const handleConflictDialog = useCallback(
-    (conflicts: ConflictEntry[], destDir: string, existingNames: string[]) => {
+    (conflicts: ConflictEntry[], destDir: string, existingNames: string[], sourcePath?: string, operation?: "move" | "copy") => {
       return new Promise<ConflictResult>((resolve) => {
         if (conflicts.length === 1) {
-          setSingleConflict({ conflict: conflicts[0], existingNames, resolve });
+          setSingleConflict({ conflict: conflicts[0], existingNames, destDir, sourcePath, operation, resolve });
         } else {
-          setMultiConflict({ conflicts, destDir, existingNames, resolve });
+          setMultiConflict({ conflicts, destDir, existingNames, resolve, sourcePath, operation });
         }
       });
     },
@@ -738,6 +743,9 @@ function AppContent() {
                 defaultName={safeName}
                 isDir={c.conflict.isDir}
                 existingNames={c.existingNames}
+                sourcePath={c.sourcePath}
+                operation={c.operation}
+                destDir={c.destDir}
                 onConfirm={(name) => {
                   const renames = new Map<string, string>();
                   renames.set(c.conflict.entry.name, name);
@@ -760,6 +768,8 @@ function AppContent() {
             conflicts={multiConflict.conflicts}
             destDir={multiConflict.destDir}
             existingNames={multiConflict.existingNames}
+            sourcePath={multiConflict.sourcePath}
+            operation={multiConflict.operation}
             onConfirm={(result) => {
               const resolve = multiConflict.resolve;
               setMultiConflict(null);

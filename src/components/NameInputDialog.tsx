@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
-import { generateSafeName, splitNameExt } from '../utils/fileConflict';
+import { generateSafeName, splitNameExt, truncateDirPath } from '../utils/fileConflict';
 import './NameInputDialog.css';
 
 interface NameInputDialogProps {
@@ -10,6 +10,9 @@ interface NameInputDialogProps {
   isDir: boolean;
   parentDir?: string;
   existingNames: string[];
+  sourcePath?: string;
+  operation?: "move" | "copy";
+  destDir?: string;
   onConfirm: (name: string) => void;
   onCancel: () => void;
 }
@@ -19,6 +22,9 @@ export const NameInputDialog: React.FC<NameInputDialogProps> = ({
   defaultName,
   isDir,
   existingNames,
+  sourcePath,
+  operation,
+  destDir,
   onConfirm,
   onCancel,
 }) => {
@@ -109,6 +115,32 @@ export const NameInputDialog: React.FC<NameInputDialogProps> = ({
       }
     >
       <div className="name-input-container">
+        {sourcePath && (
+          <div className="conflict-info-section">
+            <div className="conflict-info-row">
+              <span className="conflict-info-label">来源</span>
+              <span className="conflict-info-path" title={sourcePath}>
+                {truncateDirPath(sourcePath, 48)}
+              </span>
+            </div>
+            {operation && (
+              <div className="conflict-info-row">
+                <span className="conflict-info-label">操作</span>
+                <span className="conflict-info-value">
+                  {operation === "copy" ? "复制" : "移动"}
+                </span>
+              </div>
+            )}
+            {destDir && (
+              <div className="conflict-info-row">
+                <span className="conflict-info-label">目标</span>
+                <span className="conflict-info-path" title={destDir}>
+                  {truncateDirPath(destDir, 48)}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
         <input
           ref={inputRef}
           type="text"

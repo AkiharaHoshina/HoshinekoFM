@@ -44,7 +44,7 @@ interface ExplorerTabProps {
     onPropertiesFile: (file: IFile) => void;
     onOpenTerminalAt: (path: string) => void;
     onCreateDialog: (type: 'file' | 'folder', defaultName: string, existingNames: string[]) => Promise<string | null>;
-    onConflictDialog: (conflicts: ConflictEntry[], destDir: string, existingNames: string[]) => Promise<ConflictResult>;
+    onConflictDialog: (conflicts: ConflictEntry[], destDir: string, existingNames: string[], sourcePath?: string, operation?: "move" | "copy") => Promise<ConflictResult>;
     showHiddenFiles: boolean;
     iconSize: number;
     viewMode: 'grid' | 'list';
@@ -209,7 +209,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   };
 
   const handleDropOnTarget = useCallback(
-    async (draggedFiles: IFile[], targetPath: string, operation: "move" | "copy", targetDirFiles: IFile[]) => {
+    async (draggedFiles: IFile[], targetPath: string, operation: "move" | "copy", targetDirFiles: IFile[], sourcePath: string) => {
       const entries = draggedFiles
         .filter((f) => f.path !== targetPath)
         .map((f) => ({ path: f.path, name: f.name, isDir: f.isDirectory }));
@@ -221,7 +221,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       let conflictAction: 'skip' | 'auto-rename' = 'skip';
 
       if (conflictList.length > 0) {
-        const result = await onConflictDialog(conflictList, targetPath, existingNames);
+        const result = await onConflictDialog(conflictList, targetPath, existingNames, sourcePath, operation);
         conflictAction = result.action;
         if (result.renames) renameMap = result.renames;
       }
@@ -247,7 +247,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           }
         }
 
-        const destPath = targetPath + '/' + destName;
+        const destPath = (targetPath === "/" ? "" : targetPath) + '/' + destName;
         if (destName.includes('/') || destName.includes('..')) {
           const ok = await prepareDestParent(destPath);
           if (!ok) { fail++; continue; }
@@ -280,9 +280,12 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   const handleDropOnBreadcrumb = useCallback(
     async (targetPath: string, draggedFiles: IFile[], operation: "move" | "copy") => {
       const { data: targetFiles } = await FileSystemService.listDir(targetPath);
-      handleDropOnTarget(draggedFiles, targetPath, operation, targetFiles);
+      const sourcePath = draggedFiles.length > 0
+        ? draggedFiles[0].path.substring(0, draggedFiles[0].path.lastIndexOf('/'))
+        : currentPath;
+      handleDropOnTarget(draggedFiles, targetPath, operation, targetFiles, sourcePath);
     },
-    [handleDropOnTarget],
+    [handleDropOnTarget, currentPath],
   );
 
   const handleExternalDropOnBreadcrumb = useCallback(
@@ -709,7 +712,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               onSelectionModeChange={handleSelectionModeChange}
               onHoverFile={handleHoverFile}
               onDropOnFolder={(draggedFiles, targetPath, operation) =>
-                handleDropOnTarget(draggedFiles, targetPath, operation, files)
+                handleDropOnTarget(draggedFiles, targetPath, operation, files, currentPath)
               }
               currentPath={currentPath}
               iconSize={iconSize}

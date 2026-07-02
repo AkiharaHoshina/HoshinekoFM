@@ -4,6 +4,7 @@ import { Button } from "./Button";
 import { IconButton } from "./IconButton";
 import { Icon } from "./Icon";
 import { useDrag } from "../contexts/DragContext";
+import { clearPendingNativeDrag } from "./FileList";
 import type { IFile } from "../types/files";
 
 interface BreadcrumbsProps {
@@ -63,15 +64,11 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
 
       const dragState = getDragState();
       if (dragState && dragState.files.length > 0) {
-        if (
-          dragState.files.every(
-            (f) =>
-              f.path === targetPath || f.path.startsWith(targetPath + "/"),
-          )
-        ) {
+        if (dragState.sourcePath === targetPath) {
           return;
         }
         const operation: "move" | "copy" = e.shiftKey ? "copy" : "move";
+        clearPendingNativeDrag();
         onDropFiles(targetPath, dragState.files, operation);
         endDrag();
         return;
