@@ -47,6 +47,7 @@ interface TabState {
   title: string;
   path: string;
   version: number;
+  pendingSelectFile?: string;
 }
 
 function AppContent() {
@@ -282,7 +283,7 @@ function AppContent() {
     const folderName = path.split("/").pop() || path;
     setTabs((prev) =>
       prev.map((t) => {
-        if (t.id === id) return { ...t, path, title: folderName };
+        if (t.id === id) return { ...t, path, title: folderName, pendingSelectFile: undefined };
         return t;
       }),
     );
@@ -293,21 +294,21 @@ function AppContent() {
   };
 
   const handleSidebarNavigate = useCallback(
-    (path: string) => {
+    (path: string, selectFileName?: string) => {
       setTabs((prev) => {
         if (prev.length === 0) {
-          // Side effect in reducer? No, handleAddTab logic duplicated here safely
           const newTabId = Date.now().toString();
           const newTab: TabState = {
             id: newTabId,
         title: t("tab.new_tab"),
             path,
             version: 0,
+            pendingSelectFile: selectFileName,
           };
           setActiveTabId(newTabId);
           return [newTab];
         }
-        return prev.map((t) => (t.id === activeTabId ? { ...t, path } : t));
+        return prev.map((t) => (t.id === activeTabId ? { ...t, path, pendingSelectFile: selectFileName } : t));
       });
     },
     [activeTabId],
@@ -339,6 +340,7 @@ function AppContent() {
     } else {
       showToast(`${t('device.mount_failed')}: ${result.error || ''}`, 'error');
     }
+    return result;
   }, []);
 
   const handleDeviceUnmount = useCallback(async (devicePath: string) => {
@@ -470,12 +472,15 @@ function AppContent() {
 
       const specialItems: ContextMenuItem[] = [];
       if (item.symlinkTarget && item.mime !== 'inode/symlink') {
+        const targetFileName = item.isDirectory
+          ? item.symlinkTarget.split("/").pop() || ""
+          : "";
         specialItems.push({
           label: t("symlink.go_to_target"),
           icon: "arrow_forward",
           action: () => {
             if (item.isDirectory) {
-              handleSidebarNavigate(item.symlinkTarget!);
+              handleSidebarNavigate(item.symlinkTarget!, targetFileName);
             } else {
               const parent = item.symlinkTarget!.substring(0, item.symlinkTarget!.lastIndexOf("/"));
               handleSidebarNavigate(parent || "/");
@@ -490,44 +495,48 @@ function AppContent() {
             item.mountSource.split("/").pop() || ""
           );
         if (isRealDevice) {
+          const targetFileName = item.mountSource.split("/").pop() || "";
           specialItems.push({
             label: t("mountpoint.go_to_source"),
             icon: "hard_drive",
             action: () => {
               const parent = item.mountSource!.substring(0, item.mountSource!.lastIndexOf("/"));
-              handleSidebarNavigate(parent || "/");
+              handleSidebarNavigate(parent || "/", targetFileName);
               setContextMenu(null);
             },
           });
         }
       }
-      if (item.mime === 'inode/blockdevice' && item.isPartition) {
+      if (item.mime === 'inode/blockdevice' && item.isMountable) {
         const devPath = item.devicePath || item.path;
-        if (item.isMountpoint && item.mountSource) {
-          specialItems.push(
-            {
-              label: t("device.unmount"),
-              icon: "eject",
-              action: () => {
-                handleDeviceUnmount(devPath);
-                setContextMenu(null);
-              },
+        // Don't show unmount for root filesystem
+        const isRootSource = item.isMountpoint && item.mountSource === '/';
+        if (item.isMountpoint && item.mountSource && !isRootSource) {
+          specialItems.push({
+            label: t("device.unmount"),
+            icon: "eject",
+            action: () => {
+              handleDeviceUnmount(devPath);
+              setContextMenu(null);
             },
-            {
-              label: t("device.eject"),
-              icon: "power_settings_new",
-              action: () => {
-                handleDeviceEject(devPath);
-                setContextMenu(null);
-              },
-            },
-          );
-        } else {
+          });
+        } else if (!item.isMountpoint) {
           specialItems.push({
             label: t("device.mount"),
             icon: "hard_drive",
             action: () => {
               handleDeviceMount(devPath);
+              setContextMenu(null);
+            },
+          });
+        }
+        // Eject on parent disk
+        if (item.parentDisk) {
+          specialItems.push({
+            label: t("device.eject"),
+            icon: "power_settings_new",
+            action: () => {
+              handleDeviceEject(item.parentDisk!);
               setContextMenu(null);
             },
           });
@@ -664,6 +673,7 @@ function AppContent() {
         currentPath={currentPath}
         onDeviceContextMenu={handleDeviceContextMenu}
         onDeviceMount={handleDeviceMount}
+        onDeviceUnmount={handleDeviceUnmount}
         onDeviceEject={handleDeviceEject}
       />
 
@@ -728,6 +738,8 @@ function AppContent() {
                 viewMode={viewMode}
                 filledIcons={filledIcons}
                 refreshSignal={tab.version}
+                scrollToFileName={tab.pendingSelectFile}
+                onMountDevice={handleDeviceMount}
               />
             </div>
           ))}

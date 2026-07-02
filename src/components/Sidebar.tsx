@@ -7,9 +7,10 @@ import type { AllDevice } from "../types/files";
 
 interface SidebarProps {
   currentPath: string;
-  onNavigate: (path: string) => void;
+  onNavigate: (path: string, selectFileName?: string) => void;
   onDeviceContextMenu?: (e: React.MouseEvent, device: AllDevice) => void;
   onDeviceMount?: (devicePath: string) => void;
+  onDeviceUnmount?: (devicePath: string) => void;
   onDeviceEject?: (devicePath: string) => void;
 }
 
@@ -35,6 +36,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNavigate,
   onDeviceContextMenu,
   onDeviceMount,
+  onDeviceUnmount,
   onDeviceEject,
 }) => {
   const [places, setPlaces] = useState<
@@ -65,7 +67,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handlePartitionClick = (device: AllDevice) => {
     if (device.mounted && device.mountpoint) {
       onNavigate(device.mountpoint);
-    } else if (device.type === 'part' && onDeviceMount) {
+    } else if (onDeviceMount && (device.type === 'part' || (device.type === 'disk' && device.fstype))) {
       onDeviceMount(device.devicePath);
     }
   };
@@ -121,11 +123,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div key={disk.name} className="sidebar-device-group">
                 {disk.children && disk.children.length > 0 ? (
                   <>
-                    <div className="sidebar-device-header">
+                    <div className="sidebar-device-header" title={`${disk.model || disk.label || disk.name} · ${disk.devicePath}`}>
                       <Icon name={getDiskIcon(disk)} className="sidebar-icon" />
                       <span className="sidebar-label">
                         {disk.model || disk.label || disk.name}
                       </span>
+                      <div style={{ flex: 1 }} />
+                      {isExternalDevice(disk) && disk.children?.every(part => !part.mounted) && (
+                        <IconButton
+                          variant="standard"
+                          onClick={(e) => handleEjectClick(e, disk)}
+                          className="sidebar-disk-eject"
+                          title={t('device.eject')}
+                        >
+                          <Icon name="eject" style={{ fontSize: '18px' }} />
+                        </IconButton>
+                      )}
                     </div>
                     {disk.children.map((part) => (
                       <div
@@ -157,12 +170,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             </span>
                           )}
                         </div>
-                        {part.mounted && isExternalDevice(part) && (
+                        {part.mounted && (
                           <IconButton
                             variant="standard"
-                            onClick={(e) => handleEjectClick(e, part)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeviceUnmount?.(part.devicePath);
+                            }}
                             className="sidebar-eject-btn"
-                            title={t('device.eject')}
+                            title={t('device.unmount')}
                           >
                             <Icon name="eject" style={{ fontSize: '18px' }} />
                           </IconButton>
@@ -199,16 +215,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </span>
                       )}
                     </div>
-                    {disk.mounted && (
-                      <IconButton
-                        variant="standard"
-                        onClick={(e) => handleEjectClick(e, disk)}
-                        className="sidebar-eject-btn"
-                        title={t('device.eject')}
-                      >
-                        <Icon name="eject" style={{ fontSize: '18px' }} />
-                      </IconButton>
-                    )}
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {disk.mounted && (
+                        <IconButton
+                          variant="standard"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeviceUnmount?.(disk.devicePath);
+                          }}
+                          className="sidebar-eject-btn"
+                          title={t('device.unmount')}
+                        >
+                          <Icon name="eject" style={{ fontSize: '18px' }} />
+                        </IconButton>
+                      )}
+                      {isExternalDevice(disk) && (
+                        <IconButton
+                          variant="standard"
+                          onClick={(e) => handleEjectClick(e, disk)}
+                          className="sidebar-disk-eject"
+                          title={t('device.eject')}
+                        >
+                          <Icon name="power_settings_new" style={{ fontSize: '18px' }} />
+                        </IconButton>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

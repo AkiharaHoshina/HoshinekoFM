@@ -51,9 +51,11 @@ interface ExplorerTabProps {
     viewMode: 'grid' | 'list';
     filledIcons: boolean;
     refreshSignal: number;
+    scrollToFileName?: string;
+    onMountDevice?: (devicePath: string) => Promise<{ success: boolean; mountpoint?: string; error?: string }>;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onCreateDialog, onConflictDialog, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onCreateDialog, onConflictDialog, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal, scrollToFileName, onMountDevice }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -218,9 +220,19 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     };
   }, [isActive, currentPath, loadPath]);
 
-  const handleNavigate = (file: IFile) => {
+  const handleNavigate = async (file: IFile) => {
     if (file.isDirectory) {
       loadPath(file.path);
+    } else if (file.mime === 'inode/blockdevice' && file.isMountable) {
+      const devPath = file.devicePath || file.path;
+      if (file.isMountpoint && file.mountSource) {
+        loadPath(file.mountSource);
+      } else if (onMountDevice) {
+        const result = await onMountDevice(devPath);
+        if (result && 'success' in result && result.success && result.mountpoint) {
+          loadPath(result.mountpoint);
+        }
+      }
     } else {
       openFile(file.path);
     }
@@ -506,6 +518,11 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     if (!isActive) return;
 
     const handleKeyDown = async (e: KeyboardEvent) => {
+      // Don't handle shortcuts when focus is on an input/textarea, or when dialogs/context-menus are open
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (document.querySelector('.md3-dialog, .context-menu, [role="dialog"]')) return;
+
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
         e.preventDefault();
         const allPaths = new Set(sortedFiles.map(f => f.path));
@@ -749,6 +766,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               viewMode={viewMode}
               filledIcons={filledIcons}
               groupingEnabled={groupingEnabled}
+              scrollToFileName={scrollToFileName}
             />
           </div>
         </div>

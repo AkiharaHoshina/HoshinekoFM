@@ -31,6 +31,7 @@ interface FileListProps {
   filledIcons: boolean;
   groupingEnabled?: boolean;
   currentPath?: string;
+  scrollToFileName?: string;
 }
 
 const DOUBLE_CLICK_THRESHOLD = 500;
@@ -545,12 +546,10 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
               className={`file-name${isSymlink ? ' symlink' : ''}`}
               style={{
                 flex: 1,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                minWidth: 0,
               }}
             >
-              {file.name}
+              <span className="file-name-text">{file.name}</span>
             </span>
           )}
           <span
@@ -706,16 +705,13 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                 style={{
                   textAlign: "center",
                   fontSize: "12px",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
                   maxWidth: "100%",
                   width: "100%",
                   marginTop: "2px",
                   display: "block",
                 }}
               >
-                {file.name}
+                <span className="file-name-text">{file.name}</span>
               </span>
             )}
           </div>
@@ -752,6 +748,7 @@ export const FileList: React.FC<FileListProps> = ({
   filledIcons,
   groupingEnabled = false,
   currentPath,
+  scrollToFileName,
 }) => {
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -821,6 +818,51 @@ export const FileList: React.FC<FileListProps> = ({
     };
   }, []);
 
+  // Scroll to file when scrollToFileName changes and files are loaded
+  const prevScrollTargetRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!scrollToFileName || scrollToFileName === prevScrollTargetRef.current) return;
+    prevScrollTargetRef.current = scrollToFileName;
+
+    const idx = files.findIndex(f => f.name === scrollToFileName);
+    if (idx === -1) return;
+
+    const listEl = listImperativeRef.current;
+    if (!listEl) return;
+
+    // Compute flattened index using the same logic as the render
+    const containerWidth = listEl.element?.parentElement?.clientWidth ?? 600;
+    const columns = viewMode === 'grid'
+      ? Math.max(1, Math.floor((containerWidth + 8) / (iconSize + 40)))
+      : 0;
+    const items = flattenItems(files, groupingEnabled, viewMode, columns);
+    let flattenedIdx = -1;
+    let foundFileIdx = 0;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file' || item.kind === 'grid-row') {
+        const fileList = item.kind === 'file' ? [item.file] : item.files;
+        for (let fi = 0; fi < fileList.length; fi++) {
+          if (foundFileIdx === idx) {
+            flattenedIdx = i;
+            break;
+          }
+          foundFileIdx++;
+        }
+        if (flattenedIdx !== -1) break;
+      }
+    }
+
+    if (flattenedIdx !== -1) {
+      listEl.scrollToRow({ index: flattenedIdx, align: 'smart' });
+    }
+
+    const targetFile = files[idx];
+    if (targetFile && onSelect) {
+      onSelect(targetFile, false, false);
+    }
+  }, [scrollToFileName, files, viewMode, iconSize, groupingEnabled, onSelect]);
+
   const handleImageError = useCallback((path: string) => {
     setFailedImages((prev) => {
       if (prev.has(path)) return prev;
@@ -833,6 +875,7 @@ export const FileList: React.FC<FileListProps> = ({
   // --- Item click ---
   const handleItemClick = useCallback(
     (e: React.MouseEvent, file: IFile) => {
+      document.activeElement?.blur();
       if (renamingPath) return;
       if (isSelectingRef.current) return;
       if (didSelectRef.current) {
@@ -1053,6 +1096,7 @@ export const FileList: React.FC<FileListProps> = ({
     const target = e.target as HTMLElement;
     if (target.closest(".file-list-item, .file-group-header")) return;
 
+    document.activeElement?.blur();
     e.preventDefault();
     const ctrlHeld = e.ctrlKey;
     const shiftHeld = e.shiftKey;
@@ -1285,10 +1329,7 @@ export const FileList: React.FC<FileListProps> = ({
           }
           if (renamingPath) setRenamingPath(null);
           onDeselectAll?.();
-          const activeEl = document.activeElement;
-          if (activeEl instanceof HTMLElement && containerRef.current?.contains(activeEl)) {
-            activeEl.blur();
-          }
+          document.activeElement?.blur();
         }
       }}
     >

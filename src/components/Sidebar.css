@@ -83,6 +83,15 @@
     font-weight: 500;
 }
 
+.sidebar-disk-eject {
+    opacity: 0.6;
+    transition: opacity 0.15s ease;
+}
+
+.sidebar-disk-eject:hover {
+    opacity: 1;
+}
+
 .sidebar-partition {
     position: relative;
     padding-left: 16px;

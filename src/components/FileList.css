@@ -105,9 +105,25 @@
 .file-name {
     font-size: 14px;
     font-weight: 400;
-    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.file-name-text {
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.file-name.symlink::after {
+    content: "↗";
+    font-size: 10px;
+    margin-left: 2px;
+    opacity: 0.6;
+    flex-shrink: 0;
 }
 
 .file-size {

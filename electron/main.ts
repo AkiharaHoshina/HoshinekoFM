@@ -133,7 +133,7 @@ async function getMountMap(): Promise<Map<string, { source: string; fstype: stri
 
 async function listDirectoryContents(targetPath: string): Promise<{
   name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
-  symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isPartition?: boolean;
+  symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isMountable?: boolean; parentDisk?: string;
 }[]> {
   const entries = await fs.readdir(targetPath, { withFileTypes: true });
   const results = await Promise.all(entries.map(async (entry) => {
@@ -152,13 +152,20 @@ async function listDirectoryContents(targetPath: string): Promise<{
         else if (isChar) mime = 'inode/chardevice';
         else if (isFIFO) mime = 'inode/fifo';
         else mime = 'inode/socket';
-        let isPartition: boolean | undefined;
+        let isMountable: boolean | undefined;
+        let parentDisk: string | undefined;
         if (isBlock) {
-          try {
-            await fs.access(`/sys/class/block/${entry.name}/partition`);
-            isPartition = true;
-          } catch {
-            isPartition = false;
+          const hasPartition = await fs.access(`/sys/class/block/${entry.name}/partition`).then(() => true).catch(() => false);
+          const hasDm = await fs.access(`/sys/class/block/${entry.name}/dm/`).then(() => true).catch(() => false);
+          isMountable = hasPartition || hasDm;
+          if (hasPartition) {
+            try {
+              const linkTarget = await fs.readlink(`/sys/class/block/${entry.name}`);
+              const parentName = linkTarget.split('/').filter(Boolean).pop();
+              if (parentName && parentName !== entry.name) {
+                parentDisk = `/dev/${parentName}`;
+              }
+            } catch {}
           }
         }
         return {
@@ -169,7 +176,8 @@ async function listDirectoryContents(targetPath: string): Promise<{
           mtime: new Date(0),
           mime,
           devicePath: isBlock ? fullPath : undefined,
-          isPartition,
+          isMountable,
+          parentDisk,
         };
       }
 
@@ -185,23 +193,36 @@ async function listDirectoryContents(targetPath: string): Promise<{
         if (symlinkTarget) {
           try {
             const stats = await fs.stat(fullPath);
+            const mime = stats.isDirectory() ? 'inode/directory' : await detectMime(symlinkTarget);
             return {
               name: entry.name,
               path: fullPath,
               isDirectory: stats.isDirectory(),
               size: stats.size,
               mtime: stats.mtime,
-              mime: stats.isDirectory() ? 'inode/directory' : await detectMime(fullPath),
+              mime,
               symlinkTarget
             };
-          } catch {
+          } catch (err) {
+            const code = (err as NodeJS.ErrnoException).code;
+            if (code === 'ENOENT') {
+              return {
+                name: entry.name,
+                path: fullPath,
+                isDirectory: false,
+                size: 0,
+                mtime: new Date(0),
+                mime: 'inode/symlink',
+                symlinkTarget
+              };
+            }
             return {
               name: entry.name,
               path: fullPath,
               isDirectory: false,
               size: 0,
               mtime: new Date(0),
-              mime: 'inode/symlink',
+              mime: null,
               symlinkTarget
             };
           }
@@ -225,7 +246,7 @@ async function listDirectoryContents(targetPath: string): Promise<{
   }));
   const filtered = results.filter(r => r !== null) as {
     name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
-    symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isPartition?: boolean;
+    symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isMountable?: boolean; parentDisk?: string;
   }[];
 
   const mountMap = await getMountMap();
@@ -557,12 +578,12 @@ ipcMain.handle('system:get-storage-usage', async () => {
 
 ipcMain.handle('system:get-all-devices', async () => {
   try {
-    const { stdout } = await execAsync('lsblk --json -o NAME,LABEL,MOUNTPOINT,SIZE,TYPE,TRAN,RM,FSTYPE,MODEL,HOTPLUG,RO');
+    const { stdout } = await execAsync('lsblk --json -o NAME,KNAME,LABEL,MOUNTPOINT,SIZE,TYPE,TRAN,RM,FSTYPE,MODEL,HOTPLUG,RO');
     const data = JSON.parse(stdout);
     const devices = data.blockdevices || [];
-    const processDevice = (dev: any, parentModel?: string): any => ({
+    const processDevice = (dev: any, parentModel?: string, parentDisk?: string): any => ({
       name: dev.name,
-      devicePath: `/dev/${dev.name}`,
+      devicePath: `/dev/${dev.kname}`,
       label: dev.label || dev.name,
       mountpoint: dev.mountpoint,
       mounted: dev.mountpoint !== null && dev.mountpoint !== '[SWAP]',
@@ -573,7 +594,9 @@ ipcMain.handle('system:get-all-devices', async () => {
       hotplug: dev.hotplug || false,
       fstype: dev.fstype || undefined,
       model: dev.model || parentModel || undefined,
-      children: dev.children ? dev.children.map((c: any) => processDevice(c, dev.model || parentModel)) : undefined,
+      isExternal: !!(dev.hotplug || dev.rm || dev.tran === 'usb'),
+      parentDisk: dev.type === 'part' ? parentDisk : undefined,
+      children: dev.children ? dev.children.map((c: any) => processDevice(c, dev.model || parentModel, `/dev/${dev.kname}`)) : undefined,
     });
     return devices.map((d: any) => processDevice(d));
   } catch (e) {
@@ -618,6 +641,12 @@ ipcMain.handle('system:unmount-device', async (_event, devicePath: string) => {
 
 ipcMain.handle('system:eject-device', async (_event, devicePath: string) => {
   try {
+    const mountMap = await getMountMap();
+    for (const [, info] of mountMap) {
+      if (info.source && info.source.startsWith(devicePath) && info.source !== devicePath) {
+        return { success: false, error: '请先卸载所有已挂载的分区' };
+      }
+    }
     await execAsync(`udisksctl power-off -b "${devicePath}"`);
     return { success: true };
   } catch (e: any) {

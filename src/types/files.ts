@@ -10,7 +10,8 @@ export interface IFile {
     mountSource?: string;
     mountFstype?: string;
     devicePath?: string;
-    isPartition?: boolean;
+    isMountable?: boolean;
+    parentDisk?: string;
 }
 
 export interface AllDevice {
@@ -26,6 +27,8 @@ export interface AllDevice {
     hotplug: boolean;
     fstype?: string;
     model?: string;
+    isExternal?: boolean;
+    parentDisk?: string;
     children?: AllDevice[];
 }
 
