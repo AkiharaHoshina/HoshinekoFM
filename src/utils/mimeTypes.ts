@@ -92,6 +92,9 @@ export function getFileTypeDescription(file: IFile): string {
   if (file.isDirectory) return t('mime.folder');
 
   const mime = file.mime;
+  if (file.symlinkTarget && mime === 'inode/symlink') {
+    return t('mime.broken_symlink');
+  }
   if (mime && mimeDescriptionMap[mime]) {
     return mimeDescriptionMap[mime];
   }
@@ -108,6 +111,7 @@ export function getFileTypeDescription(file: IFile): string {
 export function getMimeIcon(description: string): string {
   if (description === t('mime.folder')) return 'folder';
   if (description === t('mime.symlink')) return 'link';
+  if (description === t('mime.broken_symlink')) return 'link_off';
   if (description === t('mime.block_device')) return 'hard_drive';
   if (description === t('mime.char_device')) return 'keyboard';
   if (description === t('mime.named_pipe')) return 'swap_vert';

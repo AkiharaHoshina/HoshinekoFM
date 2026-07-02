@@ -26,6 +26,12 @@ contextBridge.exposeInMainWorld('electron', {
   search: (dir: string, query: string, options?: any) => ipcRenderer.invoke('system:search', dir, query, options),
   getDirectorySize: (path: string) => ipcRenderer.invoke('system:get-directory-size', path),
   getDrives: () => ipcRenderer.invoke('system:get-drives'),
+  getAllDevices: () => ipcRenderer.invoke('system:get-all-devices'),
+  mountDevice: (devicePath: string) => ipcRenderer.invoke('system:mount-device', devicePath),
+  unmountDevice: (devicePath: string) => ipcRenderer.invoke('system:unmount-device', devicePath),
+  ejectDevice: (devicePath: string) => ipcRenderer.invoke('system:eject-device', devicePath),
+  getSymlinkTarget: (path: string) => ipcRenderer.invoke('fs:get-symlink-target', path),
+  checkSymlinks: (paths: string[]) => ipcRenderer.invoke('fs:check-symlinks', paths),
   getRecommendedApps: (path: string) => ipcRenderer.invoke('system:get-recommended-apps', path),
 
   // PTY

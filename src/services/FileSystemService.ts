@@ -1,4 +1,4 @@
-import type { IFile } from '../types/files';
+import type { IFile, AllDevice } from '../types/files';
 
 export const FileSystemService = {
   async getPlaces(): Promise<Array<{ name: string; path: string; icon: string }>> {
@@ -43,5 +43,29 @@ export const FileSystemService = {
 
   async exists(path: string): Promise<boolean> {
     return window.electron?.exists?.(path) ?? false;
+  },
+
+  async getAllDevices(): Promise<AllDevice[]> {
+    return window.electron.getAllDevices();
+  },
+
+  async mountDevice(devicePath: string): Promise<{ success: boolean; mountpoint?: string; error?: string }> {
+    return window.electron.mountDevice(devicePath);
+  },
+
+  async unmountDevice(devicePath: string): Promise<{ success: boolean; error?: string }> {
+    return window.electron.unmountDevice(devicePath);
+  },
+
+  async ejectDevice(devicePath: string): Promise<{ success: boolean; error?: string }> {
+    return window.electron.ejectDevice(devicePath);
+  },
+
+  async getSymlinkTarget(path: string): Promise<{ isSymlink: boolean; target?: string; targetExists: boolean }> {
+    return window.electron.getSymlinkTarget(path);
+  },
+
+  async checkSymlinks(paths: string[]): Promise<{ path: string; isSymlink: boolean; target?: string }[]> {
+    return window.electron.checkSymlinks(paths);
   },
 };

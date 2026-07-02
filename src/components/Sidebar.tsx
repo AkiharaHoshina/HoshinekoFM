@@ -1,84 +1,93 @@
-import React, { useEffect, useState } from 'react';
-import { Icon } from './Icon';
-import './Sidebar.css';
-import { t as ti } from '../i18n';
-
-interface Place {
-    name: string;
-    path: string;
-    icon: string;
-}
+import React, { useState, useEffect } from "react";
+import { Icon } from "./Icon";
+import { IconButton } from "./IconButton";
+import "./Sidebar.css";
+import { t } from "../i18n";
+import type { AllDevice } from "../types/files";
 
 interface SidebarProps {
-    onNavigate: (path: string) => void;
-    currentPath: string;
+  currentPath: string;
+  onNavigate: (path: string) => void;
+  onDeviceContextMenu?: (e: React.MouseEvent, device: AllDevice) => void;
+  onDeviceMount?: (devicePath: string) => void;
+  onDeviceEject?: (devicePath: string) => void;
 }
 
-interface Drive {
-    name: string;
-    label: string;
-    mountpoint: string;
-    size: string;
-    type: string;
-    removable: boolean;
-    usb: boolean;
-}
+const isExternalDevice = (d: AllDevice): boolean =>
+  d.hotplug || d.rm || d.tran === 'usb';
 
-const labelToKey: Record<string, string> = {
-  'Places': 'sidebar.places',
-  'Devices': 'sidebar.devices',
-  'Dashboard': 'sidebar.dashboard',
-  'Home': 'sidebar.home',
-  'Desktop': 'sidebar.desktop',
-  'Documents': 'sidebar.documents',
-  'Downloads': 'sidebar.downloads',
-  'Music': 'sidebar.music',
-  'Pictures': 'sidebar.pictures',
-  'Videos': 'sidebar.videos'
+const getDeviceIcon = (d: AllDevice): string => {
+  if (d.tran === 'usb') return 'usb';
+  if (d.rm) return 'sd_card';
+  if (d.type === 'crypt') return 'encrypted';
+  return 'hard_drive';
 };
 
-const t = (text: string): string => {
-  const key = labelToKey[text];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return key ? (ti as any)(key) : text;
+const getDiskIcon = (d: AllDevice): string => {
+  if (d.tran === 'usb') return 'usb';
+  if (d.rm) return 'sd_card';
+  if (d.tran === 'nvme') return 'memory';
+  return 'hard_drive';
 };
 
-export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, currentPath }) => {
-  const [places, setPlaces] = useState<Place[]>([]);
-  const [drives, setDrives] = useState<Drive[]>([]);
+export const Sidebar: React.FC<SidebarProps> = ({
+  currentPath,
+  onNavigate,
+  onDeviceContextMenu,
+  onDeviceMount,
+  onDeviceEject,
+}) => {
+  const [places, setPlaces] = useState<
+    Array<{ name: string; path: string; icon: string }>
+  >([]);
+  const [devices, setDevices] = useState<AllDevice[]>([]);
 
   useEffect(() => {
-    if (window.electron) {
-      if (window.electron.getPlaces) {
-        window.electron.getPlaces().then(setPlaces);
-      }
-
-      const fetchDrives = async () => {
-        if (window.electron.getDrives) {
-          const d = await window.electron.getDrives();
-          setDrives(d);
-        }
-      };
-
-      fetchDrives();
-      const interval = setInterval(fetchDrives, 5000);
-      return () => clearInterval(interval);
+    if (window.electron.getPlaces) {
+      window.electron.getPlaces().then(setPlaces);
     }
   }, []);
+
+  useEffect(() => {
+    const fetchDevices = async () => {
+      if (window.electron.getAllDevices) {
+        const d = await window.electron.getAllDevices();
+        setDevices(d);
+      }
+    };
+    fetchDevices();
+    const interval = setInterval(fetchDevices, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const externalDisks = devices.filter(isExternalDevice);
+
+  const handlePartitionClick = (device: AllDevice) => {
+    if (device.mounted && device.mountpoint) {
+      onNavigate(device.mountpoint);
+    } else if (onDeviceMount) {
+      onDeviceMount(device.devicePath);
+    }
+  };
+
+  const handleEjectClick = (e: React.MouseEvent, device: AllDevice) => {
+    e.stopPropagation();
+    if (onDeviceEject) {
+      onDeviceEject(device.devicePath);
+    }
+  };
 
   return (
     <aside className="sidebar">
       <div className="sidebar-section">
-        {/* 汉化区域标题 Places -> 位置 */}
-        <h3 className="sidebar-title">{t('Places')}</h3>
+        <h3 className="sidebar-title">{t('sidebar.places')}</h3>
         <div className="sidebar-list">
           <button
             className={`sidebar-item ${currentPath === 'app://dashboard' ? 'active' : ''}`}
             onClick={() => onNavigate('app://dashboard')}
           >
             <Icon name="dashboard" className="sidebar-icon" filled={currentPath === 'app://dashboard'} />
-            {/* 汉化 Dashboard -> 仪表盘 */}
-            <span className="sidebar-label">{t('Dashboard')}</span>
+            <span className="sidebar-label">{t('sidebar.dashboard')}</span>
           </button>
           {places.map((place) => (
             <button
@@ -87,28 +96,95 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, currentPath }) => 
               onClick={() => onNavigate(place.path)}
             >
               <Icon name={getPlaceIcon(place.name)} className="sidebar-icon" filled={currentPath.startsWith(place.path)} />
-              {/* 汉化动态获取的系统快捷路径名称（如 Home -> 主页） */}
-              <span className="sidebar-label">{t(place.name)}</span>
+              <span className="sidebar-label">{getPlaceLabel(place.name)}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {drives.length > 0 && (
+      {externalDisks.length > 0 && (
         <div className="sidebar-section">
-          {/* 汉化区域标题 Devices -> 设备 */}
-          <h3 className="sidebar-title">{t('Devices')}</h3>
+          <h3 className="sidebar-title">{t('sidebar.devices')}</h3>
           <div className="sidebar-list">
-            {drives.map((drive) => (
-              <button
-                key={drive.mountpoint}
-                className={`sidebar-item ${currentPath.startsWith(drive.mountpoint) ? 'active' : ''}`}
-                onClick={() => onNavigate(drive.mountpoint)}
-                title={drive.name}
-              >
-                <Icon name={drive.usb ? 'usb' : 'hard_drive'} className="sidebar-icon" />
-                <span className="sidebar-label">{drive.label || drive.name}</span>
-              </button>
+            {externalDisks.map((disk) => (
+              <div key={disk.name} className="sidebar-device-group">
+                {disk.children && disk.children.length > 0 ? (
+                  <>
+                    <div className="sidebar-device-header">
+                      <Icon name={getDiskIcon(disk)} className="sidebar-icon" />
+                      <span className="sidebar-label">
+                        {disk.model || disk.label || disk.name}
+                      </span>
+                    </div>
+                    {disk.children.map((part) => (
+                      <button
+                        key={part.name}
+                        className={`sidebar-item sidebar-partition ${!part.mounted ? 'unmounted' : ''} ${part.mounted && part.mountpoint && currentPath.startsWith(part.mountpoint) ? 'active' : ''}`}
+                        onClick={() => handlePartitionClick(part)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          onDeviceContextMenu?.(e, part);
+                        }}
+                        title={part.devicePath}
+                      >
+                        <Icon name={getDeviceIcon(part)} className="sidebar-icon" />
+                        <div className="sidebar-partition-info">
+                          <span className="sidebar-label">{part.label || part.name}</span>
+                          {part.mounted && part.mountpoint ? (
+                            <span className="sidebar-subtitle">{part.mountpoint}</span>
+                          ) : (
+                            <span className="sidebar-subtitle">
+                              {part.fstype ? `${part.fstype} · ` : ''}{part.size}
+                            </span>
+                          )}
+                        </div>
+                        {part.mounted && isExternalDevice(part) && (
+                          <IconButton
+                            variant="standard"
+                            onClick={(e) => handleEjectClick(e, part)}
+                            className="sidebar-eject-btn"
+                            title={t('device.eject')}
+                          >
+                            <Icon name="eject" style={{ fontSize: '18px' }} />
+                          </IconButton>
+                        )}
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  <button
+                    className={`sidebar-item sidebar-partition ${!disk.mounted ? 'unmounted' : ''} ${disk.mounted && disk.mountpoint && currentPath.startsWith(disk.mountpoint) ? 'active' : ''}`}
+                    onClick={() => handlePartitionClick(disk)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      onDeviceContextMenu?.(e, disk);
+                    }}
+                    title={disk.devicePath}
+                  >
+                    <Icon name={getDeviceIcon(disk)} className="sidebar-icon" />
+                    <div className="sidebar-partition-info">
+                      <span className="sidebar-label">{disk.label || disk.name}</span>
+                      {disk.mounted && disk.mountpoint ? (
+                        <span className="sidebar-subtitle">{disk.mountpoint}</span>
+                      ) : (
+                        <span className="sidebar-subtitle">
+                          {disk.fstype ? `${disk.fstype} · ` : ''}{disk.size}
+                        </span>
+                      )}
+                    </div>
+                    {disk.mounted && (
+                      <IconButton
+                        variant="standard"
+                        onClick={(e) => handleEjectClick(e, disk)}
+                        className="sidebar-eject-btn"
+                        title={t('device.eject')}
+                      >
+                        <Icon name="eject" style={{ fontSize: '18px' }} />
+                      </IconButton>
+                    )}
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -128,4 +204,17 @@ function getPlaceIcon(name: string): string {
   case 'Videos': return 'movie';
   default: return 'folder';
   }
+}
+
+function getPlaceLabel(name: string): string {
+  const map: Record<string, string> = {
+    'Home': t('sidebar.home'),
+    'Desktop': t('sidebar.desktop'),
+    'Documents': t('sidebar.documents'),
+    'Downloads': t('sidebar.downloads'),
+    'Music': t('sidebar.music'),
+    'Pictures': t('sidebar.pictures'),
+    'Videos': t('sidebar.videos'),
+  };
+  return map[name] || name;
 }

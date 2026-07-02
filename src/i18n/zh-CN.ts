@@ -253,6 +253,7 @@ const zhCN = {
   // ── MIME 类型 ──
   'mime.folder': '文件夹',
   'mime.symlink': '符号链接',
+  'mime.broken_symlink': '损坏的软链接',
   'mime.block_device': '块设备',
   'mime.char_device': '字符设备',
   'mime.named_pipe': '命名管道',
@@ -347,6 +348,32 @@ const zhCN = {
   // ── Toast 操作 ──
   'toast.copy_action': '复制',
   'toast.close_action': '关闭',
+
+  // ── 设备操作 ──
+  'device.mount': '挂载',
+  'device.unmount': '卸载',
+  'device.eject': '弹出',
+  'device.power_off': '关闭硬盘',
+  'device.mounting': '正在挂载...',
+  'device.unmounting': '正在卸载...',
+  'device.mounted': '已挂载',
+  'device.unmounted': '未挂载',
+  'device.mount_failed': '挂载失败',
+  'device.unmount_failed': '卸载失败',
+  'device.eject_failed': '弹出失败',
+  'device.already_mounted': '设备已挂载',
+  'device.go_to_source': '转到源设备',
+  'device.type_usb': 'USB 设备',
+  'device.type_removable': '可移动设备',
+  'device.type_disk': '磁盘',
+
+  // ── 软链接操作 ──
+  'symlink.go_to_target': '转到软链接目标',
+  'symlink.broken_tooltip': (target: string) => `→ ${target}（损坏）`,
+  'symlink.tooltip': (target: string) => `→ ${target}`,
+
+  // ── 挂载点操作 ──
+  'mountpoint.go_to_source': '转到源设备',
 } as const;
 
 export default zhCN;

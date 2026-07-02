@@ -110,6 +110,7 @@ async function resolveAccessibleParent(startPath: string): Promise<string | null
 
 async function listDirectoryContents(targetPath: string): Promise<{
   name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
+  symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string;
 }[]> {
   const entries = await fs.readdir(targetPath, { withFileTypes: true });
   const results = await Promise.all(entries.map(async (entry) => {
@@ -139,27 +140,38 @@ async function listDirectoryContents(targetPath: string): Promise<{
       }
 
       if (isSymlink) {
+        let symlinkTarget: string | undefined;
         try {
-          await fs.readlink(fullPath);
-          const stats = await fs.stat(fullPath);
-          return {
-            name: entry.name,
-            path: fullPath,
-            isDirectory: stats.isDirectory(),
-            size: stats.size,
-            mtime: stats.mtime,
-            mime: stats.isDirectory() ? 'inode/directory' : await detectMime(fullPath)
-          };
+          symlinkTarget = await fs.readlink(fullPath);
         } catch {
-          return {
-            name: entry.name,
-            path: fullPath,
-            isDirectory: false,
-            size: 0,
-            mtime: new Date(0),
-            mime: 'inode/symlink'
-          };
+          return null;
         }
+
+        if (symlinkTarget) {
+          try {
+            const stats = await fs.stat(fullPath);
+            return {
+              name: entry.name,
+              path: fullPath,
+              isDirectory: stats.isDirectory(),
+              size: stats.size,
+              mtime: stats.mtime,
+              mime: stats.isDirectory() ? 'inode/directory' : await detectMime(fullPath),
+              symlinkTarget
+            };
+          } catch {
+            return {
+              name: entry.name,
+              path: fullPath,
+              isDirectory: false,
+              size: 0,
+              mtime: new Date(0),
+              mime: 'inode/symlink',
+              symlinkTarget
+            };
+          }
+        }
+        return null;
       }
 
       const stats = await fs.stat(fullPath);
@@ -176,9 +188,35 @@ async function listDirectoryContents(targetPath: string): Promise<{
       return null;
     }
   }));
-  return results.filter(r => r !== null) as {
+  const filtered = results.filter(r => r !== null) as {
     name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
+    symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string;
   }[];
+
+  // Detect mount points among directories using findmnt
+  try {
+    const { stdout } = await execAsync(`findmnt --json -R "${targetPath.replace(/"/g, '\\"')}"`);
+    const data = JSON.parse(stdout);
+    const mountMap = new Map<string, string>();
+    const collect = (fslist: any[]) => {
+      for (const item of fslist) {
+        mountMap.set(item.target, item.source);
+        if (item.children) collect(item.children);
+      }
+    };
+    const filesystems = data.filesystems || [];
+    collect(filesystems);
+    for (const entry of filtered) {
+      if (entry.isDirectory && mountMap.has(entry.path)) {
+        entry.isMountpoint = true;
+        entry.mountSource = mountMap.get(entry.path);
+      }
+    }
+  } catch {
+    // findmnt may fail on non-standard paths; silently skip
+  }
+
+  return filtered;
 }
 
 ipcMain.handle('fs:list-dir', async (_, dirPath: string) => {
@@ -477,6 +515,98 @@ ipcMain.handle('system:get-storage-usage', async () => {
     console.error('Failed to get storage usage', e);
     return null;
   }
+});
+
+ipcMain.handle('system:get-all-devices', async () => {
+  try {
+    const { stdout } = await execAsync('lsblk --json -o NAME,LABEL,MOUNTPOINT,SIZE,TYPE,TRAN,RM,FSTYPE,MODEL,HOTPLUG,RO');
+    const data = JSON.parse(stdout);
+    const devices = data.blockdevices || [];
+    const processDevice = (dev: any, parentModel?: string): any => ({
+      name: dev.name,
+      devicePath: `/dev/${dev.name}`,
+      label: dev.label || dev.name,
+      mountpoint: dev.mountpoint,
+      mounted: dev.mountpoint !== null && dev.mountpoint !== '[SWAP]',
+      size: dev.size,
+      type: dev.type,
+      tran: dev.tran || undefined,
+      rm: dev.rm || false,
+      hotplug: dev.hotplug || false,
+      fstype: dev.fstype || undefined,
+      model: dev.model || parentModel || undefined,
+      children: dev.children ? dev.children.map((c: any) => processDevice(c, dev.model || parentModel)) : undefined,
+    });
+    return devices.map((d: any) => processDevice(d));
+  } catch (e) {
+    console.error('Failed to get all devices', e);
+    return [];
+  }
+});
+
+ipcMain.handle('system:mount-device', async (_event, devicePath: string) => {
+  try {
+    const { stdout, stderr } = await execAsync(`udisksctl mount -b "${devicePath}"`);
+    const mountMatch = stdout.match(/Mounted .+ at (.+)/);
+    if (mountMatch) return { success: true, mountpoint: mountMatch[1].trim() };
+    const alreadyMatch = stderr.match(/already mounted at ['`](.+?)['`]/);
+    if (alreadyMatch) return { success: true, mountpoint: alreadyMatch[1] };
+    return { success: false, error: stderr || 'Unknown error' };
+  } catch (e: any) {
+    const stderr = e.stderr || '';
+    const alreadyMatch = stderr.match(/already mounted at ['`](.+?)['`]/);
+    if (alreadyMatch) return { success: true, mountpoint: alreadyMatch[1] };
+    return { success: false, error: stderr || e.message || 'Mount failed' };
+  }
+});
+
+ipcMain.handle('system:unmount-device', async (_event, devicePath: string) => {
+  try {
+    await execAsync(`udisksctl unmount -b "${devicePath}"`);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.stderr || e.message || 'Unmount failed' };
+  }
+});
+
+ipcMain.handle('system:eject-device', async (_event, devicePath: string) => {
+  try {
+    await execAsync(`udisksctl power-off -b "${devicePath}"`);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.stderr || e.message || 'Eject failed' };
+  }
+});
+
+ipcMain.handle('fs:get-symlink-target', async (_event, filePath: string) => {
+  try {
+    const lstat = await fs.lstat(filePath);
+    if (!lstat.isSymbolicLink()) return { isSymlink: false };
+    const target = await fs.readlink(filePath);
+    let targetExists = false;
+    try { await fs.access(target); targetExists = true; } catch {}
+    return { isSymlink: true, target, targetExists };
+  } catch {
+    return { isSymlink: false };
+  }
+});
+
+ipcMain.handle('fs:check-symlinks', async (_event, paths: string[]) => {
+  const results: { path: string; isSymlink: boolean; target?: string }[] = [];
+  for (const p of paths) {
+    try {
+      const lstat = await fs.lstat(p);
+      if (lstat.isSymbolicLink()) {
+        const target = await fs.readlink(p);
+        results.push({ path: p, isSymlink: true, target });
+      } else {
+        results.push({ path: p, isSymlink: false });
+      }
+    } catch {
+      results.push({ path: p, isSymlink: false });
+    }
+  }
+  return results;
 });
 
 ipcMain.handle('fs:read-file', async (_, filePath: string) => {

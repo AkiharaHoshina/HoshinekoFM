@@ -412,6 +412,8 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
     const hasFailed = data.failedImages.has(file.path);
     const isRenaming = data.renamingPath === file.path;
     const isDragOver = file.isDirectory && data.dragOverPath === file.path;
+    const isBrokenSymlink = file.symlinkTarget ? file.mime === 'inode/symlink' : false;
+    const isSymlink = !!file.symlinkTarget;
 
     const sp = listSpacing(data.iconSize);
 
@@ -419,7 +421,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
       <div style={style}>
         <div
           className={`file-list-item ${isSelected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
-          title={file.name}
+          title={isSymlink ? (isBrokenSymlink ? t('symlink.broken_tooltip', file.symlinkTarget!) : t('symlink.tooltip', file.symlinkTarget!)) : file.name}
           style={{
             display: "flex",
             alignItems: "center",
@@ -485,12 +487,17 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
               />
             )}
             {(!isImg || hasFailed) && (
-              <Icon
-                name={getFileIconFromMime(file.mime, file.isDirectory)}
-                filled={data.filledIcons}
-                className={file.isDirectory ? "folder-icon" : "doc-icon"}
-                style={{ fontSize: `${data.iconSize}px` }}
-              />
+              <span style={{ position: 'relative', display: 'inline-flex' }}>
+                <Icon
+                  name={isBrokenSymlink ? 'link_off' : getFileIconFromMime(file.mime, file.isDirectory)}
+                  filled={data.filledIcons}
+                  className={file.isDirectory ? "folder-icon" : isBrokenSymlink ? "doc-icon broken-symlink-icon" : "doc-icon"}
+                  style={{ fontSize: `${data.iconSize}px`, ...(isBrokenSymlink ? { color: '#ef5350' } : {}) }}
+                />
+                {file.isMountpoint && file.isDirectory && (
+                  <Icon name="hard_drive" className="mountpoint-badge" style={{ position: 'absolute', bottom: '-1px', right: '-2px', fontSize: `${Math.max(10, data.iconSize * 0.45)}px`, color: 'var(--md-sys-color-primary)' }} />
+                )}
+              </span>
             )}
           </span>
           {isRenaming ? (
@@ -516,7 +523,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
             />
           ) : (
             <span
-              className="file-name"
+              className={`file-name${isSymlink ? ' symlink' : ''}`}
               style={{
                 flex: 1,
                 overflow: "hidden",
@@ -557,12 +564,14 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
         const hasFailed = data.failedImages.has(file.path);
         const isRenaming = data.renamingPath === file.path;
         const isDragOver = file.isDirectory && data.dragOverPath === file.path;
+        const isBrokenSymlink = file.symlinkTarget ? file.mime === 'inode/symlink' : false;
+        const isSymlink = !!file.symlinkTarget;
 
         return (
           <div
             key={file.path}
             className={`file-list-item file-grid-item ${isSelected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
-            title={file.name}
+            title={isSymlink ? (isBrokenSymlink ? t('symlink.broken_tooltip', file.symlinkTarget!) : t('symlink.tooltip', file.symlinkTarget!)) : file.name}
             onMouseEnter={() => data.onHoverFile?.(file)}
             onMouseLeave={() => data.onHoverFile?.(null)}
             onMouseDown={(e) => {
@@ -631,12 +640,17 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                 />
               )}
               {(!isImg || hasFailed) && (
-                <Icon
-                  name={getFileIconFromMime(file.mime, file.isDirectory)}
-                  filled={data.filledIcons}
-                  className={file.isDirectory ? "folder-icon" : "doc-icon"}
-                  style={{ fontSize: `${data.iconSize}px` }}
-                />
+                <span style={{ position: 'relative', display: 'inline-flex' }}>
+                  <Icon
+                    name={isBrokenSymlink ? 'link_off' : getFileIconFromMime(file.mime, file.isDirectory)}
+                    filled={data.filledIcons}
+                    className={file.isDirectory ? "folder-icon" : isBrokenSymlink ? "doc-icon broken-symlink-icon" : "doc-icon"}
+                    style={{ fontSize: `${data.iconSize}px`, ...(isBrokenSymlink ? { color: '#ef5350' } : {}) }}
+                  />
+                  {file.isMountpoint && file.isDirectory && (
+                    <Icon name="hard_drive" className="mountpoint-badge" style={{ position: 'absolute', bottom: '-1px', right: '-2px', fontSize: `${Math.max(10, data.iconSize * 0.45)}px`, color: 'var(--md-sys-color-primary)' }} />
+                  )}
+                </span>
               )}
             </span>
             {isRenaming ? (
@@ -669,7 +683,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
               />
             ) : (
               <span
-                className="file-name"
+                className={`file-name${isSymlink ? ' symlink' : ''}`}
                 style={{
                   textAlign: "center",
                   fontSize: "12px",

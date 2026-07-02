@@ -15,13 +15,17 @@ interface BreadcrumbsProps {
   onDropExternalFiles: (targetPath: string, filePaths: string[]) => void;
 }
 
+interface SymlinkInfo {
+  isSymlink: boolean;
+  target?: string;
+}
+
 export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   currentPath,
   onNavigate,
   onDropFiles,
   onDropExternalFiles,
 }) => {
-  // Normalize path
   const sanitizedPath = currentPath.startsWith("/")
     ? currentPath
     : "/" + currentPath;
@@ -29,6 +33,10 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+  const [symlinkInfo, setSymlinkInfo] = useState<Map<string, SymlinkInfo>>(new Map());
+  const [breadcrumbCtxMenu, setBreadcrumbCtxMenu] = useState<{
+    x: number; y: number; path: string; realPath: string;
+  } | null>(null);
   const { getDragState, endDrag } = useDrag();
 
   useEffect(() => {
@@ -36,6 +44,30 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
     }
   }, [currentPath]);
+
+  useEffect(() => {
+    const segmentPaths = parts.map((_, i) => "/" + parts.slice(0, i + 1).join("/"));
+    if (segmentPaths.length === 0) return;
+
+    let cancelled = false;
+    const check = async () => {
+      try {
+        if (window.electron.checkSymlinks) {
+          const results = await window.electron.checkSymlinks(segmentPaths);
+          if (cancelled) return;
+          const info = new Map<string, SymlinkInfo>();
+          for (const r of results) {
+            info.set(r.path, { isSymlink: r.isSymlink, target: r.target });
+          }
+          setSymlinkInfo(info);
+        }
+      } catch {
+        // ignore errors
+      }
+    };
+    check();
+    return () => { cancelled = true; };
+  }, [currentPath, parts]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -85,6 +117,25 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     [getDragState, onDropFiles, onDropExternalFiles, endDrag],
   );
 
+  const handleBreadcrumbContextMenu = useCallback(
+    (e: React.MouseEvent, path: string, realPath: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setBreadcrumbCtxMenu({ x: e.clientX, y: e.clientY, path, realPath });
+    },
+    [],
+  );
+
+  const closeBreadcrumbCtxMenu = useCallback(() => {
+    setBreadcrumbCtxMenu(null);
+  }, []);
+
+  useEffect(() => {
+    const handler = () => closeBreadcrumbCtxMenu();
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [closeBreadcrumbCtxMenu]);
+
   return (
     <div
       ref={scrollRef}
@@ -120,25 +171,64 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       )}
 
       {parts.map((p, i) => {
-        const path = "/" + parts.slice(0, i + 1).join("/");
+        const segmentPath = "/" + parts.slice(0, i + 1).join("/");
+        const info = symlinkInfo.get(segmentPath);
+        const isSymlinkDir = info?.isSymlink ?? false;
+        const symlinkTarget = info?.target;
+
         return (
-          <React.Fragment key={path}>
-            <span className={`breadcrumb-separator${dragOverPath === path ? " drag-over" : ""}`}>/</span>
+          <React.Fragment key={segmentPath}>
+            <span className={`breadcrumb-separator${dragOverPath === segmentPath ? " drag-over" : ""}`}>/</span>
             <Button
               variant="text"
-              onClick={() => onNavigate(path)}
+              onClick={() => {
+                if (breadcrumbCtxMenu) {
+                  closeBreadcrumbCtxMenu();
+                }
+                onNavigate(segmentPath);
+              }}
               onDragOver={handleDragOver}
-              onDragEnter={(e) => handleDragEnter(e, path)}
+              onDragEnter={(e) => handleDragEnter(e, segmentPath)}
               onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, path)}
-              className={`breadcrumb-item${dragOverPath === path ? " drag-over" : ""}`}
+              onDrop={(e) => handleDrop(e, segmentPath)}
+              onContextMenu={(e) => {
+                if (isSymlinkDir && symlinkTarget) {
+                  handleBreadcrumbContextMenu(e, segmentPath, symlinkTarget);
+                }
+              }}
+              className={`breadcrumb-item${isSymlinkDir ? ' symlink' : ''}${dragOverPath === segmentPath ? " drag-over" : ""}`}
               style={{ fontWeight: i === parts.length - 1 ? 600 : 400 }}
+              title={isSymlinkDir && symlinkTarget ? t('symlink.tooltip', symlinkTarget) : undefined}
             >
-              {p}
+              {p}{isSymlinkDir ? '↗' : ''}
             </Button>
           </React.Fragment>
         );
       })}
+
+      {breadcrumbCtxMenu && (
+        <div
+          className="breadcrumb-ctx-menu"
+          style={{ position: 'fixed', left: breadcrumbCtxMenu.x, top: breadcrumbCtxMenu.y, zIndex: 10000 }}
+        >
+          <button
+            className="breadcrumb-ctx-item"
+            onClick={() => {
+              onNavigate(breadcrumbCtxMenu.realPath);
+              closeBreadcrumbCtxMenu();
+            }}
+          >
+            <Icon name="arrow_forward" style={{ fontSize: '16px', marginRight: '8px' }} />
+            {t('symlink.go_to_target')}
+          </button>
+          <button
+            className="breadcrumb-ctx-item"
+            onClick={closeBreadcrumbCtxMenu}
+          >
+            {t('dialog.button.cancel')}
+          </button>
+        </div>
+      )}
     </div>
   );
 };

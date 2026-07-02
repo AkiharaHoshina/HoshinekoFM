@@ -17,7 +17,7 @@ import { ContextMenu } from "./components/ContextMenu";
 import type { ContextMenuItem } from "./components/ContextMenu";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { TerminalPane } from "./components/TerminalPane"; // Import TerminalPane
-import type { IFile } from "./types/files";
+import type { IFile, AllDevice } from "./types/files";
 import { Dialog } from "./components/Dialog";
 import { Button } from "./components/Button";
 import { TabBar } from "./components/TabBar";
@@ -32,6 +32,7 @@ import {
   extractFile,
   openFile,
 } from "./utils/fileOperations";
+import { FileSystemService } from "./services/FileSystemService";
 import { NameInputDialog } from "./components/NameInputDialog";
 import { ConflictDialog } from "./components/ConflictDialog";
 import {
@@ -115,6 +116,13 @@ function AppContent() {
     resolve: (result: ConflictResult) => void;
     sourcePath?: string;
     operation?: "move" | "copy";
+  } | null>(null);
+
+  // Device context menu state
+  const [deviceContextMenu, setDeviceContextMenu] = useState<{
+    x: number;
+    y: number;
+    device: AllDevice;
   } | null>(null);
 
   // -- Dialog helpers (passed as props to ExplorerTab) --
@@ -314,6 +322,45 @@ function AppContent() {
     [],
   );
 
+  const handleDeviceContextMenu = useCallback(
+    (e: React.MouseEvent, device: AllDevice) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDeviceContextMenu({ x: e.clientX, y: e.clientY, device });
+    },
+    [],
+  );
+
+  const handleDeviceMount = useCallback(async (devicePath: string) => {
+    showToast(t('device.mounting'), 'info');
+    const result = await FileSystemService.mountDevice(devicePath);
+    if (result.success) {
+      showToast(t('device.mounted'), 'success');
+    } else {
+      showToast(`${t('device.mount_failed')}: ${result.error || ''}`, 'error');
+    }
+  }, []);
+
+  const handleDeviceUnmount = useCallback(async (devicePath: string) => {
+    showToast(t('device.unmounting'), 'info');
+    const result = await FileSystemService.unmountDevice(devicePath);
+    if (result.success) {
+      showToast(t('device.unmounted'), 'success');
+    } else {
+      showToast(`${t('device.unmount_failed')}: ${result.error || ''}`, 'error');
+    }
+  }, []);
+
+  const handleDeviceEject = useCallback(async (devicePath: string) => {
+    showToast(t('device.unmounting'), 'info');
+    const result = await FileSystemService.ejectDevice(devicePath);
+    if (result.success) {
+      showToast(t('device.unmounted'), 'success');
+    } else {
+      showToast(`${t('device.eject_failed')}: ${result.error || ''}`, 'error');
+    }
+  }, []);
+
   const handleBgMenuItems = useCallback((items: ContextMenuItem[]) => {
     setBgMenuItems(items);
   }, []);
@@ -356,37 +403,39 @@ function AppContent() {
     setContextMenu(null);
   };
 
-  const menuItems: ContextMenuItem[] = contextMenu?.item
-    ? [
+  const menuItems: ContextMenuItem[] = (() => {
+    const item = contextMenu?.item;
+    if (item) {
+      const items: ContextMenuItem[] = [
         {
-          label: "Open",
+          label: t("context_menu.open"),
           icon: "open_in_new",
           action: () => {
-            openFile(contextMenu.item!.path);
+            openFile(item.path);
             setContextMenu(null);
           },
         },
         {
-          label: "Open in Terminal",
+          label: t("context_menu.open_terminal"),
           icon: "terminal",
-          action: () => openTerminalAt(contextMenu.item!.path),
+          action: () => openTerminalAt(item.path),
         },
         { divider: true, label: "", action: () => {} },
         {
-          label: "Copy",
+          label: t("context_menu.copy"),
           icon: "content_copy",
-          action: () => handleCopy(contextMenu.item!),
+          action: () => handleCopy(item),
         },
         {
-          label: "Cut",
+          label: t("context_menu.cut"),
           icon: "content_cut",
-          action: () => handleCut(contextMenu.item!),
+          action: () => handleCut(item),
         },
         {
-          label: "Delete",
+          label: t("context_menu.delete"),
           icon: "delete",
           action: () =>
-            trashFile(contextMenu.item!.path, () => {
+            trashFile(item.path, () => {
               setTabs((prev) =>
                 prev.map((t) =>
                   t.id === activeTabId ? { ...t, version: t.version + 1 } : t,
@@ -395,11 +444,10 @@ function AppContent() {
             }),
         },
         {
-          label: "Extract Here",
+          label: t("context_menu.extract_here"),
           icon: "unarchive",
           action: () => {
-            const file = contextMenu.item!;
-            extractFile(file.path, () =>
+            extractFile(item.path, () =>
               setTabs((prev) =>
                 prev.map((t) =>
                   t.id === activeTabId ? { ...t, version: t.version + 1 } : t,
@@ -409,45 +457,91 @@ function AppContent() {
           },
         },
         {
-          label: "Rename",
+          label: t("context_menu.rename"),
           icon: "edit",
           action: () => {
-            setRenameFile(contextMenu.item);
-            setNewName(contextMenu.item!.name);
+            setRenameFile(item);
+            setNewName(item.name);
             setRenameDialogOpen(true);
-            setContextMenu(null); // Close menu
+            setContextMenu(null);
           },
         },
+      ];
+
+      const specialItems: ContextMenuItem[] = [];
+      if (item.symlinkTarget) {
+        specialItems.push({
+          label: t("symlink.go_to_target"),
+          icon: "arrow_forward",
+          action: () => {
+            if (item.isDirectory) {
+              handleSidebarNavigate(item.symlinkTarget!);
+            } else {
+              const parent = item.symlinkTarget!.substring(0, item.symlinkTarget!.lastIndexOf("/"));
+              handleSidebarNavigate(parent || "/");
+            }
+            setContextMenu(null);
+          },
+        });
+      }
+      if (item.isMountpoint && item.mountSource) {
+        const isRealDevice = item.mountSource.startsWith("/dev/") &&
+          !["devtmpfs", "tmpfs", "sysfs", "proc", "hugetlbfs", "mqueue", "selinuxfs", "debugfs", "fusectl", "securityfs", "pstore", "bpf", "cgroup2", "configfs"].includes(
+            item.mountSource.split("/").pop() || ""
+          );
+        if (isRealDevice) {
+          specialItems.push({
+            label: t("mountpoint.go_to_source"),
+            icon: "hard_drive",
+            action: () => {
+              const parent = item.mountSource!.substring(0, item.mountSource!.lastIndexOf("/"));
+              handleSidebarNavigate(parent || "/");
+              setContextMenu(null);
+            },
+          });
+        }
+      }
+      if (specialItems.length > 0) {
+        items.push({ divider: true, label: "", action: () => {} }, ...specialItems);
+      }
+
+      items.push(
         { divider: true, label: "", action: () => {} },
         {
-          label: "Open With...",
+          label: t("context_menu.open_with"),
           icon: "apps",
           action: () => {
-            setOpenWithFile(contextMenu.item);
+            setOpenWithFile(item);
             setContextMenu(null);
           },
         },
         {
-          label: "Properties",
+          label: t("context_menu.properties"),
           icon: "info",
           action: () => {
-            setPropertiesFile(contextMenu.item);
+            setPropertiesFile(item);
             setPropertiesDialogOpen(true);
             setContextMenu(null);
           },
         },
-      ]
-    : (bgMenuItems ??
-      [{ label: "Paste", icon: "content_paste", action: handlePaste }].filter(
-        (item) => {
+      );
+
+      return items;
+    }
+    return (
+      bgMenuItems ??
+      [{ label: t("context_menu.paste"), icon: "content_paste", action: handlePaste }].filter(
+        (menuItem) => {
           if (
-            item.label === "Paste" &&
+            menuItem.label === t("context_menu.paste") &&
             (!clipboard || clipboard.files.length === 0)
           )
             return false;
           return true;
         },
-      ));
+      )
+    );
+  })();
 
   const handleRename = async () => {
     if (renameFile && newName && newName !== renameFile.name) {
@@ -533,7 +627,13 @@ function AppContent() {
       />
 
       {/* Places Sidebar */}
-      <Sidebar onNavigate={handleSidebarNavigate} currentPath={currentPath} />
+      <Sidebar
+        onNavigate={handleSidebarNavigate}
+        currentPath={currentPath}
+        onDeviceContextMenu={handleDeviceContextMenu}
+        onDeviceMount={handleDeviceMount}
+        onDeviceEject={handleDeviceEject}
+      />
 
       {/* Main Content Area */}
       <main
@@ -665,6 +765,48 @@ function AppContent() {
             y={contextMenu.y}
             items={menuItems}
             onClose={() => setContextMenu(null)}
+          />
+        )}
+
+        {deviceContextMenu && (
+          <ContextMenu
+            x={deviceContextMenu.x}
+            y={deviceContextMenu.y}
+            items={(() => {
+              const d = deviceContextMenu.device;
+              const items: ContextMenuItem[] = [];
+              if (d.mounted) {
+                items.push({
+                  label: t("device.unmount"),
+                  icon: "eject",
+                  action: () => {
+                    handleDeviceUnmount(d.devicePath);
+                    setDeviceContextMenu(null);
+                  },
+                });
+                if (d.hotplug || d.rm || d.tran === 'usb') {
+                  items.push({
+                    label: t("device.eject"),
+                    icon: "power_settings_new",
+                    action: () => {
+                      handleDeviceEject(d.devicePath);
+                      setDeviceContextMenu(null);
+                    },
+                  });
+                }
+              } else {
+                items.push({
+                  label: t("device.mount"),
+                  icon: "hard_drive",
+                  action: () => {
+                    handleDeviceMount(d.devicePath);
+                    setDeviceContextMenu(null);
+                  },
+                });
+              }
+              return items;
+            })()}
+            onClose={() => setDeviceContextMenu(null)}
           />
         )}
 

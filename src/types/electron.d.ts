@@ -1,4 +1,4 @@
-import { IFile } from './files';
+import type { IFile, AllDevice } from './files';
 
 export interface IDrive {
     name: string;
@@ -36,6 +36,12 @@ export interface IElectronAPI {
     exists: (path: string) => Promise<boolean>;
     getStorageUsage: () => Promise<{ total: number; used: number; free: number } | null>;
     getDrives: () => Promise<IDrive[]>;
+    getAllDevices: () => Promise<AllDevice[]>;
+    mountDevice: (devicePath: string) => Promise<{ success: boolean; mountpoint?: string; error?: string }>;
+    unmountDevice: (devicePath: string) => Promise<{ success: boolean; error?: string }>;
+    ejectDevice: (devicePath: string) => Promise<{ success: boolean; error?: string }>;
+    getSymlinkTarget: (path: string) => Promise<{ isSymlink: boolean; target?: string; targetExists: boolean }>;
+    checkSymlinks: (paths: string[]) => Promise<{ path: string; isSymlink: boolean; target?: string }[]>;
     getRecommendedApps: (path: string) => Promise<{ name: string; icon: string | null; exec: string; path: string; }[]>;
 
     // PTY

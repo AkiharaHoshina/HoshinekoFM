@@ -157,3 +157,18 @@
     transform: scale(1.1);
     transition: transform 0.15s ease;
 }
+
+.file-name.symlink::after {
+    content: "↗";
+    font-size: 10px;
+    margin-left: 2px;
+    opacity: 0.6;
+}
+
+.broken-symlink-icon {
+    color: #ef5350 !important;
+}
+
+.mountpoint-badge {
+    filter: drop-shadow(1px 1px 0 var(--md-sys-color-surface));
+}
