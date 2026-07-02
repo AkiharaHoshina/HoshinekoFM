@@ -2,18 +2,23 @@ import React, { useState, useEffect, useRef } from "react";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { Icon } from "./Icon";
 import { IconButton } from "./IconButton";
+import type { IFile } from "../types/files";
 import "./Omnibar.css";
 
 interface OmnibarProps {
   currentPath: string;
   onNavigate: (path: string) => void;
   onSearch: (query: string, options?: any) => void;
+  onDropFiles: (targetPath: string, files: IFile[], operation: "move" | "copy") => void;
+  onDropExternalFiles: (targetPath: string, filePaths: string[]) => void;
 }
 
 export const Omnibar: React.FC<OmnibarProps> = ({
   currentPath,
   onNavigate,
   onSearch,
+  onDropFiles,
+  onDropExternalFiles,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState(currentPath);
@@ -91,7 +96,12 @@ export const Omnibar: React.FC<OmnibarProps> = ({
         </div>
       ) : (
         <div className="omnibar-breadcrumbs">
-          <Breadcrumbs currentPath={currentPath} onNavigate={onNavigate} />
+          <Breadcrumbs
+            currentPath={currentPath}
+            onNavigate={onNavigate}
+            onDropFiles={onDropFiles}
+            onDropExternalFiles={onDropExternalFiles}
+          />
           <IconButton
             variant="standard"
             className="omnibar-trigger"

@@ -26,3 +26,18 @@
     margin: 0 4px;
     font-size: 16px;
 }
+.breadcrumb-separator.drag-over {
+    color: var(--md-sys-color-primary);
+}
+
+.breadcrumb-item.drag-over,
+.breadcrumb-root.drag-over {
+    background-color: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent) !important;
+    outline: 2px dashed var(--md-sys-color-primary);
+    outline-offset: -2px;
+}
+
+.breadcrumb-item.drag-over *,
+.breadcrumb-root.drag-over * {
+    pointer-events: none;
+}

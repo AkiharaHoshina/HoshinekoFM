@@ -208,6 +208,94 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     }
   };
 
+  const handleDropOnTarget = useCallback(
+    async (draggedFiles: IFile[], targetPath: string, operation: "move" | "copy", targetDirFiles: IFile[]) => {
+      const entries = draggedFiles
+        .filter((f) => f.path !== targetPath)
+        .map((f) => ({ path: f.path, name: f.name, isDir: f.isDirectory }));
+      if (entries.length === 0) return;
+
+      const existingNames = targetDirFiles.map((f) => f.name);
+      const conflictList = await checkConflicts(entries, targetPath);
+      let renameMap: Map<string, string> | undefined;
+      let conflictAction: 'skip' | 'auto-rename' = 'skip';
+
+      if (conflictList.length > 0) {
+        const result = await onConflictDialog(conflictList, targetPath, existingNames);
+        conflictAction = result.action;
+        if (result.renames) renameMap = result.renames;
+      }
+
+      const conflictNames = new Set(conflictList.map((c) => c.entry.name));
+      const usedNames = new Set(existingNames);
+
+      let success = 0;
+      let fail = 0;
+
+      for (const entry of entries) {
+        let destName = entry.name;
+        if (conflictNames.has(entry.name)) {
+          if (conflictAction === 'skip') continue;
+          if (renameMap) {
+            const renamed = renameMap.get(entry.name);
+            if (!renamed || !renamed.trim()) continue;
+            destName = renamed.trim();
+          } else {
+            const { base, ext } = splitNameExt(entry.name, entry.isDir);
+            destName = generateSafeName(base, ext, usedNames, entry.isDir);
+            usedNames.add(destName);
+          }
+        }
+
+        const destPath = targetPath + '/' + destName;
+        if (destName.includes('/') || destName.includes('..')) {
+          const ok = await prepareDestParent(destPath);
+          if (!ok) { fail++; continue; }
+        }
+
+        try {
+          if (operation === 'copy') {
+            await window.electron.copyFile(entry.path, destPath);
+          } else {
+            await window.electron.moveFile(entry.path, destPath);
+          }
+          success++;
+        } catch {
+          fail++;
+        }
+      }
+
+      if (success > 0) {
+        const verb = operation === 'copy' ? '复制' : '移动';
+        showToast(`已${verb} ${success} 个项目`, 'success');
+      }
+      if (fail > 0) {
+        showToast(`${fail} 个项目操作失败`, 'error');
+      }
+      loadPath(currentPath);
+    },
+    [onConflictDialog, loadPath, currentPath],
+  );
+
+  const handleDropOnBreadcrumb = useCallback(
+    async (targetPath: string, draggedFiles: IFile[], operation: "move" | "copy") => {
+      const { data: targetFiles } = await FileSystemService.listDir(targetPath);
+      handleDropOnTarget(draggedFiles, targetPath, operation, targetFiles);
+    },
+    [handleDropOnTarget],
+  );
+
+  const handleExternalDropOnBreadcrumb = useCallback(
+    async (targetPath: string, filePaths: string[]) => {
+      await importFiles(
+        filePaths.map((p) => ({ path: p })),
+        targetPath,
+      );
+      loadPath(currentPath);
+    },
+    [loadPath, currentPath],
+  );
+
   // Sort State
   const [sortBy, setSortBy] = useState<'name' | 'size' | 'date'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -532,6 +620,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               currentPath={currentPath}
               onNavigate={loadPath}
               onSearch={handleSearch}
+              onDropFiles={handleDropOnBreadcrumb}
+              onDropExternalFiles={handleExternalDropOnBreadcrumb}
             />
           </div>
           {/* Sort Controls */}
@@ -618,71 +708,9 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               onSetSelected={setSelectedFiles}
               onSelectionModeChange={handleSelectionModeChange}
               onHoverFile={handleHoverFile}
-              onDropOnFolder={async (draggedFiles, targetPath, operation) => {
-                const entries = draggedFiles
-                  .filter((f) => f.path !== targetPath)
-                  .map((f) => ({ path: f.path, name: f.name, isDir: f.isDirectory }));
-                if (entries.length === 0) return;
-
-                const existingNames = files.map((f) => f.name);
-                const conflictList = await checkConflicts(entries, targetPath);
-                let renameMap: Map<string, string> | undefined;
-                let conflictAction: 'skip' | 'auto-rename' = 'skip';
-
-                if (conflictList.length > 0) {
-                  const result = await onConflictDialog(conflictList, targetPath, existingNames);
-                  conflictAction = result.action;
-                  if (result.renames) renameMap = result.renames;
-                }
-
-                const conflictNames = new Set(conflictList.map((c) => c.entry.name));
-                const usedNames = new Set(existingNames);
-
-                let success = 0;
-                let fail = 0;
-
-                for (const entry of entries) {
-                  let destName = entry.name;
-                  if (conflictNames.has(entry.name)) {
-                    if (conflictAction === 'skip') continue;
-                    if (renameMap) {
-                      const renamed = renameMap.get(entry.name);
-                      if (!renamed || !renamed.trim()) continue;
-                      destName = renamed.trim();
-                    } else {
-                      const { base, ext } = splitNameExt(entry.name, entry.isDir);
-                      destName = generateSafeName(base, ext, usedNames, entry.isDir);
-                      usedNames.add(destName);
-                    }
-                  }
-
-                  const destPath = targetPath + '/' + destName;
-                  if (destName.includes('/') || destName.includes('..')) {
-                    const ok = await prepareDestParent(destPath);
-                    if (!ok) { fail++; continue; }
-                  }
-
-                  try {
-                    if (operation === 'copy') {
-                      await window.electron.copyFile(entry.path, destPath);
-                    } else {
-                      await window.electron.moveFile(entry.path, destPath);
-                    }
-                    success++;
-                  } catch {
-                    fail++;
-                  }
-                }
-
-                if (success > 0) {
-                  const verb = operation === 'copy' ? '复制' : '移动';
-                  showToast(`已${verb} ${success} 个项目`, 'success');
-                }
-                if (fail > 0) {
-                  showToast(`${fail} 个项目操作失败`, 'error');
-                }
-                loadPath(currentPath);
-              }}
+              onDropOnFolder={(draggedFiles, targetPath, operation) =>
+                handleDropOnTarget(draggedFiles, targetPath, operation, files)
+              }
               currentPath={currentPath}
               iconSize={iconSize}
               viewMode={viewMode}
