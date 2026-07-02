@@ -4,9 +4,11 @@
 </p>
 
 # Hoshineko 文件管理器
+
 <p align="center">
   <img src="Screenshot_for_HoshinekoFM.png" alt="Hoshineko">
 </p>
+
 Hoshineko 文件管理器是一款基于 Material 3 设计语言、Electron 和 React 框架构建的现代“性能至上”文件管理器。
 该项目基于 [bhimio1](https://github.com/bhimio1) 的 [material-3-file-explorer](https://github.com/bhimio1/material-3-file-explorer) 项目进行修改与重构。由于原项目已停止更新维护，且我们致力于开发一款符合 Material 3 设计标准的文件管理器，因此发起了此重构项目。
 
