@@ -2,13 +2,13 @@
 
 # Hoshineko 文件管理器
 
-Hoshineko File Manager 是一款基于 Material 3 设计语言、Electron 和 React 框架构建的现代“性能至上”文件管理器。
-该项目基于 bhimio1 的 material-3-file-explorer 项目进行修改与重构。由于原项目已停止更新维护，且我们致力于开发一款符合 Material 3 设计标准的文件管理器，因此发起了此重构项目。
+Hoshineko 文件管理器是一款基于 Material 3 设计语言、Electron 和 React 框架构建的现代“性能至上”文件管理器。
+该项目基于 [bhimio1](https://github.com/bhimio1) 的 [material-3-file-explorer](https://github.com/bhimio1/material-3-file-explorer) 项目进行修改与重构。由于原项目已停止更新维护，且我们致力于开发一款符合 Material 3 设计标准的文件管理器，因此发起了此重构项目。
 
 ## 特性
 
 - **Material Design 3 界面**: 具有动态主题的现代界面。
-- **"性能优先"**: 基于虚拟列表等技术重构的文件列表处理机制。
+- **"性能优先"**: 基于虚拟列表等技术重构的文件列表处理机制，但实话说性能受制于Electron和Web界面。
 - **标签页**: 支持多标签页导航功能。
 - **多功能栏**: 整合统一的搜索栏与地址栏，兼容 fd 命令及标准 Shell 命令。
 - **内建终端模拟器**: 便捷的内建终端模拟器支持。
@@ -19,7 +19,7 @@ Hoshineko File Manager 是一款基于 Material 3 设计语言、Electron 和 Re
 - **自由多选**: 具备多选功能，并针对 LocalSend 等应用进行了拖拽传输优化。
 - **更好的文件分类**:调整了文件分类机制，扩大了可分类的文件类型范围；在 /dev 目录下支持显示对应的设备类型图标（该功能目前处于开发阶段）。
 - **便捷而智慧的右键菜单**:调整了右键菜单架构，支持根据选定项目的不同类型动态显示相应菜单项，并扩展了菜单功能；该菜单设计同时适配触屏设备的长按操作。
-- **针对 material-3-file-explorer 项目进行了多项架构重构与功能扩充，以满足现代文件管理器的标准与特性。**
+- **针对 [material-3-file-explorer](https://github.com/bhimio1/material-3-file-explorer) 项目进行了多项架构重构与功能扩充，以满足现代文件管理器的标准与特性。**
 
 ## 国际化
 
