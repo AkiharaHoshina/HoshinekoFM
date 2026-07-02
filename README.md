@@ -1,7 +1,7 @@
 [简体中文](README-zh.md)
 
 <p align="center">
-  <img src="HoshinekoAkihara.png" alt="Hoshineko" width="35%">
+  <img src="HoshinekoAkihara.png" alt="Hoshineko" width="28%">
 </p>
 
 # Hoshineko File Manager
