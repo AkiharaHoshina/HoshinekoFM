@@ -469,7 +469,7 @@ function AppContent() {
       ];
 
       const specialItems: ContextMenuItem[] = [];
-      if (item.symlinkTarget) {
+      if (item.symlinkTarget && item.mime !== 'inode/symlink') {
         specialItems.push({
           label: t("symlink.go_to_target"),
           icon: "arrow_forward",
@@ -496,6 +496,38 @@ function AppContent() {
             action: () => {
               const parent = item.mountSource!.substring(0, item.mountSource!.lastIndexOf("/"));
               handleSidebarNavigate(parent || "/");
+              setContextMenu(null);
+            },
+          });
+        }
+      }
+      if (item.mime === 'inode/blockdevice' && item.isPartition) {
+        const devPath = item.devicePath || item.path;
+        if (item.isMountpoint && item.mountSource) {
+          specialItems.push(
+            {
+              label: t("device.unmount"),
+              icon: "eject",
+              action: () => {
+                handleDeviceUnmount(devPath);
+                setContextMenu(null);
+              },
+            },
+            {
+              label: t("device.eject"),
+              icon: "power_settings_new",
+              action: () => {
+                handleDeviceEject(devPath);
+                setContextMenu(null);
+              },
+            },
+          );
+        } else {
+          specialItems.push({
+            label: t("device.mount"),
+            icon: "hard_drive",
+            action: () => {
+              handleDeviceMount(devPath);
               setContextMenu(null);
             },
           });

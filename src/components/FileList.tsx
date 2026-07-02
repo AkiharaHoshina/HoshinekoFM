@@ -51,6 +51,25 @@ function tGroup(groupName: string): string {
   return GROUP_LABELS[groupName] || groupName;
 }
 
+function getFileTitle(file: IFile): string {
+  if (file.isMountpoint && file.mountFstype) {
+    if (file.mountSource && file.mountSource.startsWith('/dev/')) {
+      return `${file.name}(${file.mountFstype}) \u2192 ${file.mountSource}`;
+    }
+    return `${file.name}(${file.mountFstype})`;
+  }
+  if (file.symlinkTarget) {
+    if (file.mime === 'inode/symlink') {
+      return `${file.name} \u2192 ${file.symlinkTarget}\uFF08\u635F\u574F\uFF09`;
+    }
+    return `${file.name} \u2192 ${file.symlinkTarget}`;
+  }
+  if (file.mime === 'inode/blockdevice' && file.isMountpoint && file.mountSource) {
+    return `${file.name} \u2192 ${file.mountSource}`;
+  }
+  return file.name;
+}
+
 function getFileIconFromMime(
   mime: string | null,
   isDirectory: boolean,
@@ -421,7 +440,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
       <div style={style}>
         <div
           className={`file-list-item ${isSelected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
-          title={isSymlink ? (isBrokenSymlink ? t('symlink.broken_tooltip', file.symlinkTarget!) : t('symlink.tooltip', file.symlinkTarget!)) : file.name}
+          title={getFileTitle(file)}
           style={{
             display: "flex",
             alignItems: "center",
@@ -494,7 +513,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                   className={file.isDirectory ? "folder-icon" : isBrokenSymlink ? "doc-icon broken-symlink-icon" : "doc-icon"}
                   style={{ fontSize: `${data.iconSize}px`, ...(isBrokenSymlink ? { color: '#ef5350' } : {}) }}
                 />
-                {file.isMountpoint && file.isDirectory && (
+                {file.isMountpoint && file.isDirectory && file.mountSource?.startsWith('/dev/') && (
                   <Icon name="hard_drive" className="mountpoint-badge" style={{ position: 'absolute', bottom: '-1px', right: '-2px', fontSize: `${Math.max(10, data.iconSize * 0.45)}px`, color: 'var(--md-sys-color-primary)' }} />
                 )}
               </span>
@@ -571,7 +590,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
           <div
             key={file.path}
             className={`file-list-item file-grid-item ${isSelected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
-            title={isSymlink ? (isBrokenSymlink ? t('symlink.broken_tooltip', file.symlinkTarget!) : t('symlink.tooltip', file.symlinkTarget!)) : file.name}
+            title={getFileTitle(file)}
             onMouseEnter={() => data.onHoverFile?.(file)}
             onMouseLeave={() => data.onHoverFile?.(null)}
             onMouseDown={(e) => {
@@ -647,7 +666,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                     className={file.isDirectory ? "folder-icon" : isBrokenSymlink ? "doc-icon broken-symlink-icon" : "doc-icon"}
                     style={{ fontSize: `${data.iconSize}px`, ...(isBrokenSymlink ? { color: '#ef5350' } : {}) }}
                   />
-                  {file.isMountpoint && file.isDirectory && (
+                {file.isMountpoint && file.mountSource?.startsWith('/dev/') && (
                     <Icon name="hard_drive" className="mountpoint-badge" style={{ position: 'absolute', bottom: '-1px', right: '-2px', fontSize: `${Math.max(10, data.iconSize * 0.45)}px`, color: 'var(--md-sys-color-primary)' }} />
                   )}
                 </span>

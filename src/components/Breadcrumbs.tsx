@@ -3,6 +3,7 @@ import "./Breadcrumbs.css";
 import { Button } from "./Button";
 import { IconButton } from "./IconButton";
 import { Icon } from "./Icon";
+import { ContextMenu } from "./ContextMenu";
 import { useDrag } from "../contexts/DragContext";
 import { clearPendingNativeDrag } from "./FileList";
 import type { IFile } from "../types/files";
@@ -35,7 +36,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [symlinkInfo, setSymlinkInfo] = useState<Map<string, SymlinkInfo>>(new Map());
   const [breadcrumbCtxMenu, setBreadcrumbCtxMenu] = useState<{
-    x: number; y: number; path: string; realPath: string;
+    x: number; y: number; realPath: string;
   } | null>(null);
   const { getDragState, endDrag } = useDrag();
 
@@ -118,23 +119,13 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   );
 
   const handleBreadcrumbContextMenu = useCallback(
-    (e: React.MouseEvent, path: string, realPath: string) => {
+    (e: React.MouseEvent, realPath: string) => {
       e.preventDefault();
       e.stopPropagation();
-      setBreadcrumbCtxMenu({ x: e.clientX, y: e.clientY, path, realPath });
+      setBreadcrumbCtxMenu({ x: e.clientX, y: e.clientY, realPath });
     },
     [],
   );
-
-  const closeBreadcrumbCtxMenu = useCallback(() => {
-    setBreadcrumbCtxMenu(null);
-  }, []);
-
-  useEffect(() => {
-    const handler = () => closeBreadcrumbCtxMenu();
-    document.addEventListener("click", handler);
-    return () => document.removeEventListener("click", handler);
-  }, [closeBreadcrumbCtxMenu]);
 
   return (
     <div
@@ -182,9 +173,6 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
             <Button
               variant="text"
               onClick={() => {
-                if (breadcrumbCtxMenu) {
-                  closeBreadcrumbCtxMenu();
-                }
                 onNavigate(segmentPath);
               }}
               onDragOver={handleDragOver}
@@ -193,7 +181,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
               onDrop={(e) => handleDrop(e, segmentPath)}
               onContextMenu={(e) => {
                 if (isSymlinkDir && symlinkTarget) {
-                  handleBreadcrumbContextMenu(e, segmentPath, symlinkTarget);
+                  handleBreadcrumbContextMenu(e, symlinkTarget);
                 }
               }}
               className={`breadcrumb-item${isSymlinkDir ? ' symlink' : ''}${dragOverPath === segmentPath ? " drag-over" : ""}`}
@@ -207,27 +195,21 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       })}
 
       {breadcrumbCtxMenu && (
-        <div
-          className="breadcrumb-ctx-menu"
-          style={{ position: 'fixed', left: breadcrumbCtxMenu.x, top: breadcrumbCtxMenu.y, zIndex: 10000 }}
-        >
-          <button
-            className="breadcrumb-ctx-item"
-            onClick={() => {
-              onNavigate(breadcrumbCtxMenu.realPath);
-              closeBreadcrumbCtxMenu();
-            }}
-          >
-            <Icon name="arrow_forward" style={{ fontSize: '16px', marginRight: '8px' }} />
-            {t('symlink.go_to_target')}
-          </button>
-          <button
-            className="breadcrumb-ctx-item"
-            onClick={closeBreadcrumbCtxMenu}
-          >
-            {t('dialog.button.cancel')}
-          </button>
-        </div>
+        <ContextMenu
+          x={breadcrumbCtxMenu.x}
+          y={breadcrumbCtxMenu.y}
+          items={[
+            {
+              label: t('symlink.go_to_target'),
+              icon: 'arrow_forward',
+              action: () => {
+                onNavigate(breadcrumbCtxMenu.realPath);
+                setBreadcrumbCtxMenu(null);
+              },
+            },
+          ]}
+          onClose={() => setBreadcrumbCtxMenu(null)}
+        />
       )}
     </div>
   );

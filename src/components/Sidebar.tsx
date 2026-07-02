@@ -65,7 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const handlePartitionClick = (device: AllDevice) => {
     if (device.mounted && device.mountpoint) {
       onNavigate(device.mountpoint);
-    } else if (onDeviceMount) {
+    } else if (device.type === 'part' && onDeviceMount) {
       onDeviceMount(device.devicePath);
     }
   };
@@ -75,6 +75,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (onDeviceEject) {
       onDeviceEject(device.devicePath);
     }
+  };
+
+  const getDeviceTitle = (d: AllDevice): string => {
+    const parts = [d.label || d.name];
+    if (d.fstype) parts.push(d.fstype);
+    if (d.size) parts.push(d.size);
+    const base = parts.join(' · ');
+    if (d.mounted && d.mountpoint) {
+      return base + '\n→ ' + d.mountpoint;
+    }
+    return base;
   };
 
   return (
@@ -117,15 +128,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </span>
                     </div>
                     {disk.children.map((part) => (
-                      <button
+                      <div
                         key={part.name}
                         className={`sidebar-item sidebar-partition ${!part.mounted ? 'unmounted' : ''} ${part.mounted && part.mountpoint && currentPath.startsWith(part.mountpoint) ? 'active' : ''}`}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => handlePartitionClick(part)}
                         onContextMenu={(e) => {
                           e.preventDefault();
                           onDeviceContextMenu?.(e, part);
                         }}
-                        title={part.devicePath}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handlePartitionClick(part);
+                          }
+                        }}
+                        title={getDeviceTitle(part)}
                       >
                         <Icon name={getDeviceIcon(part)} className="sidebar-icon" />
                         <div className="sidebar-partition-info">
@@ -148,18 +167,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <Icon name="eject" style={{ fontSize: '18px' }} />
                           </IconButton>
                         )}
-                      </button>
+                      </div>
                     ))}
                   </>
                 ) : (
-                  <button
+                  <div
                     className={`sidebar-item sidebar-partition ${!disk.mounted ? 'unmounted' : ''} ${disk.mounted && disk.mountpoint && currentPath.startsWith(disk.mountpoint) ? 'active' : ''}`}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handlePartitionClick(disk)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       onDeviceContextMenu?.(e, disk);
                     }}
-                    title={disk.devicePath}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handlePartitionClick(disk);
+                      }
+                    }}
+                    title={getDeviceTitle(disk)}
                   >
                     <Icon name={getDeviceIcon(disk)} className="sidebar-icon" />
                     <div className="sidebar-partition-info">
@@ -182,7 +209,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <Icon name="eject" style={{ fontSize: '18px' }} />
                       </IconButton>
                     )}
-                  </button>
+                  </div>
                 )}
               </div>
             ))}

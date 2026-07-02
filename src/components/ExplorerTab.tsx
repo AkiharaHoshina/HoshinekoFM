@@ -58,6 +58,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
   const suppressWatchRef = useRef(false);
+  const mountMapVersionRef = useRef<string | null>(null);
   const { copy, cut, clipboard, clear: clearClipboard } = useClipboard();
 
   // Track recents
@@ -187,6 +188,35 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       window.electron?.unwatchDirectory?.(currentPath);
     };
   }, [isActive, currentPath]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Poll mount map to detect device mount/unmount changes
+  useEffect(() => {
+    if (!isActive || currentPath === 'app://dashboard') return;
+    let cancelled = false;
+    let pollTimer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const map = await FileSystemService.getMountMap();
+        if (cancelled) return;
+        const json = JSON.stringify(map);
+        if (mountMapVersionRef.current !== null && mountMapVersionRef.current !== json) {
+          loadPath(currentPathRef.current);
+        }
+        mountMapVersionRef.current = json;
+      } catch {
+        // ignore
+      }
+      if (!cancelled) {
+        pollTimer = setTimeout(poll, 2000);
+      }
+    };
+    pollTimer = setTimeout(poll, 2000);
+    return () => {
+      cancelled = true;
+      clearTimeout(pollTimer);
+    };
+  }, [isActive, currentPath, loadPath]);
 
   const handleNavigate = (file: IFile) => {
     if (file.isDirectory) {

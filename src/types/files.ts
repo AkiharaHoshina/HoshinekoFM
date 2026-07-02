@@ -8,6 +8,9 @@ export interface IFile {
     symlinkTarget?: string;
     isMountpoint?: boolean;
     mountSource?: string;
+    mountFstype?: string;
+    devicePath?: string;
+    isPartition?: boolean;
 }
 
 export interface AllDevice {

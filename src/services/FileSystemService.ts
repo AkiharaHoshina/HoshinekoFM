@@ -49,6 +49,10 @@ export const FileSystemService = {
     return window.electron.getAllDevices();
   },
 
+  async getMountMap(): Promise<Record<string, { source: string; fstype: string }>> {
+    return window.electron.getMountMap();
+  },
+
   async mountDevice(devicePath: string): Promise<{ success: boolean; mountpoint?: string; error?: string }> {
     return window.electron.mountDevice(devicePath);
   },

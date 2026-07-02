@@ -37,6 +37,7 @@ export interface IElectronAPI {
     getStorageUsage: () => Promise<{ total: number; used: number; free: number } | null>;
     getDrives: () => Promise<IDrive[]>;
     getAllDevices: () => Promise<AllDevice[]>;
+    getMountMap: () => Promise<Record<string, { source: string; fstype: string }>>;
     mountDevice: (devicePath: string) => Promise<{ success: boolean; mountpoint?: string; error?: string }>;
     unmountDevice: (devicePath: string) => Promise<{ success: boolean; error?: string }>;
     ejectDevice: (devicePath: string) => Promise<{ success: boolean; error?: string }>;

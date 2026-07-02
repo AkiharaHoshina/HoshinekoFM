@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('electron', {
   getDirectorySize: (path: string) => ipcRenderer.invoke('system:get-directory-size', path),
   getDrives: () => ipcRenderer.invoke('system:get-drives'),
   getAllDevices: () => ipcRenderer.invoke('system:get-all-devices'),
+  getMountMap: () => ipcRenderer.invoke('system:get-mount-map'),
   mountDevice: (devicePath: string) => ipcRenderer.invoke('system:mount-device', devicePath),
   unmountDevice: (devicePath: string) => ipcRenderer.invoke('system:unmount-device', devicePath),
   ejectDevice: (devicePath: string) => ipcRenderer.invoke('system:eject-device', devicePath),

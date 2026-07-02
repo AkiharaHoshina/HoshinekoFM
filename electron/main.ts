@@ -108,9 +108,32 @@ async function resolveAccessibleParent(startPath: string): Promise<string | null
   return null;
 }
 
+async function getMountMap(): Promise<Map<string, { source: string; fstype: string }>> {
+  const map = new Map<string, { source: string; fstype: string }>();
+  try {
+    const content = await fs.readFile('/proc/mounts', 'utf-8');
+    for (const line of content.trim().split('\n')) {
+      if (!line) continue;
+      const parts = line.split(' ');
+      if (parts.length < 3) continue;
+      const source = parts[0];
+      let mountpoint = parts[1];
+      const fstype = parts[2];
+      mountpoint = mountpoint.replace(/\\040/g, ' ')
+        .replace(/\\011/g, '\t')
+        .replace(/\\012/g, '\n')
+        .replace(/\\134/g, '\\');
+      map.set(mountpoint, { source, fstype });
+    }
+  } catch {
+    // /proc/mounts not available
+  }
+  return map;
+}
+
 async function listDirectoryContents(targetPath: string): Promise<{
   name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
-  symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string;
+  symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isPartition?: boolean;
 }[]> {
   const entries = await fs.readdir(targetPath, { withFileTypes: true });
   const results = await Promise.all(entries.map(async (entry) => {
@@ -129,20 +152,32 @@ async function listDirectoryContents(targetPath: string): Promise<{
         else if (isChar) mime = 'inode/chardevice';
         else if (isFIFO) mime = 'inode/fifo';
         else mime = 'inode/socket';
+        let isPartition: boolean | undefined;
+        if (isBlock) {
+          try {
+            await fs.access(`/sys/class/block/${entry.name}/partition`);
+            isPartition = true;
+          } catch {
+            isPartition = false;
+          }
+        }
         return {
           name: entry.name,
           path: fullPath,
           isDirectory: false,
           size: 0,
           mtime: new Date(0),
-          mime
+          mime,
+          devicePath: isBlock ? fullPath : undefined,
+          isPartition,
         };
       }
 
       if (isSymlink) {
         let symlinkTarget: string | undefined;
         try {
-          symlinkTarget = await fs.readlink(fullPath);
+          const rawTarget = await fs.readlink(fullPath);
+          symlinkTarget = path.resolve(path.dirname(fullPath), rawTarget);
         } catch {
           return null;
         }
@@ -190,30 +225,33 @@ async function listDirectoryContents(targetPath: string): Promise<{
   }));
   const filtered = results.filter(r => r !== null) as {
     name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
-    symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string;
+    symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isPartition?: boolean;
   }[];
 
-  // Detect mount points among directories using findmnt
-  try {
-    const { stdout } = await execAsync(`findmnt --json -R "${targetPath.replace(/"/g, '\\"')}"`);
-    const data = JSON.parse(stdout);
-    const mountMap = new Map<string, string>();
-    const collect = (fslist: any[]) => {
-      for (const item of fslist) {
-        mountMap.set(item.target, item.source);
-        if (item.children) collect(item.children);
-      }
-    };
-    const filesystems = data.filesystems || [];
-    collect(filesystems);
-    for (const entry of filtered) {
-      if (entry.isDirectory && mountMap.has(entry.path)) {
+  const mountMap = await getMountMap();
+  const deviceMountMap = new Map<string, { source: string; fstype: string; mountpoint: string }>();
+  for (const [mp, info] of mountMap) {
+    if (info.source && info.source !== 'none') {
+      deviceMountMap.set(info.source, { ...info, mountpoint: mp });
+    }
+  }
+  for (const entry of filtered) {
+    if (entry.isDirectory) {
+      const mount = mountMap.get(entry.path);
+      if (mount) {
         entry.isMountpoint = true;
-        entry.mountSource = mountMap.get(entry.path);
+        entry.mountSource = mount.source;
+        entry.mountFstype = mount.fstype;
       }
     }
-  } catch {
-    // findmnt may fail on non-standard paths; silently skip
+    if (entry.devicePath) {
+      const dm = deviceMountMap.get(entry.devicePath);
+      if (dm) {
+        entry.isMountpoint = true;
+        entry.mountSource = dm.mountpoint;
+        entry.mountFstype = dm.fstype;
+      }
+    }
   }
 
   return filtered;
@@ -544,6 +582,15 @@ ipcMain.handle('system:get-all-devices', async () => {
   }
 });
 
+ipcMain.handle('system:get-mount-map', async () => {
+  const map = await getMountMap();
+  const result: Record<string, { source: string; fstype: string }> = {};
+  for (const [k, v] of map) {
+    result[k] = v;
+  }
+  return result;
+});
+
 ipcMain.handle('system:mount-device', async (_event, devicePath: string) => {
   try {
     const { stdout, stderr } = await execAsync(`udisksctl mount -b "${devicePath}"`);
@@ -582,7 +629,8 @@ ipcMain.handle('fs:get-symlink-target', async (_event, filePath: string) => {
   try {
     const lstat = await fs.lstat(filePath);
     if (!lstat.isSymbolicLink()) return { isSymlink: false };
-    const target = await fs.readlink(filePath);
+    const rawTarget = await fs.readlink(filePath);
+    const target = path.resolve(path.dirname(filePath), rawTarget);
     let targetExists = false;
     try { await fs.access(target); targetExists = true; } catch {}
     return { isSymlink: true, target, targetExists };
@@ -597,7 +645,8 @@ ipcMain.handle('fs:check-symlinks', async (_event, paths: string[]) => {
     try {
       const lstat = await fs.lstat(p);
       if (lstat.isSymbolicLink()) {
-        const target = await fs.readlink(p);
+        const rawTarget = await fs.readlink(p);
+        const target = path.resolve(path.dirname(p), rawTarget);
         results.push({ path: p, isSymlink: true, target });
       } else {
         results.push({ path: p, isSymlink: false });

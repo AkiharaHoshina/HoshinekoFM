@@ -45,30 +45,3 @@
 .breadcrumb-item.symlink {
     font-style: italic;
 }
-
-.breadcrumb-ctx-menu {
-    background: var(--md-sys-color-surface-container);
-    border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: 12px;
-    padding: 4px 0;
-    min-width: 180px;
-    box-shadow: var(--md-sys-elevation-level2, 0 4px 12px rgba(0,0,0,0.15));
-}
-
-.breadcrumb-ctx-item {
-    display: flex;
-    align-items: center;
-    width: 100%;
-    padding: 8px 16px;
-    border: none;
-    background: transparent;
-    color: var(--md-sys-color-on-surface);
-    font-family: inherit;
-    font-size: 14px;
-    cursor: pointer;
-    text-align: left;
-}
-
-.breadcrumb-ctx-item:hover {
-    background-color: var(--md-sys-color-surface-container-high);
-}
