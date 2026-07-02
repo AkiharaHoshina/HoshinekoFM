@@ -20,17 +20,15 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
     }
   }, [open]);
 
-  // Close on click outside
-  const handleBackdropClick = (e: React.MouseEvent) => {
+  const handleBackdropMouseDown = (e: React.MouseEvent) => {
     if (e.target === dialogRef.current) {
+      e.preventDefault();
       onClose();
     }
   };
 
-
-
   return (
-    <dialog ref={dialogRef} className="md3-dialog" onClick={handleBackdropClick} onCancel={onClose}>
+    <dialog ref={dialogRef} className="md3-dialog" onMouseDown={handleBackdropMouseDown} onCancel={onClose}>
       <div className="md3-dialog-content">
         <div className="md3-dialog-icon">
           {/* Optional Icon Slot */}

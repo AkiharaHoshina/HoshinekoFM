@@ -1,4 +1,12 @@
 import { showToast } from './toast';
+import {
+  checkConflicts,
+  generateSafeName,
+  splitNameExt,
+  prepareDestParent,
+  type ConflictEntry,
+  type ConflictResult,
+} from './fileConflict';
 
 export function formatFileOpError(operation: string, fileRef: string, error: any): string {
   let code: string = error?.code || '';
@@ -109,6 +117,10 @@ export async function renameFile(
       showToast(`重命名失败：${newName} 已存在`, 'error');
       return;
     }
+    if (newParent !== oldParent) {
+      const ok = await prepareDestParent(newPath);
+      if (!ok) return;
+    }
     await window.electron.renameFile(oldPath, newPath);
     if (oldParent === newParent) {
       showToast(`重命名：${oldName} -> ${newName}`, 'success');
@@ -217,19 +229,65 @@ export async function extractFile(
 interface PasteEntry {
   path: string;
   name: string;
+  isDir?: boolean;
 }
 
 export async function pasteFiles(
   entries: PasteEntry[],
   operation: 'copy' | 'cut',
   destDir: string,
+  existingNames: string[],
   clearClipboard?: () => void,
   onSuccess?: () => void,
+  onConflict?: (conflicts: ConflictEntry[]) => Promise<ConflictResult>,
 ): Promise<void> {
+  const baseDir = destDir.endsWith('/') ? destDir : destDir + '/';
+
+  const conflictEntries = await checkConflicts(
+    entries.map((e) => ({ path: e.path, name: e.name, isDir: !!e.isDir })),
+    destDir,
+  );
+
+  let renameMap: Map<string, string> | undefined;
+  let conflictAction: 'skip' | 'auto-rename' = 'skip';
+
+  if (conflictEntries.length > 0 && onConflict) {
+    const result = await onConflict(conflictEntries);
+    conflictAction = result.action;
+    if (result.renames) renameMap = result.renames;
+  }
+
+  const conflictNames = new Set(conflictEntries.map((c) => c.entry.name));
+  const usedNames = new Set(existingNames);
+
+  const toProcess: { entry: PasteEntry; destName: string }[] = [];
+
+  for (const entry of entries) {
+    if (conflictNames.has(entry.name)) {
+      if (conflictAction === 'skip') continue;
+      if (renameMap) {
+        const renamed = renameMap.get(entry.name);
+        if (!renamed || !renamed.trim()) continue;
+        toProcess.push({ entry, destName: renamed.trim() });
+      } else {
+        const { base, ext } = splitNameExt(entry.name, !!entry.isDir);
+        const safe = generateSafeName(base, ext, usedNames, !!entry.isDir);
+        usedNames.add(safe);
+        toProcess.push({ entry, destName: safe });
+      }
+    } else {
+      toProcess.push({ entry, destName: entry.name });
+    }
+  }
+
   let success = 0;
   let fail = 0;
-  for (const entry of entries) {
-    const destPath = destDir.endsWith('/') ? destDir + entry.name : destDir + '/' + entry.name;
+  for (const { entry, destName } of toProcess) {
+    const destPath = baseDir + destName;
+    if (destName.includes('/') || destName.includes('..')) {
+      const ok = await prepareDestParent(destPath);
+      if (!ok) { fail++; continue; }
+    }
     try {
       if (operation === 'copy') {
         await window.electron.copyFile(entry.path, destPath);
@@ -242,6 +300,7 @@ export async function pasteFiles(
       console.error(`${operation} ${entry.name} 失败:`, e);
     }
   }
+
   if (success > 0) {
     showToast(`已粘贴 ${success} 个项目`, 'success');
     if (operation === 'cut') clearClipboard?.();

@@ -868,7 +868,7 @@ export const FileList: React.FC<FileListProps> = ({
       // Native file drag — deferred to dragend so internal HTML5 drops still work.
       // On dragend, if _pendingNativeDragPaths is still set (no internal drop consumed it),
       // we call startDrag to hand over to the OS compositor for external drop targets.
-      if (window.electron?.startDrag) {
+      if (window.electron) {
         _pendingNativeDragPaths = filesToDrag.map((f) => f.path);
       }
 
@@ -887,7 +887,7 @@ export const FileList: React.FC<FileListProps> = ({
   useEffect(() => {
     const onDragEnd = () => {
       console.warn("[drag] dragend fired, cleaning up");
-      if (_pendingNativeDragPaths && window.electron?.startDrag) {
+      if (_pendingNativeDragPaths && window.electron) {
         window.electron.startDrag(_pendingNativeDragPaths);
       }
       setDragOverPath(null);

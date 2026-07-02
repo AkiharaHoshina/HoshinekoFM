@@ -31,6 +31,14 @@ import {
   extractFile,
   openFile,
 } from "./utils/fileOperations";
+import { NameInputDialog } from "./components/NameInputDialog";
+import { ConflictDialog } from "./components/ConflictDialog";
+import {
+  generateSafeName,
+  splitNameExt,
+  type ConflictEntry,
+  type ConflictResult,
+} from "./utils/fileConflict";
 
 interface TabState {
   id: string;
@@ -80,6 +88,52 @@ function AppContent() {
 
   // Settings State
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+
+  // Create Dialog State
+  const [createDialog, setCreateDialog] = useState<{
+    type: "file" | "folder";
+    defaultName: string;
+    existingNames: string[];
+    resolve: (name: string | null) => void;
+  } | null>(null);
+
+  // Conflict Dialog State
+  const [singleConflict, setSingleConflict] = useState<{
+    conflict: ConflictEntry;
+    existingNames: string[];
+    resolve: (result: ConflictResult) => void;
+  } | null>(null);
+
+  const [multiConflict, setMultiConflict] = useState<{
+    conflicts: ConflictEntry[];
+    destDir: string;
+    existingNames: string[];
+    resolve: (result: ConflictResult) => void;
+  } | null>(null);
+
+  // -- Dialog helpers (passed as props to ExplorerTab) --
+
+  const handleCreateDialog = useCallback(
+    (type: "file" | "folder", defaultName: string, existingNames: string[]) => {
+      return new Promise<string | null>((resolve) => {
+        setCreateDialog({ type, defaultName, existingNames, resolve });
+      });
+    },
+    [],
+  );
+
+  const handleConflictDialog = useCallback(
+    (conflicts: ConflictEntry[], destDir: string, existingNames: string[]) => {
+      return new Promise<ConflictResult>((resolve) => {
+        if (conflicts.length === 1) {
+          setSingleConflict({ conflict: conflicts[0], existingNames, resolve });
+        } else {
+          setMultiConflict({ conflicts, destDir, existingNames, resolve });
+        }
+      });
+    },
+    [],
+  );
 
   const [showHiddenFiles, setShowHiddenFiles] = useLocalStorage<boolean>(
     "settings.showHiddenFiles",
@@ -284,6 +338,7 @@ function AppContent() {
       clipboard.files,
       clipboard.operation,
       currentPath,
+      [],
       clipboard.operation === "cut" ? clearClipboard : undefined,
       () =>
         setTabs((prev) =>
@@ -528,6 +583,8 @@ function AppContent() {
                 onOpenWithFile={handleOpenWithFile}
                 onPropertiesFile={handlePropertiesFile}
                 onOpenTerminalAt={openTerminalAt}
+                onCreateDialog={handleCreateDialog}
+                onConflictDialog={handleConflictDialog}
                 showHiddenFiles={showHiddenFiles}
                 iconSize={iconSize}
                 viewMode={viewMode}
@@ -639,6 +696,82 @@ function AppContent() {
             }}
           />
         </Dialog>
+
+        {/* Create File/Folder Dialog */}
+        {createDialog && (
+          <NameInputDialog
+            title={createDialog.type === "folder" ? "新建文件夹" : "新建文件"}
+            defaultName={createDialog.defaultName}
+            isDir={createDialog.type === "folder"}
+            existingNames={createDialog.existingNames}
+            onConfirm={(name) => {
+              const r = createDialog.resolve;
+              setCreateDialog(null);
+              r(name);
+            }}
+            onCancel={() => {
+              const r = createDialog.resolve;
+              setCreateDialog(null);
+              r(null);
+            }}
+          />
+        )}
+
+        {/* Single Conflict Dialog */}
+        {singleConflict &&
+          (() => {
+            const c = singleConflict;
+            const { base, ext } = splitNameExt(
+              c.conflict.entry.name,
+              c.conflict.isDir,
+            );
+            const existingSet = new Set(c.existingNames);
+            const safeName = generateSafeName(
+              base,
+              ext,
+              existingSet,
+              c.conflict.isDir,
+            );
+            return (
+              <NameInputDialog
+                title="项目重名"
+                defaultName={safeName}
+                isDir={c.conflict.isDir}
+                existingNames={c.existingNames}
+                onConfirm={(name) => {
+                  const renames = new Map<string, string>();
+                  renames.set(c.conflict.entry.name, name);
+                  const resolve = c.resolve;
+                  setSingleConflict(null);
+                  resolve({ action: "auto-rename", renames });
+                }}
+                onCancel={() => {
+                  const resolve = c.resolve;
+                  setSingleConflict(null);
+                  resolve({ action: "skip" });
+                }}
+              />
+            );
+          })()}
+
+        {/* Multi Conflict Dialog */}
+        {multiConflict && (
+          <ConflictDialog
+            conflicts={multiConflict.conflicts}
+            destDir={multiConflict.destDir}
+            existingNames={multiConflict.existingNames}
+            onConfirm={(result) => {
+              const resolve = multiConflict.resolve;
+              setMultiConflict(null);
+              resolve(result);
+            }}
+            onCancel={() => {
+              const resolve = multiConflict.resolve;
+              setMultiConflict(null);
+              resolve({ action: "skip" });
+            }}
+          />
+        )}
 
         <PropertiesDialog
           open={propertiesDialogOpen}

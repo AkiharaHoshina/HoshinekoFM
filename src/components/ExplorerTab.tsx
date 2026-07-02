@@ -15,8 +15,6 @@ import {
   createFile,
   importFiles,
   openFile,
-  copyFile,
-  moveFile,
   copyToClipboard,
   cutToClipboard,
 } from '../utils/fileOperations';
@@ -26,6 +24,14 @@ import { Dashboard } from './Dashboard';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { getSemanticGroup, GROUP_ORDER } from '../utils/fileUtils';
 import type { ContextMenuItem } from './ContextMenu';
+import {
+  checkConflicts,
+  generateSafeName,
+  splitNameExt,
+  prepareDestParent,
+  type ConflictEntry,
+  type ConflictResult,
+} from '../utils/fileConflict';
 
 interface ExplorerTabProps {
     tabId: string;
@@ -37,6 +43,8 @@ interface ExplorerTabProps {
     onOpenWithFile: (file: IFile) => void;
     onPropertiesFile: (file: IFile) => void;
     onOpenTerminalAt: (path: string) => void;
+    onCreateDialog: (type: 'file' | 'folder', defaultName: string, existingNames: string[]) => Promise<string | null>;
+    onConflictDialog: (conflicts: ConflictEntry[], destDir: string, existingNames: string[]) => Promise<ConflictResult>;
     showHiddenFiles: boolean;
     iconSize: number;
     viewMode: 'grid' | 'list';
@@ -44,7 +52,7 @@ interface ExplorerTabProps {
     refreshSignal: number;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onCreateDialog, onConflictDialog, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -359,12 +367,15 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   const executePasteAction = async () => {
     if (clipboard && clipboard.files.length > 0) {
+      const existingNames = files.map((f) => f.name);
       await pasteFiles(
         clipboard.files,
         clipboard.operation,
         currentPath,
+        existingNames,
         clipboard.operation === 'cut' ? clearClipboard : undefined,
         () => loadPath(currentPath),
+        (conflicts) => onConflictDialog(conflicts, currentPath, existingNames),
       );
     }
   };
@@ -450,20 +461,38 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       {
         label: 'New Folder',
         icon: 'create_new_folder',
-        action: () => createDirectory(currentPath + '/新建文件夹', () => loadPath(currentPath)),
+        action: () => {
+          const existingNames = files.map(f => f.name);
+          void (async () => {
+            const name = await onCreateDialog('folder', '新建文件夹', existingNames);
+            if (name) {
+              await createDirectory(currentPath + '/' + name, () => loadPath(currentPath));
+            }
+          })();
+        },
       },
       {
         label: 'New File',
         icon: 'note_add',
-        action: () => createFile(currentPath + '/新建文本文档.txt', () => loadPath(currentPath)),
+        action: () => {
+          const existingNames = files.map(f => f.name);
+          void (async () => {
+            const name = await onCreateDialog('file', '新建文本文档.txt', existingNames);
+            if (name) {
+              await createFile(currentPath + '/' + name, () => loadPath(currentPath));
+            }
+          })();
+        },
       },
-      { label: '', divider: true, action: () => {} },
-      {
-        label: 'Paste',
-        icon: 'content_paste',
-        action: () => executePasteAction()
-      },
-      { label: '', divider: true, action: () => {} },
+      ...(clipboard && clipboard.files.length > 0 ? [
+        { label: '', divider: true, action: () => {} } as ContextMenuItem,
+        {
+          label: 'Paste',
+          icon: 'content_paste',
+          action: () => executePasteAction(),
+        } as ContextMenuItem,
+        { label: '', divider: true, action: () => {} } as ContextMenuItem,
+      ] : []),
       {
         label: 'Open in Terminal',
         icon: 'terminal',
@@ -590,14 +619,67 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               onSelectionModeChange={handleSelectionModeChange}
               onHoverFile={handleHoverFile}
               onDropOnFolder={async (draggedFiles, targetPath, operation) => {
-                for (const file of draggedFiles) {
-                  if (file.path === targetPath) continue;
-                  const destPath = targetPath + '/' + file.name;
-                  if (operation === 'copy') {
-                    await copyFile(file.path, destPath, () => loadPath(currentPath));
-                  } else {
-                    await moveFile(file.path, destPath, () => loadPath(currentPath));
+                const entries = draggedFiles
+                  .filter((f) => f.path !== targetPath)
+                  .map((f) => ({ path: f.path, name: f.name, isDir: f.isDirectory }));
+                if (entries.length === 0) return;
+
+                const existingNames = files.map((f) => f.name);
+                const conflictList = await checkConflicts(entries, targetPath);
+                let renameMap: Map<string, string> | undefined;
+                let conflictAction: 'skip' | 'auto-rename' = 'skip';
+
+                if (conflictList.length > 0) {
+                  const result = await onConflictDialog(conflictList, targetPath, existingNames);
+                  conflictAction = result.action;
+                  if (result.renames) renameMap = result.renames;
+                }
+
+                const conflictNames = new Set(conflictList.map((c) => c.entry.name));
+                const usedNames = new Set(existingNames);
+
+                let success = 0;
+                let fail = 0;
+
+                for (const entry of entries) {
+                  let destName = entry.name;
+                  if (conflictNames.has(entry.name)) {
+                    if (conflictAction === 'skip') continue;
+                    if (renameMap) {
+                      const renamed = renameMap.get(entry.name);
+                      if (!renamed || !renamed.trim()) continue;
+                      destName = renamed.trim();
+                    } else {
+                      const { base, ext } = splitNameExt(entry.name, entry.isDir);
+                      destName = generateSafeName(base, ext, usedNames, entry.isDir);
+                      usedNames.add(destName);
+                    }
                   }
+
+                  const destPath = targetPath + '/' + destName;
+                  if (destName.includes('/') || destName.includes('..')) {
+                    const ok = await prepareDestParent(destPath);
+                    if (!ok) { fail++; continue; }
+                  }
+
+                  try {
+                    if (operation === 'copy') {
+                      await window.electron.copyFile(entry.path, destPath);
+                    } else {
+                      await window.electron.moveFile(entry.path, destPath);
+                    }
+                    success++;
+                  } catch {
+                    fail++;
+                  }
+                }
+
+                if (success > 0) {
+                  const verb = operation === 'copy' ? '复制' : '移动';
+                  showToast(`已${verb} ${success} 个项目`, 'success');
+                }
+                if (fail > 0) {
+                  showToast(`${fail} 个项目操作失败`, 'error');
                 }
                 loadPath(currentPath);
               }}
