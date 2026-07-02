@@ -34,17 +34,30 @@ Hoshineko 文件管理器是一款基于 Material 3 设计语言、Electron 和 
 
 ## 自订主题颜色 (Matugen)
 
+自定主题颜色的教程是老旧的，将在主题功能可用后更新。
+
 通过 [Matugen](https://github.com/InioX/matugen)，软件支持自订主题颜色。
 
-想要使用系统颜色：
 1. 安装 Matugen.
 2. 在 `~/.config/matugen/theme.css`生成主题文件.
 3. 在你启动的时候，这个软件会自动的探测和应用这个主题。
 
-一个从墙纸中生成主题的样例指令:
+一个从墙纸中生成主题的样例方式:
 ```bash
-matugen image /path/to/wallpaper.jpg --type css --output ~/.config/matugen/theme.css
+mkdir -p ~/.config/matugen/theme.css
+
+matugen image --type scheme-tonal-spot /path/to/bg/backgrounda.jpg > ~/.config/matugen/theme.css
 ```
+
+其中 --type指定调色模式,一共有：
+
+1.scheme-tonal-spot（默认）：经典的 Material 3 调色盘，颜色相对克制、和谐。
+
+2.scheme-vibrant：高饱和度，颜色更具活力。
+
+scheme-expressive：更丰富的混合色彩，对比明显。
+
+scheme-monochrome：单色/黑白灰调。
 
 ## 安装
 

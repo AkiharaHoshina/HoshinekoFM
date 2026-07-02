@@ -31,19 +31,32 @@ The Hoshineko file explorer is a modification and reconstruction of [bhimio1](ht
 
 Only provide Simplefied Chinese because i18n will soon start.
 
-## Custom Theming (Matugen)
+## Custom Theme Colors (Matugen)
 
-Materials supports dynamic theming via [Matugen](https://github.com/InioX/matugen).
+The tutorial for custom theme colors is outdated and will be updated once the theme feature becomes available.
 
-To use your system colors:
+The software supports custom theme colors via [Matugen](https://github.com/InioX/matugen).
+
 1. Install Matugen.
-2. Generate a theme file at `~/.config/matugen/theme.css`.
-3. The app will automatically detect and apply this theme on startup.
+2. Generate the theme file at `~/.config/matugen/theme.css`.
+3. The software will automatically detect and apply this theme upon startup.
 
-Example command to generate theme from wallpaper:
+An example of generating a theme from a wallpaper:
 ```bash
-matugen image /path/to/wallpaper.jpg --type css --output ~/.config/matugen/theme.css
+mkdir -p ~/.config/matugen/theme.css
+
+matugen image --type scheme-tonal-spot /path/to/bg/backgrounda.jpg > ~/.config/matugen/theme.css
 ```
+
+Where `--type` specifies the color scheme mode, options include:
+
+1. scheme-tonal-spot (Default): Classic Material 3 palette, with relatively restrained and harmonious colors.
+
+2. scheme-vibrant: High saturation, with more vibrant colors.
+
+3. scheme-expressive: Richer mixed colors, with distinct contrast.
+
+4. scheme-monochrome: Monochrome / grayscale.
 
 ## Installation
 
