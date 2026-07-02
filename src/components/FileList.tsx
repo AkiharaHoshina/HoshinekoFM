@@ -62,33 +62,33 @@ function getFileIconFromMime(
   if (!mime) return "insert_drive_file";
   const cat = mime.split("/")[0];
   switch (cat) {
-    case "image":
-      return "image";
-    case "audio":
-      return "audio_file";
-    case "video":
-      return "movie";
-    case "text":
-      return "article";
-    case "inode":
-      return "folder";
+  case "image":
+    return "image";
+  case "audio":
+    return "audio_file";
+  case "video":
+    return "movie";
+  case "text":
+    return "article";
+  case "inode":
+    return "folder";
   }
   switch (mime) {
-    case "application/pdf":
-      return "picture_as_pdf";
-    case "application/zip":
-    case "application/gzip":
-    case "application/x-bzip2":
-    case "application/x-xz":
-    case "application/x-7z-compressed":
-    case "application/vnd.rar":
-    case "application/x-rar-compressed":
-    case "application/x-tar":
-      return "folder_zip";
-    case "application/x-elf":
-    case "application/x-executable":
-    case "application/x-sharedlib":
-      return "terminal";
+  case "application/pdf":
+    return "picture_as_pdf";
+  case "application/zip":
+  case "application/gzip":
+  case "application/x-bzip2":
+  case "application/x-xz":
+  case "application/x-7z-compressed":
+  case "application/vnd.rar":
+  case "application/x-rar-compressed":
+  case "application/x-tar":
+    return "folder_zip";
+  case "application/x-elf":
+  case "application/x-executable":
+  case "application/x-sharedlib":
+    return "terminal";
   }
   return "insert_drive_file";
 }
@@ -171,7 +171,21 @@ interface RowData {
   columns: number;
 }
 
-const LIST_ROW_HEIGHT = (iconSize: number) => Math.max(52, iconSize + 16) + 8;
+function listSpacing(iconSize: number) {
+  const gap = Math.max(4, Math.round(iconSize * 0.3125));
+  const paddingV = Math.max(2, Math.round(iconSize * 0.125));
+  const paddingH = Math.max(4, Math.round(iconSize * 0.1875));
+  const marginV = Math.max(2, Math.round(iconSize * 0.125));
+  const marginH = Math.max(4, Math.round(iconSize * 0.1875));
+  const borderRadius = Math.max(4, Math.round(iconSize * 0.1875));
+  const innerH = Math.max(iconSize, 20) + paddingV * 2;
+  return { gap, paddingV, paddingH, marginV, marginH, borderRadius, innerH };
+}
+
+const LIST_ROW_HEIGHT = (iconSize: number) => {
+  const sp = listSpacing(iconSize);
+  return sp.innerH + sp.marginV * 2;
+};
 const GRID_ROW_HEIGHT = (iconSize: number) => iconSize + 38;
 const HEADER_HEIGHT = 48;
 
@@ -285,20 +299,23 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
     const isRenaming = data.renamingPath === file.path;
     const isDragOver = file.isDirectory && data.dragOverPath === file.path;
 
+    const sp = listSpacing(data.iconSize);
+
     return (
       <div style={style}>
         <div
+          className={`file-list-item ${isSelected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "16px",
-            margin: "8px 8px",
-            borderRadius: "8px",
+            gap: `${sp.gap}px`,
+            padding: `${sp.paddingV}px ${sp.paddingH}px`,
+            margin: `${sp.marginV}px ${sp.marginH}px`,
+            height: `calc(100% - ${sp.marginV * 2}px)`,
+            borderRadius: `${sp.borderRadius}px`,
             cursor: "pointer",
             boxSizing: "border-box",
-            height: `calc(100% - 8px)`,
           }}
-          className={`file-list-item ${isSelected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
           onMouseDown={(e) => {
             if (e.button !== 0) return;
             triggerRipple(e, e.currentTarget as HTMLElement);
