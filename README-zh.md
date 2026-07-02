@@ -1,3 +1,5 @@
+[English](README.md)
+
 # Hoshineko 文件管理器
 
 Hoshineko File Manager 是一款基于 Material 3 设计语言、Electron 和 React 框架构建的现代“性能至上”文件管理器。
