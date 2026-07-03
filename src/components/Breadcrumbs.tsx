@@ -12,7 +12,11 @@ import { t } from "../i18n";
 interface BreadcrumbsProps {
   currentPath: string;
   onNavigate: (path: string) => void;
-  onDropFiles: (targetPath: string, files: IFile[], operation: "move" | "copy") => void;
+  onDropFiles: (
+    targetPath: string,
+    files: IFile[],
+    operation: "move" | "copy",
+  ) => void;
   onDropExternalFiles: (targetPath: string, filePaths: string[]) => void;
 }
 
@@ -32,22 +36,29 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     : "/" + currentPath;
   const parts = sanitizedPath.split("/").filter(Boolean);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastRef = useRef<HTMLSpanElement>(null);
 
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
-  const [symlinkInfo, setSymlinkInfo] = useState<Map<string, SymlinkInfo>>(new Map());
+  const [symlinkInfo, setSymlinkInfo] = useState<Map<string, SymlinkInfo>>(
+    new Map(),
+  );
   const [breadcrumbCtxMenu, setBreadcrumbCtxMenu] = useState<{
-    x: number; y: number; realPath: string;
+    x: number;
+    y: number;
+    realPath: string;
   } | null>(null);
   const { getDragState, endDrag } = useDrag();
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+    if (lastRef.current) {
+      lastRef.current.scrollIntoView({ block: "nearest", inline: "end" });
     }
   }, [currentPath]);
 
   useEffect(() => {
-    const segmentPaths = parts.map((_, i) => "/" + parts.slice(0, i + 1).join("/"));
+    const segmentPaths = parts.map(
+      (_, i) => "/" + parts.slice(0, i + 1).join("/"),
+    );
     if (segmentPaths.length === 0) return;
 
     let cancelled = false;
@@ -67,7 +78,9 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       }
     };
     check();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [currentPath, parts]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -76,11 +89,14 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     e.dataTransfer.dropEffect = e.shiftKey ? "copy" : "move";
   }, []);
 
-  const handleDragEnter = useCallback((e: React.DragEvent, targetPath: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOverPath(targetPath);
-  }, []);
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent, targetPath: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragOverPath(targetPath);
+    },
+    [],
+  );
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     const el = e.currentTarget as HTMLElement;
@@ -155,10 +171,10 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
         className={`breadcrumb-root${dragOverPath === "/" ? " drag-over" : ""}`}
         title={t("breadcrumbs.root")}
       >
-        <Icon name="home" style={{ fontSize: "18px" }} />
+        <Icon name="home" />
       </IconButton>
       {parts.length === 0 && (
-        <span style={{ fontWeight: 600, padding: '0 2px' }}>/</span>
+        <span style={{ fontWeight: 600, padding: "0 2px" }}>/</span>
       )}
 
       {parts.map((p, i) => {
@@ -166,10 +182,16 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
         const info = symlinkInfo.get(segmentPath);
         const isSymlinkDir = info?.isSymlink ?? false;
         const symlinkTarget = info?.target;
+        const isLast = i === parts.length - 1;
 
         return (
           <React.Fragment key={segmentPath}>
-            <span className={`breadcrumb-separator${dragOverPath === segmentPath ? " drag-over" : ""}`}>/</span>
+            <span
+              ref={isLast ? lastRef : undefined}
+              className={`breadcrumb-separator${dragOverPath === segmentPath ? " drag-over" : ""}`}
+            >
+              /
+            </span>
             <Button
               variant="text"
               onClick={() => {
@@ -184,9 +206,13 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
                   handleBreadcrumbContextMenu(e, symlinkTarget);
                 }
               }}
-              className={`breadcrumb-item${isSymlinkDir ? ' symlink' : ''}${dragOverPath === segmentPath ? " drag-over" : ""}`}
+              className={`breadcrumb-item${isSymlinkDir ? " symlink" : ""}${dragOverPath === segmentPath ? " drag-over" : ""}`}
               style={{ fontWeight: i === parts.length - 1 ? 600 : 400 }}
-              title={isSymlinkDir && symlinkTarget ? t('symlink.tooltip', symlinkTarget) : undefined}
+              title={
+                isSymlinkDir && symlinkTarget
+                  ? t("symlink.tooltip", symlinkTarget)
+                  : undefined
+              }
             >
               {p}
             </Button>
@@ -200,8 +226,8 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
           y={breadcrumbCtxMenu.y}
           items={[
             {
-              label: t('symlink.go_to_target'),
-              icon: 'arrow_forward',
+              label: t("symlink.go_to_target"),
+              icon: "arrow_forward",
               action: () => {
                 onNavigate(breadcrumbCtxMenu.realPath);
                 setBreadcrumbCtxMenu(null);

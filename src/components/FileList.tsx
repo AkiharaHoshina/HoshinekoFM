@@ -89,7 +89,7 @@ function getFileIconFromMime(
   if (mime === "inode/blockdevice") return "hard_drive";
   if (mime === "inode/chardevice") return "keyboard";
   if (mime === "inode/fifo") return "swap_vert";
-  if (mime === "inode/socket") return "hub";
+  if (mime === "inode/socket") return "settings_ethernet";
 
   if (mime.startsWith("font/")) return "font_download";
 
