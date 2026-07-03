@@ -5,9 +5,30 @@
     display: flex;
     flex-direction: column;
     border-radius: 16px;
-    /* Floating panel look? Or attached? */
     margin: 12px 0 12px 0;
-    /* Add margin if implementing standard M3 drawer */
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--md-sys-color-outline-variant) transparent;
+}
+
+.sidebar::-webkit-scrollbar {
+    width: 4px;
+}
+
+.sidebar::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 4px 0;
+    border-radius: 4px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+    background-color: var(--md-sys-color-outline-variant);
+    border-radius: 4px;
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover {
+    background-color: var(--md-sys-color-outline);
 }
 
 .sidebar-title {

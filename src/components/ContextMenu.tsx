@@ -19,18 +19,33 @@ interface ContextMenuProps {
 }
 
 const MENU_PADDING = 8;
+const CURSOR_OFFSET_X = 4;
+const CURSOR_OFFSET_Y = 4;
 
 function clampPosition(x: number, y: number, width: number, height: number) {
   const { innerWidth, innerHeight } = window;
-  const maxH = innerHeight - 2 * MENU_PADDING;
-  const clampedHeight = Math.min(height, maxH);
-  let newX = x;
-  let newY = y;
 
-  if (x + width > innerWidth) newX = x - width;
-  if (y + clampedHeight > innerHeight) newY = y - clampedHeight;
-  if (newX < MENU_PADDING) newX = MENU_PADDING;
-  if (newY < MENU_PADDING) newY = MENU_PADDING;
+  // Preferred: menu opens with cursor slightly inside, below-right
+  let newX = x - CURSOR_OFFSET_X;
+  let newY = y - CURSOR_OFFSET_Y;
+
+  // Available space in each direction (for the full content, unclamped — CSS overflow will scroll)
+  const spaceBelow = innerHeight - newY - MENU_PADDING;
+  const spaceAbove = (y + CURSOR_OFFSET_Y) - MENU_PADDING;
+  const spaceRight = innerWidth - newX - MENU_PADDING;
+  const spaceLeft = (x + CURSOR_OFFSET_X) - MENU_PADDING;
+
+  // Flip only if the opposite direction gives more room for the content
+  if (width > spaceRight && spaceLeft > spaceRight) {
+    newX = x - width + CURSOR_OFFSET_X;
+  }
+  if (height > spaceBelow && spaceAbove > spaceBelow) {
+    newY = y - height + CURSOR_OFFSET_Y;
+  }
+
+  // Keep menu within viewport bounds; overflow handles the rest
+  newX = Math.max(MENU_PADDING, Math.min(newX, innerWidth - width - MENU_PADDING));
+  newY = Math.max(MENU_PADDING, Math.min(newY, innerHeight - height - MENU_PADDING));
 
   return { left: newX, top: newY };
 }

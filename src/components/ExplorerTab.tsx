@@ -533,7 +533,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       // Don't handle shortcuts when focus is on an input/textarea, or when dialogs/context-menus are open
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (document.querySelector('dialog[open].md3-dialog, .context-menu, [role="dialog"]')) return;
+      if (document.querySelector('md-dialog[open], .context-menu, [role="dialog"]')) return;
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
         e.preventDefault();

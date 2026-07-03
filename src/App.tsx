@@ -272,7 +272,7 @@ function AppContent() {
         e.preventDefault();
         return;
       }
-      const openDialog = document.querySelector('dialog[open]');
+      const openDialog = document.querySelector('md-dialog[open]');
       if (openDialog) {
         if (openDialog.contains(target)) return;
         e.preventDefault();
@@ -548,8 +548,7 @@ function AppContent() {
         const devPath = item.devicePath || item.path;
         // Mount/unmount for mountable devices (partitions, dm)
         if (item.isMountable) {
-          const isRootSource = item.isMountpoint && item.mountSource === '/';
-          if (item.isMountpoint && item.mountSource && !isRootSource) {
+          if (item.mountedAt) {
             specialItems.push({
               label: t("device.unmount"),
               icon: "eject",
@@ -558,7 +557,7 @@ function AppContent() {
                 setContextMenu(null);
               },
             });
-          } else if (!item.isMountpoint) {
+          } else {
             specialItems.push({
               label: t("device.mount"),
               icon: "hard_drive",

@@ -908,7 +908,10 @@ export const FileList: React.FC<FileListProps> = ({
   // Scroll to file when scrollToFileName changes and files are loaded
   const prevScrollTargetRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (!scrollToFileName) return;
+    if (!scrollToFileName) {
+      prevScrollTargetRef.current = undefined;
+      return;
+    }
 
     const scrollKey = scrollToFileName + "|" + (currentPath || "");
     if (scrollKey === prevScrollTargetRef.current) return;
