@@ -38,6 +38,8 @@ const docMimeTypes = new Set([
   'application/vnd.oasis.opendocument.spreadsheet',
   'application/vnd.oasis.opendocument.presentation',
   'application/rtf',
+  'application/x-krita',
+  'application/x-scratch',
 ]);
 
 const execMimeTypes = new Set([

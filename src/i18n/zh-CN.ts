@@ -108,10 +108,6 @@ const zhCN = {
   'settings.import_css': '导入 CSS',
   'settings.behavior': '行为',
   'settings.language': '语言',
-  'settings.language_auto': '自动',
-  'settings.language_en': 'English',
-  'settings.language_zh': '中文',
-  'settings.language_system': '跟随系统',
   'settings.marquee_text': '滚动文本',
 
   // ── Toast 消息 ──
@@ -308,6 +304,8 @@ const zhCN = {
   'mime.rar': 'RAR 压缩包',
   'mime.tar': 'TAR 归档',
   'mime.iso': '光盘映像',
+  'mime.krita': 'Krita 文档',
+  'mime.scratch': 'Scratch 项目',
   'mime.odt': 'ODT 文档',
   'mime.ods': 'ODS 表格',
   'mime.odp': 'ODP 演示文稿',
@@ -381,6 +379,11 @@ const zhCN = {
 
   // ── 挂载点操作 ──
   'mountpoint.go_to_source': '转到源设备',
+  // ── 语言信息 ──
+  'language_name': '中文',
+  'language_auto': '跟随系统',
 } as const;
+
+export const match = (lang: string) => lang.startsWith('zh');
 
 export default zhCN;

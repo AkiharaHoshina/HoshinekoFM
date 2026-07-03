@@ -57,6 +57,8 @@ const mimeDescriptionMap: Record<string, string> = {
   'application/x-rar-compressed': t('mime.rar'),
   'application/x-tar': t('mime.tar'),
   'application/x-iso9660-image': t('mime.iso'),
+  'application/x-krita': t('mime.krita'),
+  'application/x-scratch': t('mime.scratch'),
 
   'application/vnd.oasis.opendocument.text': t('mime.odt'),
   'application/vnd.oasis.opendocument.spreadsheet': t('mime.ods'),

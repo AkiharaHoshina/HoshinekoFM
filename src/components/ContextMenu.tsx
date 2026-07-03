@@ -2,10 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import './ContextMenu.css';
 import { ListItem, Divider } from './md';
 import { Icon } from './Icon';
-import { t } from '../i18n';
-import type zhCN from '../i18n/zh-CN';
-
-type I18nKey = keyof typeof zhCN;
 
 export interface ContextMenuItem {
     label: string;
@@ -38,25 +34,6 @@ function clampPosition(x: number, y: number, width: number, height: number) {
 
   return { left: newX, top: newY };
 }
-
-const labelToKey: Record<string, string> = {
-  'Open': 'context_menu.open',
-  'Open With...': 'context_menu.open_with',
-  'Open in Terminal': 'context_menu.open_terminal',
-  'Copy': 'context_menu.copy',
-  'Cut': 'context_menu.cut',
-  'Paste': 'context_menu.paste',
-  'Rename': 'context_menu.rename',
-  'Delete': 'context_menu.delete',
-  'Properties': 'context_menu.properties',
-  'New Folder': 'context_menu.new_folder',
-  'New File': 'context_menu.new_file',
-  'Refresh': 'context_menu.refresh',
-  'Select All': 'context_menu.select_all',
-  'Pin to Dashboard': 'context_menu.pin',
-  'Unpin from Dashboard': 'context_menu.unpin',
-  'Extract Here': 'context_menu.extract_here',
-};
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }) => {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -117,9 +94,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
                   <Icon name={item.icon} className="context-menu-icon" />
                 </span>
               )}
-              <span slot="headline">
-                {labelToKey[item.label] ? t(labelToKey[item.label] as I18nKey) : item.label}
-              </span>
+              <span slot="headline">{item.label}</span>
               {item.shortcut && (
                 <span slot="end" className="context-menu-shortcut">{item.shortcut}</span>
               )}

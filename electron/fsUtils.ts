@@ -479,6 +479,11 @@ function getIconNameForMime(mime: string | null, isDirectory: boolean): string {
   case 'application/x-bittorrent':
     return 'cloud_download';
 
+  case 'application/x-krita':
+    return 'brush';
+  case 'application/x-scratch':
+    return 'extension';
+
   // ── Fonts (non-font/* MIMEs) ──
   case 'application/vnd.ms-fontobject':
     return 'font_download';

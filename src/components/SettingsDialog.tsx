@@ -3,8 +3,7 @@ import { Dialog } from "./Dialog";
 import { Button } from "./Button";
 import { Icon } from "./Icon";
 import { Switch, Slider, Divider, OutlinedSelect, SelectOption } from "./md";
-import { t as ti } from '../i18n';
-import type { Locale } from '../i18n';
+import { t, getLanguageOptions, type Locale } from '../i18n';
 import "./SettingsDialog.css";
 
 interface SettingsDialogProps {
@@ -26,40 +25,6 @@ interface SettingsDialogProps {
   onToggleMarquee: () => void;
 }
 
-const labelToKey: Record<string, string> = {
-  Settings: "settings.title",
-  Done: "settings.done",
-  "Show Hidden Files": "settings.show_hidden",
-  Appearance: "settings.appearance",
-  "View Mode": "settings.view_mode",
-  Grid: "settings.grid",
-  List: "settings.list",
-  "Icon Size": "settings.icon_size",
-  "Filled Icons": "settings.filled_icons",
-  Behavior: "settings.behavior",
-  "Marquee text": "settings.marquee_text",
-  Language: "settings.language",
-  Auto: "settings.language_auto",
-  English: "settings.language_en",
-  "中文": "settings.language_zh",
-  System: "settings.language_system",
-  Customization: "settings.customization",
-  "Custom CSS": "settings.custom_css",
-  "Import CSS": "settings.import_css",
-};
-
-const tSettings = (text: string) => {
-  const key = labelToKey[text];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return key ? (ti as any)(key) : text;
-};
-
-const LANG_OPTIONS: { value: Locale; label: string }[] = [
-  { value: "auto", label: "System" },
-  { value: "en-US", label: "English" },
-  { value: "zh-CN", label: "中文" },
-];
-
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   open,
   onClose,
@@ -78,14 +43,16 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   marqueeEnabled,
   onToggleMarquee,
 }) => {
+  const langOptions = getLanguageOptions();
+
   return (
     <Dialog
-      title={tSettings("Settings")}
+      title={t("settings.title")}
       open={open}
       onClose={onClose}
       actions={
         <Button onClick={onClose} variant="filled">
-          {tSettings("Done")}
+          {t("settings.done")}
         </Button>
       }
     >
@@ -93,7 +60,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         {/* Language */}
         <div className="settings-section--compact">
           <div className="settings-section-header">
-            {tSettings("Language")}
+            {t("settings.language")}
           </div>
           <OutlinedSelect
             className="settings-select"
@@ -103,9 +70,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               if (val) onLocaleChange(val);
             }}
           >
-            {LANG_OPTIONS.map((opt) => (
+            {langOptions.map((opt) => (
               <SelectOption key={opt.value} value={opt.value}>
-                <div slot="headline">{tSettings(opt.label)}</div>
+                <div slot="headline">{opt.name}</div>
               </SelectOption>
             ))}
           </OutlinedSelect>
@@ -118,7 +85,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           <div className="settings-row__start">
             <Icon name={showHiddenFiles ? "visibility" : "visibility_off"} />
             <div className="settings-row__label">
-              {tSettings("Show Hidden Files")}
+              {t("settings.show_hidden")}
             </div>
           </div>
           <Switch selected={showHiddenFiles} onClick={onToggleHiddenFiles} />
@@ -129,32 +96,32 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         {/* Appearance */}
         <div className="settings-section">
           <div className="settings-section-header">
-            {tSettings("Appearance")}
+            {t("settings.appearance")}
           </div>
 
           <div className="settings-view-mode">
             <div className="settings-view-mode__label">
-              {tSettings("View Mode")}
+              {t("settings.view_mode")}
             </div>
             <div className="settings-view-mode__buttons">
               <Button
                 variant={viewMode === "grid" ? "filled" : "outlined"}
                 onClick={() => onViewModeChange("grid")}
               >
-                <Icon name="grid_view" /> {tSettings("Grid")}
+                <Icon name="grid_view" /> {t("settings.grid")}
               </Button>
               <Button
                 variant={viewMode === "list" ? "filled" : "outlined"}
                 onClick={() => onViewModeChange("list")}
               >
-                <Icon name="view_list" /> {tSettings("List")}
+                <Icon name="view_list" /> {t("settings.list")}
               </Button>
             </div>
           </div>
 
           <div className="settings-icon-size">
             <div className="settings-icon-size__header">
-              <span>{tSettings("Icon Size")}</span>
+              <span>{t("settings.icon_size")}</span>
               <span className="settings-icon-size__value">{iconSize}px</span>
             </div>
             <Slider
@@ -171,7 +138,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             <div className="settings-row__start">
               <Icon name="favorite" filled={filledIcons} />
               <div className="settings-row__label">
-                {tSettings("Filled Icons")}
+                {t("settings.filled_icons")}
               </div>
             </div>
             <Switch selected={filledIcons} onClick={onToggleFilledIcons} />
@@ -183,14 +150,14 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         {/* Behavior */}
         <div className="settings-section">
           <div className="settings-section-header">
-            {tSettings("Behavior")}
+            {t("settings.behavior")}
           </div>
 
           <div className="settings-row" onClick={onToggleMarquee}>
             <div className="settings-row__start">
               <Icon name="play_arrow" />
               <div className="settings-row__label">
-                {tSettings("Marquee text")}
+                {t("settings.marquee_text")}
               </div>
             </div>
             <Switch selected={marqueeEnabled} onClick={onToggleMarquee} />
@@ -202,19 +169,19 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         {/* Customization */}
         <div className="settings-section">
           <div className="settings-section-header">
-            {tSettings("Customization")}
+            {t("settings.customization")}
           </div>
           <div className="settings-css-row">
             <div className="settings-css-row__info">
               <div className="settings-row__label">
-                {tSettings("Custom CSS")}
+                {t("settings.custom_css")}
               </div>
               {customCssPath && (
                 <div className="settings-css-row__path">{customCssPath}</div>
               )}
             </div>
             <Button variant="outlined" onClick={onImportCss}>
-              {tSettings("Import CSS")}
+              {t("settings.import_css")}
             </Button>
           </div>
         </div>

@@ -307,6 +307,8 @@ export const EXT_TO_MIME: Record<string, string> = {
   '.pub': 'application/x-pem-file',
   '.torrent': 'application/x-bittorrent',
   '.ipynb': 'application/json',
+  '.kra': 'application/x-krita',
+  '.sb3': 'application/x-scratch',
 } as const;
 
 /**
@@ -409,6 +411,8 @@ export const ZIP_CONTAINER_EXTS = new Set([
   '.3mf',             // 3D Manufacturing Format
   '.sxc', '.sxd', '.sxi', '.sxg', '.sxm', // StarOffice / OpenOffice
   '.gltf',            // Could be ZIP-backed
+  '.kra',             // Krita document
+  '.sb3',             // Scratch 3 / TurboWarp project
 ]);
 
 /**
@@ -427,4 +431,6 @@ export const EXT_PREFERRED = new Set([
   '.avif', '.heic', '.heif', '.heifs',
   // IANA vnd.rar > legacy x-rar-compressed from magic
   '.rar',
+  // ZIP-based project formats (magic says ZIP, ext is more precise)
+  '.kra', '.sb3',
 ]);

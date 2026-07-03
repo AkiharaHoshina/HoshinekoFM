@@ -118,10 +118,6 @@ const enUS = {
   'settings.import_css': 'Import CSS',
   'settings.behavior': 'Behavior',
   'settings.language': 'Language',
-  'settings.language_auto': 'Auto',
-  'settings.language_en': 'English',
-  'settings.language_zh': '中文',
-  'settings.language_system': 'System',
   'settings.marquee_text': 'Marquee text',
 
   // ── Toast 消息 ──
@@ -317,6 +313,8 @@ const enUS = {
   'mime.rar': 'RAR Archive',
   'mime.tar': 'TAR Archive',
   'mime.iso': 'Disc Image',
+  'mime.krita': 'Krita Document',
+  'mime.scratch': 'Scratch Project',
   'mime.odt': 'ODT Document',
   'mime.ods': 'ODS Spreadsheet',
   'mime.odp': 'ODP Presentation',
@@ -389,6 +387,11 @@ const enUS = {
   'symlink.tooltip': (target: string) => `→ ${target}`,
   // ── 挂载点操作 ──
   'mountpoint.go_to_source': 'Switch to source device',
+  // ── 语言信息 ──
+  'language_name': 'English',
+  'language_auto': 'System',
 } as const;
+
+export const match = (lang: string) => lang.startsWith('en');
 
 export default enUS;
