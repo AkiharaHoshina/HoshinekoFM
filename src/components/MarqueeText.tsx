@@ -1,4 +1,4 @@
-import { useRef, useState, useLayoutEffect, useEffect } from "react";
+import { useRef, useLayoutEffect, useEffect } from "react";
 import "./MarqueeText.css";
 
 const SPEED = 10;
@@ -19,105 +19,55 @@ export function MarqueeText({
 }: MarqueeTextProps) {
   const containerRef = useRef<HTMLSpanElement>(null);
   const measureRef = useRef<HTMLSpanElement>(null);
-  const innerRef = useRef<HTMLSpanElement>(null);
-  const [scrolling, setScrolling] = useState(false);
-  const startRef = useRef<(() => void) | null>(null);
-  const cleanupRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    const stop = () => {
-      cleanupRef.current?.();
-      cleanupRef.current = null;
-    };
-
-    const start = () => {
-      const inner = innerRef.current;
-      const measure = measureRef.current;
-      if (!inner || !measure) return;
-
-      stop();
-
-      inner.style.transition = "none";
-      inner.style.transform = "translateX(0)";
-      inner.getBoundingClientRect();
-
-      const textWidth = measure.scrollWidth;
-      const fontSize = parseFloat(getComputedStyle(inner).fontSize);
-      const gapPx = GAP_EM * fontSize;
-      const totalDistance = textWidth + gapPx;
-      const duration = totalDistance / SPEED;
-
-      inner.style.transition = `transform ${duration}s linear`;
-      inner.style.transform = `translateX(-${totalDistance}px)`;
-
-      const onEnd = () => {
-        inner.removeEventListener("transitionend", onEnd);
-        start();
-      };
-      inner.addEventListener("transitionend", onEnd);
-
-      cleanupRef.current = () => {
-        inner.removeEventListener("transitionend", onEnd);
-        inner.style.transition = "none";
-        inner.style.transform = "translateX(0)";
-      };
-    };
-
-    startRef.current = start;
-
-    return () => stop();
-  }, []);
+  const scrollingRef = useRef(false);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
     const measure = measureRef.current;
     if (!container || !measure) return;
 
-    const isOverflowing = measure.scrollWidth > container.clientWidth;
-    if (isOverflowing) {
-      setScrolling(true);
-      requestAnimationFrame(() => startRef.current?.());
-    } else {
-      setScrolling(false);
-      cleanupRef.current?.();
-      cleanupRef.current = null;
-    }
+    const textWidth = measure.scrollWidth;
+    const fontSize = parseFloat(getComputedStyle(container).fontSize);
+    const gapPx = GAP_EM * fontSize;
+    const totalDistance = textWidth + gapPx;
+    const duration = totalDistance / SPEED;
+
+    container.style.setProperty("--marquee-text-width", `${textWidth}px`);
+    container.style.setProperty("--marquee-duration", `${duration}s`);
   }, [children]);
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    const measure = measureRef.current;
+    if (!container || !measure) return;
 
-    const observer = new ResizeObserver(() => {
-      const measure = measureRef.current;
-      if (!measure) return;
+    const check = () => {
       const isOverflowing = measure.scrollWidth > container.clientWidth;
-      if (isOverflowing && !scrolling) {
-        setScrolling(true);
-        requestAnimationFrame(() => startRef.current?.());
-      } else if (!isOverflowing && scrolling) {
-        setScrolling(false);
-        cleanupRef.current?.();
-        cleanupRef.current = null;
+      if (isOverflowing !== scrollingRef.current) {
+        scrollingRef.current = isOverflowing;
+        container.classList.toggle("scrolling", isOverflowing);
       }
-    });
+    };
+
+    check();
+    const observer = new ResizeObserver(check);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [scrolling]);
+  }, [children]);
 
   return (
     <span
       ref={containerRef}
-      className={`marquee-container${scrolling ? " scrolling" : ""}${className ? ` ${className}` : ""}`}
+      className={`marquee-container${className ? ` ${className}` : ""}`}
       style={style}
       title={title}
     >
       <span ref={measureRef} className="marquee-measure" aria-hidden="true">
         {children}
       </span>
-      <span ref={innerRef} className="marquee-inner">
+      <span className="marquee-inner">
         {children}
-        {scrolling && <span className="marquee-clone">{children}</span>}
+        <span className="marquee-clone">{children}</span>
       </span>
     </span>
   );

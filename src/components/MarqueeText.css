@@ -30,3 +30,17 @@
 .marquee-clone {
   margin-left: 2em;
 }
+
+.marquee-container:not(.scrolling) .marquee-clone {
+  display: none;
+}
+
+@keyframes marquee-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(calc(-1 * var(--marquee-distance))); }
+}
+
+.marquee-container.scrolling .marquee-inner {
+  --marquee-distance: calc(var(--marquee-text-width, 0px) + 2em);
+  animation: marquee-scroll var(--marquee-duration) linear infinite;
+}
