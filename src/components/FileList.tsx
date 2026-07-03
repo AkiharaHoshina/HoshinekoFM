@@ -36,6 +36,7 @@ interface FileListProps {
   currentPath?: string;
   scrollToFileName?: string;
   onScrollToComplete?: () => void;
+  marqueeEnabled: boolean;
 }
 
 const DOUBLE_CLICK_THRESHOLD = 500;
@@ -316,6 +317,7 @@ interface RowData {
   filledIcons: boolean;
   viewMode: "grid" | "list";
   columns: number;
+  marqueeEnabled: boolean;
 }
 
 function listSpacing(iconSize: number) {
@@ -589,7 +591,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                 marginRight: -sp.paddingH,
               }}
             >
-              <MarqueeText
+              <MarqueeText enabled={data.marqueeEnabled}
                 className="file-name-text"
                 style={{ paddingRight: sp.paddingH }}
                 title={getFileTitle(file)}
@@ -783,7 +785,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                   display: "block",
                 }}
               >
-                <MarqueeText
+                <MarqueeText enabled={data.marqueeEnabled}
                   className="file-name-text"
                   style={{ paddingLeft: 4, paddingRight: 4 }}
                   title={getFileTitle(file)}
@@ -829,6 +831,7 @@ export const FileList: React.FC<FileListProps> = ({
   currentPath,
   scrollToFileName,
   onScrollToComplete,
+  marqueeEnabled,
 }) => {
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -1476,6 +1479,7 @@ export const FileList: React.FC<FileListProps> = ({
             filledIcons,
             viewMode,
             columns,
+            marqueeEnabled,
           };
 
           return (

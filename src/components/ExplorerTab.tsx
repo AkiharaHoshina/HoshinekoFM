@@ -54,9 +54,10 @@ interface ExplorerTabProps {
     scrollToFileName?: string;
     onScrollToComplete?: () => void;
     onMountDevice?: (devicePath: string) => Promise<{ success: boolean; mountpoint?: string; error?: string }>;
+    marqueeEnabled: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onCreateDialog, onConflictDialog, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onCreateDialog, onConflictDialog, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -780,6 +781,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               groupingEnabled={groupingEnabled}
               scrollToFileName={scrollToFileName}
               onScrollToComplete={onScrollToComplete}
+              marqueeEnabled={marqueeEnabled}
             />
           </div>
         </div>

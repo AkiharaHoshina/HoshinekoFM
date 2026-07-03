@@ -116,6 +116,13 @@ const enUS = {
   'settings.customization': 'Customization',
   'settings.custom_css': 'Custom CSS',
   'settings.import_css': 'Import CSS',
+  'settings.behavior': 'Behavior',
+  'settings.language': 'Language',
+  'settings.language_auto': 'Auto',
+  'settings.language_en': 'English',
+  'settings.language_zh': '中文',
+  'settings.language_system': 'System',
+  'settings.marquee_text': 'Marquee text',
 
   // ── Toast 消息 ──
   'toast.copied_items': (n: number) => n === 1 ? 'Copied 1 item' : `Copied ${n} items`,

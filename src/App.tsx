@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { showToast } from "./utils/toast";
-import { t } from "./i18n";
+import { t, setLocale, getLocale, type Locale } from "./i18n";
 import { initDragIcons } from "./utils/dragIconRenderer";
 import "./index.css";
 import { ToastContainer } from "react-toastify";
@@ -168,6 +168,19 @@ function AppContent() {
     false,
   );
   const [customCssPath, setCustomCssPath] = useState<string>("");
+  const [locale, setLocaleState] = useLocalStorage<Locale>(
+    "settings.locale",
+    getLocale(),
+  );
+  const [marqueeEnabled, setMarqueeEnabled] = useLocalStorage<boolean>(
+    "settings.marqueeEnabled",
+    true,
+  );
+
+  // Sync module-level locale when state changes
+  useEffect(() => {
+    setLocale(locale);
+  }, [locale]);
 
   // -- Handlers (Defined before effects) --
 
@@ -701,6 +714,7 @@ function AppContent() {
         onDeviceMount={handleDeviceMount}
         onDeviceUnmount={handleDeviceUnmount}
         onDeviceEject={handleDeviceEject}
+        marqueeEnabled={marqueeEnabled}
       />
 
       {/* Main Content Area */}
@@ -767,6 +781,7 @@ function AppContent() {
                 scrollToFileName={tab.pendingSelectFile}
                 onScrollToComplete={handleScrollToComplete}
                 onMountDevice={handleDeviceMount}
+                marqueeEnabled={marqueeEnabled}
               />
             </div>
           ))}
@@ -1033,6 +1048,10 @@ function AppContent() {
           onToggleFilledIcons={() => setFilledIcons(!filledIcons)}
           customCssPath={customCssPath}
           onImportCss={handleImportCss}
+          locale={locale}
+          onLocaleChange={setLocaleState}
+          marqueeEnabled={marqueeEnabled}
+          onToggleMarquee={() => setMarqueeEnabled(!marqueeEnabled)}
         />
       </main>
     </div>

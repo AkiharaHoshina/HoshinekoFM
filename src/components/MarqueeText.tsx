@@ -9,6 +9,7 @@ interface MarqueeTextProps {
   title?: string;
   className?: string;
   style?: React.CSSProperties;
+  enabled?: boolean;
 }
 
 export function MarqueeText({
@@ -16,12 +17,14 @@ export function MarqueeText({
   title,
   className,
   style,
+  enabled = true,
 }: MarqueeTextProps) {
   const containerRef = useRef<HTMLSpanElement>(null);
   const measureRef = useRef<HTMLSpanElement>(null);
   const scrollingRef = useRef(false);
 
   useLayoutEffect(() => {
+    if (!enabled) return;
     const container = containerRef.current;
     const measure = measureRef.current;
     if (!container || !measure) return;
@@ -34,9 +37,14 @@ export function MarqueeText({
 
     container.style.setProperty("--marquee-text-width", `${textWidth}px`);
     container.style.setProperty("--marquee-duration", `${duration}s`);
-  }, [children]);
+  }, [children, enabled]);
 
   useEffect(() => {
+    if (!enabled) {
+      scrollingRef.current = false;
+      return;
+    }
+
     const container = containerRef.current;
     const measure = measureRef.current;
     if (!container || !measure) return;
@@ -53,7 +61,27 @@ export function MarqueeText({
     const observer = new ResizeObserver(check);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [children]);
+  }, [children, enabled]);
+
+  if (!enabled) {
+    return (
+      <span
+        className={className}
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          display: "inline-block",
+          maxWidth: "100%",
+          minWidth: 0,
+          ...style,
+        }}
+        title={title}
+      >
+        {children}
+      </span>
+    );
+  }
 
   return (
     <span

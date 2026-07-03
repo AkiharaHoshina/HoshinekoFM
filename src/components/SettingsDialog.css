@@ -1,0 +1,104 @@
+.settings-content {
+  padding: 0 8px;
+  min-width: 320px;
+}
+
+.settings-section {
+  padding: 12px 0;
+}
+
+.settings-section--compact {
+  padding: 8px 0;
+}
+
+.settings-section-header {
+  font-size: 14px;
+  color: var(--md-sys-color-primary);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-row__start {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-row__label {
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-row__sub {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-view-mode {
+  margin-bottom: 16px;
+}
+
+.settings-view-mode__label {
+  margin-bottom: 8px;
+}
+
+.settings-view-mode__buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-icon-size {
+  margin-bottom: 16px;
+}
+
+.settings-icon-size__header {
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.settings-icon-size__value {
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-css-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-css-row__info {
+  min-width: 0;
+  flex: 1;
+  margin-right: 16px;
+}
+
+.settings-css-row__path {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-select {
+  width: 160px;
+}

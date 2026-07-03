@@ -2,8 +2,10 @@ import React from "react";
 import { Dialog } from "./Dialog";
 import { Button } from "./Button";
 import { Icon } from "./Icon";
-import { Switch, Slider } from "./md";
+import { Switch, Slider, Divider, OutlinedSelect, SelectOption } from "./md";
 import { t as ti } from '../i18n';
+import type { Locale } from '../i18n';
+import "./SettingsDialog.css";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -18,6 +20,10 @@ interface SettingsDialogProps {
   onToggleFilledIcons: () => void;
   onImportCss: () => void;
   customCssPath?: string;
+  locale: Locale;
+  onLocaleChange: (locale: Locale) => void;
+  marqueeEnabled: boolean;
+  onToggleMarquee: () => void;
 }
 
 const labelToKey: Record<string, string> = {
@@ -30,6 +36,13 @@ const labelToKey: Record<string, string> = {
   List: "settings.list",
   "Icon Size": "settings.icon_size",
   "Filled Icons": "settings.filled_icons",
+  Behavior: "settings.behavior",
+  "Marquee text": "settings.marquee_text",
+  Language: "settings.language",
+  Auto: "settings.language_auto",
+  English: "settings.language_en",
+  "中文": "settings.language_zh",
+  System: "settings.language_system",
   Customization: "settings.customization",
   "Custom CSS": "settings.custom_css",
   "Import CSS": "settings.import_css",
@@ -40,6 +53,12 @@ const tSettings = (text: string) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return key ? (ti as any)(key) : text;
 };
+
+const LANG_OPTIONS: { value: Locale; label: string }[] = [
+  { value: "auto", label: "System" },
+  { value: "en-US", label: "English" },
+  { value: "zh-CN", label: "中文" },
+];
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   open,
@@ -54,6 +73,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onToggleFilledIcons,
   onImportCss,
   customCssPath,
+  locale,
+  onLocaleChange,
+  marqueeEnabled,
+  onToggleMarquee,
 }) => {
   return (
     <Dialog
@@ -66,52 +89,54 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         </Button>
       }
     >
-      <div style={{ padding: "0 8px", minWidth: "300px" }}>
-        <div
-          onClick={onToggleHiddenFiles}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "12px 0",
-            cursor: "pointer",
-            userSelect: "none",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+      <div className="settings-content">
+        {/* Language */}
+        <div className="settings-section--compact">
+          <div className="settings-section-header">
+            {tSettings("Language")}
+          </div>
+          <OutlinedSelect
+            className="settings-select"
+            value={locale}
+            onInput={(e) => {
+              const val = (e.target as HTMLSelectElement).value as Locale;
+              if (val) onLocaleChange(val);
+            }}
+          >
+            {LANG_OPTIONS.map((opt) => (
+              <SelectOption key={opt.value} value={opt.value}>
+                <div slot="headline">{tSettings(opt.label)}</div>
+              </SelectOption>
+            ))}
+          </OutlinedSelect>
+        </div>
+
+        <Divider />
+
+        {/* Show Hidden Files */}
+        <div className="settings-row" onClick={onToggleHiddenFiles}>
+          <div className="settings-row__start">
             <Icon name={showHiddenFiles ? "visibility" : "visibility_off"} />
-            <div style={{ fontSize: "16px" }}>
+            <div className="settings-row__label">
               {tSettings("Show Hidden Files")}
             </div>
           </div>
-          {/* Material 3 Switch */}
-          <Switch
-            selected={showHiddenFiles}
-            onClick={onToggleHiddenFiles}
-          />
+          <Switch selected={showHiddenFiles} onClick={onToggleHiddenFiles} />
         </div>
 
-        <div
-          style={{
-            padding: "12px 0",
-            borderTop: "1px solid var(--md-sys-color-outline-variant)",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "14px",
-              color: "var(--md-sys-color-primary)",
-              fontWeight: 500,
-              marginBottom: "8px",
-            }}
-          >
+        <Divider />
+
+        {/* Appearance */}
+        <div className="settings-section">
+          <div className="settings-section-header">
             {tSettings("Appearance")}
           </div>
 
-          {/* View Mode */}
-          <div style={{ marginBottom: "16px" }}>
-            <div style={{ marginBottom: "8px" }}>{tSettings("View Mode")}</div>
-            <div style={{ display: "flex", gap: "8px" }}>
+          <div className="settings-view-mode">
+            <div className="settings-view-mode__label">
+              {tSettings("View Mode")}
+            </div>
+            <div className="settings-view-mode__buttons">
               <Button
                 variant={viewMode === "grid" ? "filled" : "outlined"}
                 onClick={() => onViewModeChange("grid")}
@@ -127,17 +152,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             </div>
           </div>
 
-          {/* Icon Size */}
-          <div style={{ marginBottom: "16px" }}>
-            <div
-              style={{
-                marginBottom: "8px",
-                display: "flex",
-                justifyContent: "space-between",
-              }}
-            >
+          <div className="settings-icon-size">
+            <div className="settings-icon-size__header">
               <span>{tSettings("Icon Size")}</span>
-              <span>{iconSize}px</span>
+              <span className="settings-icon-size__value">{iconSize}px</span>
             </div>
             <Slider
               min={16}
@@ -149,68 +167,50 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             />
           </div>
 
-          {/* Filled Icons */}
-          <div
-            onClick={onToggleFilledIcons}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              cursor: "pointer",
-              userSelect: "none",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+          <div className="settings-row" onClick={onToggleFilledIcons}>
+            <div className="settings-row__start">
               <Icon name="favorite" filled={filledIcons} />
-              <div style={{ fontSize: "16px" }}>
+              <div className="settings-row__label">
                 {tSettings("Filled Icons")}
               </div>
             </div>
-            <Switch
-              selected={filledIcons}
-              onClick={onToggleFilledIcons}
-            />
+            <Switch selected={filledIcons} onClick={onToggleFilledIcons} />
           </div>
         </div>
 
-        <div
-          style={{
-            padding: "12px 0",
-            borderTop: "1px solid var(--md-sys-color-outline-variant)",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "14px",
-              color: "var(--md-sys-color-primary)",
-              fontWeight: 500,
-              marginBottom: "8px",
-            }}
-          >
+        <Divider />
+
+        {/* Behavior */}
+        <div className="settings-section">
+          <div className="settings-section-header">
+            {tSettings("Behavior")}
+          </div>
+
+          <div className="settings-row" onClick={onToggleMarquee}>
+            <div className="settings-row__start">
+              <Icon name="play_arrow" />
+              <div className="settings-row__label">
+                {tSettings("Marquee text")}
+              </div>
+            </div>
+            <Switch selected={marqueeEnabled} onClick={onToggleMarquee} />
+          </div>
+        </div>
+
+        <Divider />
+
+        {/* Customization */}
+        <div className="settings-section">
+          <div className="settings-section-header">
             {tSettings("Customization")}
           </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <div>
-              <div style={{ fontSize: "16px" }}>{tSettings("Custom CSS")}</div>
+          <div className="settings-css-row">
+            <div className="settings-css-row__info">
+              <div className="settings-row__label">
+                {tSettings("Custom CSS")}
+              </div>
               {customCssPath && (
-                <div
-                  style={{
-                    fontSize: "12px",
-                    color: "var(--md-sys-color-on-surface-variant)",
-                    maxWidth: "200px",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {customCssPath}
-                </div>
+                <div className="settings-css-row__path">{customCssPath}</div>
               )}
             </div>
             <Button variant="outlined" onClick={onImportCss}>

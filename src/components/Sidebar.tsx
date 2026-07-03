@@ -15,6 +15,7 @@ interface SidebarProps {
   ) => Promise<{ success: boolean; mountpoint?: string; error?: string }>;
   onDeviceUnmount?: (devicePath: string) => void;
   onDeviceEject?: (devicePath: string) => void;
+  marqueeEnabled: boolean;
 }
 
 const isExternalDevice = (d: AllDevice): boolean =>
@@ -41,6 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeviceMount,
   onDeviceUnmount,
   onDeviceEject,
+  marqueeEnabled,
 }) => {
   const [places, setPlaces] = useState<
     Array<{ name: string; path: string; icon: string }>
@@ -129,7 +131,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               filled={currentPath === "app://dashboard"}
             />
             <span className="sidebar-label">
-              <MarqueeText>{t("sidebar.dashboard")}</MarqueeText>
+              <MarqueeText enabled={marqueeEnabled}>{t("sidebar.dashboard")}</MarqueeText>
             </span>
           </button>
           {places.map((place) => (
@@ -144,7 +146,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 filled={currentPath.startsWith(place.path)}
               />
               <span className="sidebar-label">
-                <MarqueeText>{getPlaceLabel(place.name)}</MarqueeText>
+                <MarqueeText enabled={marqueeEnabled}>{getPlaceLabel(place.name)}</MarqueeText>
               </span>
             </button>
           ))}
@@ -165,7 +167,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     >
                       <Icon name={getDiskIcon(disk)} className="sidebar-icon" />
                       <span className="sidebar-label">
-                        <MarqueeText>
+                        <MarqueeText enabled={marqueeEnabled}>
                           {disk.model || disk.label || disk.name}
                         </MarqueeText>
                       </span>
@@ -207,15 +209,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         />
                         <div className="sidebar-partition-info">
                           <span className="sidebar-label">
-                            <MarqueeText>{part.label || part.name}</MarqueeText>
+                            <MarqueeText enabled={marqueeEnabled}>{part.label || part.name}</MarqueeText>
                           </span>
                           {part.mounted && part.mountpoint ? (
                             <span className="sidebar-subtitle">
-                              <MarqueeText>{part.mountpoint}</MarqueeText>
+                              <MarqueeText enabled={marqueeEnabled}>{part.mountpoint}</MarqueeText>
                             </span>
                           ) : (
                             <span className="sidebar-subtitle">
-                              <MarqueeText>{`${part.fstype ? `${part.fstype} · ` : ""}${part.size}`}</MarqueeText>
+                              <MarqueeText enabled={marqueeEnabled}>{`${part.fstype ? `${part.fstype} · ` : ""}${part.size}`}</MarqueeText>
                             </span>
                           )}
                         </div>
@@ -256,15 +258,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <Icon name={getDeviceIcon(disk)} className="sidebar-icon" />
                     <div className="sidebar-partition-info">
                       <span className="sidebar-label">
-                        <MarqueeText>{disk.label || disk.name}</MarqueeText>
+                        <MarqueeText enabled={marqueeEnabled}>{disk.label || disk.name}</MarqueeText>
                       </span>
                       {disk.mounted && disk.mountpoint ? (
                         <span className="sidebar-subtitle">
-                          <MarqueeText>{disk.mountpoint}</MarqueeText>
+                          <MarqueeText enabled={marqueeEnabled}>{disk.mountpoint}</MarqueeText>
                         </span>
                       ) : (
                         <span className="sidebar-subtitle">
-                          <MarqueeText>{`${disk.fstype ? `${disk.fstype} · ` : ""}${disk.size}`}</MarqueeText>
+                          <MarqueeText enabled={marqueeEnabled}>{`${disk.fstype ? `${disk.fstype} · ` : ""}${disk.size}`}</MarqueeText>
                         </span>
                       )}
                     </div>

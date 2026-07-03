@@ -106,6 +106,13 @@ const zhCN = {
   'settings.customization': '个性化',
   'settings.custom_css': '自定义 CSS',
   'settings.import_css': '导入 CSS',
+  'settings.behavior': '行为',
+  'settings.language': '语言',
+  'settings.language_auto': '自动',
+  'settings.language_en': 'English',
+  'settings.language_zh': '中文',
+  'settings.language_system': '跟随系统',
+  'settings.marquee_text': '滚动文本',
 
   // ── Toast 消息 ──
   'toast.copied_items': (n: number) => `已复制 ${n} 个项目`,
