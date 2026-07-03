@@ -188,7 +188,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
               style={{ fontWeight: i === parts.length - 1 ? 600 : 400 }}
               title={isSymlinkDir && symlinkTarget ? t('symlink.tooltip', symlinkTarget) : undefined}
             >
-              {p}{isSymlinkDir ? '↗' : ''}
+              {p}
             </Button>
           </React.Fragment>
         );

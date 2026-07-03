@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import type { IFile } from "../types/files";
 import { Icon } from "./Icon";
+import { MarqueeText } from "./MarqueeText";
 import "./FileList.css";
 import { getSemanticGroup } from "../utils/fileUtils";
 import { AutoSizer } from "react-virtualized-auto-sizer";
@@ -24,7 +25,9 @@ interface FileListProps {
     operation: "move" | "copy",
   ) => void;
   onSetSelected?: (paths: Set<string>) => void;
-  onSelectionModeChange?: (mode: "replace" | "union" | "intersection" | "difference" | null) => void;
+  onSelectionModeChange?: (
+    mode: "replace" | "union" | "intersection" | "difference" | null,
+  ) => void;
   onHoverFile?: (file: IFile | null) => void;
   viewMode: "grid" | "list";
   iconSize: number;
@@ -40,13 +43,13 @@ const AUTO_SCROLL_ZONE = 60;
 const AUTO_SCROLL_SPEED = 8;
 
 const GROUP_LABELS: Record<string, string> = {
-  Folders: t('group.folders'),
-  Media: t('group.media'),
-  Documents: t('group.documents'),
-  Code: t('group.code'),
-  Archives: t('group.archives'),
-  Executables: t('group.executables'),
-  Others: t('group.others'),
+  Folders: t("group.folders"),
+  Media: t("group.media"),
+  Documents: t("group.documents"),
+  Code: t("group.code"),
+  Archives: t("group.archives"),
+  Executables: t("group.executables"),
+  Others: t("group.others"),
 };
 
 function tGroup(groupName: string): string {
@@ -55,7 +58,7 @@ function tGroup(groupName: string): string {
 
 function getFileTitle(file: IFile): string {
   if (file.isMountpoint && file.mountFstype) {
-    if (file.mountSource && file.mountSource.startsWith('/dev/')) {
+    if (file.mountSource && file.mountSource.startsWith("/dev/")) {
       return `${file.name}(${file.mountFstype}) \u2192 ${file.mountSource}`;
     }
     return `${file.name}(${file.mountFstype})`;
@@ -63,11 +66,11 @@ function getFileTitle(file: IFile): string {
   if (file.symlinkTarget && file.mountFstype) {
     return `${file.name}(${file.mountFstype}) \u2192 ${file.symlinkTarget}`;
   }
-  if (file.mime === 'inode/blockdevice' && file.mountFstype) {
+  if (file.mime === "inode/blockdevice" && file.mountFstype) {
     return `${file.name}(${file.mountFstype})`;
   }
   if (file.symlinkTarget) {
-    if (file.mime === 'inode/symlink') {
+    if (file.mime === "inode/symlink") {
       return `${file.name} \u2192 ${file.symlinkTarget}\uFF08\u635F\u574F\uFF09`;
     }
     return `${file.name} \u2192 ${file.symlinkTarget}`;
@@ -91,140 +94,140 @@ function getFileIconFromMime(
   if (mime.startsWith("font/")) return "font_download";
 
   switch (mime) {
-  // ── Text — markup ──
-  case "text/markdown":
-    return "markdown";
-  case "text/x-tex":
-    return "article";
+    // ── Text — markup ──
+    case "text/markdown":
+      return "markdown";
+    case "text/x-tex":
+      return "article";
 
-  // ── Text — code (specific languages) ──
-  case "text/javascript":
-    return "javascript";
-  case "text/html":
-    return "html";
-  case "text/css":
-  case "text/x-scss":
-    return "css";
-  case "text/x-shell":
-    return "terminal";
-  case "text/x-sql":
-    return "database";
+    // ── Text — code (specific languages) ──
+    case "text/javascript":
+      return "javascript";
+    case "text/html":
+      return "html";
+    case "text/css":
+    case "text/x-scss":
+      return "css";
+    case "text/x-shell":
+      return "terminal";
+    case "text/x-sql":
+      return "database";
 
-  // ── Text — data/config ──
-  case "text/x-yaml":
-  case "text/x-toml":
-    return "data_object";
+    // ── Text — data/config ──
+    case "text/x-yaml":
+    case "text/x-toml":
+      return "data_object";
 
-  // ── Text — table data ──
-  case "text/csv":
-  case "text/tab-separated-values":
-    return "csv";
+    // ── Text — table data ──
+    case "text/csv":
+    case "text/tab-separated-values":
+      return "csv";
 
-  // ── Text — plain ──
-  case "text/plain":
-    return "article";
+    // ── Text — plain ──
+    case "text/plain":
+      return "article";
 
-  // ── Images (overrides) ──
-  case "image/vnd.djvu":
-    return "book_2";
+    // ── Images (overrides) ──
+    case "image/vnd.djvu":
+      return "book_2";
 
-  // ── Documents ──
-  case "application/pdf":
-    return "picture_as_pdf";
-  case "application/msword":
-  case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-  case "application/vnd.oasis.opendocument.text":
-  case "application/vnd.oasis.opendocument.formula":
-    return "description";
-  case "application/vnd.ms-excel":
-  case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-  case "application/vnd.oasis.opendocument.spreadsheet":
-    return "table";
-  case "application/vnd.ms-powerpoint":
-  case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-  case "application/vnd.oasis.opendocument.presentation":
-    return "slideshow";
-  case "application/vnd.oasis.opendocument.graphics":
-    return "stylus";
-  case "application/rtf":
-    return "article";
+    // ── Documents ──
+    case "application/pdf":
+      return "picture_as_pdf";
+    case "application/msword":
+    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    case "application/vnd.oasis.opendocument.text":
+    case "application/vnd.oasis.opendocument.formula":
+      return "description";
+    case "application/vnd.ms-excel":
+    case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+    case "application/vnd.oasis.opendocument.spreadsheet":
+      return "table";
+    case "application/vnd.ms-powerpoint":
+    case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+    case "application/vnd.oasis.opendocument.presentation":
+      return "slideshow";
+    case "application/vnd.oasis.opendocument.graphics":
+      return "stylus";
+    case "application/rtf":
+      return "article";
 
-  // ── Ebooks ──
-  case "application/epub+zip":
-  case "application/x-mobipocket-ebook":
-    return "import_contacts";
+    // ── Ebooks ──
+    case "application/epub+zip":
+    case "application/x-mobipocket-ebook":
+      return "import_contacts";
 
-  // ── Archives ──
-  case "application/x-iso9660-image":
-    return "album";
-  case "application/x-rpm":
-  case "application/vnd.debian.binary-package":
-    return "package_2";
-  case "application/zip":
-  case "application/gzip":
-  case "application/x-bzip2":
-  case "application/x-xz":
-  case "application/x-7z-compressed":
-  case "application/vnd.rar":
-  case "application/x-rar-compressed":
-  case "application/x-tar":
-  case "application/x-lzip":
-  case "application/x-lzop":
-  case "application/x-lz4":
-  case "application/zstd":
-  case "application/vnd.ms-cab-compressed":
-  case "application/x-arj":
-  case "application/x-lzh":
-    return "folder_zip";
+    // ── Archives ──
+    case "application/x-iso9660-image":
+      return "album";
+    case "application/x-rpm":
+    case "application/vnd.debian.binary-package":
+      return "package_2";
+    case "application/zip":
+    case "application/gzip":
+    case "application/x-bzip2":
+    case "application/x-xz":
+    case "application/x-7z-compressed":
+    case "application/vnd.rar":
+    case "application/x-rar-compressed":
+    case "application/x-tar":
+    case "application/x-lzip":
+    case "application/x-lzop":
+    case "application/x-lz4":
+    case "application/zstd":
+    case "application/vnd.ms-cab-compressed":
+    case "application/x-arj":
+    case "application/x-lzh":
+      return "folder_zip";
 
-  // ── Executables ──
-  case "application/x-msdownload":
-    return "deployed_code";
-  case "application/java-archive":
-    return "deployed_code";
-  case "application/vnd.android.package-archive":
-    return "android";
-  case "application/wasm":
-  case "application/x-python-bytecode":
-  case "application/x-java-bytecode":
-    return "code";
-  case "application/x-elf":
-  case "application/x-executable":
-  case "application/x-sharedlib":
-    return "terminal";
+    // ── Executables ──
+    case "application/x-msdownload":
+      return "deployed_code";
+    case "application/java-archive":
+      return "deployed_code";
+    case "application/vnd.android.package-archive":
+      return "android";
+    case "application/wasm":
+    case "application/x-python-bytecode":
+    case "application/x-java-bytecode":
+      return "code";
+    case "application/x-elf":
+    case "application/x-executable":
+    case "application/x-sharedlib":
+      return "terminal";
 
-  // ── Data ──
-  case "application/json":
-    return "file_json";
-  case "application/xml":
-    return "data_object";
-  case "application/graphql":
-    return "data_object";
-  case "application/x-sqlite3":
-    return "database";
-  case "application/x-pem-file":
-  case "application/x-x509-ca-cert":
-    return "key";
-  case "application/x-bittorrent":
-    return "cloud_download";
+    // ── Data ──
+    case "application/json":
+      return "file_json";
+    case "application/xml":
+      return "data_object";
+    case "application/graphql":
+      return "data_object";
+    case "application/x-sqlite3":
+      return "database";
+    case "application/x-pem-file":
+    case "application/x-x509-ca-cert":
+      return "key";
+    case "application/x-bittorrent":
+      return "cloud_download";
 
-  // ── Fonts (non-font/* MIMEs) ──
-  case "application/vnd.ms-fontobject":
-    return "font_download";
+    // ── Fonts (non-font/* MIMEs) ──
+    case "application/vnd.ms-fontobject":
+      return "font_download";
   }
 
   const cat = mime.split("/")[0];
   switch (cat) {
-  case "image":
-    return "image";
-  case "audio":
-    return "audio_file";
-  case "video":
-    return "movie";
-  case "text":
-    return "code";
-  case "inode":
-    return "folder";
+    case "image":
+      return "image";
+    case "audio":
+      return "audio_file";
+    case "video":
+      return "movie";
+    case "text":
+      return "code";
+    case "inode":
+      return "folder";
   }
 
   return "insert_drive_file";
@@ -233,7 +236,13 @@ function getFileIconFromMime(
 function formatSize(bytes: number) {
   if (bytes === 0) return t("size.zero");
   const k = 1024;
-  const sizes = [t("size.b"), t("size.kb"), t("size.mb"), t("size.gb"), t("size.tb")];
+  const sizes = [
+    t("size.b"),
+    t("size.kb"),
+    t("size.mb"),
+    t("size.gb"),
+    t("size.tb"),
+  ];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
@@ -436,7 +445,9 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
     const hasFailed = data.failedImages.has(file.path);
     const isRenaming = data.renamingPath === file.path;
     const isDragOver = file.isDirectory && data.dragOverPath === file.path;
-    const isBrokenSymlink = file.symlinkTarget ? file.mime === 'inode/symlink' : false;
+    const isBrokenSymlink = file.symlinkTarget
+      ? file.mime === "inode/symlink"
+      : false;
     const isSymlink = !!file.symlinkTarget;
 
     const sp = listSpacing(data.iconSize);
@@ -445,7 +456,6 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
       <div style={style}>
         <div
           className={`file-list-item ${isSelected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
-          title={getFileTitle(file)}
           style={{
             display: "flex",
             alignItems: "center",
@@ -511,16 +521,41 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
               />
             )}
             {(!isImg || hasFailed) && (
-              <span style={{ position: 'relative', display: 'inline-flex' }}>
+              <span style={{ position: "relative", display: "inline-flex" }}>
                 <Icon
-                  name={isBrokenSymlink ? 'link_off' : getFileIconFromMime(file.mime, file.isDirectory)}
+                  name={
+                    isBrokenSymlink
+                      ? "link_off"
+                      : getFileIconFromMime(file.mime, file.isDirectory)
+                  }
                   filled={data.filledIcons}
-                  className={file.isDirectory ? "folder-icon" : isBrokenSymlink ? "doc-icon broken-symlink-icon" : "doc-icon"}
-                  style={{ fontSize: `${data.iconSize}px`, ...(isBrokenSymlink ? { color: '#ef5350' } : {}) }}
+                  className={
+                    file.isDirectory
+                      ? "folder-icon"
+                      : isBrokenSymlink
+                        ? "doc-icon broken-symlink-icon"
+                        : "doc-icon"
+                  }
+                  style={{
+                    fontSize: `${data.iconSize}px`,
+                    ...(isBrokenSymlink ? { color: "#ef5350" } : {}),
+                  }}
                 />
-                {file.isMountpoint && file.isDirectory && file.mountSource?.startsWith('/dev/') && (
-                  <Icon name="hard_drive" className="mountpoint-badge" style={{ position: 'absolute', bottom: '-1px', right: '-2px', fontSize: `${Math.max(10, data.iconSize * 0.45)}px`, color: 'var(--md-sys-color-primary)' }} />
-                )}
+                {file.isMountpoint &&
+                  file.isDirectory &&
+                  file.mountSource?.startsWith("/dev/") && (
+                    <Icon
+                      name="hard_drive"
+                      className="mountpoint-badge"
+                      style={{
+                        position: "absolute",
+                        bottom: "-1px",
+                        right: "-2px",
+                        fontSize: `${Math.max(10, data.iconSize * 0.45)}px`,
+                        color: "var(--md-sys-color-primary)",
+                      }}
+                    />
+                  )}
               </span>
             )}
           </span>
@@ -547,13 +582,20 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
             />
           ) : (
             <span
-              className={`file-name${isSymlink ? ' symlink' : ''}`}
+              className={`file-name${isSymlink ? " symlink" : ""}`}
               style={{
                 flex: 1,
                 minWidth: 0,
+                marginRight: -sp.paddingH,
               }}
             >
-              <span className="file-name-text">{file.name}</span>
+              <MarqueeText
+                className="file-name-text"
+                style={{ paddingRight: sp.paddingH }}
+                title={getFileTitle(file)}
+              >
+                {file.name}
+              </MarqueeText>
             </span>
           )}
           <span
@@ -574,7 +616,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
         ...style,
         display: "grid",
         gridTemplateColumns: `repeat(${data.columns}, 1fr)`,
-        gap: "16px",
+        gap: "8px",
         padding: "4px 10px",
         boxSizing: "border-box",
         overflow: "hidden",
@@ -586,14 +628,15 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
         const hasFailed = data.failedImages.has(file.path);
         const isRenaming = data.renamingPath === file.path;
         const isDragOver = file.isDirectory && data.dragOverPath === file.path;
-        const isBrokenSymlink = file.symlinkTarget ? file.mime === 'inode/symlink' : false;
+        const isBrokenSymlink = file.symlinkTarget
+          ? file.mime === "inode/symlink"
+          : false;
         const isSymlink = !!file.symlinkTarget;
 
         return (
           <div
             key={file.path}
             className={`file-list-item file-grid-item ${isSelected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
-            title={getFileTitle(file)}
             onMouseEnter={() => data.onHoverFile?.(file)}
             onMouseLeave={() => data.onHoverFile?.(null)}
             onMouseDown={(e) => {
@@ -628,11 +671,12 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              padding: "4px",
+              padding: "4px 0",
               cursor: "pointer",
               borderRadius: "8px",
               overflow: "hidden",
               width: "100%",
+              boxSizing: "border-box",
               height: "auto",
               minHeight: "auto",
             }}
@@ -662,16 +706,40 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                 />
               )}
               {(!isImg || hasFailed) && (
-                <span style={{ position: 'relative', display: 'inline-flex' }}>
+                <span style={{ position: "relative", display: "inline-flex" }}>
                   <Icon
-                    name={isBrokenSymlink ? 'link_off' : getFileIconFromMime(file.mime, file.isDirectory)}
+                    name={
+                      isBrokenSymlink
+                        ? "link_off"
+                        : getFileIconFromMime(file.mime, file.isDirectory)
+                    }
                     filled={data.filledIcons}
-                    className={file.isDirectory ? "folder-icon" : isBrokenSymlink ? "doc-icon broken-symlink-icon" : "doc-icon"}
-                    style={{ fontSize: `${data.iconSize}px`, ...(isBrokenSymlink ? { color: '#ef5350' } : {}) }}
+                    className={
+                      file.isDirectory
+                        ? "folder-icon"
+                        : isBrokenSymlink
+                          ? "doc-icon broken-symlink-icon"
+                          : "doc-icon"
+                    }
+                    style={{
+                      fontSize: `${data.iconSize}px`,
+                      ...(isBrokenSymlink ? { color: "#ef5350" } : {}),
+                    }}
                   />
-                {file.isMountpoint && file.mountSource?.startsWith('/dev/') && (
-                    <Icon name="hard_drive" className="mountpoint-badge" style={{ position: 'absolute', bottom: '-1px', right: '-2px', fontSize: `${Math.max(10, data.iconSize * 0.45)}px`, color: 'var(--md-sys-color-primary)' }} />
-                  )}
+                  {file.isMountpoint &&
+                    file.mountSource?.startsWith("/dev/") && (
+                      <Icon
+                        name="hard_drive"
+                        className="mountpoint-badge"
+                        style={{
+                          position: "absolute",
+                          bottom: "-1px",
+                          right: "-2px",
+                          fontSize: `${Math.max(10, data.iconSize * 0.45)}px`,
+                          color: "var(--md-sys-color-primary)",
+                        }}
+                      />
+                    )}
                 </span>
               )}
             </span>
@@ -705,7 +773,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
               />
             ) : (
               <span
-                className={`file-name${isSymlink ? ' symlink' : ''}`}
+                className={`file-name${isSymlink ? " symlink" : ""}`}
                 style={{
                   textAlign: "center",
                   fontSize: "12px",
@@ -715,7 +783,13 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
                   display: "block",
                 }}
               >
-                <span className="file-name-text">{file.name}</span>
+                <MarqueeText
+                  className="file-name-text"
+                  style={{ paddingLeft: 4, paddingRight: 4 }}
+                  title={getFileTitle(file)}
+                >
+                  {file.name}
+                </MarqueeText>
               </span>
             )}
           </div>
@@ -828,11 +902,11 @@ export const FileList: React.FC<FileListProps> = ({
   useEffect(() => {
     if (!scrollToFileName) return;
 
-    const scrollKey = scrollToFileName + '|' + (currentPath || '');
+    const scrollKey = scrollToFileName + "|" + (currentPath || "");
     if (scrollKey === prevScrollTargetRef.current) return;
     prevScrollTargetRef.current = scrollKey;
 
-    const idx = files.findIndex(f => f.name === scrollToFileName);
+    const idx = files.findIndex((f) => f.name === scrollToFileName);
     if (idx === -1) return;
 
     const listEl = listImperativeRef.current;
@@ -840,16 +914,17 @@ export const FileList: React.FC<FileListProps> = ({
 
     // Compute flattened index using the same logic as the render
     const containerWidth = listEl.element?.parentElement?.clientWidth ?? 600;
-    const columns = viewMode === 'grid'
-      ? Math.max(1, Math.floor((containerWidth + 8) / (iconSize + 40)))
-      : 0;
+    const columns =
+      viewMode === "grid"
+        ? Math.max(1, Math.floor((containerWidth + 8) / (iconSize + 40)))
+        : 0;
     const items = flattenItems(files, groupingEnabled, viewMode, columns);
     let flattenedIdx = -1;
     let foundFileIdx = 0;
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      if (item.kind === 'file' || item.kind === 'grid-row') {
-        const fileList = item.kind === 'file' ? [item.file] : item.files;
+      if (item.kind === "file" || item.kind === "grid-row") {
+        const fileList = item.kind === "file" ? [item.file] : item.files;
         for (let fi = 0; fi < fileList.length; fi++) {
           if (foundFileIdx === idx) {
             flattenedIdx = i;
@@ -862,7 +937,7 @@ export const FileList: React.FC<FileListProps> = ({
     }
 
     if (flattenedIdx !== -1) {
-      listEl.scrollToRow({ index: flattenedIdx, align: 'smart' });
+      listEl.scrollToRow({ index: flattenedIdx, align: "smart" });
     }
 
     const targetFile = files[idx];
@@ -870,7 +945,16 @@ export const FileList: React.FC<FileListProps> = ({
       onSelect(targetFile, false, false);
       onScrollToComplete?.();
     }
-  }, [scrollToFileName, files, viewMode, iconSize, groupingEnabled, onSelect, currentPath, onScrollToComplete]);
+  }, [
+    scrollToFileName,
+    files,
+    viewMode,
+    iconSize,
+    groupingEnabled,
+    onSelect,
+    currentPath,
+    onScrollToComplete,
+  ]);
 
   const handleImageError = useCallback((path: string) => {
     setFailedImages((prev) => {
@@ -958,7 +1042,9 @@ export const FileList: React.FC<FileListProps> = ({
 
       // HTML5 DnD for internal drops
       e.dataTransfer.effectAllowed = "copyMove";
-      const uris = filesToDrag.map((f) => "file://" + encodeURI(f.path)).join("\r\n");
+      const uris = filesToDrag
+        .map((f) => "file://" + encodeURI(f.path))
+        .join("\r\n");
       e.dataTransfer.setData("text/uri-list", uris);
       e.dataTransfer.setData("text/plain", uris);
     },
@@ -1112,9 +1198,12 @@ export const FileList: React.FC<FileListProps> = ({
     const prevSet = new Set(selectedFiles);
 
     const mode: "replace" | "union" | "intersection" | "difference" =
-      ctrlHeld && shiftHeld ? "difference"
-        : ctrlHeld ? "union"
-          : shiftHeld ? "intersection"
+      ctrlHeld && shiftHeld
+        ? "difference"
+        : ctrlHeld
+          ? "union"
+          : shiftHeld
+            ? "intersection"
             : "replace";
     onSelectionModeChange?.(mode);
 

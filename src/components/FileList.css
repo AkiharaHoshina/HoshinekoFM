@@ -118,12 +118,8 @@
     min-width: 0;
 }
 
-.file-name.symlink::after {
-    content: "↗";
-    font-size: 10px;
-    margin-left: 2px;
-    opacity: 0.6;
-    flex-shrink: 0;
+.file-name.symlink {
+    font-style: italic;
 }
 
 .file-size {
@@ -172,13 +168,6 @@
     color: var(--md-sys-color-primary);
     transform: scale(1.1);
     transition: transform 0.15s ease;
-}
-
-.file-name.symlink::after {
-    content: "↗";
-    font-size: 10px;
-    margin-left: 2px;
-    opacity: 0.6;
 }
 
 .broken-symlink-icon {

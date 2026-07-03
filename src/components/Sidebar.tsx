@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Icon } from "./Icon";
 import { IconButton } from "./IconButton";
+import { MarqueeText } from "./MarqueeText";
 import "./Sidebar.css";
 import { t } from "../i18n";
 import type { AllDevice } from "../types/files";
@@ -125,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className="sidebar-icon"
               filled={currentPath === "app://dashboard"}
             />
-            <span className="sidebar-label">{t("sidebar.dashboard")}</span>
+            <span className="sidebar-label"><MarqueeText>{t("sidebar.dashboard")}</MarqueeText></span>
           </button>
           {places.map((place) => (
             <button
@@ -138,7 +139,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="sidebar-icon"
                 filled={currentPath.startsWith(place.path)}
               />
-              <span className="sidebar-label">{getPlaceLabel(place.name)}</span>
+              <span className="sidebar-label"><MarqueeText>{getPlaceLabel(place.name)}</MarqueeText></span>
             </button>
           ))}
         </div>
@@ -158,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     >
                       <Icon name={getDiskIcon(disk)} className="sidebar-icon" />
                       <span className="sidebar-label">
-                        {disk.model || disk.label || disk.name}
+                        <MarqueeText>{disk.model || disk.label || disk.name}</MarqueeText>
                       </span>
                       <div style={{ flex: 1 }} />
                       {isExternalDevice(disk) &&
@@ -198,16 +199,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         />
                         <div className="sidebar-partition-info">
                           <span className="sidebar-label">
-                            {part.label || part.name}
+                            <MarqueeText>{part.label || part.name}</MarqueeText>
                           </span>
                           {part.mounted && part.mountpoint ? (
                             <span className="sidebar-subtitle">
-                              {part.mountpoint}
+                              <MarqueeText>{part.mountpoint}</MarqueeText>
                             </span>
                           ) : (
                             <span className="sidebar-subtitle">
-                              {part.fstype ? `${part.fstype} · ` : ""}
-                              {part.size}
+                              <MarqueeText>{`${part.fstype ? `${part.fstype} · ` : ""}${part.size}`}</MarqueeText>
                             </span>
                           )}
                         </div>
@@ -248,16 +248,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <Icon name={getDeviceIcon(disk)} className="sidebar-icon" />
                     <div className="sidebar-partition-info">
                       <span className="sidebar-label">
-                        {disk.label || disk.name}
+                        <MarqueeText>{disk.label || disk.name}</MarqueeText>
                       </span>
                       {disk.mounted && disk.mountpoint ? (
                         <span className="sidebar-subtitle">
-                          {disk.mountpoint}
+                          <MarqueeText>{disk.mountpoint}</MarqueeText>
                         </span>
                       ) : (
                         <span className="sidebar-subtitle">
-                          {disk.fstype ? `${disk.fstype} · ` : ""}
-                          {disk.size}
+                          <MarqueeText>{`${disk.fstype ? `${disk.fstype} · ` : ""}${disk.size}`}</MarqueeText>
                         </span>
                       )}
                     </div>

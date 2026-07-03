@@ -1,0 +1,32 @@
+.marquee-container {
+  overflow: hidden;
+  min-width: 0;
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.marquee-container:not(.scrolling) {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marquee-measure {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
+}
+
+.marquee-inner {
+  display: inline-flex;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.marquee-container:not(.scrolling) .marquee-inner {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.marquee-clone {
+  margin-left: 2em;
+}
