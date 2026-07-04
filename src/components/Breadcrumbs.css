@@ -1,9 +1,10 @@
 md-text-button.breadcrumb-item,
 md-icon-button.breadcrumb-root {
-    --md-icon-button-size: 32px;
+    --md-icon-button-size: 36px;
 }
 
 md-text-button.breadcrumb-item {
+    --md-text-button-container-height: 28px;
     height: auto;
     min-width: 0;
     flex-shrink: 0;
@@ -18,9 +19,7 @@ md-text-button.breadcrumb-item {
 
 md-icon-button.breadcrumb-root {
     flex-shrink: 0;
-    width: auto;
-    height: auto;
-    padding: 4px 4px;
+    padding: 0;
     border-radius: 8px;
     color: var(--md-sys-color-on-surface);
 }
