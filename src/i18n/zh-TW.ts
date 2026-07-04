@@ -236,6 +236,17 @@ const zhTW = {
   'breadcrumbs.root': '根目錄',
   'breadcrumbs.home': (user: string, dir: string) => `${user} 的家目錄\n${dir}`,
   'breadcrumbs.go_to_root': '轉到根目錄',
+  'breadcrumbs.root_title': (mp: string) => `根目錄\n${mp}`,
+  'breadcrumbs.dev': '設備',
+  'breadcrumbs.dev_title': (mp: string) => `設備目錄\n${mp}`,
+  'breadcrumbs.devpts': '虛擬終端',
+  'breadcrumbs.devpts_title': (mp: string) => `虛擬終端目錄\n${mp}`,
+  'breadcrumbs.proc': '核心資訊',
+  'breadcrumbs.proc_title': (mp: string) => `核心資訊目錄\n${mp}`,
+  'breadcrumbs.sysfs': '核心物件',
+  'breadcrumbs.sysfs_title': (mp: string) => `核心物件目錄\n${mp}`,
+  'breadcrumbs.tmpfs': '臨時目錄',
+  'breadcrumbs.tmpfs_title': (mp: string) => `臨時目錄\n${mp}`,
 
   // ── Tab 標題 ──
   'tab.dashboard': '儀表板',

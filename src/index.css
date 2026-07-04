@@ -18,6 +18,8 @@
 @import '@fontsource/roboto/800-italic.css';
 @import '@fontsource/roboto/900.css';
 @import '@fontsource/roboto/900-italic.css';
+@import '@fontsource/noto-sans-sc/chinese-simplified-400.css';
+@import '@fontsource/noto-sans-sc/chinese-simplified-700.css';
 
 @keyframes fadeIn {
   from {
@@ -41,10 +43,10 @@ md-icon {
 }
 
 :root {
-  --md-ref-typeface-plain: 'Roboto', sans-serif;
-  --md-ref-typeface-brand: 'Roboto', sans-serif;
+  --md-ref-typeface-plain: 'Roboto', 'Noto Sans SC', sans-serif;
+  --md-ref-typeface-brand: 'Roboto', 'Noto Sans SC', sans-serif;
 
-  font-family: 'Roboto', 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Roboto', 'Noto Sans SC', 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 

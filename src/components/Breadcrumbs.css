@@ -8,7 +8,7 @@ md-text-button.breadcrumb-item {
     height: auto;
     min-width: 0;
     flex-shrink: 0;
-    padding: 0px 0px;
+    padding: 0px 4px;
     border-radius: 8px;
     color: var(--md-sys-color-on-surface);
     font-weight: inherit;
@@ -29,10 +29,15 @@ md-suggestion-chip.breadcrumb-chip {
     --md-suggestion-chip-with-leading-icon-leading-space: 4px;
     --md-suggestion-chip-trailing-space: 8px;
     --md-suggestion-chip-icon-label-space: 2px;
-    padding-left: 6px;
+    --md-suggestion-chip-label-text-weight: 400;
+    padding-left: 0px;
     border-radius: 14px;
     flex-shrink: 0;
     color: var(--md-sys-color-on-surface);
+}
+
+md-suggestion-chip.breadcrumb-chip:first-child {
+    padding-left: 6px;
 }
 
 .breadcrumb-separator {
@@ -62,3 +67,14 @@ md-suggestion-chip.breadcrumb-chip {
 .breadcrumb-item.symlink {
     font-style: italic;
 }
+
+.breadcrumb-container {
+    display: flex;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+

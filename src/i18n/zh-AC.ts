@@ -238,6 +238,17 @@ const zhAC = {
   'breadcrumbs.root': '根目录',
   'breadcrumbs.home': (user: string, dir: string) => `${user} 的家目录\n${dir}`,
   'breadcrumbs.go_to_root': '转到根目录',
+  'breadcrumbs.root_title': (mp: string) => `根目录\n${mp}`,
+  'breadcrumbs.dev': '设备',
+  'breadcrumbs.dev_title': (mp: string) => `设备目录\n${mp}`,
+  'breadcrumbs.devpts': '虚拟终端',
+  'breadcrumbs.devpts_title': (mp: string) => `虚拟终端目录\n${mp}`,
+  'breadcrumbs.proc': '内核信息',
+  'breadcrumbs.proc_title': (mp: string) => `内核信息目录\n${mp}`,
+  'breadcrumbs.sysfs': '内核对象',
+  'breadcrumbs.sysfs_title': (mp: string) => `内核对象目录\n${mp}`,
+  'breadcrumbs.tmpfs': '临时目录',
+  'breadcrumbs.tmpfs_title': (mp: string) => `临时目录\n${mp}`,
 
   // ── Tab 标题 ──
   'tab.dashboard': '仪表板',

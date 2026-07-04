@@ -246,6 +246,17 @@ const enUS = {
   'breadcrumbs.root': 'Root',
   'breadcrumbs.home': (user: string, dir: string) => `${user}'s Home\n${dir}`,
   'breadcrumbs.go_to_root': 'Go to root',
+  'breadcrumbs.root_title': (mp: string) => `Root Directory\n${mp}`,
+  'breadcrumbs.dev': 'Devices',
+  'breadcrumbs.dev_title': (mp: string) => `Device Directory\n${mp}`,
+  'breadcrumbs.devpts': 'Virtual Terminals',
+  'breadcrumbs.devpts_title': (mp: string) => `Virtual Terminal Directory\n${mp}`,
+  'breadcrumbs.proc': 'Kernel Info',
+  'breadcrumbs.proc_title': (mp: string) => `Kernel Information Directory\n${mp}`,
+  'breadcrumbs.sysfs': 'Kernel Objects',
+  'breadcrumbs.sysfs_title': (mp: string) => `Kernel Objects Directory\n${mp}`,
+  'breadcrumbs.tmpfs': 'Temporary',
+  'breadcrumbs.tmpfs_title': (mp: string) => `Temporary Directory\n${mp}`,
 
   // ── Tab 标题 ──
   'tab.dashboard': 'Dashboard',

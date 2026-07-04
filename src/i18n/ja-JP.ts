@@ -236,6 +236,17 @@ const jaJP = {
   'breadcrumbs.root': 'ルートディレクトリ',
   'breadcrumbs.home': (user: string, dir: string) => `${user} のホームディレクトリ\n${dir}`,
   'breadcrumbs.go_to_root': 'ルートへ移動',
+  'breadcrumbs.root_title': (mp: string) => `ルートディレクトリ\n${mp}`,
+  'breadcrumbs.dev': 'デバイス',
+  'breadcrumbs.dev_title': (mp: string) => `デバイスディレクトリ\n${mp}`,
+  'breadcrumbs.devpts': '仮想端末',
+  'breadcrumbs.devpts_title': (mp: string) => `仮想端末ディレクトリ\n${mp}`,
+  'breadcrumbs.proc': 'カーネル情報',
+  'breadcrumbs.proc_title': (mp: string) => `カーネル情報ディレクトリ\n${mp}`,
+  'breadcrumbs.sysfs': 'カーネルオブジェクト',
+  'breadcrumbs.sysfs_title': (mp: string) => `カーネルオブジェクトディレクトリ\n${mp}`,
+  'breadcrumbs.tmpfs': '一時ディレクトリ',
+  'breadcrumbs.tmpfs_title': (mp: string) => `一時ディレクトリ\n${mp}`,
 
   // ── Tab 标题 ──
   'tab.dashboard': 'ダッシュボード',

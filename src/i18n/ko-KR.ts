@@ -236,6 +236,17 @@ const koKR = {
   'breadcrumbs.root': '루트 디렉터리',
   'breadcrumbs.home': (user: string, dir: string) => `${user} 홈 디렉터리\n${dir}`,
   'breadcrumbs.go_to_root': '루트로 이동',
+  'breadcrumbs.root_title': (mp: string) => `루트 디렉터리\n${mp}`,
+  'breadcrumbs.dev': '장치',
+  'breadcrumbs.dev_title': (mp: string) => `장치 디렉터리\n${mp}`,
+  'breadcrumbs.devpts': '가상 터미널',
+  'breadcrumbs.devpts_title': (mp: string) => `가상 터미널 디렉터리\n${mp}`,
+  'breadcrumbs.proc': '커널 정보',
+  'breadcrumbs.proc_title': (mp: string) => `커널 정보 디렉터리\n${mp}`,
+  'breadcrumbs.sysfs': '커널 객체',
+  'breadcrumbs.sysfs_title': (mp: string) => `커널 객체 디렉터리\n${mp}`,
+  'breadcrumbs.tmpfs': '임시 디렉터리',
+  'breadcrumbs.tmpfs_title': (mp: string) => `임시 디렉터리\n${mp}`,
 
   // ── Tab 标题 ──
   'tab.dashboard': '대시보드',

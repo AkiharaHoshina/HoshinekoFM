@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@fontsource-variable/material-symbols-rounded": "^5.2.45",
+    "@fontsource/noto-sans-sc": "^5.2.9",
     "@fontsource/roboto": "^5.2.10",
     "@lit-labs/react": "^2.1.3",
     "@lit/react": "^1.0.8",
