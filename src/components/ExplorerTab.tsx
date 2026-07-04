@@ -211,7 +211,13 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       try {
         const map = await FileSystemService.getMountMap();
         if (cancelled) return;
-        const json = JSON.stringify(map);
+        // Filter to only block-device-backed mounts — ignoring virtual
+        // filesystems (proc, sysfs, cgroup, tmpfs, snap squashfs overlays)
+        // whose entries churn frequently and would trigger unnecessary reloads
+        const relevantEntries = Object.entries(map).filter(([_, info]) =>
+          info.source.startsWith('/dev/')
+        );
+        const json = JSON.stringify(Object.fromEntries(relevantEntries));
         if (mountMapVersionRef.current !== null && mountMapVersionRef.current !== json) {
           loadPath(currentPathRef.current);
         }

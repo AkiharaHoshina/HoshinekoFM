@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { RowComponentProps } from "react-window";
 import type { IFile } from "../../types/files";
 import { Icon } from "../Icon";
@@ -367,15 +367,25 @@ function GridRowItem({
 function Row({ index, style, ...data }: RowComponentProps<RowData>) {
   const item = data.items[index];
 
+  const renameInputCleanupRef = useRef<(() => void) | null>(null);
+
   const renameInputRef = useCallback((el: HTMLInputElement | null) => {
+    renameInputCleanupRef.current?.();
+    renameInputCleanupRef.current = null;
     if (!el) return;
-    el.addEventListener(
-      "dragstart",
-      (e) => {
-        e.stopImmediatePropagation();
-      },
-      true,
-    );
+    const handler = (e: DragEvent) => {
+      e.stopImmediatePropagation();
+    };
+    el.addEventListener("dragstart", handler, true);
+    renameInputCleanupRef.current = () => {
+      el.removeEventListener("dragstart", handler, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      renameInputCleanupRef.current?.();
+    };
   }, []);
 
   const triggerRipple = useCallback(

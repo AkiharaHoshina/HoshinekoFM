@@ -1,4 +1,5 @@
 import { watch, FSWatcher } from 'fs';
+import path from 'path';
 
 interface WatcherEntry {
   watcher: FSWatcher;
@@ -7,41 +8,49 @@ interface WatcherEntry {
 
 const watchers = new Map<string, WatcherEntry>();
 
+/** Normalize directory path for consistent Map key comparison */
+function normalizeDir(dir: string): string {
+  const resolved = path.resolve(dir);
+  return resolved.endsWith('/') && resolved !== '/' ? resolved.slice(0, -1) : resolved;
+}
+
 export function startWatching(
   dir: string,
   onChange: (changedDir: string) => void,
 ): void {
-  if (watchers.has(dir)) return;
+  const normalized = normalizeDir(dir);
+  if (watchers.has(normalized)) return;
 
   try {
-    const watcher = watch(dir, () => {
-      const entry = watchers.get(dir);
+    const watcher = watch(normalized, () => {
+      const entry = watchers.get(normalized);
       if (!entry) return;
 
       if (entry.timer) clearTimeout(entry.timer);
       entry.timer = setTimeout(() => {
         entry.timer = null;
-        onChange(dir);
+        onChange(normalized);
       }, 300);
     });
 
     watcher.on('error', (err: Error) => {
-      console.warn(`[fsWatcher] error on "${dir}":`, err.message);
-      stopWatching(dir);
+      console.warn(`[fsWatcher] error on "${normalized}":`, err.message);
+      stopWatching(normalized);
     });
 
-    watchers.set(dir, { watcher, timer: null });
+    watchers.set(normalized, { watcher, timer: null });
   } catch (err) {
-    console.warn(`[fsWatcher] cannot watch "${dir}":`, (err as Error).message);
+    console.warn(`[fsWatcher] cannot watch "${normalized}":`, (err as Error).message);
   }
 }
 
 export function stopWatching(dir: string): void {
-  const entry = watchers.get(dir);
+  const normalized = normalizeDir(dir);
+  const entry = watchers.get(normalized);
   if (!entry) return;
   if (entry.timer) clearTimeout(entry.timer);
   entry.watcher.close();
-  watchers.delete(dir);
+  watchers.delete(normalized);
 }
 
 export function stopAllWatching(): void {
