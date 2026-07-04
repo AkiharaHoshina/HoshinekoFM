@@ -67,6 +67,17 @@ export interface IFile {
      * additional configuration.
      */
     canAutoMount?: boolean;
+    /**
+     * If this directory is a user's home directory (from `/etc/passwd` or
+     * `getent passwd`), the username of the owner.
+     * Example: `"sbchild"` for `/home/sbchild`, `"geoclue"` for `/var/lib/geoclue`.
+     */
+    homeOwner?: string;
+    /**
+     * Numeric UID of the user that owns this home directory.
+     * Example: `1000` for `/home/sbchild`, `989` for `/var/lib/geoclue`.
+     */
+    homeOwnerUid?: number;
 }
 
 export interface AllDevice {

@@ -9,6 +9,51 @@ import { getMountMap, resolveAccessibleParent } from '../shared';
 const execAsync = promisify(exec);
 
 /**
+ * Build a Map from home directory path → `{ username, uid }` by parsing
+ * `/etc/passwd`. Falls back to `getent passwd` if the file read fails
+ * (e.g. in NIS/LDAP environments where not all users are in `/etc/passwd`).
+ *
+ * Memoized at module level — the map does not change during the app
+ * lifetime, so we read it once and reuse across all `listDirectoryContents`
+ * calls.
+ */
+let _passwdHomeMap: Map<string, { username: string; uid: number }> | undefined;
+
+async function getPasswdHomeMap(): Promise<Map<string, { username: string; uid: number }>> {
+  if (_passwdHomeMap) return _passwdHomeMap;
+
+  const map = new Map<string, { username: string; uid: number }>();
+  let content: string;
+
+  try {
+    content = await fs.readFile('/etc/passwd', 'utf-8');
+  } catch {
+    try {
+      const { stdout } = await execAsync('getent passwd');
+      content = stdout;
+    } catch {
+      _passwdHomeMap = map;
+      return map;
+    }
+  }
+
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const fields = trimmed.split(':');
+    if (fields.length < 7) continue;
+    const username = fields[0];
+    const uid = parseInt(fields[2], 10);
+    const home = fields[5];
+    if (!home || isNaN(uid)) continue;
+    map.set(home, { username, uid });
+  }
+
+  _passwdHomeMap = map;
+  return map;
+}
+
+/**
  * Lists all entries under `targetPath` with full metadata.
  *
  * **Phase 1 — readdir**: Enumerate directory entries via
@@ -39,12 +84,18 @@ const execAsync = promisify(exec);
  *   `isExternal` computed from `/sys/class/block/<targetName>` and
  *   `/sys/block/<targetName>`.
  *
+ * **Phase 5 — Enrich entries with home directory owner info** (third pass):
+ * - Parse `/etc/passwd` (with `getent passwd` fallback for NIS/LDAP) into a
+ *   Map keyed by home directory path.
+ * - For each entry whose `path` matches a home directory, set `homeOwner`
+ *   (username) and `homeOwnerUid` (numeric UID).
+ *
  * @returns Filtered array (null entries removed) of file entry objects
  * matching the `IFile` shape.
  */
 async function listDirectoryContents(targetPath: string): Promise<{
   name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
-  symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isMountable?: boolean; parentDisk?: string; isExternal?: boolean; mountedAt?: string; canAutoMount?: boolean;
+  symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isMountable?: boolean; parentDisk?: string; isExternal?: boolean; mountedAt?: string; canAutoMount?: boolean; homeOwner?: string; homeOwnerUid?: number;
 }[]> {
   const entries = await fs.readdir(targetPath, { withFileTypes: true });
   const results = await Promise.all(entries.map(async (entry) => {
@@ -192,7 +243,7 @@ async function listDirectoryContents(targetPath: string): Promise<{
   }));
   const filtered = results.filter(r => r !== null) as {
     name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
-    symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isMountable?: boolean; parentDisk?: string; isExternal?: boolean; mountedAt?: string; canAutoMount?: boolean;
+    symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isMountable?: boolean; parentDisk?: string; isExternal?: boolean; mountedAt?: string; canAutoMount?: boolean; homeOwner?: string; homeOwnerUid?: number;
   }[];
 
   const mountMap = await getMountMap();
@@ -255,6 +306,16 @@ async function listDirectoryContents(targetPath: string): Promise<{
           } catch { /* continue */ }
         }
       }
+    }
+  }
+
+  // Phase 5 — Enrich entries with home directory owner info from /etc/passwd.
+  const homeMap = await getPasswdHomeMap();
+  for (const entry of filtered) {
+    const owner = homeMap.get(entry.path);
+    if (owner) {
+      entry.homeOwner = owner.username;
+      entry.homeOwnerUid = owner.uid;
     }
   }
 
