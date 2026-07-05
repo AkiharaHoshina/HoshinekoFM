@@ -28,9 +28,28 @@ Hoshineko 文件管理器是一款基于 Material 3 设计语言、Electron 和 
 - **便捷而智慧的右键菜单**:调整了右键菜单架构，支持根据选定项目的不同类型动态显示相应菜单项，并扩展了菜单功能；该菜单设计同时适配触屏设备的长按操作。
 - **针对 [material-3-file-explorer](https://github.com/bhimio1/material-3-file-explorer) 项目进行了多项架构重构与功能扩充，以满足现代文件管理器的标准与特性。**
 
-## 国际化
+## 国际化 / Internationalization
 
-目前只有简体中文版本提供，国际化将于以后开始。
+### 现在支持 / Currently Supported
+
+| 代码 (Code) | 本地语言名称 (Native Name) | 中文描述 (Chinese Description) | 英语描述 (English Description) |
+| :--- | :--- | :--- | :--- |
+| **zh-CN** | 简体中文 | 简体中文 | Simplified Chinese |
+| **zh-HK** | 繁體中文（香港） | 繁体中文（香港） | Traditional Chinese (Hong Kong) |
+| **zh-CT** | 粵語 | 粤语 | Cantonese |
+| **zh-TW** | 正體中文（台灣） | 正体中文（台湾） | Traditional Chinese (Taiwan) |
+| **en-US** | English | 英语 | English |
+| **ja-JP** | 日本語 | 日语 | Japanese |
+| **ko-KR** | 한국어（대한민국） | 韩语（大韩民国） | Korean (Republic of Korea) |
+| **ko-KP** | 한국어（조선민주주의인민공화국） | 韩语（朝鲜民主主义人民共和国） | Korean (Democratic People's Republic of Korea) |
+| **ko-CN** | 조선어（중국） | 朝鲜语（中国） | Korean (China) |
+
+### 计划支持 / Planned Support
+
+| 代码 (Code) | 本地语言名称 (Native Name) | 中文描述 (Chinese Description) | 英语描述 (English Description) |
+| :--- | :--- | :--- | :--- |
+| **ru-UA** | Русский（Украина） | 俄语（乌克兰） | Russian (Ukraine) |
+| **uk-UA** | Українська（Україна） | 乌克兰语（乌克兰） | Ukrainian (Ukraine) |
 
 ## 自订主题颜色 (Matugen)
 

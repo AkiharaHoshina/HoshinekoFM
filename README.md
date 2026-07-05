@@ -27,9 +27,29 @@ The Hoshineko file explorer is a modification and reconstruction of [bhimio1](ht
 - **Convenient and Smart Right-Click Menu**:Refactored the context menu architecture to dynamically display specific menu items based on the selected item type, while extending menu features; the menu design is optimized for long-press gestures on touchscreen devices.
 - **The rest includes a massive amount of refactoring and completion relative to the [material-3-file-explorer](https://github.com/bhimio1/material-3-file-explorer) project, equipping it with the characteristics of a modern file manager.**
 
-## i18n
+##Internationalization
 
-Only provide Simplefied Chinese because i18n will soon start.
+###/ Currently Supported
+
+| Code | Native Name | Chinese Description | English Description) |
+| :--- | :--- | :--- | :--- |
+| **zh-CN** | 简体中文 | 简体中文 | Simplified Chinese |
+| **zh-HK** | 繁體中文（香港） | 繁体中文（香港） | Traditional Chinese (Hong Kong) |
+| **zh-CT** | 粵語 | 粤语 | Cantonese |
+| **zh-TW** | 正體中文（台灣） | 正体中文（台湾） | Traditional Chinese (Taiwan) |
+| **en-US** | English | 英语 | English |
+| **ja-JP** | 日本語 | 日语 | Japanese |
+| **ko-KR** | 한국어（대한민국） | 韩语（大韩民国） | Korean (Republic of Korea) |
+| **ko-KP** | 한국어（조선민주주의인민공화국） | 韩语（朝鲜民主主义人民共和国） | Korean (Democratic People's Republic of Korea) |
+| **ko-CN** | 조선어（중국） | 朝鲜语（中国） | Korean (China) |
+
+### 计划支持 / Planned Support
+
+
+| Code | Native Name | Chinese Description | English Description) |
+| :--- | :--- | :--- | :--- |
+| **ru-UA** | Русский（Украина） | 俄语（乌克兰） | Russian (Ukraine) |
+| **uk-UA** | Українська（Україна） | 乌克兰语（乌克兰） | Ukrainian (Ukraine) |
 
 ## Custom Theme Colors (Matugen)
 
