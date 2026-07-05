@@ -265,6 +265,143 @@ export function clearMimeCache(): void {
   mimeCache.clear();
 }
 
+// ── Batch MIME detection ──────────────────────────────────────────
+
+/** Maximum paths per `file --mime-type` invocation to stay within command-line limits. */
+const BATCH_CHUNK_SIZE = 200;
+
+/**
+ * Run `file --mime-type --brief` for multiple paths in one subprocess
+ * call and parse the output.  Returns a Map<path, mime|null>.
+ */
+async function fileMimeBatchCommand(filePaths: string[]): Promise<Map<string, string | null>> {
+  const result = new Map<string, string | null>();
+  for (const p of filePaths) result.set(p, null);
+
+  if (filePaths.length === 0) return result;
+
+  try {
+    const { stdout } = await execFileAsync('file', ['--mime-type', '--brief', ...filePaths]);
+    const lines = stdout.split('\n');
+    for (let i = 0; i < filePaths.length; i++) {
+      const mime = lines[i]?.trim();
+      if (mime && mime !== 'application/octet-stream' && mime !== 'inode/x-empty') {
+        result.set(filePaths[i], mime);
+      }
+    }
+  } catch {
+    // On failure, all paths remain null (caller may handle individually if needed)
+  }
+  return result;
+}
+
+/**
+ * Fast-path MIME detection without spawning `file` command.
+ * Runs tiers ① (magic bytes), ② (extension), and ③ (basename) only.
+ * Returns null if the file command fallback is needed.
+ */
+async function detectMimeFast(filePath: string, ext: string): Promise<string | null> {
+  // Tier ①: Magic bytes
+  const magicMime = await detectMimeByMagic(filePath);
+  if (magicMime) {
+    const extMime = ext ? EXT_TO_MIME[ext] : null;
+    if (!ext || !extMime || extMime === magicMime) {
+      // No conflict → trust magic bytes.  Container types need file fallback
+      // to get sub-type, so return the magic type and let caller decide.
+      return magicMime;
+    }
+    if (magicMime === 'application/zip' && ZIP_CONTAINER_EXTS.has(ext)) {
+      return extMime;
+    }
+    if (EXT_PREFERRED.has(ext)) {
+      return extMime;
+    }
+    // Conflict → trust magic (same as detectMime)
+    return magicMime;
+  }
+
+  // Tier ②: Extension map
+  if (ext && EXT_TO_MIME[ext]) {
+    return EXT_TO_MIME[ext];
+  }
+
+  // Tier ③: Basename match
+  const basenameMime = detectByBasename(filePath);
+  if (basenameMime) return basenameMime;
+
+  return null;
+}
+
+/**
+ * Batch MIME detection for multiple file paths.
+ *
+ * Uses the same 4-tier logic as {@link detectMime} but batches tier-④
+ * (`file --mime-type`) invocations: all paths unresolved after fast
+ * detection are passed to a single `file` command (chunked at
+ * {@link BATCH_CHUNK_SIZE}).
+ *
+ * @returns Map from file path to MIME type (or null if unknown).
+ */
+export async function detectMimeBatch(filePaths: string[]): Promise<Map<string, string | null>> {
+  const result = new Map<string, string | null>();
+  const pending: string[] = [];
+  const now = Date.now();
+
+  for (const filePath of filePaths) {
+    // Check cache
+    const cached = mimeCache.get(filePath);
+    if (cached && now - cached.ts < MIME_CACHE_TTL) {
+      result.set(filePath, cached.mime || null);
+      continue;
+    }
+    if (cached) {
+      mimeCache.delete(filePath);
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = await detectMimeFast(filePath, ext);
+
+    if (mime) {
+      // Container types still need `file` for sub-type
+      if (CONTAINER_TYPES.has(mime)) {
+        pending.push(filePath);
+      } else {
+        result.set(filePath, mime);
+      }
+    } else {
+      pending.push(filePath);
+    }
+  }
+
+  // Batch `file` command for pending paths (chunked to avoid arg overflow)
+  for (let i = 0; i < pending.length; i += BATCH_CHUNK_SIZE) {
+    const chunk = pending.slice(i, i + BATCH_CHUNK_SIZE);
+    const fileResults = await fileMimeBatchCommand(chunk);
+    for (const [p, mime] of fileResults) {
+      result.set(p, mime);
+    }
+  }
+
+  // Write cache for all results
+  for (const [p, mime] of result) {
+    mimeCache.set(p, { mime: mime ?? '', ts: now });
+  }
+
+  // Evict oldest entries if cache exceeds max size
+  if (mimeCache.size > MIME_CACHE_MAX_SIZE) {
+    const entries = [...mimeCache.entries()];
+    const toDelete = entries.length - Math.floor(MIME_CACHE_MAX_SIZE * 0.75);
+    if (toDelete > 0) {
+      entries.sort((a, b) => a[1].ts - b[1].ts);
+      for (let j = 0; j < toDelete; j++) {
+        mimeCache.delete(entries[j][0]);
+      }
+    }
+  }
+
+  return result;
+}
+
 // ── Thumbnail generation & caching ────────────────────────────────
 
 const THUMB_CACHE_DIR = path.join(os.homedir(), '.cache', 'material3', 'thumbnails');

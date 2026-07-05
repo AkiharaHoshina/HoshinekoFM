@@ -20,7 +20,21 @@ export async function resolveAccessibleParent(startPath: string): Promise<string
   return null;
 }
 
+/** TTL (ms) for mount-map cache. Mounts rarely change during normal browsing. */
+const MOUNT_MAP_CACHE_TTL = 30_000;
+
+let _mountMapCache: { map: Map<string, { source: string; fstype: string }>; ts: number } | undefined;
+
+/**
+ * Parse `/proc/mounts` into a Map keyed by mountpoint.
+ * Cached for {@link MOUNT_MAP_CACHE_TTL} ms to avoid re-reading on every
+ * directory listing.
+ */
 export async function getMountMap(): Promise<Map<string, { source: string; fstype: string }>> {
+  if (_mountMapCache && Date.now() - _mountMapCache.ts < MOUNT_MAP_CACHE_TTL) {
+    return _mountMapCache.map;
+  }
+
   const map = new Map<string, { source: string; fstype: string }>();
   try {
     const content = await fs.readFile('/proc/mounts', 'utf-8');
@@ -40,5 +54,7 @@ export async function getMountMap(): Promise<Map<string, { source: string; fstyp
   } catch {
     // /proc/mounts not available
   }
+
+  _mountMapCache = { map, ts: Date.now() };
   return map;
 }

@@ -3,7 +3,7 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import { promisify } from 'util';
 import { exec } from 'child_process';
-import { detectMime } from '../fsUtils';
+import { detectMimeBatch } from '../fsUtils';
 import { getMountMap, resolveAccessibleParent } from '../shared';
 
 const execAsync = promisify(exec);
@@ -85,12 +85,46 @@ async function getPasswdHomeMap(): Promise<Map<string, { username: string; uid: 
 }
 
 /**
+ * Process items with a concurrency limit, preserving input order.
+ *
+ * Spawning thousands of parallel filesystem operations saturates the
+ * UV thread pool and causes severe contention.  This worker-pool pattern
+ * keeps at most `concurrency` operations in-flight simultaneously.
+ *
+ * @returns Results in the same order as `items` (nulls preserved).
+ */
+async function processWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  processor: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const i = nextIndex++;
+      results[i] = await processor(items[i], i);
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  return results;
+}
+
+/**
  * Lists all entries under `targetPath` with full metadata.
  *
  * **Phase 1 — readdir**: Enumerate directory entries via
  * `fs.readdir({ withFileTypes: true })`.
  *
- * **Phase 2 — Per-entry classification**:
+ * **Phase 2 — Per-entry classification** (concurrency-limited, batch MIME):
+ * - Processed with {@link processWithConcurrency} (limit 16) to avoid
+ *   UV thread-pool saturation.
  * - Special files (block, char, fifo, socket) are classified with `inode/*`
  *   MIME types. Block devices additionally query `/sys/class/block/` for
  *   partition/DM status (→ `isMountable`, `canAutoMount`) and `/sys/block/`
@@ -98,13 +132,15 @@ async function getPasswdHomeMap(): Promise<Map<string, { username: string; uid: 
  * - Symlinks are resolved with `fs.readlink`, then `fs.stat` on the resolved
  *   target to get the real target's metadata. Broken symlinks (`ENOENT`) are
  *   reported with `mime: "inode/symlink"`.
- * - Regular files/directories get size/mtime via `fs.stat` and MIME via
- *   `detectMime`.
+ * - Regular files/directories get size/mtime via `fs.stat`.
+ * - MIME detection is deferred: all paths needing MIME are collected and
+ *   resolved in a single batched `detectMimeBatch` call (which internally
+ *   batches `file --mime-type` commands).
  *
  * **Phase 3 — Device ↔ mount map**: Parse `/proc/mounts` (via
- * `getMountMap`) and index by device source path. Also resolve symlinks in
- * device paths (e.g. `/dev/disk/by-uuid/...` → `/dev/sda1`) so that
- * alternative device names can be matched.
+ * `getMountMap`) and index by device source path. Device-path symlink
+ * resolution (e.g. `/dev/disk/by-uuid/...` → `/dev/sda1`) happens in
+ * parallel via `Promise.all`.
  *
  * **Phase 4 — Enrich entries with mount info** (second pass):
  * - Directories matching a mountpoint get `isMountpoint`, `mountSource`,
@@ -136,7 +172,23 @@ async function listDirectoryContents(targetPath: string): Promise<{
   const targetFstype = resolveFstype(mountMap, targetPath);
   const skipMime = targetFstype !== null && VIRTUAL_FS_TYPES.has(targetFstype);
 
-  const results = await Promise.all(entries.map(async (entry) => {
+  // ── Phase 2: Classify entries with concurrency limit ──────────
+  // MIME detection is deferred: we store the path that needs MIME
+  // in `_mimePath` and resolve all of them at once in Phase 2b.
+
+  interface ClassifiedEntry {
+    name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
+    symlinkTarget?: string; devicePath?: string; isMountable?: boolean;
+    parentDisk?: string; isExternal?: boolean; canAutoMount?: boolean;
+    /** Non-null when this entry needs batch MIME detection on this path */
+    _mimePath?: string;
+    /** Set in Phase 4 — mount enrichment */
+    isMountpoint?: boolean; mountSource?: string; mountFstype?: string; mountedAt?: string;
+    /** Set in Phase 5 — home directory owner enrichment */
+    homeOwner?: string; homeOwnerUid?: number;
+  }
+
+  const results = await processWithConcurrency(entries, 16, async (entry): Promise<ClassifiedEntry | null> => {
     try {
       const fullPath = path.join(targetPath, entry.name);
       const isSymlink = entry.isSymbolicLink();
@@ -215,93 +267,129 @@ async function listDirectoryContents(targetPath: string): Promise<{
         if (symlinkTarget) {
           try {
             const stats = await fs.stat(fullPath);
-            let mime: string | null;
             if (stats.isDirectory()) {
-              mime = 'inode/directory';
-            } else if (stats.isBlockDevice()) {
-              mime = 'inode/blockdevice';
-            } else if (stats.isCharacterDevice()) {
-              mime = 'inode/chardevice';
-            } else if (stats.isFIFO()) {
-              mime = 'inode/fifo';
-            } else if (stats.isSocket()) {
-              mime = 'inode/socket';
-            } else {
-              mime = skipMime ? null : await detectMime(symlinkTarget);
+              return {
+                name: entry.name, path: fullPath, isDirectory: true,
+                size: stats.size, mtime: stats.mtime,
+                mime: 'inode/directory', symlinkTarget,
+              };
             }
+            if (stats.isBlockDevice() || stats.isCharacterDevice() ||
+                stats.isFIFO() || stats.isSocket()) {
+              let mime: string | null;
+              if (stats.isBlockDevice()) mime = 'inode/blockdevice';
+              else if (stats.isCharacterDevice()) mime = 'inode/chardevice';
+              else if (stats.isFIFO()) mime = 'inode/fifo';
+              else mime = 'inode/socket';
+              return {
+                name: entry.name, path: fullPath, isDirectory: false,
+                size: stats.size, mtime: stats.mtime,
+                mime, symlinkTarget,
+              };
+            }
+            // Regular file via symlink → defer MIME to batch
             return {
-              name: entry.name,
-              path: fullPath,
-              isDirectory: stats.isDirectory(),
-              size: stats.size,
-              mtime: stats.mtime,
-              mime,
-              symlinkTarget
+              name: entry.name, path: fullPath, isDirectory: false,
+              size: stats.size, mtime: stats.mtime,
+              mime: skipMime ? null : undefined as unknown as string | null,
+              symlinkTarget,
+              _mimePath: skipMime ? undefined : symlinkTarget,
             };
           } catch (err) {
             const code = (err as NodeJS.ErrnoException).code;
             if (code === 'ENOENT') {
               return {
-                name: entry.name,
-                path: fullPath,
-                isDirectory: false,
-                size: 0,
-                mtime: new Date(0),
-                mime: 'inode/symlink',
-                symlinkTarget
+                name: entry.name, path: fullPath, isDirectory: false,
+                size: 0, mtime: new Date(0),
+                mime: 'inode/symlink', symlinkTarget,
               };
             }
             return {
-              name: entry.name,
-              path: fullPath,
-              isDirectory: false,
-              size: 0,
-              mtime: new Date(0),
-              mime: null,
-              symlinkTarget
+              name: entry.name, path: fullPath, isDirectory: false,
+              size: 0, mtime: new Date(0),
+              mime: null, symlinkTarget,
             };
           }
         }
         return null;
       }
 
+      // Regular file or directory
       const stats = await fs.stat(fullPath);
-      const mime = entry.isDirectory() ? 'inode/directory' : (skipMime ? null : await detectMime(fullPath));
+      if (entry.isDirectory()) {
+        return {
+          name: entry.name, path: fullPath, isDirectory: true,
+          size: stats.size, mtime: stats.mtime,
+          mime: 'inode/directory',
+        };
+      }
       return {
-        name: entry.name,
-        path: fullPath,
-        isDirectory: entry.isDirectory(),
-        size: stats.size,
-        mtime: stats.mtime,
-        mime
+        name: entry.name, path: fullPath, isDirectory: false,
+        size: stats.size, mtime: stats.mtime,
+        mime: skipMime ? null : undefined as unknown as string | null,
+        _mimePath: skipMime ? undefined : fullPath,
       };
     } catch {
       return null;
     }
-  }));
-  const filtered = results.filter(r => r !== null) as {
-    name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
-    symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isMountable?: boolean; parentDisk?: string; isExternal?: boolean; mountedAt?: string; canAutoMount?: boolean; homeOwner?: string; homeOwnerUid?: number;
-  }[];
+  });
 
+  // ── Phase 2b: Batch MIME detection ────────────────────────────
+  const filtered: ClassifiedEntry[] = [];
+  const mimePathSet = new Set<string>();
+
+  for (const r of results) {
+    if (!r) continue;
+    filtered.push(r);
+    if (r._mimePath) {
+      mimePathSet.add(r._mimePath);
+    }
+  }
+
+  if (mimePathSet.size > 0) {
+    const mimeMap = await detectMimeBatch([...mimePathSet]);
+    for (const entry of filtered) {
+      if (entry._mimePath) {
+        entry.mime = mimeMap.get(entry._mimePath) ?? null;
+      }
+    }
+  }
+
+  // Ensure any entries with mime=undefined (skipped batch) are set to null
+  for (const entry of filtered) {
+    if (entry.mime === (undefined as unknown)) {
+      entry.mime = null;
+    }
+  }
+
+  // ── Phase 3: Device ↔ mount map (parallel symlink resolution) ─
   const deviceMountMap = new Map<string, { source: string; fstype: string; mountpoint: string }>();
   for (const [mp, info] of mountMap) {
     if (info.source && info.source !== 'none') {
       deviceMountMap.set(info.source, { ...info, mountpoint: mp });
     }
   }
-  for (const [source, info] of [...deviceMountMap]) {
-    try {
-      const stat = await fs.lstat(source);
-      if (stat.isSymbolicLink()) {
-        const target = path.resolve(path.dirname(source), await fs.readlink(source));
-        if (!deviceMountMap.has(target)) {
-          deviceMountMap.set(target, info);
+
+  // Resolve device symlinks in parallel, then write results sequentially
+  const symlinkResolutions = await Promise.all(
+    [...deviceMountMap].map(async ([source, info]) => {
+      try {
+        const stat = await fs.lstat(source);
+        if (stat.isSymbolicLink()) {
+          const target = path.resolve(path.dirname(source), await fs.readlink(source));
+          return { source, target, info } as const;
         }
-      }
-    } catch { /* continue */ }
+      } catch { /* continue */ }
+      return null;
+    }),
+  );
+  for (const res of symlinkResolutions) {
+    if (res && !deviceMountMap.has(res.target)) {
+      deviceMountMap.set(res.target, res.info);
+    }
   }
 
+  // ── Phase 4: Enrich entries with mount info ───────────────────
   for (const entry of filtered) {
     if (entry.isDirectory) {
       const mount = mountMap.get(entry.path);
@@ -356,7 +444,14 @@ async function listDirectoryContents(targetPath: string): Promise<{
     }
   }
 
-  return filtered;
+  // Strip internal `_mimePath` field before returning
+  for (const entry of filtered) {
+    delete (entry as unknown as Record<string, unknown>)._mimePath;
+  }
+  return filtered as unknown as {
+    name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
+    symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isMountable?: boolean; parentDisk?: string; isExternal?: boolean; mountedAt?: string; canAutoMount?: boolean; homeOwner?: string; homeOwnerUid?: number;
+  }[];
 }
 
 export function registerFsHandlers() {
