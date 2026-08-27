@@ -21,6 +21,8 @@ const zhAC = {
   'context_menu.open': '打开',
   'context_menu.open_with': '打开方式...',
   'context_menu.open_terminal': '在内建终端打开',
+  'context_menu.open_in_terminal': '在默认终端打开',
+  'context_menu.run_in_terminal': '在默认终端运行',
   'context_menu.copy': '复制',
   'context_menu.cut': '剪切',
   'context_menu.paste': '粘贴',
@@ -143,6 +145,8 @@ const zhAC = {
   'toast.copy_success': (src: string, destDir: string, dest: string) => `${src} → ${destDir}/${dest}`,
   'toast.move_success': (src: string, destDir: string, dest: string) => `${src} → ${destDir}/${dest}`,
   'toast.launch_failed': (exec: string, result: string) => `打开方式：${exec} 启动失败（${result}）`,
+  'toast.no_terminal_found': '未找到默认终端模拟器',
+  'toast.terminal_launch_failed': (msg: string) => `启动终端失败：${msg}`,
 
   // ── 错误消息 ──
   'error.permission_denied': '权限不足',

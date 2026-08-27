@@ -22,6 +22,8 @@ const koKR = {
   'context_menu.open': '열기',
   'context_menu.open_with': '다른 앱으로 열기...',
   'context_menu.open_terminal': '내장 터미널에서 열기',
+  'context_menu.open_in_terminal': '기본 터미널에서 열기',
+  'context_menu.run_in_terminal': '기본 터미널에서 실행',
   'context_menu.copy': '복사',
   'context_menu.cut': '잘라내기',
   'context_menu.paste': '붙여넣기',
@@ -142,6 +144,8 @@ const koKR = {
   'toast.copy_success': (src: string, destDir: string, dest: string) => `${src} → ${destDir}/${dest}`,
   'toast.move_success': (src: string, destDir: string, dest: string) => `${src} → ${destDir}/${dest}`,
   'toast.launch_failed': (exec: string, result: string) => `실행 실패: ${exec} (${result})`,
+  'toast.no_terminal_found': '기본 터미널 에뮬레이터를 찾을 수 없습니다',
+  'toast.terminal_launch_failed': (msg: string) => `터미널 실행 실패: ${msg}`,
 
   // ── 에러 메시지 ──
   'error.permission_denied': '권한 부족',

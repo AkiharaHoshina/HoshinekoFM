@@ -21,6 +21,8 @@ const jaJP = {
   'context_menu.open': '開く',
   'context_menu.open_with': 'プログラムから開く...',
   'context_menu.open_terminal': '内蔵ターミナルで開く',
+  'context_menu.open_in_terminal': 'デフォルトの端末で開く',
+  'context_menu.run_in_terminal': 'デフォルトの端末で実行',
   'context_menu.copy': 'コピー',
   'context_menu.cut': '切り取り',
   'context_menu.paste': '貼り付け',
@@ -141,6 +143,8 @@ const jaJP = {
   'toast.copy_success': (src: string, destDir: string, dest: string) => `${src} → ${destDir}/${dest}`,
   'toast.move_success': (src: string, destDir: string, dest: string) => `${src} → ${destDir}/${dest}`,
   'toast.launch_failed': (exec: string, result: string) => `プログラムの起動: ${exec} の起動に失敗しました（${result}）`,
+  'toast.no_terminal_found': 'デフォルトの端末エミュレータが見つかりません',
+  'toast.terminal_launch_failed': (msg: string) => `端末の起動に失敗しました：${msg}`,
 
   // ── 错误消息 ──
   'error.permission_denied': '権限がありません',

@@ -18,6 +18,7 @@ import {
   pasteFiles,
   createDirectory,
   createFile,
+  openInDefaultTerminal,
   importFiles,
   openFile,
   copyToClipboard,
@@ -922,6 +923,11 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         label: t('context_menu.open_terminal'),
         icon: 'terminal',
         action: () => onOpenTerminalAt(currentPath)
+      },
+      {
+        label: t('context_menu.open_in_terminal'),
+        icon: 'terminal',
+        action: () => { void openInDefaultTerminal(currentPath); }
       },
       {
         label: t('context_menu.open_with'),

@@ -21,6 +21,8 @@ const enUS = {
   'context_menu.open': 'Open',
   'context_menu.open_with': 'Open with...',
   'context_menu.open_terminal': 'Open in built-in terminal',
+  'context_menu.open_in_terminal': 'Open in default terminal',
+  'context_menu.run_in_terminal': 'Run in default terminal',
   'context_menu.copy': 'Copy',
   'context_menu.cut': 'Cut',
   'context_menu.paste': 'Paste',
@@ -152,6 +154,8 @@ const enUS = {
   'toast.copy_success': (src: string, destDir: string, dest: string) => `${src} → ${destDir}/${dest}`,
   'toast.move_success': (src: string, destDir: string, dest: string) => `${src} → ${destDir}/${dest}`,
   'toast.launch_failed': (exec: string, result: string) => `Open with: Failed to execute ${exec} (${result})`,
+  'toast.no_terminal_found': 'No default terminal emulator found',
+  'toast.terminal_launch_failed': (msg: string) => `Failed to launch terminal: ${msg}`,
 
   // ── 错误消息 ──
   'error.permission_denied': 'Permission denied',

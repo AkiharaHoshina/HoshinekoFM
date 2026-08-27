@@ -115,6 +115,12 @@ export interface IElectronAPI {
     stat: (path: string) => Promise<{ isDirectory: boolean; size: number; mtime: Date } | null>;
     getRecommendedApps: (path: string) => Promise<{ name: string; icon: string | null; exec: string; path: string; }[]>;
 
+    // 默认终端
+    /** 在系统默认终端中打开目录 */
+    openTerminal: (dir: string) => Promise<{ success: boolean; code?: string; error?: string }>;
+    /** 在系统默认终端中运行可执行文件 */
+    runInTerminal: (filePath: string) => Promise<{ success: boolean; code?: string; error?: string }>;
+
     // PTY
     ptySpawn: (cwd: string) => Promise<number>;
     ptyWrite: (pid: number, data: string) => void;

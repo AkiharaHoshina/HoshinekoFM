@@ -42,6 +42,202 @@ interface DriveInfo {
 
 let appsCache: { name: string; icon: string; exec: string; desktopFile: string; }[] | null = null;
 
+// ── 默认终端检测 ──
+
+/** 单个终端模拟器的启动参数规格 */
+interface TerminalSpec {
+  /**
+   * 执行命令（argv 数组）的参数构造器：把目标命令 argv 转成该终端的
+   * 完整 spawn 参数。null 表示无专用语法，回退到通用 `-e`。
+   */
+  exec: ((argv: string[]) => string[]) | null;
+}
+
+/**
+ * 常见终端参数规格表（按二进制 basename 匹配）。
+ * 不同终端执行命令的参数风格差异很大，无法用一套参数通吃。
+ *
+ * 注意：刻意不用各终端的 `--working-directory` 类标志打开目录——
+ * 单实例/CS 架构的终端（如 ghostty）在转发新窗口请求时会丢弃该标志，
+ * 窗口会继承 server 进程的 cwd。统一改为「在终端里执行
+ * `sh -c 'cd "$1" && exec "$SHELL"'`」的命令包装，命令本身会被可靠转发。
+ */
+const TERMINAL_SPECS: Record<string, TerminalSpec> = {
+  'ghostty': { exec: (argv) => ['-e', ...argv] },
+  'gnome-terminal': { exec: (argv) => ['--', ...argv] },
+  'kgx': { exec: (argv) => ['-e', ...argv] },
+  'konsole': { exec: (argv) => ['-e', ...argv] },
+  'xfce4-terminal': { exec: (argv) => ['-x', ...argv] },
+  'kitty': { exec: (argv) => argv },
+  'alacritty': { exec: (argv) => ['-e', ...argv] },
+  'foot': { exec: (argv) => argv },
+  'wezterm': { exec: (argv) => ['start', '--', ...argv] },
+  'tilix': { exec: (argv) => ['-e', ...argv] },
+  'xterm': { exec: (argv) => ['-e', ...argv] },
+  'x-terminal-emulator': { exec: (argv) => ['-e', ...argv] },
+};
+
+/** 硬编码兜底扫描列表（按优先级从高到低） */
+const FALLBACK_TERMINALS = [
+  'ghostty',
+  'kitty',
+  'alacritty',
+  'wezterm',
+  'foot',
+  'gnome-terminal',
+  'kgx',
+  'konsole',
+  'xfce4-terminal',
+  'tilix',
+  'xterm',
+];
+
+/** 默认终端检测结果 */
+interface DetectedTerminal {
+  /** 实际执行的命令（终端二进制名/路径，或 xdg-terminal-exec） */
+  command: string;
+  /** 是否为 xdg-terminal-exec 委托模式（参数整体交给它构造） */
+  delegate: boolean;
+  /** 参数规格；委托模式或未知终端时为 null */
+  spec: TerminalSpec | null;
+}
+
+/** 默认终端检测缓存（Promise 级缓存；未找到时不缓存，下次重试） */
+let terminalDetection: Promise<DetectedTerminal | null> | null = null;
+
+/** 检查命令是否存在于 PATH（which 实现） */
+async function commandExists(cmd: string): Promise<boolean> {
+  try {
+    await execFileAsync('which', [cmd]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 检测系统默认终端模拟器，按优先级依次尝试：
+ * 1. `$TERMINAL` 环境变量（用户显式指定）
+ * 2. `xdg-terminal-exec`（freedesktop 新标准，可整包委托）
+ * 3. `gsettings`（GNOME / Cinnamon / MATE / Budgie 的默认终端配置）
+ * 4. `exo-open --launch TerminalEmulator`（XFCE）
+ * 5. `kreadconfig`（KDE Plasma 5/6）
+ * 6. 常见终端二进制扫描（含 ghostty）
+ * 7. `x-terminal-emulator`（Debian alternatives 符号链接）
+ *
+ * 命中即返回对应命令与参数规格；全部失败返回 null。
+ */
+async function detectDefaultTerminal(): Promise<DetectedTerminal | null> {
+  // 1) $TERMINAL 环境变量
+  const envTerminal = process.env.TERMINAL;
+  if (envTerminal) {
+    const cmd = envTerminal.trim().split(/\s+/)[0];
+    if (cmd && (await commandExists(cmd))) {
+      return { command: cmd, delegate: false, spec: TERMINAL_SPECS[path.basename(cmd)] ?? null };
+    }
+  }
+
+  // 2) xdg-terminal-exec（存在则整包委托，由它负责终端选择与参数构造）
+  if (await commandExists('xdg-terminal-exec')) {
+    return { command: 'xdg-terminal-exec', delegate: true, spec: null };
+  }
+
+  // 3) gsettings 系列 schema
+  const gsettingsSchemas = [
+    'org.gnome.desktop.default-applications.terminal',
+    'org.cinnamon.desktop.default-applications.terminal',
+    'org.mate.applications-terminal',
+  ];
+  if (await commandExists('gsettings')) {
+    for (const schema of gsettingsSchemas) {
+      try {
+        const { stdout } = await execFileAsync('gsettings', ['get', schema, 'exec']);
+        const cmd = stdout.trim().replace(/^'|'$/g, '');
+        if (cmd && (await commandExists(cmd))) {
+          return { command: cmd, delegate: false, spec: TERMINAL_SPECS[path.basename(cmd)] ?? null };
+        }
+      } catch { /* 尝试下一个 schema */ }
+    }
+  }
+
+  // 4) exo-open（XFCE）
+  if (await commandExists('exo-open')) {
+    try {
+      const { stdout } = await execFileAsync('exo-open', ['--launch', 'TerminalEmulator']);
+      const cmd = stdout.trim().split(/\s+/)[0];
+      if (cmd && (await commandExists(cmd))) {
+        return { command: cmd, delegate: false, spec: TERMINAL_SPECS[path.basename(cmd)] ?? null };
+      }
+    } catch { /* continue */ }
+  }
+
+  // 5) kreadconfig（KDE Plasma 6 → 5）
+  for (const tool of ['kreadconfig6', 'kreadconfig']) {
+    if (!(await commandExists(tool))) continue;
+    try {
+      const { stdout } = await execFileAsync(tool, ['--file', 'kdeglobals', '--group', 'General', '--key', 'TerminalApplication']);
+      const cmd = stdout.trim();
+      if (cmd && (await commandExists(cmd))) {
+        return { command: cmd, delegate: false, spec: TERMINAL_SPECS[path.basename(cmd)] ?? null };
+      }
+    } catch { /* 尝试 kreadconfig（Plasma 5） */ }
+  }
+
+  // 6) 常见终端扫描
+  for (const cmd of FALLBACK_TERMINALS) {
+    if (await commandExists(cmd)) {
+      return { command: cmd, delegate: false, spec: TERMINAL_SPECS[cmd] ?? null };
+    }
+  }
+
+  // 7) Debian alternatives
+  if (await commandExists('x-terminal-emulator')) {
+    return { command: 'x-terminal-emulator', delegate: false, spec: TERMINAL_SPECS['x-terminal-emulator'] };
+  }
+
+  return null;
+}
+
+/**
+ * 获取默认终端（带缓存）。未找到时不缓存结果，
+ * 下次调用会重新检测（用户可能刚安装了终端）。
+ */
+async function getDefaultTerminal(): Promise<DetectedTerminal | null> {
+  if (!terminalDetection) {
+    terminalDetection = detectDefaultTerminal().then((result) => {
+      if (!result) terminalDetection = null;
+      return result;
+    });
+  }
+  return terminalDetection;
+}
+
+/**
+ * 以 detached 模式启动进程（与窗口生命周期解耦），返回 true 或错误消息。
+ * 参数用数组传递而非 shell 字符串，避免路径含空格时被拆分。
+ */
+function spawnDetached(command: string, args: string[], cwd?: string): Promise<true | string> {
+  return new Promise((resolve) => {
+    try {
+      const child = spawn(command, args, {
+        detached: true,
+        stdio: 'ignore',
+        cwd,
+        env: { ...process.env },
+      });
+      child.on('error', (err: Error) => {
+        resolve(err.message);
+      });
+      child.on('spawn', () => {
+        child.unref();
+        resolve(true);
+      });
+    } catch (e) {
+      resolve(getExecError(e).message);
+    }
+  });
+}
+
 let udisks2Available = false;
 let deviceRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let previousExternalDevicesJson = '';
@@ -216,6 +412,79 @@ export function registerSystemHandlers() {
         resolve(getExecError(e).message);
       }
     });
+  });
+
+  /**
+   * 在系统默认终端中打开目录。
+   *
+   * 实现为「在终端里执行 `sh -c 'cd "$1" && exec "$SHELL"' sh <dir>`」：
+   * 命令会被单实例/CS 架构的终端（ghostty 等）可靠转发，
+   * 而 `--working-directory` 类标志与 spawn cwd 在这类终端上会被丢弃
+   * （窗口继承 server 进程的 cwd）。spawn cwd 仍一并设置作为兜底。
+   *
+   * 返回 `{ success: false, code: 'NO_TERMINAL' }` 表示未找到默认终端，
+   * `{ success: false, code: 'NOT_DIRECTORY' / 'NOT_FOUND' }` 表示目录无效，
+   * 由渲染端按错误码翻译提示。
+   */
+  ipcMain.handle('system:open-terminal', async (_event, dir: string) => {
+    try {
+      const stats = await fs.stat(dir);
+      if (!stats.isDirectory()) return { success: false, code: 'NOT_DIRECTORY' };
+    } catch {
+      return { success: false, code: 'NOT_FOUND' };
+    }
+
+    const terminal = await getDefaultTerminal();
+    if (!terminal) return { success: false, code: 'NO_TERMINAL' };
+
+    // sh -c 'cd "$1" && exec "${SHELL:-bash}"' sh <dir>
+    // $1 以 argv 传递，目录含空格/引号时无需转义
+    const shellArgv = ['sh', '-c', 'cd "$1" && exec "${SHELL:-bash}"', 'sh', dir];
+
+    if (terminal.delegate) {
+      // xdg-terminal-exec 负责挑选终端并正确构造参数
+      const result = await spawnDetached(terminal.command, shellArgv);
+      return result === true ? { success: true } : { success: false, error: result };
+    }
+
+    const args = terminal.spec?.exec ? terminal.spec.exec(shellArgv) : ['-e', ...shellArgv];
+    const result = await spawnDetached(terminal.command, args, dir);
+    return result === true ? { success: true } : { success: false, error: result };
+  });
+
+  /**
+   * 在系统默认终端中运行可执行文件。
+   * 后端复核可执行位（防御性检查，前端只对可执行文件显示入口）：
+   * 目录虽有 X_OK 位但无法被终端执行，需单独排除；
+   * 不可执行时返回 `code: 'NOT_EXECUTABLE'`。
+   */
+  ipcMain.handle('system:run-in-terminal', async (_event, filePath: string) => {
+    try {
+      const stats = await fs.stat(filePath);
+      if (stats.isDirectory()) return { success: false, code: 'NOT_EXECUTABLE' };
+    } catch {
+      return { success: false, code: 'NOT_EXECUTABLE' };
+    }
+
+    try {
+      await fs.access(filePath, fs.constants.X_OK);
+    } catch {
+      return { success: false, code: 'NOT_EXECUTABLE' };
+    }
+
+    const terminal = await getDefaultTerminal();
+    if (!terminal) return { success: false, code: 'NO_TERMINAL' };
+
+    const cwd = path.dirname(filePath);
+
+    if (terminal.delegate) {
+      const result = await spawnDetached(terminal.command, [filePath], cwd);
+      return result === true ? { success: true } : { success: false, error: result };
+    }
+
+    const args = terminal.spec?.exec ? terminal.spec.exec([filePath]) : ['-e', filePath];
+    const result = await spawnDetached(terminal.command, args, cwd);
+    return result === true ? { success: true } : { success: false, error: result };
   });
 
   ipcMain.handle('system:get-drives', async () => {

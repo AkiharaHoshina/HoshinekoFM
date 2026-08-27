@@ -21,6 +21,8 @@ const zhCT = {
   'context_menu.open': '打開',
   'context_menu.open_with': '打開方式...',
   'context_menu.open_terminal': '喺內置終端打開',
+  'context_menu.open_in_terminal': '喺預設終端機打開',
+  'context_menu.run_in_terminal': '喺預設終端機運行',
   'context_menu.copy': '複製',
   'context_menu.cut': '剪下',
   'context_menu.paste': '貼上',
@@ -141,6 +143,8 @@ const zhCT = {
   'toast.copy_success': (src: string, destDir: string, dest: string) => `${src} → ${destDir}/${dest}`,
   'toast.move_success': (src: string, destDir: string, dest: string) => `${src} → ${destDir}/${dest}`,
   'toast.launch_failed': (exec: string, result: string) => `打開方式：${exec} 啟動失敗（${result}）`,
+  'toast.no_terminal_found': '搵唔到預設終端機',
+  'toast.terminal_launch_failed': (msg: string) => `啟動終端機失敗：${msg}`,
 
   // ── 錯誤訊息 ──
   'error.permission_denied': '權限不足',

@@ -723,3 +723,38 @@ export async function emptyTrash(onSuccess?: () => void): Promise<void> {
     showToast(t('trash.empty'), 'info');
   }
 }
+
+/**
+ * 按后端返回错误码弹出对应的终端启动失败提示。
+ * @param code - 后端错误码（NO_TERMINAL 等）
+ * @param error - 非错误码场景下的原始错误消息
+ */
+function showTerminalLaunchError(code: string | undefined, error: string | undefined): void {
+  if (code === 'NO_TERMINAL') {
+    showToast(t('toast.no_terminal_found'), 'error');
+  } else {
+    showToast(t('toast.terminal_launch_failed', error || t('error.unknown')), 'error');
+  }
+}
+
+/**
+ * 在系统默认终端中打开目录。失败时按错误码弹 toast 提示。
+ * @param dir - 目标目录绝对路径
+ */
+export async function openInDefaultTerminal(dir: string): Promise<void> {
+  const result = await window.electron.openTerminal(dir);
+  if (!result.success) {
+    showTerminalLaunchError(result.code, result.error);
+  }
+}
+
+/**
+ * 在系统默认终端中运行可执行文件。失败时按错误码弹 toast 提示。
+ * @param filePath - 可执行文件绝对路径（调用方已确认含可执行位）
+ */
+export async function runInDefaultTerminal(filePath: string): Promise<void> {
+  const result = await window.electron.runInTerminal(filePath);
+  if (!result.success) {
+    showTerminalLaunchError(result.code, result.error);
+  }
+}

@@ -35,6 +35,8 @@ import {
   extractFile,
   openFile,
   buildPermanentDeleteMessage,
+  openInDefaultTerminal,
+  runInDefaultTerminal,
 } from "./utils/fileOperations";
 import { NameInputDialog } from "./components/NameInputDialog";
 import { ConflictDialog } from "./components/ConflictDialog";
@@ -366,6 +368,26 @@ function AppContent() {
           icon: "terminal",
           action: () => openTerminalAt(item.path),
         },
+        ...(item.isDirectory
+          ? [{
+            label: t("context_menu.open_in_terminal"),
+            icon: "terminal",
+            action: () => {
+              void openInDefaultTerminal(item.path);
+              closeContextMenu();
+            },
+          }]
+          : []),
+        ...(item.mode !== undefined && !item.isDirectory && (item.mode & 0o111) !== 0
+          ? [{
+            label: t("context_menu.run_in_terminal"),
+            icon: "play_arrow",
+            action: () => {
+              void runInDefaultTerminal(item.path);
+              closeContextMenu();
+            },
+          }]
+          : []),
         { divider: true, label: "", action: () => {} },
         {
           label: t("context_menu.copy"),

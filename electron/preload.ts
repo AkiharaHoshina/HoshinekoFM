@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld('electron', {
   realpath: (path: string) => ipcRenderer.invoke('fs:realpath', path),
   stat: (path: string) => ipcRenderer.invoke('fs:stat', path),
   getRecommendedApps: (path: string) => ipcRenderer.invoke('system:get-recommended-apps', path),
+  openTerminal: (dir: string) => ipcRenderer.invoke('system:open-terminal', dir),
+  runInTerminal: (filePath: string) => ipcRenderer.invoke('system:run-in-terminal', filePath),
 
   // PTY
   ptySpawn: (cwd: string) => ipcRenderer.invoke('terminal:spawn', cwd),
