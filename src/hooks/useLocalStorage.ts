@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 function getStorageValue<T>(key: string, defaultValue: T): T {
   // getting stored value
@@ -19,7 +19,18 @@ export const useLocalStorage = <T>(key: string, defaultValue: T): [T, (value: T 
     return getStorageValue(key, defaultValue);
   });
 
+  /**
+   * 首次挂载跳过写入：保持"键不存在 = 用户从未修改过"的语义。
+   * 若首次挂载就把默认值写入，就无法区分"从未选择"与"手动选择了默认值"
+   * （如设置里的语言跟随系统）。
+   */
+  const firstRenderRef = useRef(true);
+
   useEffect(() => {
+    if (firstRenderRef.current) {
+      firstRenderRef.current = false;
+      return;
+    }
     // storing input name
     localStorage.setItem(key, JSON.stringify(value));
   }, [key, value]);

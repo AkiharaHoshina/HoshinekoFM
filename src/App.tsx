@@ -184,14 +184,27 @@ function AppContent() {
     "settings.locale",
     getLocale(),
   );
-  const [marqueeEnabled, setMarqueeEnabled] = useLocalStorage<boolean>(
-    "settings.marqueeEnabled",
-    true,
-  );
+
+  /**
+   * 应用语言：先同步更新 i18n 模块（当前窗口所有订阅者立即重渲染），
+   * 再更新持久化状态（useLocalStorage 写入 localStorage 并触发其他窗口
+   * 的 storage 事件）。若顺序相反，App 的重渲染会发生在 _locale 更新之前，
+   * 未订阅 useLocale 的组件（导航栏、标签栏等）会晚一个渲染周期才显示
+   * 新语言——这正是此前"设置窗口点击确定/退出才响应"的原因。
+   */
+  const handleLocaleChange = useCallback((loc: Locale) => {
+    setLocale(loc);
+    setLocaleState(loc);
+  }, [setLocaleState]);
 
   useEffect(() => {
     setLocale(locale);
   }, [locale]);
+
+  const [marqueeEnabled, setMarqueeEnabled] = useLocalStorage<boolean>(
+    "settings.marqueeEnabled",
+    true,
+  );
 
   const handleLoadCustomCss = async (path: string) => {
     try {
@@ -920,7 +933,7 @@ function AppContent() {
           customCssPath={customCssPath}
           onImportCss={handleImportCss}
           locale={locale}
-          onLocaleChange={setLocaleState}
+          onLocaleChange={handleLocaleChange}
           marqueeEnabled={marqueeEnabled}
           onToggleMarquee={() => setMarqueeEnabled(!marqueeEnabled)}
         />

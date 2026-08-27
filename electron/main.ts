@@ -53,11 +53,17 @@ async function resolveStartupPath(argv: string[]): Promise<string | null> {
 /**
  * 创建一个新窗口。所有窗口共享同一主进程后端
  * （模块级缓存、UDISKS2 连接、inotify watcher 去重等）。
+ *
+ * 窗口对象同步构造并立即加入 `windows` 集合，再异步解析启动路径写入
+ * `startupPathByWindow`——这样 second-instance 处理器 await 返回后拿到的
+ * 一定是刚创建的窗口，不会误取到旧窗口（旧实现先 await 后构造，处理器
+ * 同步取"最后一个窗口"时新窗口尚未入集合，focus 到旧窗口导致 Wayland
+ * 合成器（niri 等）视口跳转到旧窗口所在工作区）。
+ *
+ * @param startupArgs - 启动参数，用于解析窗口专属启动路径
+ * @returns 创建的窗口实例
  */
-async function createWindow(startupArgs: string[] = process.argv) {
-  // 先解析启动路径，确保渲染进程调用 get-startup-path 时已就绪
-  const startupPath = await resolveStartupPath(startupArgs);
-
+async function createWindow(startupArgs: string[] = process.argv): Promise<BrowserWindow> {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -76,8 +82,13 @@ async function createWindow(startupArgs: string[] = process.argv) {
   const wc = win.webContents;
   windows.add(win);
 
-  // 窗口专属的启动路径
-  startupPathByWindow.set(win, startupPath);
+  // 窗口专属的启动路径（异步解析，保证渲染进程调用 get-startup-path 时已就绪；
+  // 解析期间窗口已入集合，不影响 second-instance 的窗口定位）
+  void resolveStartupPath(startupArgs).then((startupPath) => {
+    if (!win.isDestroyed()) {
+      startupPathByWindow.set(win, startupPath);
+    }
+  });
 
   win.once('closed', () => {
     windows.delete(win);
@@ -105,6 +116,8 @@ async function createWindow(startupArgs: string[] = process.argv) {
   } else {
     win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  return win;
 }
 
 // Initialize PTY handlers
@@ -125,20 +138,22 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', (_event, argv) => {
-    // 已有实例运行：打开新窗口（共享同一个后端）
-    const open = () => {
-      createWindow(argv);
-      const wins = getWindows();
-      const win = wins[wins.length - 1];
-      if (win) {
-        if (win.isMinimized()) win.restore();
-        win.focus();
-      }
+    // 已有实例运行：打开新窗口（共享同一个后端）。
+    // 必须 await 新窗口实例后再 focus：新窗口由 niri 等 Wayland 合成器
+    // 映射到"当前活动工作区"，若误 focus 旧窗口会把视口拉回旧窗口的
+    // 工作区，新窗口随后也会开在那里（跨工作区回跳问题）。
+    const open = async () => {
+      const win = await createWindow(argv);
+      if (win.isDestroyed()) return;
+      if (win.isMinimized()) win.restore();
+      // 新窗口显示后由合成器按 open-focused 规则自动聚焦，
+      // 这里只在已显示时补一次 focus，绝不触碰其他窗口
+      if (win.isVisible()) win.focus();
     };
     if (app.isReady()) {
-      open();
+      void open();
     } else {
-      app.whenReady().then(open);
+      app.whenReady().then(() => void open());
     }
   });
 }

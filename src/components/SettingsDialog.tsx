@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Dialog } from "./Dialog";
 import { Button } from "./Button";
 import { Icon } from "./Icon";
@@ -45,13 +45,34 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 }) => {
   const langOptions = getLanguageOptions();
 
+  /**
+   * 语言选择的应用时机：选择时只更新本地预览（pendingLocale），
+   * 点击「确定」或关闭对话框（退出 = 确定）时才调用 onLocaleChange
+   * 真正应用并同步到所有窗口，避免其他窗口在用户犹豫选择时立即响应。
+   */
+  const [pendingLocale, setPendingLocale] = useState<Locale>(locale);
+
+  // 每次打开对话框时把预览重置为当前已应用的语言
+  useEffect(() => {
+    if (open) setPendingLocale(locale); // eslint-disable-line react-hooks/set-state-in-effect -- 打开时同步预览初值
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 open 变化时同步，保持打开期间的本地预览不被外部变更打断
+  }, [open]);
+
+  /**
+   * 应用语言并关闭：确定与关闭走同一路径（退出设置等于确定）。
+   */
+  const handleApply = () => {
+    if (pendingLocale !== locale) onLocaleChange(pendingLocale);
+    onClose();
+  };
+
   return (
     <Dialog
       title={t("settings.title")}
       open={open}
-      onClose={onClose}
+      onClose={handleApply}
       actions={
-        <Button onClick={onClose} variant="filled">
+        <Button onClick={handleApply} variant="filled">
           {t("settings.done")}
         </Button>
       }
@@ -64,10 +85,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           </div>
           <OutlinedSelect
             className="settings-select"
-            value={locale}
+            value={pendingLocale}
             onInput={(e) => {
               const val = (e.target as HTMLSelectElement).value as Locale;
-              if (val) onLocaleChange(val);
+              if (val) setPendingLocale(val);
             }}
           >
             {langOptions.map((opt) => (

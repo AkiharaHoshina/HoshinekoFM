@@ -1,7 +1,7 @@
 {
   "name": "material-3-file-manager",
   "private": true,
-  "version": "0.11.3",
+  "version": "0.11.4",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
