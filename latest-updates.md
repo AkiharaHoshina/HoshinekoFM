@@ -1,17 +1,5 @@
 # 更新日志
 
-## v0.11.3 — 系统默认终端集成
-
-- **在默认终端中打开**：目录右键菜单与背景右键菜单新增入口，检测系统默认终端模拟器并打开当前目录
-- **在默认终端中运行**：可执行文件（含可执行位）右键菜单新增入口，在默认终端中运行该文件
-- 内置终端未改动，两个入口与「在内置终端打开」并列显示
-- 检测链：`$TERMINAL` → `xdg-terminal-exec`（整包委托）→ `gsettings`（GNOME/Cinnamon/MATE）→ `exo-open`（XFCE）→ `kreadconfig`（KDE）→ 常见终端扫描 → `x-terminal-emulator`；结果缓存，未找到不缓存
-- 支持 ghostty、gnome-terminal、kgx、konsole、xfce4-terminal、kitty、alacritty、foot、wezterm、tilix、xterm
-- 打开目录采用 `sh -c 'cd "$1" && exec "$SHELL"'` 命令包装（不使用 `--working-directory` 类标志）：ghostty 等单实例/CS 架构终端在转发新窗口请求时会丢弃工作目录标志，命令包装则会被可靠转发
-- 运行文件后端复核：目录（虽有 X_OK）与不可执行文件均拒绝
-- 目录不再错误显示「在默认终端中运行」
-- i18n 全部 10 种语言新增 4 个键（打开/运行/未找到终端/启动失败）
-
 ## v0.11.2
 
 > 基于提交 `4789fc7`（main 分支）实际变更整理。类型检查（`npx tsc -b`）与 ESLint 均通过。
@@ -132,3 +120,74 @@
 - 版本号升至 `0.11.2`
 - 删除 FileList / Breadcrumbs 中遗留的调试日志（`console.warn`）
 - 错误提示统一走 i18n（`error.search_failed`、`error.cannot_open_dir` 等）
+
+## v0.11.3 — 系统默认终端集成
+
+> 基于提交 `3112838`（main 分支）实际变更整理。类型检查（`npx tsc -b`、`npx tsc -p electron/tsconfig.json`）与 ESLint 均通过。
+
+### 新增功能
+
+#### 在默认终端中打开（目录）
+
+- 目录右键菜单与背景右键菜单新增「在默认终端中打开」入口，与「在内置终端打开」并列；内置终端未做任何改动
+- 读取系统默认终端模拟器，调用其打开目标目录
+- 后端校验目录有效性，失败返回错误码由前端翻译提示
+
+#### 在默认终端中运行（文件）
+
+- 右键菜单新增「在默认终端中运行」入口，仅对含可执行位（`mode & 0o111`）的**文件**显示，目录不显示
+- 调用系统默认终端运行该可执行文件（脚本类含 shebang 亦可）
+- 后端防御性复核：目录（虽有 X_OK 位）与不可执行文件一律拒绝（`code: 'NOT_EXECUTABLE'`）
+
+### 默认终端检测链（`electron/handlers/system.ts`）
+
+按优先级依次尝试，命中即返回命令与参数风格；Promise 级缓存，未找到时不缓存（下次重试，用户可能刚安装终端）：
+
+1. `$TERMINAL` 环境变量
+2. `xdg-terminal-exec`（freedesktop 新标准，存在则整包委托）
+3. `gsettings`（GNOME / Cinnamon / MATE / Budgie）
+4. `exo-open --launch TerminalEmulator`（XFCE）
+5. `kreadconfig6` / `kreadconfig`（KDE Plasma 6/5）
+6. 常见终端二进制扫描（ghostty、kitty、alacritty、wezterm、foot、gnome-terminal、kgx、konsole、xfce4-terminal、tilix、xterm）
+7. `x-terminal-emulator`（Debian alternatives）
+
+### 终端参数风格表
+
+不同终端执行命令的参数风格差异大，内置按 basename 匹配的规格表：
+
+| 终端 | 命令参数风格 |
+| --- | --- |
+| ghostty | `-e <argv...>` |
+| gnome-terminal | `-- <argv...>` |
+| kgx / konsole / alacritty / tilix / xterm | `-e <argv...>` |
+| xfce4-terminal | `-x <argv...>` |
+| kitty / foot | 尾随 `<argv...>` |
+| wezterm | `start -- <argv...>` |
+
+### ghostty 工作目录问题的分析与修复
+
+- **问题现象**：ghostty 有窗口时打开在已有窗口所在目录，无窗口时打开在 `~`，目标目录不生效
+- **根因**：ghostty 为 client-server / GTK 单实例架构，`ghostty` 命令仅是客户端，新窗口由 server 进程创建。不带 `-e` 时 `--working-directory` 标志在单实例转发中被丢弃，spawn 的 `cwd` 也不生效，新窗口继承 server 进程的 cwd（无 server 时 ghostty 启动即切到 `~`）；用户配置 `working-directory = inherit` 加剧此问题
+- **修复**：不再使用 `--working-directory` 类标志，打开目录统一走「在终端里执行命令」包装：`sh -c 'cd "$1" && exec "${SHELL:-bash}"' sh <目录>`，目录以 argv 传入（空格/引号安全）；命令会被单实例转发可靠送达，`spawn cwd` 仍一并设置作兜底。已在真机验证（含 server 运行中、含空格与中文路径场景）
+
+### 实现位置
+
+- `electron/handlers/system.ts`：终端检测链、参数规格表、`spawnDetached`、两个 IPC handler（`system:open-terminal` / `system:run-in-terminal`）
+- `electron/preload.ts`：暴露 `openTerminal` / `runInTerminal`
+- `src/types/electron.d.ts`：类型声明（含错误码字段）
+- `src/utils/fileOperations.ts`：`openInDefaultTerminal` / `runInDefaultTerminal` 封装，按错误码弹 toast（未找到终端 / 启动失败）
+- `src/App.tsx`：目录/文件右键菜单入口（运行项限定 `!isDirectory` 且含可执行位）
+- `src/components/ExplorerTab.tsx`：背景右键菜单入口
+- 启动参数以数组传递（非 shell 字符串），路径含空格/引号安全；进程以 `detached + unref` 方式启动，与窗口生命周期解耦
+
+### 国际化
+
+- 全部 10 种语言（zh-CN/HK/CT/TW/AC、en-US、ja-JP、ko-KR/KP/CN）新增 4 个键：
+  - `context_menu.open_in_terminal`（在默认终端中打开）
+  - `context_menu.run_in_terminal`（在默认终端中运行）
+  - `toast.no_terminal_found`（未找到默认终端模拟器）
+  - `toast.terminal_launch_failed`（启动终端失败）
+
+### 其他
+
+- 版本号升至 `0.11.3`

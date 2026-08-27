@@ -42,14 +42,12 @@ The Hoshineko file explorer is a modification and reconstruction of [bhimio1](ht
 | **ko-KR** | 한국어（대한민국） | 韩语（大韩民国） | Korean (Republic of Korea) |
 | **ko-KP** | 한국어（조선민주주의인민공화국） | 韩语（朝鲜民主主义人民共和国） | Korean (Democratic People's Republic of Korea) |
 | **ko-CN** | 조선어（중국） | 朝鲜语（中国） | Korean (China) |
+| **ru-UA** | Русский（Украина） | 俄语（乌克兰） | Russian (Ukraine) |
+| **uk-UA** | Українська（Україна） | 乌克兰语（乌克兰） | Ukrainian (Ukraine) |
 
 ### 计划支持 / Planned Support
 
-
-| Code | Native Name | Chinese Description | English Description) |
-| :--- | :--- | :--- | :--- |
-| **ru-UA** | Русский（Украина） | 俄语（乌克兰） | Russian (Ukraine) |
-| **uk-UA** | Українська（Україна） | 乌克兰语（乌克兰） | Ukrainian (Ukraine) |
+暂无。
 
 ## Custom Theme Colors (Matugen)
 
