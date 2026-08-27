@@ -26,6 +26,9 @@ const zhCN = {
   'context_menu.paste': '粘贴',
   'context_menu.rename': '重命名',
   'context_menu.delete': '删除',
+  'context_menu.delete_permanent': '永久删除',
+  'drop.same_dir': '文件已在该目录中',
+  'drop.no_paths': '无法获取拖拽文件的路径',
   'context_menu.properties': '属性',
   'context_menu.new_folder': '新建文件夹',
   'context_menu.new_file': '新建文件',
@@ -56,6 +59,9 @@ const zhCN = {
   'dialog.conflict.operation_move': '移动',
   'dialog.conflict.operation_copy': '复制',
   'dialog.conflict.more_items': (n: number) => `...还有 ${n} 个`,
+  'dialog.conflict.cancelled': '操作已取消',
+  'dialog.conflict.skipped_items': (n: number) => `已跳过 ${n} 个重名项目`,
+  'dialog.conflict.all_skipped': (n: number) => `所有 ${n} 个项目均因重名被跳过，未执行任何操作`,
   'dialog.conflict.cancel_item': '取消此项',
 
   // ── 重命名弹窗 ──
@@ -72,6 +78,8 @@ const zhCN = {
 
   // ── 删除确认 ──
   'dialog.delete.confirm': (n: number) => `确定要删除选中的 ${n} 个项目吗？`,
+  'dialog.delete.permanent_confirm': (n: number) => `此操作将永久删除选中的 ${n} 个项目，无法恢复。确定继续吗？`,
+  'dialog.delete.total_size': (size: string) => `总大小: ${size}`,
 
   // ── 属性弹窗 ──
   'properties.title': '属性',
@@ -82,6 +90,8 @@ const zhCN = {
   'properties.calculating': '计算中...',
   'properties.bytes': ' 字节',
   'properties.modified': '修改时间:',
+  'properties.permissions': '权限:',
+  'properties.owner': '所有者:',
   'properties.type': '类型:',
   'properties.directory': '文件夹',
 
@@ -116,6 +126,7 @@ const zhCN = {
   'toast.moved_items': (n: number) => `已移动 ${n} 个项目`,
   'toast.pasted_items': (n: number) => `已粘贴 ${n} 个项目`,
   'toast.deleted_items': (n: number) => `已删除 ${n} 个项目`,
+  'toast.deleted_permanently': (n: number) => `已永久删除 ${n} 个项目`,
   'toast.imported_files': (n: number) => `已导入 ${n} 个文件`,
   'toast.imported_skipped': (ok: number, skip: number) => `已导入 ${ok} 个文件，跳过 ${skip} 个`,
   'toast.import_all_skipped': (skip: number) => `全部 ${skip} 个文件已跳过（文件已存在）`,
@@ -203,6 +214,8 @@ const zhCN = {
   'dashboard.loading': '正在加载统计数据...',
   'dashboard.pinned': '固定项',
   'dashboard.add': '添加',
+  'dashboard.pin_folder': '固定文件夹',
+  'dashboard.pin_file': '固定文件',
   'dashboard.recent': '最近访问',
   'dashboard.no_recent': '暂无最近访问的文件。',
   'dashboard.unpin_tooltip': '取消固定',
@@ -223,6 +236,7 @@ const zhCN = {
   // ── 排序 ──
   'sort.toggle_grouping': '切换分组',
   'sort.by_name': '按名称排序',
+  'sort.by_size': '按大小排序',
   'sort.by_date': '按修改时间排序',
 
   // ── 状态栏 ──
@@ -238,6 +252,15 @@ const zhCN = {
   'breadcrumbs.root': '根目录',
   'breadcrumbs.home': (user: string, dir: string) => `${user} 的家目录\n${dir}`,
   'breadcrumbs.go_to_root': '转到根目录',
+  'breadcrumbs.go_to_home': '转到主页',
+  'breadcrumbs.go_to_trash': '转到回收站',
+  'drag.action_title': '移动还是复制？',
+  'drag.action_message': (n: number, dir: string) => `将 ${n} 个项目移动或复制到"${dir}"？`,
+  'drag.button.move': '移动',
+  'drag.button.copy': '复制',
+  'drag.trash_restore_title': '还原到该位置？',
+  'drag.trash_restore_message': (dir: string) => `将项目还原到"${dir}"？还原会将其移出回收站。`,
+  'breadcrumbs.go_to_dev': '转到设备目录',
   'breadcrumbs.root_title': (mp: string) => `根目录\n${mp}`,
   'breadcrumbs.dev': '设备',
   'breadcrumbs.dev_title': (mp: string) => `设备目录\n${mp}`,
@@ -267,6 +290,20 @@ const zhCN = {
   // ── 终端 ──
   'terminal.title': '终端',
   'terminal.process_exited': '\r\n进程已退出。\r\n',
+
+  // ── 回收站 ──
+  'tab.trash': '回收站',
+  'sidebar.trash': '回收站',
+  'trash.title': '回收站',
+  'trash.empty': '回收站是空的',
+  'trash.empty_trash': '清空回收站',
+  'trash.empty_confirm': '确定要清空回收站吗？此操作无法撤销。',
+  'trash.emptied': (n: number) => `已清空回收站（删除 ${n} 个项目）`,
+  'trash.restore': '还原',
+  'trash.restoring_items': '正在还原…',
+  'trash.restored_items': (n: number) => `已还原 ${n} 个项目`,
+  'trash.restore_conflicts': (n: number) => `${n} 个项目因目标位置已有同名文件而跳过`,
+  'trash.restore_no_origin': '找不到原始位置信息，无法还原',
 
   // ── 错误边界 ──
   'error.something_wrong': '出了点问题。',
@@ -393,6 +430,7 @@ const zhCN = {
   'device.mount_failed': (device: string, error?: string) => `挂载 ${device} 失败` + (error ? `: ${error}` : ''),
   'device.unmount_failed': (device: string, error?: string) => `卸载 ${device} 失败` + (error ? `: ${error}` : ''),
   'device.eject_failed': (device: string, error?: string) => `弹出 ${device} 失败` + (error ? `: ${error}` : ''),
+  'device.eject_partitions_mounted': (device: string) => `请先卸载 ${device} 上所有已挂载的分区`,
   'device.already_mounted': '设备已挂载',
   'device.go_to_source': '转到源设备',
   'device.type_usb': 'USB 设备',

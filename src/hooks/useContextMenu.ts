@@ -7,6 +7,8 @@ export function useContextMenu() {
     x: number;
     y: number;
     item: IFile | null;
+    /** 右键命中已选中文件时，携带的当前完整选中集（用于批量操作） */
+    selected: IFile[];
   } | null>(null);
   const [bgMenuItems, setBgMenuItems] = useState<ContextMenuItem[] | null>(null);
   const [deviceContextMenu, setDeviceContextMenu] = useState<{
@@ -16,10 +18,10 @@ export function useContextMenu() {
   } | null>(null);
 
   const handleContextMenu = useCallback(
-    (e: React.MouseEvent, file: IFile | null) => {
+    (e: React.MouseEvent, file: IFile | null, selectedFiles: IFile[] = []) => {
       e.preventDefault();
       e.stopPropagation();
-      setContextMenu({ x: e.clientX, y: e.clientY, item: file });
+      setContextMenu({ x: e.clientX, y: e.clientY, item: file, selected: selectedFiles });
     },
     [],
   );

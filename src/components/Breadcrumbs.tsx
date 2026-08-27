@@ -6,8 +6,10 @@ import { Icon } from "./Icon";
 import { Chip } from "./md";
 import { ContextMenu } from "./ContextMenu";
 import { useDrag } from "../contexts/DragContext";
-import { clearPendingNativeDrag } from "./FileList";
 import type { IFile } from "../types/files";
+import type { DragClaimResult } from "../types/electron.d";
+import { extractDropPaths, samePathSet } from "../utils/dragDrop";
+import { shouldSuppressDrop } from "../utils/nativeDragTracker";
 import { t } from "../i18n";
 
 type HomeMap = Record<string, { username: string; uid: number }>;
@@ -137,7 +139,6 @@ interface BreadcrumbCtxMenuState {
   x: number;
   y: number;
   realPath: string;
-  isChip: boolean;
   /** 当 Chip 是软链接时，记录软链接目标路径 */
   symlinkTarget?: string;
 }
@@ -156,6 +157,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   const lastRef = useRef<HTMLSpanElement>(null);
 
   const [homeMap, setHomeMap] = useState<HomeMap>({});
+  const [ownHome, setOwnHome] = useState<string | null>(null);
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [symlinkInfo, setSymlinkInfo] = useState<Map<string, SymlinkInfo>>(
     new Map(),
@@ -171,6 +173,13 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    window.electron
+      .getHomePath()
+      .then(setOwnHome)
+      .catch(() => {});
+  }, []);
+
   const [mountMap, setMountMap] = useState<Record<string, { source: string; fstype: string }>>({});
 
   useEffect(() => {
@@ -179,6 +188,21 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       .then(setMountMap)
       .catch(() => {});
   }, []);
+
+  /**
+   * 共用右键菜单里的动态特殊挂载入口。
+   * 挂载映射里的特殊源（devtmpfs/devpts/proc/sysfs/tmpfs 如 /run、/tmp 等）
+   * 各自成为一个跳转项，与固定入口（回收站/主页/根目录/设备目录）互通。
+   * 过滤：只保留深度 ≤ 2 的挂载点（排除 /run/lock、/sys/fs/cgroup 等噪音），
+   * 排除 /dev（已有固定"设备目录"入口避免重复）。
+   */
+  const specialMountMenuEntries = useMemo(() => {
+    return Object.entries(mountMap)
+      .filter(([mp]) => mp.split('/').filter(Boolean).length <= 2)
+      .map(([mp, info]) => ({ mountpoint: mp, source: info.source, config: MOUNT_SOURCE_DISPLAY[info.source] }))
+      .filter((e) => e.config && e.mountpoint !== '/dev')
+      .sort((a, b) => a.mountpoint.localeCompare(b.mountpoint));
+  }, [mountMap]);
 
   useEffect(() => {
     if (lastRef.current) {
@@ -238,26 +262,60 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   }, []);
 
   const handleDrop = useCallback(
-    (e: React.DragEvent, targetPath: string) => {
+    async (e: React.DragEvent, targetPath: string) => {
       e.preventDefault();
       e.stopPropagation();
       setDragOverPath(null);
 
+      // 幻影 drop-back（本窗口刚发起过拖拽，真实 drop 落在其他窗口）：
+      // 直接忽略，防止同一次拖放被重复处理
+      if (shouldSuppressDrop()) return;
+
+      // 1) 同窗口内部拖拽（dragState 存活）
       const dragState = getDragState();
       if (dragState && dragState.files.length > 0) {
         if (dragState.sourcePath === targetPath) {
           return;
         }
         const operation: "move" | "copy" = e.shiftKey ? "copy" : "move";
-        clearPendingNativeDrag();
         onDropFiles(targetPath, dragState.files, operation);
         endDrag();
         return;
       }
 
-      const externalPaths = Array.from(e.dataTransfer.files)
-        .filter((f) => (f as unknown as { path?: string }).path)
-        .map((f) => (f as unknown as { path: string }).path);
+      // 2) 跨窗口 / 外部应用：主进程登记仲裁（同一次跨窗口拖放只授予一个窗口）
+      const externalPaths = extractDropPaths(e.dataTransfer);
+      let claim: DragClaimResult;
+      try {
+        claim = await window.electron.claimDragFiles();
+      } catch {
+        claim = { status: 'none' };
+      }
+      if (claim.status === 'consumed') {
+        // 幻影 drop-back（同一次拖放已被另一窗口处理）：静默退出
+        return;
+      }
+      if (claim.status === 'granted') {
+        const metas = claim.files;
+        if (externalPaths.length > 0 && !samePathSet(metas.map((m) => m.path), externalPaths)) {
+          // 外部应用拖入（登记陈旧）：按外部复制处理
+          onDropExternalFiles(targetPath, externalPaths);
+          return;
+        }
+        const entries: IFile[] = metas.map((m) => ({
+          name: m.name,
+          path: m.path,
+          isDirectory: m.isDirectory,
+          size: 0,
+          mtime: new Date(),
+          mime: null,
+          trashOriginalPath: m.trashOriginalPath,
+        }));
+        onDropFiles(targetPath, entries, 'move');
+        return;
+      }
+
+      // 3) 外部应用拖入：复制
       if (externalPaths.length > 0) {
         onDropExternalFiles(targetPath, externalPaths);
       }
@@ -266,7 +324,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   );
 
   const handleBreadcrumbContextMenu = useCallback(
-    (e: React.MouseEvent, realPath: string, isChip = false) => {
+    (e: React.MouseEvent, realPath: string) => {
       e.preventDefault();
       e.stopPropagation();
       const info = symlinkInfo.get(realPath);
@@ -274,7 +332,6 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
         x: e.clientX,
         y: e.clientY,
         realPath,
-        isChip,
         symlinkTarget: info?.isSymlink && info.target ? info.target : undefined,
       });
     },
@@ -343,7 +400,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
           const folded = segSpecial.config.showPath && showPathSeen > 0;
           if (segSpecial.config.showPath) showPathSeen++;
           const segSymlink = symlinkInfo.get(segmentPath);
-          const isSegSymlink = segSymlink?.isSymlink && segSymlink.target;
+          const isSegSymlink = Boolean(segSymlink?.isSymlink && segSymlink.target);
           const segTitle = t(segSpecial.config.titleKey, segSpecial.mountpoint);
           return (
             <React.Fragment key={segmentPath}>
@@ -355,7 +412,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
                 onDragEnter={(e) => handleDragEnter(e, segmentPath)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, segmentPath)}
-                onContextMenu={(e) => handleBreadcrumbContextMenu(e, segmentPath, true)}
+                onContextMenu={(e) => handleBreadcrumbContextMenu(e, segmentPath)}
                 className={`breadcrumb-chip${dragOverPath === segmentPath ? " drag-over" : ""}`}
               >
                 <Icon name={segSpecial.config.icon} slot="icon" />
@@ -385,11 +442,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
             onDragEnter={(e) => handleDragEnter(e, segmentPath)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, segmentPath)}
-            onContextMenu={(e) => {
-              if (isSymlinkDir && symlinkTarget) {
-                handleBreadcrumbContextMenu(e, symlinkTarget);
-              }
-            }}
+            onContextMenu={(e) => handleBreadcrumbContextMenu(e, segmentPath)}
             className={`breadcrumb-item${isSymlinkDir ? " symlink" : ""}${dragOverPath === segmentPath ? " drag-over" : ""}`}
             style={{ fontWeight: isLast ? 600 : 400 }}
             title={
@@ -404,6 +457,107 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       );
     });
   };
+
+  // 所有胶囊（特殊挂载/回收站/主页/根目录/普通路径段）统一右键菜单：
+  // 软链接目标 + 回收站 + 主页 + 根目录 + 设备目录，互相跳转补齐，
+  // 与当前胶囊相同的入口自动排除。
+  const ctxMenuNode = breadcrumbCtxMenu ? (
+    <ContextMenu
+      x={breadcrumbCtxMenu.x}
+      y={breadcrumbCtxMenu.y}
+      items={[
+        ...(breadcrumbCtxMenu.symlinkTarget
+          ? [{
+            label: t("symlink.go_to_target"),
+            icon: "arrow_forward",
+            action: () => {
+              onNavigate(breadcrumbCtxMenu.symlinkTarget!);
+              setBreadcrumbCtxMenu(null);
+            },
+          }]
+          : []),
+        ...(breadcrumbCtxMenu.realPath !== "trash://"
+          ? [{
+            label: t("breadcrumbs.go_to_trash"),
+            icon: "delete",
+            action: () => {
+              onNavigate("trash://");
+              setBreadcrumbCtxMenu(null);
+            },
+          }]
+          : []),
+        ...(ownHome && breadcrumbCtxMenu.realPath !== ownHome
+          ? [{
+            label: t("breadcrumbs.go_to_home"),
+            icon: "home",
+            action: () => {
+              onNavigate(ownHome);
+              setBreadcrumbCtxMenu(null);
+            },
+          }]
+          : []),
+        ...(breadcrumbCtxMenu.realPath !== "/"
+          ? [{
+            label: t("breadcrumbs.go_to_root"),
+            icon: "tag",
+            action: () => {
+              onNavigate("/");
+              setBreadcrumbCtxMenu(null);
+            },
+          }]
+          : []),
+        ...(breadcrumbCtxMenu.realPath !== "/dev"
+          ? [{
+            label: t("breadcrumbs.go_to_dev"),
+            icon: "memory",
+            action: () => {
+              onNavigate("/dev");
+              setBreadcrumbCtxMenu(null);
+            },
+          }]
+          : []),
+        ...(specialMountMenuEntries.length > 0
+          ? [{ divider: true, label: "", action: () => {} }]
+          : []),
+        ...specialMountMenuEntries
+          .filter((s) => s.mountpoint !== breadcrumbCtxMenu.realPath)
+          .map((s) => ({
+            label: s.config.showPath
+              ? `${t(s.config.labelKey)} ${s.mountpoint.split('/').filter(Boolean).pop()}`
+              : t(s.config.labelKey),
+            icon: s.config.icon,
+            action: () => {
+              onNavigate(s.mountpoint);
+              setBreadcrumbCtxMenu(null);
+            },
+          })),
+      ]}
+      onClose={() => setBreadcrumbCtxMenu(null)}
+    />
+  ) : null;
+
+  // 回收站虚拟目录：渲染单个胶囊，样式与主页/根目录胶囊一致。
+  // 所有 hooks 已在此处之前执行完毕，early return 不会破坏 hooks 顺序。
+  if (currentPath === 'trash://') {
+    return (
+      <div ref={scrollRef} className="breadcrumb-container">
+        <Chip
+          title={t("trash.title")}
+          onClick={() => onNavigate("trash://")}
+          onDragOver={handleDragOver}
+          onDragEnter={(e) => handleDragEnter(e, "trash://")}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, "trash://")}
+          onContextMenu={(e) => handleBreadcrumbContextMenu(e, "trash://")}
+          className={`breadcrumb-chip${dragOverPath === "trash://" ? " drag-over" : ""}`}
+        >
+          <Icon name="delete" slot="icon" />
+          <span style={{ fontWeight: 600 }}>{t("trash.title")}</span>
+        </Chip>
+        {ctxMenuNode}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -428,7 +582,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
           onDragEnter={(e) => handleDragEnter(e, homeMatchPath)}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, homeMatchPath)}
-          onContextMenu={(e) => handleBreadcrumbContextMenu(e, homeMatchPath, true)}
+          onContextMenu={(e) => handleBreadcrumbContextMenu(e, homeMatchPath)}
           className={`breadcrumb-chip${dragOverPath === homeMatchPath ? " drag-over" : ""}`}
         >
           <Icon name="home" slot="icon" />
@@ -446,6 +600,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
             <IconButton
               variant="standard"
               onClick={() => onNavigate("/")}
+              onContextMenu={(e) => handleBreadcrumbContextMenu(e, "/")}
               className="breadcrumb-root"
               title={t("breadcrumbs.root_title", "/")}
             >
@@ -473,7 +628,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
                 onDragEnter={(e) => handleDragEnter(e, mountPath)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, mountPath)}
-                onContextMenu={(e) => handleBreadcrumbContextMenu(e, mountPath, true)}
+                onContextMenu={(e) => handleBreadcrumbContextMenu(e, mountPath)}
                 className={`breadcrumb-chip${dragOverPath === mountPath ? " drag-over" : ""}`}
               >
                 <Icon name={matchedSpecial!.config.icon} slot="icon" />
@@ -494,7 +649,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
           onDragEnter={(e) => handleDragEnter(e, "/")}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, "/")}
-          onContextMenu={(e) => handleBreadcrumbContextMenu(e, "/", true)}
+          onContextMenu={(e) => handleBreadcrumbContextMenu(e, "/")}
           className={`breadcrumb-chip${dragOverPath === "/" ? " drag-over" : ""}`}
         >
           <Icon name="tag" slot="icon" />
@@ -511,6 +666,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
           onDragEnter={(e) => handleDragEnter(e, "/")}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, "/")}
+          onContextMenu={(e) => handleBreadcrumbContextMenu(e, "/")}
           className={`breadcrumb-root${dragOverPath === "/" ? " drag-over" : ""}`}
           title={t("breadcrumbs.root_title", "/")}
         >
@@ -525,46 +681,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
         isInSpecial,
       )}
 
-      {breadcrumbCtxMenu && (
-        <ContextMenu
-          x={breadcrumbCtxMenu.x}
-          y={breadcrumbCtxMenu.y}
-          items={
-            breadcrumbCtxMenu.isChip
-              ? [
-                ...(breadcrumbCtxMenu.symlinkTarget
-                  ? [{
-                    label: t("symlink.go_to_target"),
-                    icon: "arrow_forward",
-                    action: () => {
-                      onNavigate(breadcrumbCtxMenu.symlinkTarget!);
-                      setBreadcrumbCtxMenu(null);
-                    },
-                  }]
-                  : []),
-                {
-                  label: t("breadcrumbs.go_to_root"),
-                  icon: "home",
-                  action: () => {
-                    onNavigate("/");
-                    setBreadcrumbCtxMenu(null);
-                  },
-                },
-              ]
-              : [
-                {
-                  label: t("symlink.go_to_target"),
-                  icon: "arrow_forward",
-                  action: () => {
-                    onNavigate(breadcrumbCtxMenu.realPath);
-                    setBreadcrumbCtxMenu(null);
-                  },
-                },
-              ]
-          }
-          onClose={() => setBreadcrumbCtxMenu(null)}
-        />
-      )}
+      {ctxMenuNode}
     </div>
   );
 };

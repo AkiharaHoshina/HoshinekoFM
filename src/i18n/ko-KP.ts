@@ -27,6 +27,9 @@ const koKP = {
   'context_menu.paste': '붙여넣기',
   'context_menu.rename': '이름 바꾸기',
   'context_menu.delete': '삭제',
+  'context_menu.delete_permanent': '영구 삭제',
+  'drop.same_dir': '화일이 이미 이 폴더에 있습니다',
+  'drop.no_paths': '끌어온 화일의 경로를 가져올 수 없습니다',
   'context_menu.properties': '속성',
   'context_menu.new_folder': '새 서류함',
   'context_menu.new_file': '새 화일',
@@ -57,6 +60,9 @@ const koKP = {
   'dialog.conflict.operation_move': '이동',
   'dialog.conflict.operation_copy': '복사',
   'dialog.conflict.more_items': (n: number) => `...외 ${n}개`,
+  'dialog.conflict.cancelled': '작업이 취소되었습니다',
+  'dialog.conflict.skipped_items': (n: number) => `같은 이름의 ${n}개 항목을 통과하였습니다`,
+  'dialog.conflict.all_skipped': (n: number) => `${n}개 항목이 모두 같은 이름으로 통과되어 아무 작업도 실행되지 않았습니다`,
   'dialog.conflict.cancel_item': '이 항목 취소',
 
   // ── 이름 바꾸기 팝업 ──
@@ -73,6 +79,8 @@ const koKP = {
 
   // ── 삭제 확인 ──
   'dialog.delete.confirm': (n: number) => `선택한 ${n}개의 항목을 삭제하시겠습니까?`,
+  'dialog.delete.permanent_confirm': (n: number) => `선택한 ${n}개의 항목을 영구 삭제합니다. 복구할 수 없습니다. 계속하시겠습니까?`,
+  'dialog.delete.total_size': (size: string) => `총 크기: ${size}`,
 
   // ── 속성 팝업 ──
   'properties.title': '속성',
@@ -83,6 +91,8 @@ const koKP = {
   'properties.calculating': '계산 중...',
   'properties.bytes': ' 바이트',
   'properties.modified': '수정한 날짜:',
+  'properties.permissions': '권한:',
+  'properties.owner': '소유자:',
   'properties.type': '류형:',
   'properties.directory': '디렉토리',
 
@@ -117,6 +127,7 @@ const koKP = {
   'toast.moved_items': (n: number) => `${n}개 항목을 이동하였습니다`,
   'toast.pasted_items': (n: number) => `${n}개 항목을 붙여넣었습니다`,
   'toast.deleted_items': (n: number) => `${n}개 항목을 삭제하였습니다`,
+  'toast.deleted_permanently': (n: number) => `${n}개 항목을 영구 삭제하였습니다`,
   'toast.imported_files': (n: number) => `${n}개 화일을 가져왔습니다`,
   'toast.imported_skipped': (ok: number, skip: number) => `${ok}개 화일 가져옴, ${skip}개 통과함`,
   'toast.import_all_skipped': (skip: number) => `전체 ${skip}개 화일을 통과하였습니다 (화일이 이미 존재함)`,
@@ -131,6 +142,15 @@ const koKP = {
   'toast.copy_success': (src: string, destDir: string, dest: string) => `${src} → ${destDir}/${dest}`,
   'toast.move_success': (src: string, destDir: string, dest: string) => `${src} → ${destDir}/${dest}`,
   'toast.launch_failed': (exec: string, result: string) => `실행 실패: ${exec} (${result})`,
+  'toast.loading_dir': (path: string) => `${path} 로딩 중…`,
+  'toast.opening_file': '화일 여는 중…',
+  'toast.searching': '검색 중…',
+  'toast.cancel_action': '취소',
+  'toast.deleting_items': '삭제 중…',
+  'toast.pasting_items': '붙여넣기 중…',
+  'toast.importing_items': '가져오기 중…',
+  'toast.progress_count': (current: number, total: number) => `${current} / ${total}`,
+  'toast.operation_cancelled': '작업이 취소되었습니다',
 
   // ── 에러 메시지 ──
   'error.permission_denied': '권한 부족',
@@ -145,6 +165,7 @@ const koKP = {
   'error.unsupported_format': '지원하지 않는 압축 형식',
   'error.file_open_failed': (name: string, err: string) => `${name} 열기 실패: ${err}`,
   'error.create_parent_failed': (parent: string) => `대상 디렉토리 생성 실패: ${parent}`,
+  'error.path_fallback': (path: string, reason: string, fallback: string) => `"${path}"에 접근할 수 없습니다 (${reason}), "${fallback}"으로 전환되었습니다`,
 
   // ── fileOperations 에러 포맷 ──
   'file_op.exists': (op: string, ref: string) => `${op} ${ref}: 이름이 같은 화일이 존재합니다`,
@@ -203,6 +224,8 @@ const koKP = {
   'dashboard.loading': '통계 자료를 불러오는 중...',
   'dashboard.pinned': '고정됨',
   'dashboard.add': '추가',
+  'dashboard.pin_folder': '폴더 고정',
+  'dashboard.pin_file': '파일 고정',
   'dashboard.recent': '최근 항목',
   'dashboard.no_recent': '최근에 접근한 화일이 없습니다.',
   'dashboard.unpin_tooltip': '고정 해제',
@@ -223,6 +246,7 @@ const koKP = {
   // ── 정렬 ──
   'sort.toggle_grouping': '무리지기 전환',
   'sort.by_name': '이름순 정렬',
+  'sort.by_size': '크기순 정렬',
   'sort.by_date': '수정일순 정렬',
 
   // ── 상태 표시줄 ──
@@ -232,11 +256,21 @@ const koKP = {
   // ── Omnibar ──
   'omnibar.placeholder': '경로 입력 또는 검색...',
   'omnibar.button_tip': '경로를 편집하거나 검색하려면 누르십시오',
+  'omnibar.flatten_symlinks': '심볼릭 링크 해결',
 
   // ── 빵가루 내비게이션 ──
   'breadcrumbs.root': '뿌리',
   'breadcrumbs.home': (user: string, dir: string) => `${user}의 사용자 서류함\n${dir}`,
   'breadcrumbs.go_to_root': '뿌리 디렉토리로 이동',
+  'breadcrumbs.go_to_home': '사용자 서류함으로 이동',
+  'breadcrumbs.go_to_trash': '휴지통으로 이동',
+  'drag.action_title': '이동 또는 복사?',
+  'drag.action_message': (n: number, dir: string) => `${n}개 항목을 "${dir}"(으)로 이동 또는 복사하시겠습니까?`,
+  'drag.button.move': '이동',
+  'drag.button.copy': '복사',
+  'drag.trash_restore_title': '이 위치로 복원하시겠습니까?',
+  'drag.trash_restore_message': (dir: string) => `항목을 "${dir}"(으)로 복원하시겠습니까? 복원하면 휴지통에서 이동됩니다.`,
+  'breadcrumbs.go_to_dev': '장치 디렉토리로 이동',
   'breadcrumbs.root_title': (mp: string) => `뿌리 디렉토리\n${mp}`,
   'breadcrumbs.dev': '장치',
   'breadcrumbs.dev_title': (mp: string) => `장치 디렉토리\n${mp}`,
@@ -266,6 +300,20 @@ const koKP = {
   // ── 터미널 ──
   'terminal.title': '단말기',
   'terminal.process_exited': '\r\n처리가 종료되였습니다.\r\n',
+
+  // ── 回收站 ──
+  'tab.trash': '휴지통',
+  'sidebar.trash': '휴지통',
+  'trash.title': '휴지통',
+  'trash.empty': '휴지통이 비어 있습니다',
+  'trash.empty_trash': '휴지통 비우기',
+  'trash.empty_confirm': '휴지통을 비우시겠습니까? 이 작업은 되돌릴 수 없습니다.',
+  'trash.emptied': (n: number) => `휴지통을 비웠습니다 (${n}개 항목 삭제)`,
+  'trash.restore': '복원',
+  'trash.restoring_items': '복원 중...',
+  'trash.restored_items': (n: number) => `${n}개 항목을 복원하였습니다`,
+  'trash.restore_conflicts': (n: number) => `대상 위치에 같은 이름의 파일이 있어 ${n}개 항목을 건너뛰었습니다`,
+  'trash.restore_no_origin': '원래 위치 정보를 찾을 수 없어 복원할 수 없습니다',
 
   // ── 오류 경계 ──
   'error.something_wrong': '문제가 발생하였습니다.',
@@ -383,11 +431,14 @@ const koKP = {
   'device.mount_failed': '탑재 실패',
   'device.unmount_failed': '탑재 해제 실패',
   'device.eject_failed': '꺼내기 실패',
+  'device.eject_partitions_mounted': '먼저 탑재된 모든 파티션을 탑재 해제하십시오',
   'device.already_mounted': '장치가 이미 탑재됨',
   'device.go_to_source': '원본 장치로 이동',
   'device.type_usb': 'USB 장치',
   'device.type_removable': '이동식 장치',
   'device.type_disk': '디스크',
+  'device.needs_auth': '인증이 필요한 장치입니다',
+  'device.cannot_mount': '이 장치 유형은 탑재할 수 없습니다',
 
   // ── 심볼릭 링크 동작 ──
   'symlink.go_to_target': '기호련결 대상으로 이동',

@@ -27,6 +27,9 @@ const koKR = {
   'context_menu.paste': '붙여넣기',
   'context_menu.rename': '이름 바꾸기',
   'context_menu.delete': '삭제',
+  'context_menu.delete_permanent': '영구 삭제',
+  'drop.same_dir': '파일이 이미 이 폴더에 있습니다',
+  'drop.no_paths': '드래그한 파일의 경로를 가져올 수 없습니다',
   'context_menu.properties': '속성',
   'context_menu.new_folder': '새 폴더',
   'context_menu.new_file': '새 파일',
@@ -57,6 +60,9 @@ const koKR = {
   'dialog.conflict.operation_move': '이동',
   'dialog.conflict.operation_copy': '복사',
   'dialog.conflict.more_items': (n: number) => `...외 ${n}개`,
+  'dialog.conflict.cancelled': '작업이 취소되었습니다',
+  'dialog.conflict.skipped_items': (n: number) => `같은 이름의 ${n}개 항목을 건너뛰었습니다`,
+  'dialog.conflict.all_skipped': (n: number) => `${n}개 항목이 모두 같은 이름으로 건너뛰어져 아무 작업도 실행되지 않았습니다`,
   'dialog.conflict.cancel_item': '이 항목 취소',
 
   // ── 이름 바꾸기 팝업 ──
@@ -73,6 +79,8 @@ const koKR = {
 
   // ── 삭제 확인 ──
   'dialog.delete.confirm': (n: number) => `선택한 ${n}개의 항목을 삭제하시겠습니까?`,
+  'dialog.delete.permanent_confirm': (n: number) => `선택한 ${n}개의 항목을 영구 삭제합니다. 복구할 수 없습니다. 계속하시겠습니까?`,
+  'dialog.delete.total_size': (size: string) => `총 크기: ${size}`,
 
   // ── 속성 팝업 ──
   'properties.title': '속성',
@@ -83,6 +91,8 @@ const koKR = {
   'properties.calculating': '계산 중...',
   'properties.bytes': ' 바이트',
   'properties.modified': '수정한 날짜:',
+  'properties.permissions': '권한:',
+  'properties.owner': '소유자:',
   'properties.type': '유형:',
   'properties.directory': '디렉터리',
 
@@ -117,6 +127,7 @@ const koKR = {
   'toast.moved_items': (n: number) => `${n}개 항목을 이동했습니다`,
   'toast.pasted_items': (n: number) => `${n}개 항목을 붙여넣었습니다`,
   'toast.deleted_items': (n: number) => `${n}개 항목을 삭제했습니다`,
+  'toast.deleted_permanently': (n: number) => `${n}개 항목을 영구 삭제했습니다`,
   'toast.imported_files': (n: number) => `${n}개 파일을 가져왔습니다`,
   'toast.imported_skipped': (ok: number, skip: number) => `${ok}개 파일 가져옴, ${skip}개 건너뜀`,
   'toast.import_all_skipped': (skip: number) => `모든 ${skip}개 파일을 건너뛰었습니다 (파일이 이미 존재함)`,
@@ -204,6 +215,8 @@ const koKR = {
   'dashboard.loading': '통계 데이터를 불러오는 중...',
   'dashboard.pinned': '고정됨',
   'dashboard.add': '추가',
+  'dashboard.pin_folder': '폴더 고정',
+  'dashboard.pin_file': '파일 고정',
   'dashboard.recent': '최근 항목',
   'dashboard.no_recent': '최근에 액세스한 파일이 없습니다.',
   'dashboard.unpin_tooltip': '고정 해제',
@@ -224,6 +237,7 @@ const koKR = {
   // ── 정렬 ──
   'sort.toggle_grouping': '그룹화 전환',
   'sort.by_name': '이름순 정렬',
+  'sort.by_size': '크기순 정렬',
   'sort.by_date': '수정일순 정렬',
 
   // ── 상태 표시줄 ──
@@ -239,6 +253,15 @@ const koKR = {
   'breadcrumbs.root': '루트',
   'breadcrumbs.home': (user: string, dir: string) => `${user}의 홈 디렉터리\n${dir}`,
   'breadcrumbs.go_to_root': '루트 디렉터리로 이동',
+  'breadcrumbs.go_to_home': '홈으로 이동',
+  'breadcrumbs.go_to_trash': '휴지통으로 이동',
+  'drag.action_title': '이동 또는 복사?',
+  'drag.action_message': (n: number, dir: string) => `${n}개 항목을 "${dir}"(으)로 이동 또는 복사할까요?`,
+  'drag.button.move': '이동',
+  'drag.button.copy': '복사',
+  'drag.trash_restore_title': '이 위치로 복원할까요?',
+  'drag.trash_restore_message': (dir: string) => `항목을 "${dir}"(으)로 복원할까요? 복원하면 휴지통에서 이동됩니다.`,
+  'breadcrumbs.go_to_dev': '장치 디렉토리로 이동',
   'breadcrumbs.root_title': (mp: string) => `루트 디렉터리\n${mp}`,
   'breadcrumbs.dev': '장치',
   'breadcrumbs.dev_title': (mp: string) => `장치 디렉터리\n${mp}`,
@@ -268,6 +291,20 @@ const koKR = {
   // ── 터미널 ──
   'terminal.title': '터미널',
   'terminal.process_exited': '\r\n프로세스가 종료되었습니다.\r\n',
+
+  // ── 回收站 ──
+  'tab.trash': '휴지통',
+  'sidebar.trash': '휴지통',
+  'trash.title': '휴지통',
+  'trash.empty': '휴지통이 비어 있습니다',
+  'trash.empty_trash': '휴지통 비우기',
+  'trash.empty_confirm': '휴지통을 비우시겠습니까? 이 작업은 되돌릴 수 없습니다.',
+  'trash.emptied': (n: number) => `휴지통을 비웠습니다 (${n}개 항목 삭제)`,
+  'trash.restore': '복원',
+  'trash.restoring_items': '복원 중...',
+  'trash.restored_items': (n: number) => `${n}개 항목을 복원했습니다`,
+  'trash.restore_conflicts': (n: number) => `대상 위치에 같은 이름의 파일이 있어 ${n}개 항목을 건너뛰었습니다`,
+  'trash.restore_no_origin': '원래 위치 정보를 찾을 수 없어 복원할 수 없습니다',
 
   // ── 오류 경계 ──
   'error.something_wrong': '문제가 발생했습니다.',
@@ -394,6 +431,7 @@ const koKR = {
   'device.mount_failed': (device: string, error?: string) => `${device} 마운트 실패` + (error ? `: ${error}` : ''),
   'device.unmount_failed': (device: string, error?: string) => `${device} 마운트 해제 실패` + (error ? `: ${error}` : ''),
   'device.eject_failed': (device: string, error?: string) => `${device} 꺼내기 실패` + (error ? `: ${error}` : ''),
+  'device.eject_partitions_mounted': (device: string) => `${device}에 마운트된 모든 파티션을 먼저 마운트 해제하세요`,
   'device.already_mounted': '장치가 이미 마운트됨',
   'device.go_to_source': '원본 장치로 이동',
   'device.type_usb': 'USB 장치',

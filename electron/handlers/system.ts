@@ -1,4 +1,4 @@
-import { ipcMain, app, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import path from 'path';
 import { promises as fs } from 'fs';
 import os from 'os';
@@ -75,7 +75,7 @@ async function getAllDevices(): Promise<LsblkDevice[]> {
   }
 }
 
-function scheduleExternalDevicesRefresh(mainWindow: BrowserWindow | null) {
+function scheduleExternalDevicesRefresh(getWindows: () => BrowserWindow[]) {
   if (deviceRefreshTimer) clearTimeout(deviceRefreshTimer);
   deviceRefreshTimer = setTimeout(async () => {
     deviceRefreshTimer = null;
@@ -85,8 +85,11 @@ function scheduleExternalDevicesRefresh(mainWindow: BrowserWindow | null) {
       const json = JSON.stringify(externalDevices);
       if (json !== previousExternalDevicesJson) {
         previousExternalDevicesJson = json;
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('system:devices-changed', externalDevices);
+        // 广播给所有窗口
+        for (const win of getWindows()) {
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('system:devices-changed', externalDevices);
+          }
         }
       }
     } catch (e) {
@@ -95,7 +98,7 @@ function scheduleExternalDevicesRefresh(mainWindow: BrowserWindow | null) {
   }, 300);
 }
 
-export async function setupUdisks2Monitor(mainWindow: BrowserWindow | null) {
+export async function setupUdisks2Monitor(getWindows: () => BrowserWindow[]) {
   try {
     const bus = dbus.systemBus();
     const obj = await bus.getProxyObject('org.freedesktop.UDisks2', '/org/freedesktop/UDisks2');
@@ -103,15 +106,15 @@ export async function setupUdisks2Monitor(mainWindow: BrowserWindow | null) {
     udisks2Available = true;
     console.log('udisks2 monitor active');
 
-    objectManager.on('InterfacesAdded', () => scheduleExternalDevicesRefresh(mainWindow));
-    objectManager.on('InterfacesRemoved', () => scheduleExternalDevicesRefresh(mainWindow));
+    objectManager.on('InterfacesAdded', () => scheduleExternalDevicesRefresh(getWindows));
+    objectManager.on('InterfacesRemoved', () => scheduleExternalDevicesRefresh(getWindows));
   } catch {
     console.warn('udisks2 not available, device polling will be used');
     udisks2Available = false;
   }
 }
 
-export function registerSystemHandlers(mainWindowRef: () => BrowserWindow | null) {
+export function registerSystemHandlers() {
   ipcMain.handle('system:get-apps', async () => {
     if (appsCache) return appsCache;
 
@@ -146,40 +149,69 @@ export function registerSystemHandlers(mainWindowRef: () => BrowserWindow | null
     return appsCache;
   });
 
+  /**
+   * Open a file with a chosen application.
+   *
+   * When the original `.desktop` file is available it is preferred to launch
+   * through `gio launch`, which resolves the same desktop environment as
+   * double-click (`shell.openPath`/xdg-open). Spawning the raw `Exec=` line
+   * directly can drop session environment variables, making apps started via
+   * "Open with" behave differently from double-click.
+   *
+   * Falls back to spawning the Exec line with proper field-code substitution
+   * when GIO is unavailable or no desktop file was provided.
+   */
   ipcMain.handle('system:open-with', async (_, execPath: string, filePath: string, desktopFile?: string) => {
+    if (desktopFile) {
+      try {
+        await execFileAsync('gio', ['launch', desktopFile, filePath]);
+        return true;
+      } catch (gioErr) {
+        console.warn('gio launch failed, falling back to direct spawn:', getExecError(gioErr).message);
+      }
+    }
+
     let cwd: string | undefined;
     if (desktopFile) {
       try {
         const content = await fs.readFile(desktopFile, 'utf-8');
         const pathMatch = content.match(/^Path=(.*)$/m);
         if (pathMatch && pathMatch[1].trim()) {
-          cwd = pathMatch[1].trim();
+          cwd = pathMatch[1].trim().replace(/^~(?=$|\/)/, os.homedir());
         }
       } catch { /* continue */ }
     }
 
-    return new Promise((resolve) => {
-      let cmdLine = execPath;
-      if (cmdLine.includes('@@')) {
-        cmdLine = cmdLine.replace(/@@u\s*@@/g, `@@u ${filePath} @@`);
-        cmdLine = cmdLine.replace(/@@\s*@@/g, `@@ ${filePath} @@`);
-      } else {
-        cmdLine += ` "${filePath}"`;
-      }
+    // Substitute Desktop Entry field codes per spec: %f/%F/%u/%U become the
+    // file path, the remaining codes (%d/%D/%n/%N/%i/%c/%k/%v/%m) are removed.
+    // `%%` is escaped to a literal `%`.
+    const quotedPath = `"${filePath.replace(/"/g, '\\"')}"`;
+    let cmdLine: string;
+    if (execPath.includes('%')) {
+      cmdLine = execPath.replace(/%%|%[fFuUdDnNickvm]/g, (match, code) => {
+        if (match === '%%') return '%';
+        return (code === 'f' || code === 'F' || code === 'u' || code === 'U') ? quotedPath : '';
+      });
+    } else {
+      cmdLine = `${execPath} ${quotedPath}`;
+    }
 
+    return new Promise((resolve) => {
       try {
         const child = spawn(cmdLine, [], {
           detached: true,
           stdio: 'ignore',
           shell: true,
-          cwd: cwd,
+          cwd,
           env: { ...process.env }
         });
         child.on('error', (err: Error) => {
           resolve(err.message);
         });
-        child.unref();
-        child.on('spawn', () => resolve(true));
+        child.on('spawn', () => {
+          child.unref();
+          resolve(true);
+        });
       } catch (e) {
         resolve(getExecError(e).message);
       }
@@ -275,12 +307,17 @@ export function registerSystemHandlers(mainWindowRef: () => BrowserWindow | null
     }
   });
 
+  /**
+   * Eject (power off) a device. Fails with a `code` of `PARTITIONS_MOUNTED`
+   * when the device still has mounted partitions — the renderer translates
+   * the code instead of receiving a hardcoded message.
+   */
   ipcMain.handle('system:eject-device', async (_event, devicePath: string) => {
     try {
       const mountMap = await getMountMap();
       for (const [, info] of mountMap) {
         if (info.source && info.source.startsWith(devicePath) && info.source !== devicePath) {
-          return { success: false, error: '请先卸载所有已挂载的分区' };
+          return { success: false, code: 'PARTITIONS_MOUNTED' };
         }
       }
       await execAsync(`udisksctl power-off -b "${devicePath}"`);

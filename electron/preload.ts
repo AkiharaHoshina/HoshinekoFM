@@ -7,6 +7,11 @@ contextBridge.exposeInMainWorld('electron', {
   getHomePath: () => ipcRenderer.invoke('fs:get-home'),
   getHomeMap: () => ipcRenderer.invoke('fs:get-home-map'),
   getPlaces: () => ipcRenderer.invoke('fs:get-places'),
+  listTrash: () => ipcRenderer.invoke('fs:trash-list'),
+  removeFromTrash: (names: string[]) => ipcRenderer.invoke('fs:trash-remove', names),
+  removeTrashInfo: (names: string[]) => ipcRenderer.invoke('fs:trash-remove-info', names),
+  emptyTrash: () => ipcRenderer.invoke('fs:trash-empty'),
+  getTrashDir: () => ipcRenderer.invoke('fs:get-trash-dir'),
   copyFile: (source: string, dest: string) => ipcRenderer.invoke('fs:copy', source, dest),
   moveFile: (source: string, dest: string) => ipcRenderer.invoke('fs:move', source, dest),
   trashFile: (path: string) => ipcRenderer.invoke('fs:trash', path),
@@ -17,9 +22,28 @@ contextBridge.exposeInMainWorld('electron', {
   getApps: () => ipcRenderer.invoke('system:get-apps'),
   openWith: (exec: string, path: string, desktopFile?: string) => ipcRenderer.invoke('system:open-with', exec, path, desktopFile),
   openFileDialog: () => ipcRenderer.invoke('dialog:open-file'),
+  pickFile: () => ipcRenderer.invoke('dialog:pick-file'),
+  pickDirectory: () => ipcRenderer.invoke('dialog:pick-directory'),
   readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path),
-  startDrag: (paths: string | string[]) => ipcRenderer.send('dnd:start', paths),
+  startDrag: (paths: string | string[], files?: { path: string; name: string; isDirectory: boolean; trashOriginalPath?: string }[]) => ipcRenderer.send('dnd:start', { paths, files }),
+  claimDragFiles: () => ipcRenderer.invoke('dnd:claim-files'),
+  consumeDrag: () => ipcRenderer.invoke('dnd:consume'),
+  onDragConsumedExternally: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('dnd:externally-consumed', handler);
+    return () => ipcRenderer.removeListener('dnd:externally-consumed', handler);
+  },
   cacheDragIcon: (name: string, pngBase64: string) => ipcRenderer.send('cache:drag-icon', name, pngBase64),
+
+  // 跨窗口剪贴板（主进程持有，广播到所有窗口）
+  clipboardSet: (data: unknown) => ipcRenderer.invoke('clipboard:set', data),
+  clipboardGet: () => ipcRenderer.invoke('clipboard:get'),
+  clipboardClear: () => ipcRenderer.invoke('clipboard:clear'),
+  onClipboardChange: (callback: (data: unknown) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, data: unknown) => callback(data);
+    ipcRenderer.on('clipboard:changed', handler);
+    return () => ipcRenderer.removeListener('clipboard:changed', handler);
+  },
   getStorageUsage: () => ipcRenderer.invoke('system:get-storage-usage'),
   getStartupPath: () => ipcRenderer.invoke('app:get-startup-path'),
   exists: (path: string) => ipcRenderer.invoke('fs:exists', path),
@@ -36,6 +60,7 @@ contextBridge.exposeInMainWorld('electron', {
   getSymlinkTarget: (path: string) => ipcRenderer.invoke('fs:get-symlink-target', path),
   checkSymlinks: (paths: string[]) => ipcRenderer.invoke('fs:check-symlinks', paths),
   realpath: (path: string) => ipcRenderer.invoke('fs:realpath', path),
+  stat: (path: string) => ipcRenderer.invoke('fs:stat', path),
   getRecommendedApps: (path: string) => ipcRenderer.invoke('system:get-recommended-apps', path),
 
   // PTY

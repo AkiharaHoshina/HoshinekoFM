@@ -12,7 +12,7 @@ export interface IDrive {
 
 /** Parameters for starting a batch job on the main process. */
 export interface StartJobParams {
-  type: 'trash' | 'copy' | 'move';
+  type: 'trash' | 'copy' | 'move' | 'delete';
   items: { src?: string; dest?: string; path?: string }[];
 }
 
@@ -40,6 +40,26 @@ export interface JobComplete {
   cancelled: boolean;
 }
 
+/** Cross-window clipboard contents (held by the main process). */
+export interface ClipboardData {
+  files: IFile[];
+  operation: 'copy' | 'cut';
+}
+
+/** 拖拽文件元数据（随活跃拖拽登记跨窗口传递） */
+export interface DragFileMeta {
+  path: string;
+  name: string;
+  isDirectory: boolean;
+  trashOriginalPath?: string;
+}
+
+/** 拖拽登记 claim 结果（主进程仲裁跨窗口拖放只授予一个窗口） */
+export type DragClaimResult =
+  | { status: 'granted'; files: DragFileMeta[] }
+  | { status: 'consumed' }
+  | { status: 'none' };
+
 export interface IElectronAPI {
     getThemeCss: () => Promise<string | null>;
     listDir: (path: string) => Promise<{ data: IFile[]; actualPath: string; error?: { code: string; originalPath: string } }>;
@@ -47,6 +67,11 @@ export interface IElectronAPI {
     getHomePath: () => Promise<string>;
     getHomeMap: () => Promise<Record<string, { username: string; uid: number }>>;
     getPlaces: () => Promise<Array<{ name: string; path: string; icon: string }>>;
+    listTrash: () => Promise<IFile[]>;
+    removeFromTrash: (names: string[]) => Promise<number>;
+    removeTrashInfo: (names: string[]) => Promise<void>;
+    emptyTrash: () => Promise<number>;
+    getTrashDir: () => Promise<string>;
     copyFile: (source: string, dest: string) => Promise<boolean>;
     moveFile: (source: string, dest: string) => Promise<boolean>;
     trashFile: (path: string) => Promise<boolean>;
@@ -57,9 +82,20 @@ export interface IElectronAPI {
     getApps: () => Promise<{ name: string; icon: string; exec: string; desktopFile: string; }[]>;
     openWith: (exec: string, path: string, desktopFile?: string) => Promise<true | string>;
     openFileDialog: () => Promise<string | null>;
+    pickFile: () => Promise<string | null>;
+    pickDirectory: () => Promise<string | null>;
     readFile: (path: string) => Promise<string | null>;
-    startDrag: (paths: string | string[]) => void;
+    startDrag: (paths: string | string[], files?: DragFileMeta[]) => void;
+    claimDragFiles: () => Promise<DragClaimResult>;
+    consumeDrag: () => Promise<void>;
+    onDragConsumedExternally: (callback: () => void) => () => void;
     cacheDragIcon: (name: string, pngBase64: string) => void;
+
+    // 跨窗口剪贴板
+    clipboardSet: (data: ClipboardData) => Promise<void>;
+    clipboardGet: () => Promise<ClipboardData | null>;
+    clipboardClear: () => Promise<void>;
+    onClipboardChange: (callback: (data: ClipboardData | null) => void) => () => void;
     getStartupPath: () => Promise<string | null>;
     search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string }) => Promise<IFile[]>;
     getDirectorySize: (path: string) => Promise<number>;
@@ -72,10 +108,11 @@ export interface IElectronAPI {
     getMountMap: () => Promise<Record<string, { source: string; fstype: string }>>;
     mountDevice: (devicePath: string) => Promise<{ success: boolean; mountpoint?: string; error?: string }>;
     unmountDevice: (devicePath: string) => Promise<{ success: boolean; error?: string }>;
-    ejectDevice: (devicePath: string) => Promise<{ success: boolean; error?: string }>;
+    ejectDevice: (devicePath: string) => Promise<{ success: boolean; error?: string; code?: string }>;
     getSymlinkTarget: (path: string) => Promise<{ isSymlink: boolean; target?: string; targetExists: boolean }>;
     checkSymlinks: (paths: string[]) => Promise<{ path: string; isSymlink: boolean; target?: string }[]>;
     realpath: (path: string) => Promise<string>;
+    stat: (path: string) => Promise<{ isDirectory: boolean; size: number; mtime: Date } | null>;
     getRecommendedApps: (path: string) => Promise<{ name: string; icon: string | null; exec: string; path: string; }[]>;
 
     // PTY

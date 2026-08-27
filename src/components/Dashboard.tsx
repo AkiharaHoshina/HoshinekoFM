@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Icon } from './Icon';
+import { ContextMenu } from './ContextMenu';
 import './Dashboard.css';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import type { IFile } from '../types/files';
@@ -7,6 +8,8 @@ import { t as ti } from '../i18n';
 
 interface DashboardProps {
     onNavigate: (path: string) => void;
+    /** 固定的是文件时点击打开文件（而非进入目录） */
+    onOpenFile?: (path: string) => void;
 }
 
 interface StorageStats {
@@ -19,6 +22,8 @@ interface PinnedItem {
     name: string;
     path: string;
     icon?: string;
+    /** 是否为目录。false 表示文件，点击时用系统默认程序打开 */
+    isDir?: boolean;
 }
 
 const labelToKey: Record<string, string> = {
@@ -45,7 +50,7 @@ const t = (text: string): string => {
   return key ? (ti as any)(key) : text;
 };
 
-export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile }) => {
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
@@ -54,11 +59,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   }, []);
   const [storage, setStorage] = useState<StorageStats | null>(null);
 
-  const [pinnedItems, setPinnedItems] = useLocalStorage<PinnedItem[]>('dashboard.pinned', [
-    { name: 'Home', path: '/home/bhimio' },
-    { name: 'Downloads', path: '/home/bhimio/Downloads' },
-    { name: 'Documents', path: '/home/bhimio/Documents' }
-  ]);
+  /**
+   * Whether `dashboard.pinned` already existed in localStorage before this
+   * mount. Used to seed first-run defaults without clobbering the user's own
+   * pins (or their choice to remove every pin).
+   */
+  const hasStoredPins = useRef<boolean>(
+    localStorage.getItem('dashboard.pinned') !== null,
+  );
+
+  const [pinnedItems, setPinnedItems] = useLocalStorage<PinnedItem[]>('dashboard.pinned', []);
 
   const [recentFiles] = useLocalStorage<IFile[]>('dashboard.recent', []);
 
@@ -70,14 +80,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     }
   }, []);
 
-  const handleAddPin = async () => {
-    if (window.electron) {
-      const path = await window.electron.openFileDialog();
-      if (path) {
-        const name = path.split('/').pop() || path;
-        setPinnedItems(prev => [...prev, { name, path }]);
-      }
-    }
+  /**
+   * Seed default pins (Home/Downloads/Documents) from the real home
+   * directory on first launch. The previous defaults were hardcoded to
+   * `/home/bhimio`, which is wrong for every other user.
+   */
+  useEffect(() => {
+    if (hasStoredPins.current) return;
+    if (!window.electron) return;
+
+    window.electron.getHomePath().then((home) => {
+      setPinnedItems([
+        { name: 'Home', path: home, isDir: true },
+        { name: 'Downloads', path: `${home}/Downloads`, isDir: true },
+        { name: 'Documents', path: `${home}/Documents`, isDir: true },
+      ]);
+    });
+  }, [setPinnedItems]);
+
+  const [pinMenuPos, setPinMenuPos] = useState<{ x: number; y: number } | null>(null);
+
+  /**
+   * 添加固定项。文件点击后打开，目录点击后导航进入。
+   * Linux 上 GTK 文件选择器 openFile/openDirectory 互斥，
+   * 因此文件与目录必须用两个独立的对话框入口。
+   */
+  const addPin = async (kind: 'file' | 'folder') => {
+    if (!window.electron) return;
+    const path = kind === 'file'
+      ? await window.electron.pickFile()
+      : await window.electron.pickDirectory();
+    if (!path) return;
+    const stat = await window.electron.stat(path);
+    if (!stat) return;
+    const name = path.split('/').pop() || path;
+    setPinnedItems(prev => [...prev, { name, path, isDir: stat.isDirectory }]);
   };
 
   const handleRemovePin = (e: React.MouseEvent, index: number) => {
@@ -132,9 +169,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           </div>
           <div className="pinned-grid">
             {pinnedItems.map((item, idx) => (
-              <div key={idx} className="pinned-item" onClick={() => onNavigate(item.path)}>
+              <div
+                key={idx}
+                className="pinned-item"
+                onClick={() => item.isDir === false ? onOpenFile?.(item.path) : onNavigate(item.path)}
+              >
                 <div className="pinned-icon">
-                  <Icon name={item.name === 'Home' ? 'home' : 'folder'} size={32} />
+                  <Icon
+                    name={item.name === 'Home' ? 'home' : item.isDir === false ? 'insert_drive_file' : 'folder'}
+                    size={32}
+                  />
                 </div>
                 <span>{t(item.name)}</span>
                 <div className="pin-remove" onClick={(e) => handleRemovePin(e, idx)} title={ti('dashboard.unpin_tooltip')}>
@@ -142,7 +186,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 </div>
               </div>
             ))}
-            <div className="pinned-item add-pin" onClick={handleAddPin}>
+            <div
+              className="pinned-item add-pin"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPinMenuPos({ x: e.clientX, y: e.clientY });
+              }}
+            >
               <div className="pinned-icon">
                 <Icon name="add" />
               </div>
@@ -150,6 +200,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </div>
           </div>
         </div>
+
+        {pinMenuPos && (
+          <ContextMenu
+            x={pinMenuPos.x}
+            y={pinMenuPos.y}
+            items={[
+              {
+                label: ti('dashboard.pin_folder'),
+                icon: 'folder',
+                action: () => { void addPin('folder'); },
+              },
+              {
+                label: ti('dashboard.pin_file'),
+                icon: 'insert_drive_file',
+                action: () => { void addPin('file'); },
+              },
+            ]}
+            onClose={() => setPinMenuPos(null)}
+          />
+        )}
 
         <div className="dashboard-card recent-card">
           <div className="card-header">

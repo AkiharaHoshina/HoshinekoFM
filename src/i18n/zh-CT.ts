@@ -26,6 +26,9 @@ const zhCT = {
   'context_menu.paste': '貼上',
   'context_menu.rename': '改名',
   'context_menu.delete': '刪除',
+  'context_menu.delete_permanent': '永久刪除',
+  'drop.same_dir': '檔案已喺呢個資料夾入面',
+  'drop.no_paths': '攞唔到拖曳檔案嘅路徑',
   'context_menu.properties': '屬性',
   'context_menu.new_folder': '新資料夾',
   'context_menu.new_file': '新檔案',
@@ -56,6 +59,9 @@ const zhCT = {
   'dialog.conflict.operation_move': '移動',
   'dialog.conflict.operation_copy': '複製',
   'dialog.conflict.more_items': (n: number) => `...仲有 ${n} 個`,
+  'dialog.conflict.cancelled': '操作已取消',
+  'dialog.conflict.skipped_items': (n: number) => `已跳過 ${n} 個撞名項目`,
+  'dialog.conflict.all_skipped': (n: number) => `所有 ${n} 個項目都因撞名被跳過，冇執行任何操作`,
   'dialog.conflict.cancel_item': '取消呢項',
 
   // ── 重命名彈窗 ──
@@ -72,6 +78,8 @@ const zhCT = {
 
   // ── 刪除確認 ──
   'dialog.delete.confirm': (n: number) => `確唔確定要刪除選中嘅 ${n} 個項目？`,
+  'dialog.delete.permanent_confirm': (n: number) => `呢個操作會永久刪除選中嘅 ${n} 個項目，冇得復原。確定繼續？`,
+  'dialog.delete.total_size': (size: string) => `總大細: ${size}`,
 
   // ── 屬性彈窗 ──
   'properties.title': '屬性',
@@ -82,6 +90,8 @@ const zhCT = {
   'properties.calculating': '計緊...',
   'properties.bytes': ' 位元組',
   'properties.modified': '修改時間:',
+  'properties.permissions': '權限:',
+  'properties.owner': '擁有者:',
   'properties.type': '類型:',
   'properties.directory': '資料夾',
 
@@ -116,6 +126,7 @@ const zhCT = {
   'toast.moved_items': (n: number) => `已移動 ${n} 個項目`,
   'toast.pasted_items': (n: number) => `已貼上 ${n} 個項目`,
   'toast.deleted_items': (n: number) => `已刪除 ${n} 個項目`,
+  'toast.deleted_permanently': (n: number) => `已永久刪除 ${n} 個項目`,
   'toast.imported_files': (n: number) => `已匯入 ${n} 個檔案`,
   'toast.imported_skipped': (ok: number, skip: number) => `已匯入 ${ok} 個檔案，跳過 ${skip} 個`,
   'toast.import_all_skipped': (skip: number) => `全部 ${skip} 個檔案已跳過（檔案已存在）`,
@@ -203,6 +214,8 @@ const zhCT = {
   'dashboard.loading': '載入緊統計數據...',
   'dashboard.pinned': '固定項',
   'dashboard.add': '加入',
+  'dashboard.pin_folder': '固定資料夾',
+  'dashboard.pin_file': '固定檔案',
   'dashboard.recent': '最近存取',
   'dashboard.no_recent': '暫時冇最近存取嘅檔案。',
   'dashboard.unpin_tooltip': '取消固定',
@@ -223,6 +236,7 @@ const zhCT = {
   // ── 排序 ──
   'sort.toggle_grouping': '切換分組',
   'sort.by_name': '按名稱排序',
+  'sort.by_size': '按大細排序',
   'sort.by_date': '按修改時間排序',
 
   // ── 狀態欄 ──
@@ -238,6 +252,15 @@ const zhCT = {
   'breadcrumbs.root': '根目錄',
   'breadcrumbs.home': (user: string, dir: string) => `${user} 的家目錄\n${dir}`,
   'breadcrumbs.go_to_root': '轉到根目錄',
+  'breadcrumbs.go_to_home': '去主頁',
+  'breadcrumbs.go_to_trash': '去垃圾桶',
+  'drag.action_title': '移動定複製？',
+  'drag.action_message': (n: number, dir: string) => `將 ${n} 個項目移動或者複製到「${dir}」？`,
+  'drag.button.move': '移動',
+  'drag.button.copy': '複製',
+  'drag.trash_restore_title': '還原到呢個位置？',
+  'drag.trash_restore_message': (dir: string) => `將項目還原到「${dir}」？還原會將其移出垃圾桶。`,
+  'breadcrumbs.go_to_dev': '去裝置目錄',
   'breadcrumbs.root_title': (mp: string) => `根目錄\n${mp}`,
   'breadcrumbs.dev': '設備',
   'breadcrumbs.dev_title': (mp: string) => `設備目錄\n${mp}`,
@@ -267,6 +290,20 @@ const zhCT = {
   // ── 終端 ──
   'terminal.title': '終端機',
   'terminal.process_exited': '\r\n進程已退出。\r\n',
+
+  // ── 回收站 ──
+  'tab.trash': '垃圾桶',
+  'sidebar.trash': '垃圾桶',
+  'trash.title': '垃圾桶',
+  'trash.empty': '垃圾桶入面冇嘢',
+  'trash.empty_trash': '清空垃圾桶',
+  'trash.empty_confirm': '係咪要清空垃圾桶？呢個操作冇得返轉頭。',
+  'trash.emptied': (n: number) => `已清空垃圾桶（刪除咗 ${n} 個項目）`,
+  'trash.restore': '還原',
+  'trash.restoring_items': '還原緊…',
+  'trash.restored_items': (n: number) => `已還原 ${n} 個項目`,
+  'trash.restore_conflicts': (n: number) => `目標位置已經有同名檔案，所以跳過咗 ${n} 個項目`,
+  'trash.restore_no_origin': '搵唔到原始位置資訊，冇得還原',
 
   // ── 錯誤邊界 ──
   'error.something_wrong': '出咗少少問題。',
@@ -393,6 +430,7 @@ const zhCT = {
   'device.mount_failed': (device: string, error?: string) => `掛載 ${device} 失敗` + (error ? `: ${error}` : ''),
   'device.unmount_failed': (device: string, error?: string) => `解除掛載 ${device} 失敗` + (error ? `: ${error}` : ''),
   'device.eject_failed': (device: string, error?: string) => `退出 ${device} 失敗` + (error ? `: ${error}` : ''),
+  'device.eject_partitions_mounted': (device: string) => `請先解除掛載 ${device} 上所有已掛載嘅分區`,
   'device.already_mounted': '裝置已經掛載咗',
   'device.go_to_source': '去源裝置',
   'device.type_usb': 'USB 裝置',

@@ -15,6 +15,8 @@ import {
 } from "./FileList/utils";
 import { Row, type RowData } from "./FileList/Row";
 import { useRubberBandSelection } from "../hooks/useRubberBandSelection";
+import { useLocale } from "../i18n";
+import { startNativeDragTracking, shouldSuppressDrop } from "../utils/nativeDragTracker";
 
 interface FileListProps {
   files: IFile[];
@@ -47,14 +49,6 @@ interface FileListProps {
 
 // --- Main component ---
 
-let _draggedPaths: Set<string> = new Set();
-let _pendingNativeDragPaths: string[] | null = null;
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function clearPendingNativeDrag() {
-  _pendingNativeDragPaths = null;
-}
-
 const FileListComponent: React.FC<FileListProps> = ({
   files,
   selectedFiles,
@@ -82,6 +76,10 @@ const FileListComponent: React.FC<FileListProps> = ({
   const [renameValue, setRenameValue] = useState("");
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
 
+  // 订阅语言变更：FileList 被 memo 包裹，语言切换后需要主动重渲染，
+  // 分组标题等 t() 惰性求值的文本才能更新
+  useLocale();
+
   const lastClickRef = useRef<{ path: string; time: number } | null>(null);
   const lastDragRef = useRef<{ path: string; time: number } | null>(null);
   const renameTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -105,7 +103,12 @@ const FileListComponent: React.FC<FileListProps> = ({
     onSelectionModeChange,
   );
 
-  const { startDrag, endDrag, getDragState } = useDrag();
+  const {
+    startDrag,
+    endDrag,
+    getDragState,
+    getDraggedPaths,
+  } = useDrag();
 
   useEffect(() => {
     return () => {
@@ -196,7 +199,7 @@ const FileListComponent: React.FC<FileListProps> = ({
   // --- Item click ---
   const handleItemClick = useCallback(
     (e: React.MouseEvent, file: IFile) => {
-      document.activeElement?.blur();
+      if (document.activeElement) (document.activeElement as HTMLElement).blur();
       if (renamingPath) return;
       if (isSelectingRef.current) return;
       if (didSelectRef.current) {
@@ -246,11 +249,9 @@ const FileListComponent: React.FC<FileListProps> = ({
     [onSelect, onNavigate, renamingPath],
   );
 
-  // --- Drag start (HTML5 DnD for internal, native file drag for external) ---
+  // --- Drag start（同步原生 OS 拖拽：外部程序才能收到真实文件）---
   const handleFileDragStart = useCallback(
     (e: React.DragEvent, file: IFile) => {
-      console.warn("[drag] dragstart entered:", file.name);
-
       lastDragRef.current = { path: file.path, time: Date.now() };
       lastClickRef.current = null;
 
@@ -258,63 +259,42 @@ const FileListComponent: React.FC<FileListProps> = ({
         ? files.filter((f) => selectedFiles.has(f.path))
         : [file];
 
-      _draggedPaths = new Set(filesToDrag.map((f) => f.path));
       startDrag(filesToDrag, currentPath || "");
       lastDragOverFolderRef.current = null;
 
-      // Native file drag — deferred to dragend so internal HTML5 drops still work.
-      // On dragend, if _pendingNativeDragPaths is still set (no internal drop consumed it),
-      // we call startDrag to hand over to the OS compositor for external drop targets.
+      // 原生拖拽：必须在 dragstart 内同步调用 webContents.startDrag
+      //（Electron 官方模式），LocalSend / 其他文件管理器 / 另一个实例
+      // 才能收到真实文件。HTML5 拖拽立即被系统拖拽替换。
+      // 同窗口落回在 Wayland 上不派发 drop，由 nativeDragTracker 兜底。
       if (window.electron) {
-        _pendingNativeDragPaths = filesToDrag.map((f) => f.path);
+        e.preventDefault();
+        // 声明 copy+move 两种动作：部分文件管理器只接受 copy 动作的拖放
+        e.dataTransfer.effectAllowed = 'copyMove';
+        startNativeDragTracking();
+        window.electron.startDrag(
+          filesToDrag.map((f) => f.path),
+          filesToDrag.map((f) => ({
+            path: f.path,
+            name: f.name,
+            isDirectory: f.isDirectory,
+            trashOriginalPath: f.trashOriginalPath,
+          })),
+        );
       }
-
-      // HTML5 DnD for internal drops
-      e.dataTransfer.effectAllowed = "copyMove";
-      const uris = filesToDrag
-        .map((f) => "file://" + encodeURI(f.path))
-        .join("\r\n");
-      e.dataTransfer.setData("text/uri-list", uris);
-      e.dataTransfer.setData("text/plain", uris);
     },
     [selectedFiles, files, currentPath, startDrag],
   );
 
   // Cleanup drag state on dragend.
-  // If _pendingNativeDragPaths is still set (no internal drop consumed it),
-  // fire the native drag for external apps before cleaning up.
   useEffect(() => {
     const onDragEnd = () => {
-      console.warn("[drag] dragend fired, cleaning up");
-      if (_pendingNativeDragPaths && window.electron) {
-        window.electron.startDrag(_pendingNativeDragPaths);
-      }
       setDragOverPath(null);
       lastDragOverFolderRef.current = null;
-      _draggedPaths = new Set();
-      _pendingNativeDragPaths = null;
       endDrag();
     };
     document.addEventListener("dragend", onDragEnd, true);
     return () => document.removeEventListener("dragend", onDragEnd, true);
   }, [endDrag]);
-
-  // Debug: catch ALL drop events (capture phase, document level)
-  useEffect(() => {
-    const onDocDrop = (e: Event) => {
-      const de = e as DragEvent;
-      console.warn(
-        "[drag] DOCUMENT capture drop:",
-        (e.target as HTMLElement)?.tagName,
-        "class:",
-        (e.target as HTMLElement)?.className?.slice(0, 40),
-        "types:",
-        de.dataTransfer?.types,
-      );
-    };
-    document.addEventListener("drop", onDocDrop, true);
-    return () => document.removeEventListener("drop", onDocDrop, true);
-  }, []);
 
   const handleItemDoubleClick = useCallback(
     (file: IFile) => {
@@ -350,13 +330,7 @@ const FileListComponent: React.FC<FileListProps> = ({
 
   const handleFolderDragOver = useCallback(
     (e: React.DragEvent, file: IFile) => {
-      console.warn(
-        "[drag] dragover on folder:",
-        file.name,
-        "types:",
-        e.dataTransfer.types,
-      );
-      if (_draggedPaths.has(file.path)) {
+      if (getDraggedPaths().has(file.path)) {
         e.dataTransfer.dropEffect = "none";
         return;
       }
@@ -367,7 +341,7 @@ const FileListComponent: React.FC<FileListProps> = ({
       // Track for internal drop (native drag kills HTML5 drop events)
       lastDragOverFolderRef.current = file;
     },
-    [],
+    [getDraggedPaths],
   );
 
   const handleFolderDragLeave = useCallback(() => {
@@ -376,33 +350,37 @@ const FileListComponent: React.FC<FileListProps> = ({
 
   const handleFolderDrop = useCallback(
     (e: React.DragEvent, targetFile: IFile) => {
-      console.warn("[drag] drop on folder:", targetFile.name);
-      _pendingNativeDragPaths = null;
+      // 幻影 drop-back：本窗口刚发起过拖拽，真实 drop 落在其他窗口
+      if (shouldSuppressDrop()) {
+        return;
+      }
       const dragState = getDragState();
-      console.warn("[drag] drop getDragState:", dragState);
+      if (!dragState) {
+        // 原生拖拽回落：内部 HTML5 拖拽已被系统拖拽替换，dragState 为空。
+        // 不消费此事件，让其冒泡到上层容器的 onDrop 用 elementFromPoint 路由。
+        setDragOverPath(null);
+        return;
+      }
+
       e.preventDefault();
       e.stopPropagation();
       setDragOverPath(null);
 
-      if (!dragState || !onDropOnFolder) {
-        console.warn("[drag] drop NO dragState or NO onDropOnFolder");
-        _draggedPaths = new Set();
+      if (!onDropOnFolder) {
         endDrag();
         return;
       }
 
-      if (_draggedPaths.has(targetFile.path)) {
-        _draggedPaths = new Set();
+      if (getDraggedPaths().has(targetFile.path)) {
         endDrag();
         return;
       }
 
       const operation: "move" | "copy" = e.shiftKey ? "copy" : "move";
       onDropOnFolder(dragState.files, targetFile.path, operation);
-      _draggedPaths = new Set();
       endDrag();
     },
-    [getDragState, onDropOnFolder, endDrag],
+    [getDragState, getDraggedPaths, onDropOnFolder, endDrag],
   );
 
   // --- Rubber-band selection ---
@@ -450,7 +428,7 @@ const FileListComponent: React.FC<FileListProps> = ({
           }
           if (renamingPath) setRenamingPath(null);
           onDeselectAll?.();
-          document.activeElement?.blur();
+          if (document.activeElement) (document.activeElement as HTMLElement).blur();
         }
       }}
     >

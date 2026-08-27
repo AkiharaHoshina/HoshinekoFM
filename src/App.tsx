@@ -27,13 +27,19 @@ import { OpenWithDialog } from "./components/OpenWithDialog";
 import { PropertiesDialog } from "./components/PropertiesDialog";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import {
-  trashFile,
+  trashFiles,
+  deleteFilesPermanently,
+  restoreTrashItems,
+  removeTrashItems,
   pasteFiles,
   extractFile,
   openFile,
+  buildPermanentDeleteMessage,
 } from "./utils/fileOperations";
 import { NameInputDialog } from "./components/NameInputDialog";
 import { ConflictDialog } from "./components/ConflictDialog";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { DragActionDialog } from "./components/DragActionDialog";
 import {
   generateSafeName,
   splitNameExt,
@@ -42,8 +48,11 @@ import { useTabs } from "./hooks/useTabs";
 import { useContextMenu } from "./hooks/useContextMenu";
 import { useRenameDialog } from "./hooks/useRenameDialog";
 import { useConflictDialog } from "./hooks/useConflictDialog";
+import { useConfirmDialog } from "./hooks/useConfirmDialog";
+import { useDragActionDialog } from "./hooks/useDragActionDialog";
 import { useCreateDialog } from "./hooks/useCreateDialog";
 import { useDeviceActions } from "./hooks/useDeviceActions";
+import { attachNativeDragTracker } from "./utils/nativeDragTracker";
 
 function AppContent() {
   const {
@@ -88,6 +97,21 @@ function AppContent() {
   } = useConflictDialog();
 
   const {
+    confirmDialog,
+    confirm,
+    handleConfirm,
+    handleCancel,
+  } = useConfirmDialog();
+
+  const {
+    dragAction,
+    requestDragAction,
+    handleMove: handleDragMove,
+    handleCopy: handleDragCopy,
+    handleCancel: handleDragActionCancel,
+  } = useDragActionDialog();
+
+  const {
     createDialog,
     setCreateDialog,
     handleCreateDialog,
@@ -110,7 +134,28 @@ function AppContent() {
   const [propertiesDialogOpen, setPropertiesDialogOpen] = useState(false);
   const [propertiesFile, setPropertiesFile] = useState<IFile | null>(null);
 
+  // ── 原生拖拽兜底判定：Wayland 落回源窗口不派发 drop，由 tracker 合成 ──
+  useEffect(() => {
+    attachNativeDragTracker();
+  }, []);
+
   const [openWithFile, setOpenWithFile] = useState<IFile | null>(null);
+
+  /** 拖到标签页的内部拖放请求，由目标标签页的 ExplorerTab 消费 */
+  const [pendingTabDrop, setPendingTabDrop] = useState<{
+    tabId: string;
+    files: IFile[];
+    operation: "move" | "copy";
+    sourcePath: string;
+  } | null>(null);
+
+  const handleDropOnTab = useCallback(
+    (tabId: string, files: IFile[], operation: "move" | "copy", sourcePath: string) => {
+      setPendingTabDrop({ tabId, files, operation, sourcePath });
+      setActiveTabId(tabId);
+    },
+    [setActiveTabId],
+  );
 
   const { clipboard, copy, cut, clear: clearClipboard } = useClipboard();
 
@@ -237,13 +282,13 @@ function AppContent() {
     setPropertiesDialogOpen(true);
   }, []);
 
-  const handleCopy = (file: IFile) => {
-    copy([file]);
+  const handleCopy = (files: IFile[]) => {
+    copy(files);
     closeContextMenu();
   };
 
-  const handleCut = (file: IFile) => {
-    cut([file]);
+  const handleCut = (files: IFile[]) => {
+    cut(files);
     closeContextMenu();
   };
 
@@ -264,6 +309,49 @@ function AppContent() {
   const menuItems: ContextMenuItem[] = (() => {
     const item = contextMenu?.item;
     if (item) {
+      // 回收站内：仅提供还原 / 永久删除 / 属性
+      if (currentPath === "trash://") {
+        const trashSelected =
+          contextMenu.selected.length > 0 ? contextMenu.selected : [item];
+        return [
+          {
+            label: t("trash.restore"),
+            icon: "restore_from_trash",
+            action: () => {
+              restoreTrashItems(trashSelected, refreshActiveTab, handleConflictDialog);
+              closeContextMenu();
+            },
+          },
+          {
+            label: t("context_menu.delete_permanent"),
+            icon: "delete_forever",
+            action: () => {
+              const names = trashSelected.map((f) => f.name);
+              const paths = trashSelected.map((f) => f.path);
+              void buildPermanentDeleteMessage(paths).then((message) =>
+                confirm(t("context_menu.delete_permanent"), message).then((ok) => {
+                  if (ok) removeTrashItems(names, refreshActiveTab);
+                }),
+              );
+              closeContextMenu();
+            },
+          },
+          { divider: true, label: "", action: () => {} },
+          {
+            label: t("context_menu.properties"),
+            icon: "info",
+            action: () => {
+              setPropertiesFile(item);
+              setPropertiesDialogOpen(true);
+              closeContextMenu();
+            },
+          },
+        ];
+      }
+
+      // 右键命中已选中文件时，批量操作作用于整个选中集；否则只作用于命中的文件
+      const selectedFiles =
+        contextMenu.selected.length > 0 ? contextMenu.selected : [item];
       const items: ContextMenuItem[] = [
         {
           label: t("context_menu.open"),
@@ -282,18 +370,30 @@ function AppContent() {
         {
           label: t("context_menu.copy"),
           icon: "content_copy",
-          action: () => handleCopy(item),
+          action: () => handleCopy(selectedFiles),
         },
         {
           label: t("context_menu.cut"),
           icon: "content_cut",
-          action: () => handleCut(item),
+          action: () => handleCut(selectedFiles),
         },
         {
           label: t("context_menu.delete"),
           icon: "delete",
           action: () =>
-            trashFile(item.path, refreshActiveTab),
+            trashFiles(selectedFiles.map((f) => f.path), refreshActiveTab),
+        },
+        {
+          label: t("context_menu.delete_permanent"),
+          icon: "delete_forever",
+          action: () => {
+            const paths = selectedFiles.map((f) => f.path);
+            void buildPermanentDeleteMessage(paths).then((message) =>
+              confirm(t("context_menu.delete_permanent"), message).then((ok) => {
+                if (ok) deleteFilesPermanently(paths, refreshActiveTab);
+              }),
+            );
+          },
         },
         {
           label: t("context_menu.extract_here"),
@@ -502,6 +602,7 @@ function AppContent() {
             onTabClick={setActiveTabId}
             onTabClose={handleCloseTab}
             onNewTab={() => handleAddTab()}
+            onDropFiles={handleDropOnTab}
           />
         </header>
 
@@ -526,6 +627,8 @@ function AppContent() {
                 onOpenTerminalAt={openTerminalAt}
                 onCreateDialog={handleCreateDialog}
                 onConflictDialog={handleConflictDialog}
+                onConfirmDialog={confirm}
+                onDragAction={requestDragAction}
                 showHiddenFiles={showHiddenFiles}
                 iconSize={iconSize}
                 viewMode={viewMode}
@@ -535,6 +638,8 @@ function AppContent() {
                 onScrollToComplete={handleScrollToComplete}
                 onMountDevice={handleDeviceMount}
                 marqueeEnabled={marqueeEnabled}
+                pendingDrop={pendingTabDrop?.tabId === tab.id ? pendingTabDrop : null}
+                onPendingDropHandled={() => setPendingTabDrop(null)}
               />
             </div>
           ))}
@@ -710,7 +815,7 @@ function AppContent() {
                 onCancel={() => {
                   const resolve = c.resolve;
                   setSingleConflict(null);
-                  resolve({ action: "skip" });
+                  resolve({ action: "cancel" });
                 }}
               />
             );
@@ -731,7 +836,7 @@ function AppContent() {
             onCancel={() => {
               const resolve = multiConflict.resolve;
               setMultiConflict(null);
-              resolve({ action: "skip" });
+              resolve({ action: "cancel" });
             }}
           />
         )}
@@ -740,6 +845,23 @@ function AppContent() {
           open={propertiesDialogOpen}
           onClose={() => setPropertiesDialogOpen(false)}
           file={propertiesFile}
+        />
+
+        <ConfirmDialog
+          open={!!confirmDialog}
+          title={confirmDialog?.title ?? ""}
+          message={confirmDialog?.message ?? ""}
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
+        />
+
+        <DragActionDialog
+          open={!!dragAction}
+          title={dragAction?.title ?? ""}
+          message={dragAction?.message ?? ""}
+          onMove={handleDragMove}
+          onCopy={handleDragCopy}
+          onCancel={handleDragActionCancel}
         />
         {openWithFile && (
           <OpenWithDialog

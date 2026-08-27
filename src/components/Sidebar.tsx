@@ -4,6 +4,7 @@ import { IconButton } from "./IconButton";
 import { MarqueeText } from "./MarqueeText";
 import "./Sidebar.css";
 import { t } from "../i18n";
+import { showToast } from "../utils/toast";
 import type { AllDevice } from "../types/files";
 import { isExternalDevice, getDiskIcon } from "../utils/deviceUtils";
 import { SidebarPartitionItem } from "./SidebarPartitionItem";
@@ -80,6 +81,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       if (result.success && result.mountpoint) {
         onNavigate(result.mountpoint);
       }
+    } else if (!device.mounted) {
+      // 无文件系统（未格式化）等无法挂载的设备：明确提示
+      showToast(t("device.cannot_mount"), "warning");
     }
   };
 
@@ -161,6 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         isActive={!!(part.mounted && part.mountpoint && currentPath.startsWith(part.mountpoint))}
                         onPartitionClick={handlePartitionClick}
                         onDeviceContextMenu={onDeviceContextMenu}
+                        onDeviceMount={onDeviceMount}
                         onDeviceUnmount={onDeviceUnmount}
                         marqueeEnabled={marqueeEnabled}
                       />
@@ -172,6 +177,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     isActive={!!(disk.mounted && disk.mountpoint && currentPath.startsWith(disk.mountpoint))}
                     onPartitionClick={handlePartitionClick}
                     onDeviceContextMenu={onDeviceContextMenu}
+                    onDeviceMount={onDeviceMount}
                     onDeviceUnmount={onDeviceUnmount}
                     onDeviceEject={onDeviceEject}
                     marqueeEnabled={marqueeEnabled}
@@ -203,6 +209,8 @@ function getPlaceIcon(name: string): string {
     return "image";
   case "Videos":
     return "movie";
+  case "Trash":
+    return "delete";
   default:
     return "folder";
   }
@@ -217,6 +225,7 @@ function getPlaceLabel(name: string): string {
     Music: t("sidebar.music"),
     Pictures: t("sidebar.pictures"),
     Videos: t("sidebar.videos"),
+    Trash: t("sidebar.trash"),
   };
   return map[name] || name;
 }

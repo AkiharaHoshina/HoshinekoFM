@@ -8,7 +8,12 @@ export interface ConflictEntry {
 }
 
 export interface ConflictResult {
-  action: 'skip' | 'auto-rename';
+  /**
+   * - skip：跳过所有冲突条目（其余继续执行）
+   * - auto-rename：自动/手动重命名冲突条目后继续
+   * - cancel：取消整个操作（不执行任何条目）
+   */
+  action: 'skip' | 'auto-rename' | 'cancel';
   renames?: Map<string, string>;
 }
 

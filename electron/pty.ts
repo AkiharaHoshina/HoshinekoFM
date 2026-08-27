@@ -1,18 +1,34 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, type WebContents } from 'electron';
 import * as pty from 'node-pty';
 import os from 'os';
 
-// Map of PID -> IPty instance
-const sessions = new Map<number, pty.IPty>();
-let _mainWindow: BrowserWindow | null = null;
+interface PtySession {
+  process: pty.IPty;
+  /** 发起该终端的窗口 webContents（数据按窗口路由，多窗口互不干扰） */
+  sender: WebContents;
+}
 
-export function setMainWindow(win: BrowserWindow) {
-  _mainWindow = win;
+// Map of PID -> PTY session
+const sessions = new Map<number, PtySession>();
+
+// 已挂上 closed 清理钩子的窗口
+const cleanupHooked = new WeakSet<BrowserWindow>();
+
+/** 杀掉属于某窗口的全部终端会话 */
+function cleanupWindowSessions(sender: WebContents) {
+  for (const [pid, session] of sessions) {
+    if (session.sender === sender) {
+      try {
+        session.process.kill();
+      } catch { /* ignore */ }
+      sessions.delete(pid);
+    }
+  }
 }
 
 export function setupPtyHandlers() {
 
-  ipcMain.handle('terminal:spawn', async (_, cwd: string) => {
+  ipcMain.handle('terminal:spawn', async (event, cwd: string) => {
     const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 
     try {
@@ -25,21 +41,29 @@ export function setupPtyHandlers() {
       });
 
       const pid = ptyProcess.pid;
-      sessions.set(pid, ptyProcess);
+      const sender = event.sender;
+      sessions.set(pid, { process: ptyProcess, sender });
 
-      // Forward data to renderer
+      // 数据只发回发起该终端的窗口
       ptyProcess.onData((data) => {
-        if (_mainWindow && !_mainWindow.isDestroyed()) {
-          _mainWindow.webContents.send(`terminal:data:${pid}`, data);
+        if (!sender.isDestroyed()) {
+          sender.send(`terminal:data:${pid}`, data);
         }
       });
 
       ptyProcess.onExit(() => {
         sessions.delete(pid);
-        if (_mainWindow && !_mainWindow.isDestroyed()) {
-          _mainWindow.webContents.send(`terminal:exit:${pid}`);
+        if (!sender.isDestroyed()) {
+          sender.send(`terminal:exit:${pid}`);
         }
       });
+
+      // 窗口关闭时杀掉属于它的终端，避免孤儿进程
+      const win = BrowserWindow.fromWebContents(sender);
+      if (win && !cleanupHooked.has(win)) {
+        cleanupHooked.add(win);
+        win.once('closed', () => cleanupWindowSessions(sender));
+      }
 
       return pid;
     } catch (error) {
@@ -51,7 +75,7 @@ export function setupPtyHandlers() {
   ipcMain.on('terminal:write', (_, pid: number, data: string) => {
     const session = sessions.get(pid);
     if (session) {
-      session.write(data);
+      session.process.write(data);
     }
   });
 
@@ -59,7 +83,7 @@ export function setupPtyHandlers() {
     const session = sessions.get(pid);
     if (session) {
       try {
-        session.resize(cols, rows);
+        session.process.resize(cols, rows);
       } catch (e) {
         console.error('Resize failed', e);
       }
@@ -69,13 +93,17 @@ export function setupPtyHandlers() {
   ipcMain.on('terminal:kill', (_, pid: number) => {
     const session = sessions.get(pid);
     if (session) {
-      session.kill();
+      session.process.kill();
       sessions.delete(pid);
     }
   });
 }
 
 export function killAllPty() {
-  sessions.forEach(s => s.kill());
+  sessions.forEach((s) => {
+    try {
+      s.process.kill();
+    } catch { /* ignore */ }
+  });
   sessions.clear();
 }

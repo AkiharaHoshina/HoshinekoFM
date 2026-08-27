@@ -21,6 +21,8 @@ const labelToKey: Record<string, string> = {
   'Calculating...': 'properties.calculating',
   ' bytes': 'properties.bytes',
   'Modified:': 'properties.modified',
+  'Permissions:': 'properties.permissions',
+  'Owner:': 'properties.owner',
   'Type:': 'properties.type',
   'Directory': 'properties.directory'
 };
@@ -98,7 +100,7 @@ export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, 
         <div className="properties-grid" style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '12px', fontSize: '14px' }}>
 
           <div style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>{tProp('Location:')}</div>
-          <div style={{ wordBreak: 'break-all', userSelect: 'text' }}>{file.path}</div>
+          <div style={{ wordBreak: 'break-all', userSelect: 'text' }}>{file.trashOriginalPath || file.path}</div>
 
           <div style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>{tProp('Size:')}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -117,7 +119,12 @@ export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, 
           <div style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>{tProp('Modified:')}</div>
           <div>{new Date(file.mtime).toLocaleString()}</div>
 
-          {/* Placeholder for Perms or Type details */}
+          <div style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>{tProp('Permissions:')}</div>
+          <div>{formatMode(file.mode, file.isDirectory)}</div>
+
+          <div style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>{tProp('Owner:')}</div>
+          <div>{formatOwner(file)}</div>
+
           <div style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>{tProp('Type:')}</div>
           <div>{file.isDirectory ? tProp('Directory') : file.name.split('.').pop()?.toUpperCase() || tProp('File')}</div>
 
@@ -126,6 +133,33 @@ export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, 
     </Dialog>
   );
 };
+
+/**
+ * 把 Unix 权限位（mode & 0o777）格式化为 `drwxr-xr-x` 形式的权限字符串。
+ * mode 缺失（如设备文件或人为构造的条目）时返回 '-'。
+ */
+function formatMode(mode: number | undefined, isDirectory: boolean): string {
+  if (mode === undefined || isNaN(mode)) return '-';
+  const chars = 'rwx';
+  let s = isDirectory ? 'd' : '-';
+  for (let shift = 6; shift >= 0; shift -= 3) {
+    for (let bit = 2; bit >= 0; bit--) {
+      s += (mode & (1 << (shift + bit))) ? chars[2 - bit] : '-';
+    }
+  }
+  return s;
+}
+
+/**
+ * 把属主/属组格式化为 `username : groupname`。用户名或组名解析失败时
+ * 回退为数字 UID/GID；两者都缺失时返回 '-'。
+ */
+function formatOwner(file: IFile): string {
+  if (file.uid === undefined && file.gid === undefined) return '-';
+  const user = file.userName || (file.uid !== undefined ? String(file.uid) : '?');
+  const group = file.groupName || (file.gid !== undefined ? String(file.gid) : '?');
+  return `${user} : ${group}`;
+}
 
 function formatSize(bytes: number) {
   if (bytes === 0) return '0 B';

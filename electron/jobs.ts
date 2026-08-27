@@ -14,10 +14,10 @@ export interface JobItem {
 }
 
 /**
- * Job item for trash operations.
+ * Job item for trash/permanent-delete operations.
  */
 export interface TrashItem {
-  /** Path to trash */
+  /** Path to trash or permanently delete */
   path: string;
 }
 
@@ -25,7 +25,7 @@ export interface TrashItem {
  * Parameters for starting a new job.
  */
 export interface StartJobParams {
-  type: 'trash' | 'copy' | 'move';
+  type: 'trash' | 'copy' | 'move' | 'delete';
   items: (JobItem | TrashItem)[];
 }
 
@@ -59,7 +59,7 @@ export interface JobComplete {
 
 interface JobInfo {
   controller: AbortController;
-  type: 'trash' | 'copy' | 'move';
+  type: 'trash' | 'copy' | 'move' | 'delete';
   total: number;
   completed: number;
   errors: string[];
@@ -74,8 +74,8 @@ function generateJobId(): string {
 /**
  * Register IPC handlers for the job system.
  *
- * The job system allows long-running batch file operations (trash/copy/move)
- * to report progress and be cancelled mid-flight. It follows the same
+ * The job system allows long-running batch file operations
+ * (trash/delete/copy/move) to report progress and be cancelled mid-flight. It follows the same
  * push-event pattern as {@link ../pty.ts|pty.ts}:
  * - `job:start` — invoke, returns a jobId immediately
  * - `job:cancel` — invoke, aborts the running job
@@ -117,7 +117,7 @@ export function initJobHandlers() {
 
 async function processItems(
   jobId: string,
-  type: 'trash' | 'copy' | 'move',
+  type: 'trash' | 'copy' | 'move' | 'delete',
   items: StartJobParams['items'],
   signal: AbortSignal,
   sender: WebContents,
@@ -132,16 +132,31 @@ async function processItems(
       if (type === 'trash') {
         const ti = item as TrashItem;
         await shell.trashItem(ti.path);
+      } else if (type === 'delete') {
+        const ti = item as TrashItem;
+        await fs.rm(ti.path, { recursive: true, force: true });
       } else if (type === 'copy') {
         const ji = item as JobItem;
         await fs.mkdir(path.dirname(ji.dest), { recursive: true });
         await fs.cp(ji.src, ji.dest, { recursive: true, force: false });
       } else if (type === 'move') {
         const ji = item as JobItem;
-        await fs.rename(ji.src, ji.dest);
+        // 目标父目录可能不存在（例如从回收站还原到已删除的目录）——先创建
+        await fs.mkdir(path.dirname(ji.dest), { recursive: true });
+        try {
+          await fs.rename(ji.src, ji.dest);
+        } catch (err) {
+          // 跨设备移动（EXDEV）时回退为复制 + 删除
+          if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+            await fs.cp(ji.src, ji.dest, { recursive: true, force: false });
+            await fs.rm(ji.src, { recursive: true, force: true });
+          } else {
+            throw err;
+          }
+        }
       }
     } catch {
-      if (type === 'trash') {
+      if (type === 'trash' || type === 'delete') {
         errors.push((item as TrashItem).path);
       } else {
         errors.push((item as JobItem).src);

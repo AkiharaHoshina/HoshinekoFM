@@ -6,18 +6,23 @@ export const DOUBLE_CLICK_THRESHOLD = 500;
 export const AUTO_SCROLL_ZONE = 60;
 export const AUTO_SCROLL_SPEED = 8;
 
-const GROUP_LABELS: Record<string, string> = {
-  Folders: t("group.folders"),
-  Media: t("group.media"),
-  Documents: t("group.documents"),
-  Code: t("group.code"),
-  Archives: t("group.archives"),
-  Executables: t("group.executables"),
-  Others: t("group.others"),
+/**
+ * 分组名 → i18n key 映射。注意：翻译必须在调用时取（`t()` 惰性求值），
+ * 不能做成模块级常量，否则切换语言后分组标题不会更新。
+ */
+const GROUP_LABEL_KEYS: Record<string, string> = {
+  Folders: "group.folders",
+  Media: "group.media",
+  Documents: "group.documents",
+  Code: "group.code",
+  Archives: "group.archives",
+  Executables: "group.executables",
+  Others: "group.others",
 };
 
 export function tGroup(groupName: string): string {
-  return GROUP_LABELS[groupName] || groupName;
+  const key = GROUP_LABEL_KEYS[groupName];
+  return key ? t(key) : groupName;
 }
 
 export function getFileTitle(file: IFile): string {

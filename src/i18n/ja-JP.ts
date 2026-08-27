@@ -26,6 +26,9 @@ const jaJP = {
   'context_menu.paste': '貼り付け',
   'context_menu.rename': '名前の変更',
   'context_menu.delete': '削除',
+  'context_menu.delete_permanent': '完全に削除',
+  'drop.same_dir': 'ファイルは既にこのフォルダーにあります',
+  'drop.no_paths': 'ドラッグされたファイルのパスを取得できませんでした',
   'context_menu.properties': 'プロパティ',
   'context_menu.new_folder': '新しいフォルダー',
   'context_menu.new_file': '新しいファイル',
@@ -56,6 +59,9 @@ const jaJP = {
   'dialog.conflict.operation_move': '移動',
   'dialog.conflict.operation_copy': 'コピー',
   'dialog.conflict.more_items': (n: number) => `...残り ${n} 個`,
+  'dialog.conflict.cancelled': '操作がキャンセルされました',
+  'dialog.conflict.skipped_items': (n: number) => `競合する ${n} 個の項目をスキップしました`,
+  'dialog.conflict.all_skipped': (n: number) => `${n} 個の競合項目がすべてスキップされ、何も実行されませんでした`,
   'dialog.conflict.cancel_item': 'この項目をキャンセル',
 
   // ── 重命名弹窗 ──
@@ -72,6 +78,8 @@ const jaJP = {
 
   // ── 删除确认 ──
   'dialog.delete.confirm': (n: number) => `選択した ${n} 個の項目を削除してもよろしいですか？`,
+  'dialog.delete.permanent_confirm': (n: number) => `選択した ${n} 個の項目を完全に削除します。元に戻せません。続行しますか？`,
+  'dialog.delete.total_size': (size: string) => `合計サイズ: ${size}`,
 
   // ── 属性弹窗 ──
   'properties.title': 'プロパティ',
@@ -82,6 +90,8 @@ const jaJP = {
   'properties.calculating': '計算中...',
   'properties.bytes': ' バイト',
   'properties.modified': '更新日時:',
+  'properties.permissions': '権限:',
+  'properties.owner': '所有者:',
   'properties.type': '種類:',
   'properties.directory': 'フォルダー',
 
@@ -116,6 +126,7 @@ const jaJP = {
   'toast.moved_items': (n: number) => `${n} 個の項目を移動しました`,
   'toast.pasted_items': (n: number) => `${n} 個の項目を貼り付けました`,
   'toast.deleted_items': (n: number) => `${n} 個の項目を削除しました`,
+  'toast.deleted_permanently': (n: number) => `${n} 個の項目を完全に削除しました`,
   'toast.imported_files': (n: number) => `${n} 個のファイルをインポートしました`,
   'toast.imported_skipped': (ok: number, skip: number) => `${ok} ファイルをインポート、${skip} ファイルをスキップしました`,
   'toast.import_all_skipped': (skip: number) => `${skip} ファイルすべてをスキップしました（既に存在）`,
@@ -203,6 +214,8 @@ const jaJP = {
   'dashboard.loading': '統計データを読み込み中...',
   'dashboard.pinned': 'ピン留めされた項目',
   'dashboard.add': '追加',
+  'dashboard.pin_folder': 'フォルダーを固定',
+  'dashboard.pin_file': 'ファイルを固定',
   'dashboard.recent': '最近使用した項目',
   'dashboard.no_recent': '最近使用したファイルはありません。',
   'dashboard.unpin_tooltip': 'ピン留めを外す',
@@ -223,6 +236,7 @@ const jaJP = {
   // ── 排序 ──
   'sort.toggle_grouping': 'グループ化の切り替え',
   'sort.by_name': '名前順',
+  'sort.by_size': 'サイズ順',
   'sort.by_date': '更新日時順',
 
   // ── 状态栏 ──
@@ -238,6 +252,15 @@ const jaJP = {
   'breadcrumbs.root': 'ルートディレクトリ',
   'breadcrumbs.home': (user: string, dir: string) => `${user} のホームディレクトリ\n${dir}`,
   'breadcrumbs.go_to_root': 'ルートへ移動',
+  'breadcrumbs.go_to_home': 'ホームへ移動',
+  'breadcrumbs.go_to_trash': 'ゴミ箱へ移動',
+  'drag.action_title': '移動またはコピー',
+  'drag.action_message': (n: number, dir: string) => `${n} 個の項目を「${dir}」に移動またはコピーしますか？`,
+  'drag.button.move': '移動',
+  'drag.button.copy': 'コピー',
+  'drag.trash_restore_title': 'ここに元に戻しますか？',
+  'drag.trash_restore_message': (dir: string) => `項目を「${dir}」に元に戻しますか？ゴミ箱から移動されます。`,
+  'breadcrumbs.go_to_dev': 'デバイスディレクトリへ移動',
   'breadcrumbs.root_title': (mp: string) => `ルートディレクトリ\n${mp}`,
   'breadcrumbs.dev': 'デバイス',
   'breadcrumbs.dev_title': (mp: string) => `デバイスディレクトリ\n${mp}`,
@@ -267,6 +290,20 @@ const jaJP = {
   // ── 终端 ──
   'terminal.title': 'ターミナル',
   'terminal.process_exited': '\r\nプロセスが終了しました。\r\n',
+
+  // ── 回收站 ──
+  'tab.trash': 'ゴミ箱',
+  'sidebar.trash': 'ゴミ箱',
+  'trash.title': 'ゴミ箱',
+  'trash.empty': 'ゴミ箱は空です',
+  'trash.empty_trash': 'ゴミ箱を空にする',
+  'trash.empty_confirm': 'ゴミ箱を空にしてもよろしいですか？この操作は元に戻せません。',
+  'trash.emptied': (n: number) => `ゴミ箱を空にしました（${n} 個の項目を削除）`,
+  'trash.restore': '元に戻す',
+  'trash.restoring_items': '復元中…',
+  'trash.restored_items': (n: number) => `${n} 個の項目を元に戻しました`,
+  'trash.restore_conflicts': (n: number) => `移動先に同名のファイルがあるため ${n} 個の項目をスキップしました`,
+  'trash.restore_no_origin': '元の場所の情報が見つからないため、元に戻せません',
 
   // ── 错误边界 ──
   'error.something_wrong': '問題が発生しました。',
@@ -393,6 +430,7 @@ const jaJP = {
   'device.mount_failed': (device: string, error?: string) => `${device} のマウントに失敗しました` + (error ? `: ${error}` : ''),
   'device.unmount_failed': (device: string, error?: string) => `${device} のアンマウントに失敗しました` + (error ? `: ${error}` : ''),
   'device.eject_failed': (device: string, error?: string) => `${device} の取り出しに失敗しました` + (error ? `: ${error}` : ''),
+  'device.eject_partitions_mounted': (device: string) => `先に ${device} にマウントされているパーティションをすべてアンマウントしてください`,
   'device.already_mounted': 'デバイスは既にマウントされています',
   'device.go_to_source': 'ソースデバイスへ移動',
   'device.type_usb': 'USB デバイス',

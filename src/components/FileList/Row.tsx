@@ -206,6 +206,7 @@ function ListRowItem({
 
   return (
     <div
+      data-path={file.path}
       className={`file-list-item ${isSelected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
       style={{
         display: "flex",
@@ -295,6 +296,7 @@ function GridRowItem({
   return (
     <div
       key={file.path}
+      data-path={file.path}
       className={`file-list-item file-grid-item ${isSelected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
       onMouseEnter={() => data.onHoverFile?.(file)}
       onMouseLeave={() => data.onHoverFile?.(null)}

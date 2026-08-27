@@ -89,7 +89,9 @@ export function useDeviceActions() {
         showToast(t('device.unmounted', dev), 'success');
       }
     } else {
-      const msg = t('device.eject_failed', dev, result.error);
+      const msg = result.code === 'PARTITIONS_MOUNTED'
+        ? t('device.eject_partitions_mounted', dev)
+        : t('device.eject_failed', dev, result.error);
       if (toastId) {
         finishToast(toastId, msg, 'error');
       } else {

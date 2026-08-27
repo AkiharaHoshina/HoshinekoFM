@@ -26,6 +26,9 @@ const enUS = {
   'context_menu.paste': 'Paste',
   'context_menu.rename': 'Rename',
   'context_menu.delete': 'Delete',
+  'context_menu.delete_permanent': 'Permanently Delete',
+  'drop.same_dir': 'Files are already in this folder',
+  'drop.no_paths': 'Could not read the dragged files',
   'context_menu.properties': 'Properties',
   'context_menu.new_folder': 'New folder',
   'context_menu.new_file': 'New file',
@@ -64,6 +67,9 @@ const enUS = {
   'dialog.conflict.operation_move': 'Move',
   'dialog.conflict.operation_copy': 'Copy',
   'dialog.conflict.more_items': (n: number) => `... ${n} conflicts remaining`,
+  'dialog.conflict.cancelled': 'Operation cancelled',
+  'dialog.conflict.skipped_items': (n: number) => `Skipped ${n} conflicting item(s)`,
+  'dialog.conflict.all_skipped': (n: number) => `All ${n} item(s) were skipped due to name conflicts — nothing was done`,
   'dialog.conflict.cancel_item': 'Item canceled',
 
   // ── 重命名弹窗 ──
@@ -82,6 +88,9 @@ const enUS = {
   'dialog.delete.confirm': (n: number) => n === 1 
     ? 'Are you sure you want to delete the selected item?' 
     : `Are you sure you want to delete the selected ${n} items?`,
+  'dialog.delete.permanent_confirm': (n: number) =>
+    `This will permanently delete ${n === 1 ? '1 item' : `${n} items`} and cannot be undone. Continue?`,
+  'dialog.delete.total_size': (size: string) => `Total size: ${size}`,
 
   // ── 属性弹窗 ──
   'properties.title': 'Properties',
@@ -92,6 +101,8 @@ const enUS = {
   'properties.calculating': 'Calculating...',
   'properties.bytes': ' Bytes',
   'properties.modified': 'Modified time:',
+  'properties.permissions': 'Permissions:',
+  'properties.owner': 'Owner:',
   'properties.type': 'Type:',
   'properties.directory': 'Directory',             //不知所谓
 
@@ -126,6 +137,7 @@ const enUS = {
   'toast.moved_items': (n: number) => n === 1 ? 'Moved 1 item' : `Moved ${n} items`,
   'toast.pasted_items': (n: number) => n === 1 ? 'Pasted 1 item' : `Pasted ${n} items`,
   'toast.deleted_items': (n: number) => n === 1 ? 'Deleted 1 item' : `Deleted ${n} items`,
+  'toast.deleted_permanently': (n: number) => n === 1 ? 'Permanently deleted 1 item' : `Permanently deleted ${n} items`,
   'toast.imported_files': (n: number) => n === 1 ? 'Imported 1 file' : `Imported ${n} files`,
   'toast.imported_skipped': (ok: number, skip: number) => `Imported ${ok} file(s), ${skip} skipped`,
   'toast.import_all_skipped': (skip: number) => `All ${skip} file(s) skipped (already exist)`,
@@ -145,12 +157,12 @@ const enUS = {
   'error.permission_denied': 'Permission denied',
   'error.not_found': 'Not found',
   'error.cannot_access': 'Cannot access',
-  'error.unknown': 'Unkouwn error',
+  'error.unknown': 'Unknown error',
   'error.cannot_open_dir': (msg: string) => `Cannot open directory: ${msg}`,
-  'error.search_failed': (msg: string) => `Search faild: ${msg}`,
-  'error.name_exists': (name: string) => `Rename faild：${name} exists`,
-  'error.copy_exists': (name: string) => `Copay faild：${name} exists`,
-  'error.move_exists': (name: string) => `Move faild：${name} exists`,
+  'error.search_failed': (msg: string) => `Search failed: ${msg}`,
+  'error.name_exists': (name: string) => `Rename failed: ${name} exists`,
+  'error.copy_exists': (name: string) => `Copy failed: ${name} exists`,
+  'error.move_exists': (name: string) => `Move failed: ${name} exists`,
   'error.unsupported_format': 'Unsupported archive format',
   'error.file_open_failed': (name: string, err: string) => `Failed to open ${name}: ${err}`,
   'error.create_parent_failed': (parent: string) => `Failed to create destination directory: ${parent}`,
@@ -213,6 +225,8 @@ const enUS = {
   'dashboard.loading': 'Loading statistics...',
   'dashboard.pinned': 'Pinned',
   'dashboard.add': 'Add',
+  'dashboard.pin_folder': 'Pin Folder',
+  'dashboard.pin_file': 'Pin File',
   'dashboard.recent': 'Recent',
   'dashboard.no_recent': 'No recently accessed files.',
   'dashboard.unpin_tooltip': 'Unpin',
@@ -233,6 +247,7 @@ const enUS = {
   // ── 排序 ──
   'sort.toggle_grouping': 'Toggle Grouping',
   'sort.by_name': 'Sort by Name',
+  'sort.by_size': 'Sort by Size',
   'sort.by_date': 'Sort by Date Modified',
 
   // ── 状态栏 ──
@@ -248,6 +263,15 @@ const enUS = {
   'breadcrumbs.root': 'Root',
   'breadcrumbs.home': (user: string, dir: string) => `${user}'s Home\n${dir}`,
   'breadcrumbs.go_to_root': 'Go to root',
+  'breadcrumbs.go_to_home': 'Go to home',
+  'breadcrumbs.go_to_trash': 'Go to trash',
+  'drag.action_title': 'Move or copy?',
+  'drag.action_message': (n: number, dir: string) => `Move or copy ${n} item(s) to "${dir}"?`,
+  'drag.button.move': 'Move',
+  'drag.button.copy': 'Copy',
+  'drag.trash_restore_title': 'Restore to this location?',
+  'drag.trash_restore_message': (dir: string) => `Restore items to "${dir}"? Restoring moves them out of the trash.`,
+  'breadcrumbs.go_to_dev': 'Go to device directory',
   'breadcrumbs.root_title': (mp: string) => `Root Directory\n${mp}`,
   'breadcrumbs.dev': 'Devices',
   'breadcrumbs.dev_title': (mp: string) => `Device Directory\n${mp}`,
@@ -276,6 +300,20 @@ const enUS = {
   // ── 终端 ──
   'terminal.title': 'Terminal',
   'terminal.process_exited': '\r\nProcess exited.\r\n',
+
+  // ── 回收站 ──
+  'tab.trash': 'Trash',
+  'sidebar.trash': 'Trash',
+  'trash.title': 'Trash',
+  'trash.empty': 'Trash is empty',
+  'trash.empty_trash': 'Empty Trash',
+  'trash.empty_confirm': 'Are you sure you want to empty the trash? This cannot be undone.',
+  'trash.emptied': (n: number) => `Emptied trash (${n} item(s) removed)`,
+  'trash.restore': 'Restore',
+  'trash.restoring_items': 'Restoring items...',
+  'trash.restored_items': (n: number) => n === 1 ? 'Restored 1 item' : `Restored ${n} items`,
+  'trash.restore_conflicts': (n: number) => n === 1 ? 'Skipped 1 item because a file with the same name exists at the destination' : `Skipped ${n} items because files with the same name exist at the destination`,
+  'trash.restore_no_origin': 'Cannot restore: original location information is missing',
 
   // ── 错误边界 ──
   'error.something_wrong': 'Something went wrong',
@@ -402,6 +440,7 @@ const enUS = {
   'device.mount_failed': (device: string, error?: string) => `Mount ${device} failed` + (error ? `: ${error}` : ''),
   'device.unmount_failed': (device: string, error?: string) => `Unmount ${device} failed` + (error ? `: ${error}` : ''),
   'device.eject_failed': (device: string, error?: string) => `Eject ${device} failed` + (error ? `: ${error}` : ''),
+  'device.eject_partitions_mounted': (device: string) => `Please unmount all mounted partitions of ${device} first`,
   'device.already_mounted': 'Device is already mounted',
   'device.go_to_source': 'Go to Source Device',
   'device.type_usb': 'USB Device',

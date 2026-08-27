@@ -78,6 +78,42 @@ export interface IFile {
      * Example: `1000` for `/home/sbchild`, `989` for `/var/lib/geoclue`.
      */
     homeOwnerUid?: number;
+    /**
+     * Unix permission bits (`mode & 0o777`) from `fs.stat`.
+     * Example: `0o755` for `rwxr-xr-x`. Absent for special device files
+     * and broken symlinks.
+     */
+    mode?: number;
+    /**
+     * Numeric owner UID from `fs.stat`.
+     * Absent for special device files and broken symlinks.
+     */
+    uid?: number;
+    /**
+     * Numeric group GID from `fs.stat`.
+     * Absent for special device files and broken symlinks.
+     */
+    gid?: number;
+    /**
+     * Owner username resolved from UID via `/etc/passwd` (or `getent passwd`).
+     * Absent if the UID has no matching passwd entry.
+     */
+    userName?: string;
+    /**
+     * Group name resolved from GID via `/etc/group` (or `getent group`).
+     * Absent if the GID has no matching group entry.
+     */
+    groupName?: string;
+    /**
+     * 回收站条目：原始绝对路径（解析自 `.trashinfo` 的 `Path=` 字段，
+     * freedesktop 规范中为 percent-encoded）。仅回收站列表条目存在。
+     */
+    trashOriginalPath?: string;
+    /**
+     * 回收站条目：对应的 `.trashinfo` 文件路径。
+     * 仅回收站列表条目存在。
+     */
+    trashInfoPath?: string;
 }
 
 export interface AllDevice {

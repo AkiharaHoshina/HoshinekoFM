@@ -1,4 +1,7 @@
 import { t } from '../i18n';
+import type { IFile } from '../types/files';
+import { FileSystemService } from '../services/FileSystemService';
+import { formatSize } from '../components/FileList/utils';
 import {
   showToast,
   showProgressToast,
@@ -196,6 +199,88 @@ export async function trashFiles(
   });
 }
 
+/**
+ * 计算一批路径的总大小（用于永久删除确认提示）。
+ * 目录用 `du -sb`（getDirectorySize），文件用 fs:stat。
+ * 任一路径计算失败时返回 null——不阻塞删除，只是不显示大小。
+ *
+ * @param paths - 待统计的绝对路径
+ * @returns 总字节数；无法统计时为 null
+ */
+export async function computeDeleteTotalSize(paths: string[]): Promise<number | null> {
+  try {
+    let total = 0;
+    for (const p of paths) {
+      const stat = await window.electron.stat(p);
+      if (!stat) return null;
+      if (stat.isDirectory) {
+        const dirSize = await window.electron.getDirectorySize(p);
+        total += dirSize;
+      } else {
+        total += stat.size;
+      }
+    }
+    return total;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 构建永久删除确认消息：条目数 + （可统计时的）总大小。
+ */
+export async function buildPermanentDeleteMessage(paths: string[]): Promise<string> {
+  const base = t('dialog.delete.permanent_confirm', paths.length);
+  const total = await computeDeleteTotalSize(paths);
+  if (total === null) return base;
+  return base + '\n' + t('dialog.delete.total_size', formatSize(total));
+}
+
+/**
+ * 永久删除（不进回收站，不可恢复）。通过批量任务系统执行，
+ * 带进度条与取消。调用方必须在调用前自行向用户确认。
+ */
+export async function deleteFilesPermanently(
+  paths: string[],
+  onSuccess?: () => void,
+): Promise<void> {
+  if (paths.length === 0) return;
+
+  const items = paths.map((p) => ({ path: p }));
+  const jobId = await window.electron.startJob({ type: 'delete', items });
+
+  const toastId = showProgressToast(t('toast.deleting_items'), {
+    total: items.length,
+    onCancel: () => { window.electron.cancelJob(jobId); },
+  });
+
+  const unsubProgress = window.electron.onJobProgress(jobId, (data) => {
+    updateProgress(toastId, data.current);
+  });
+
+  window.electron.onJobComplete(jobId, (data) => {
+    unsubProgress();
+
+    if (data.cancelled) {
+      finishToast(toastId, t('toast.operation_cancelled'), 'warning');
+      return;
+    }
+
+    if (data.success > 0) onSuccess?.();
+
+    if (data.success > 0 && data.fail === 0) {
+      finishToast(toastId, t('toast.deleted_permanently', data.success), 'success');
+    } else if (data.success > 0 && data.fail > 0) {
+      finishToast(toastId, t('toast.deleted_permanently', data.success), 'warning');
+      showToast(t('toast.failed_items', data.fail), 'error');
+      showToast(t('toast.delete_fail_permission'), 'warning');
+    } else {
+      finishToast(toastId, t('toast.failed_items', data.fail), 'error');
+      showToast(t('toast.delete_fail_permission'), 'warning');
+    }
+  });
+}
+
 export async function copyFile(
   source: string,
   dest: string,
@@ -276,12 +361,16 @@ export async function pasteFiles(
   );
 
   let renameMap: Map<string, string> | undefined;
-  let conflictAction: 'skip' | 'auto-rename' = 'skip';
+  let conflictAction: 'skip' | 'auto-rename' | 'cancel' = 'skip';
 
   if (conflictEntries.length > 0 && onConflict) {
     const result = await onConflict(conflictEntries);
     conflictAction = result.action;
     if (result.renames) renameMap = result.renames;
+    if (conflictAction === 'cancel') {
+      showToast(t('dialog.conflict.cancelled'), 'info');
+      return;
+    }
   }
 
   const conflictNames = new Set(conflictEntries.map((c) => c.entry.name));
@@ -456,4 +545,181 @@ export function cutToClipboard(
   count: number,
 ): void {
   showToast(t('toast.cut_items', count), 'info');
+}
+
+/**
+ * 还原回收站条目到原始位置。
+ *
+ * - 目标位置已有同名文件时：提供 `onConflict`（App 的冲突对话框）则弹出
+ *   跳过/自动重命名/手动重命名选择；不提供则直接跳过冲突条目。
+ * - 缺少原始位置信息（无 .trashinfo）的条目无法还原。
+ * - 按原始目录分组处理冲突（不同目录各自弹一次对话框）。
+ * - 实际移动走批量任务系统（进度 + 取消）。
+ *
+ * @param files - 回收站条目列表（含 trashOriginalPath）
+ * @param onSuccess - 全部完成后回调（通常用于刷新回收站视图）
+ * @param onConflict - 冲突对话框入口，签名同 useConflictDialog 的 handleConflictDialog
+ */
+export async function restoreTrashItems(
+  files: IFile[],
+  onSuccess?: () => void,
+  onConflict?: (
+    conflicts: ConflictEntry[],
+    destDir: string,
+    existingNames: string[],
+    sourcePath?: string,
+    operation?: "move" | "copy",
+  ) => Promise<ConflictResult>,
+): Promise<void> {
+  const valid = files.filter((f) => f.trashOriginalPath);
+  if (valid.length < files.length) {
+    showToast(t('trash.restore_no_origin'), 'warning');
+  }
+  if (valid.length === 0) return;
+
+  // 按原始目录分组：不同目录的同名冲突需要各自解决
+  const groups = new Map<string, IFile[]>();
+  for (const f of valid) {
+    const orig = f.trashOriginalPath!;
+    const dir = orig.substring(0, orig.lastIndexOf('/')) || '/';
+    const list = groups.get(dir);
+    if (list) list.push(f);
+    else groups.set(dir, [f]);
+  }
+
+  const jobItems: { src: string; dest: string }[] = [];
+  let skippedConflicts = 0;
+
+  for (const [dir, group] of groups) {
+    // 目标目录里现有的文件名（目录不存在或不可读时视为无冲突，
+    // 任务执行时会自动重建父目录）
+    let existingNames: string[] = [];
+    try {
+      const { data } = await FileSystemService.listDir(dir);
+      existingNames = data.map((f) => f.name);
+    } catch { /* 目录尚不存在 */ }
+    const existingSet = new Set(existingNames);
+
+    const conflicts: ConflictEntry[] = group
+      .filter((f) => existingSet.has(f.name))
+      .map((f) => ({
+        entry: { path: f.path, name: f.name },
+        destPath: dir === '/' ? '/' + f.name : dir + '/' + f.name,
+        isDir: f.isDirectory,
+      }));
+
+    // 条目名 → 最终还原名
+    const destNames = new Map<string, string>();
+    for (const f of group) destNames.set(f.name, f.name);
+
+    if (conflicts.length > 0) {
+      if (onConflict) {
+        const result = await onConflict(conflicts, dir, existingNames, undefined, 'move');
+        if (result.action === 'cancel') {
+          // 取消 = 取消整个还原操作，明确提示
+          showToast(t('dialog.conflict.cancelled'), 'info');
+          return;
+        }
+        if (result.action === 'skip') {
+          skippedConflicts += conflicts.length;
+          for (const c of conflicts) destNames.delete(c.entry.name);
+        } else {
+          const renameMap = result.renames;
+          for (const c of conflicts) {
+            const manual = renameMap?.get(c.entry.name);
+            if (manual && manual.trim()) {
+              destNames.set(c.entry.name, manual.trim());
+            } else {
+              const { base, ext } = splitNameExt(c.entry.name, c.isDir);
+              const safe = generateSafeName(base, ext, existingSet, c.isDir);
+              existingSet.add(safe);
+              destNames.set(c.entry.name, safe);
+            }
+          }
+        }
+      } else {
+        skippedConflicts += conflicts.length;
+        for (const c of conflicts) destNames.delete(c.entry.name);
+      }
+    }
+
+    for (const f of group) {
+      const name = destNames.get(f.name);
+      if (!name) continue;
+      jobItems.push({ src: f.path, dest: dir === '/' ? '/' + name : dir + '/' + name });
+    }
+  }
+
+  if (skippedConflicts > 0) {
+    showToast(t('trash.restore_conflicts', skippedConflicts), 'warning');
+  }
+  if (jobItems.length === 0) {
+    // 全部因同名被跳过：明确告知，绝不静默
+    showToast(t('dialog.conflict.all_skipped', skippedConflicts), 'warning');
+    return;
+  }
+
+  const jobId = await window.electron.startJob({ type: 'move', items: jobItems });
+
+  const toastId = showProgressToast(t('trash.restoring_items'), {
+    total: jobItems.length,
+    onCancel: () => { window.electron.cancelJob(jobId); },
+  });
+
+  const unsubProgress = window.electron.onJobProgress(jobId, (data) => {
+    updateProgress(toastId, data.current);
+  });
+
+  window.electron.onJobComplete(jobId, (data) => {
+    unsubProgress();
+
+    if (data.cancelled) {
+      finishToast(toastId, t('toast.operation_cancelled'), 'warning');
+      return;
+    }
+
+    if (data.success > 0) {
+      finishToast(
+        toastId,
+        t('trash.restored_items', data.success),
+        data.fail > 0 ? 'warning' : 'success',
+      );
+      onSuccess?.();
+    } else {
+      finishToast(toastId, t('toast.failed_items', data.fail), 'error');
+    }
+
+    if (data.fail > 0) {
+      showToast(t('toast.failed_items', data.fail), 'error');
+    }
+  });
+}
+
+/**
+ * 从回收站永久删除条目（连同 .trashinfo）。
+ * @param names - 回收站条目名（仅文件名）
+ */
+export async function removeTrashItems(
+  names: string[],
+  onSuccess?: () => void,
+): Promise<void> {
+  if (names.length === 0) return;
+  const success = await window.electron.removeFromTrash(names);
+  if (success > 0) {
+    showToast(t('toast.deleted_permanently', success), 'success');
+    onSuccess?.();
+  }
+}
+
+/**
+ * 清空回收站。调用方必须在调用前自行向用户确认。
+ */
+export async function emptyTrash(onSuccess?: () => void): Promise<void> {
+  const removed = await window.electron.emptyTrash();
+  if (removed > 0) {
+    showToast(t('trash.emptied', removed), 'success');
+    onSuccess?.();
+  } else {
+    showToast(t('trash.empty'), 'info');
+  }
 }

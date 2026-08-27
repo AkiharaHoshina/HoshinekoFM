@@ -5,6 +5,10 @@ export const FileSystemService = {
     return window.electron.getPlaces();
   },
 
+  async listTrash(): Promise<IFile[]> {
+    return window.electron.listTrash();
+  },
+
   async copy(source: string, dest: string): Promise<boolean> {
     return window.electron.copyFile(source, dest);
   },
@@ -61,7 +65,7 @@ export const FileSystemService = {
     return window.electron.unmountDevice(devicePath);
   },
 
-  async ejectDevice(devicePath: string): Promise<{ success: boolean; error?: string }> {
+  async ejectDevice(devicePath: string): Promise<{ success: boolean; error?: string; code?: string }> {
     return window.electron.ejectDevice(devicePath);
   },
 

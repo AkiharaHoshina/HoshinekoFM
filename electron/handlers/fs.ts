@@ -48,12 +48,37 @@ function resolveFstype(
  * lifetime, so we read it once and reuse across all `listDirectoryContents`
  * calls.
  */
-let _passwdHomeMap: Map<string, { username: string; uid: number }> | undefined;
+/**
+ * Cached `/etc/passwd` derived maps:
+ * - `homeMap`: home directory path → `{ username, uid }`
+ * - `uidMap`: numeric UID → username
+ */
+let _passwdMaps: {
+  homeMap: Map<string, { username: string; uid: number }>;
+  uidMap: Map<number, string>;
+} | undefined;
 
-async function getPasswdHomeMap(): Promise<Map<string, { username: string; uid: number }>> {
-  if (_passwdHomeMap) return _passwdHomeMap;
+/**
+ * Build the passwd-derived maps by parsing `/etc/passwd`. Falls back to
+ * `getent passwd` if the file read fails (e.g. in NIS/LDAP environments
+ * where not all users are in `/etc/passwd`).
+ *
+ * Entries with home directory `/` (root) are excluded from `homeMap` to
+ * avoid treating system accounts as "home directory" owners of the entire
+ * filesystem, but their UID→username mapping is kept in `uidMap`.
+ *
+ * Memoized at module level — the maps do not change during the app
+ * lifetime, so we read once and reuse across all `listDirectoryContents`
+ * calls.
+ */
+async function getPasswdMaps(): Promise<{
+  homeMap: Map<string, { username: string; uid: number }>;
+  uidMap: Map<number, string>;
+}> {
+  if (_passwdMaps) return _passwdMaps;
 
-  const map = new Map<string, { username: string; uid: number }>();
+  const homeMap = new Map<string, { username: string; uid: number }>();
+  const uidMap = new Map<number, string>();
   let content: string;
 
   try {
@@ -63,8 +88,8 @@ async function getPasswdHomeMap(): Promise<Map<string, { username: string; uid: 
       const { stdout } = await execAsync('getent passwd');
       content = stdout;
     } catch {
-      _passwdHomeMap = map;
-      return map;
+      _passwdMaps = { homeMap, uidMap };
+      return _passwdMaps;
     }
   }
 
@@ -76,11 +101,57 @@ async function getPasswdHomeMap(): Promise<Map<string, { username: string; uid: 
     const username = fields[0];
     const uid = parseInt(fields[2], 10);
     const home = fields[5];
-    if (!home || isNaN(uid) || home === '/') continue;
-    map.set(home, { username, uid });
+    if (!username || isNaN(uid)) continue;
+    uidMap.set(uid, username);
+    if (!home || home === '/') continue;
+    homeMap.set(home, { username, uid });
   }
 
-  _passwdHomeMap = map;
+  _passwdMaps = { homeMap, uidMap };
+  return _passwdMaps;
+}
+
+async function getPasswdHomeMap(): Promise<Map<string, { username: string; uid: number }>> {
+  return (await getPasswdMaps()).homeMap;
+}
+
+/** Cached GID → group name map parsed from `/etc/group` */
+let _groupGidMap: Map<number, string> | undefined;
+
+/**
+ * Build a GID → group name map by parsing `/etc/group`. Falls back to
+ * `getent group` if the file read fails. Memoized at module level.
+ */
+async function getGroupGidMap(): Promise<Map<number, string>> {
+  if (_groupGidMap) return _groupGidMap;
+
+  const map = new Map<number, string>();
+  let content: string;
+
+  try {
+    content = await fs.readFile('/etc/group', 'utf-8');
+  } catch {
+    try {
+      const { stdout } = await execAsync('getent group');
+      content = stdout;
+    } catch {
+      _groupGidMap = map;
+      return map;
+    }
+  }
+
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const fields = trimmed.split(':');
+    if (fields.length < 3) continue;
+    const name = fields[0];
+    const gid = parseInt(fields[2], 10);
+    if (!name || isNaN(gid)) continue;
+    map.set(gid, name);
+  }
+
+  _groupGidMap = map;
   return map;
 }
 
@@ -162,7 +233,7 @@ async function processWithConcurrency<T, R>(
  */
 async function listDirectoryContents(targetPath: string): Promise<{
   name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
-  symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isMountable?: boolean; parentDisk?: string; isExternal?: boolean; mountedAt?: string; canAutoMount?: boolean; homeOwner?: string; homeOwnerUid?: number;
+  symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isMountable?: boolean; parentDisk?: string; isExternal?: boolean; mountedAt?: string; canAutoMount?: boolean; homeOwner?: string; homeOwnerUid?: number; mode?: number; uid?: number; gid?: number; userName?: string; groupName?: string;
 }[]> {
   const entries = await fs.readdir(targetPath, { withFileTypes: true });
 
@@ -186,6 +257,16 @@ async function listDirectoryContents(targetPath: string): Promise<{
     isMountpoint?: boolean; mountSource?: string; mountFstype?: string; mountedAt?: string;
     /** Set in Phase 5 — home directory owner enrichment */
     homeOwner?: string; homeOwnerUid?: number;
+    /** Permissions bits (`mode & 0o777`) from `fs.stat` */
+    mode?: number;
+    /** Numeric owner UID from `fs.stat` */
+    uid?: number;
+    /** Numeric group GID from `fs.stat` */
+    gid?: number;
+    /** Owner username resolved from UID in Phase 6 */
+    userName?: string;
+    /** Group name resolved from GID in Phase 6 */
+    groupName?: string;
   }
 
   const results = await processWithConcurrency(entries, 16, async (entry): Promise<ClassifiedEntry | null> => {
@@ -272,6 +353,7 @@ async function listDirectoryContents(targetPath: string): Promise<{
                 name: entry.name, path: fullPath, isDirectory: true,
                 size: stats.size, mtime: stats.mtime,
                 mime: 'inode/directory', symlinkTarget,
+                mode: stats.mode & 0o777, uid: stats.uid, gid: stats.gid,
               };
             }
             if (stats.isBlockDevice() || stats.isCharacterDevice() ||
@@ -294,6 +376,7 @@ async function listDirectoryContents(targetPath: string): Promise<{
               mime: skipMime ? null : undefined as unknown as string | null,
               symlinkTarget,
               _mimePath: skipMime ? undefined : symlinkTarget,
+              mode: stats.mode & 0o777, uid: stats.uid, gid: stats.gid,
             };
           } catch (err) {
             const code = (err as NodeJS.ErrnoException).code;
@@ -321,6 +404,7 @@ async function listDirectoryContents(targetPath: string): Promise<{
           name: entry.name, path: fullPath, isDirectory: true,
           size: stats.size, mtime: stats.mtime,
           mime: 'inode/directory',
+          mode: stats.mode & 0o777, uid: stats.uid, gid: stats.gid,
         };
       }
       return {
@@ -328,6 +412,7 @@ async function listDirectoryContents(targetPath: string): Promise<{
         size: stats.size, mtime: stats.mtime,
         mime: skipMime ? null : undefined as unknown as string | null,
         _mimePath: skipMime ? undefined : fullPath,
+        mode: stats.mode & 0o777, uid: stats.uid, gid: stats.gid,
       };
     } catch {
       return null;
@@ -444,13 +529,25 @@ async function listDirectoryContents(targetPath: string): Promise<{
     }
   }
 
+  // Phase 6 — Resolve owner/group names from UID/GID for the properties dialog.
+  const uidMap = (await getPasswdMaps()).uidMap;
+  const gidMap = await getGroupGidMap();
+  for (const entry of filtered) {
+    if (entry.uid !== undefined && entry.userName === undefined) {
+      entry.userName = uidMap.get(entry.uid);
+    }
+    if (entry.gid !== undefined && entry.groupName === undefined) {
+      entry.groupName = gidMap.get(entry.gid);
+    }
+  }
+
   // Strip internal `_mimePath` field before returning
   for (const entry of filtered) {
     delete (entry as unknown as Record<string, unknown>)._mimePath;
   }
   return filtered as unknown as {
     name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null;
-    symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isMountable?: boolean; parentDisk?: string; isExternal?: boolean; mountedAt?: string; canAutoMount?: boolean; homeOwner?: string; homeOwnerUid?: number;
+    symlinkTarget?: string; isMountpoint?: boolean; mountSource?: string; mountFstype?: string; devicePath?: string; isMountable?: boolean; parentDisk?: string; isExternal?: boolean; mountedAt?: string; canAutoMount?: boolean; homeOwner?: string; homeOwnerUid?: number; mode?: number; uid?: number; gid?: number; userName?: string; groupName?: string;
   }[];
 }
 
@@ -489,7 +586,169 @@ export function registerFsHandlers() {
       { name: 'Music', path: app.getPath('music'), icon: '🎵' },
       { name: 'Pictures', path: app.getPath('pictures'), icon: '🖼️' },
       { name: 'Videos', path: app.getPath('videos'), icon: '🎥' },
+      { name: 'Trash', path: 'trash://', icon: '🗑️' },
     ];
+  });
+
+  /**
+   * freedesktop 规范的回收站根目录（~/.local/share/Trash）。
+   */
+  function getTrashRoot(): string {
+    return path.join(app.getPath('home'), '.local/share/Trash');
+  }
+
+  /**
+   * 返回回收站 files 目录的真实路径。前端在 trash:// 视图下监听该目录，
+   * 外部应用改动回收站时可自动刷新。
+   */
+  ipcMain.handle('fs:get-trash-dir', () => {
+    return path.join(getTrashRoot(), 'files');
+  });
+
+  /**
+   * 列出回收站内容。每条目解析 `info/<name>.trashinfo` 中的 `Path=`
+   * （原始绝对路径，percent-encoded）与 `DeletionDate=` 字段。
+   */
+  ipcMain.handle('fs:trash-list', async () => {
+    const filesDir = path.join(getTrashRoot(), 'files');
+    const infoDir = path.join(getTrashRoot(), 'info');
+
+    let names: string[];
+    try {
+      names = await fs.readdir(filesDir);
+    } catch {
+      return [];
+    }
+
+    interface TrashListing {
+      name: string; path: string; isDirectory: boolean; size: number;
+      mtime: Date; mime: string | null;
+      trashOriginalPath?: string; trashInfoPath?: string;
+      _mimePath?: string;
+    }
+
+    const results = await processWithConcurrency(names, 16, async (name): Promise<TrashListing | null> => {
+      try {
+        const filePath = path.join(filesDir, name);
+        const infoPath = path.join(infoDir, name + '.trashinfo');
+        const stats = await fs.lstat(filePath);
+
+        let trashOriginalPath: string | undefined;
+        let deletionDate: Date | undefined;
+        try {
+          const content = await fs.readFile(infoPath, 'utf-8');
+          const pathMatch = content.match(/^Path=(.*)$/m);
+          if (pathMatch) {
+            trashOriginalPath = decodeURIComponent(pathMatch[1].trim());
+          }
+          const dateMatch = content.match(/^DeletionDate=(.*)$/m);
+          if (dateMatch) {
+            deletionDate = new Date(dateMatch[1].trim());
+          }
+        } catch { /* no .trashinfo — keep original fields undefined */ }
+
+        return {
+          name,
+          path: filePath,
+          isDirectory: stats.isDirectory(),
+          size: stats.size,
+          mtime: deletionDate && !isNaN(deletionDate.getTime()) ? deletionDate : stats.mtime,
+          mime: stats.isDirectory() ? 'inode/directory' : undefined as unknown as string | null,
+          trashOriginalPath,
+          trashInfoPath: infoPath,
+          _mimePath: stats.isDirectory() ? undefined : filePath,
+        };
+      } catch {
+        return null;
+      }
+    });
+
+    const filtered = results.filter((r): r is TrashListing => r !== null);
+
+    // 批量 MIME 检测（与普通目录列表一致，供图标与类型描述使用）
+    const mimePaths = new Set<string>();
+    for (const entry of filtered) {
+      if (entry._mimePath) mimePaths.add(entry._mimePath);
+    }
+    if (mimePaths.size > 0) {
+      const mimeMap = await detectMimeBatch([...mimePaths]);
+      for (const entry of filtered) {
+        if (entry._mimePath) {
+          entry.mime = mimeMap.get(entry._mimePath) ?? null;
+        }
+      }
+    }
+
+    for (const entry of filtered) {
+      delete entry._mimePath;
+    }
+
+    // 按删除时间倒序（最近删除的在前）
+    filtered.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+    return filtered;
+  });
+
+  /**
+   * 从回收站永久删除条目（同时清理对应的 .trashinfo）。
+   * 只接受文件名（不含路径分隔符），防止路径逃逸。
+   * @returns 成功删除的条目数
+   */
+  ipcMain.handle('fs:trash-remove', async (_, names: string[]) => {
+    const filesDir = path.join(getTrashRoot(), 'files');
+    const infoDir = path.join(getTrashRoot(), 'info');
+    let success = 0;
+
+    await Promise.all(names.map(async (name) => {
+      if (typeof name !== 'string' || name.includes('/') || name.includes('\\') || name === '.' || name === '..' || !name) {
+        return;
+      }
+      try {
+        await fs.rm(path.join(filesDir, name), { recursive: true, force: true });
+        await fs.rm(path.join(infoDir, name + '.trashinfo'), { force: true }).catch(() => { /* info 可能不存在 */ });
+        success++;
+      } catch { /* skip */ }
+    }));
+
+    return success;
+  });
+
+  /**
+   * 仅删除回收站条目的 .trashinfo 元数据（条目本体已被移动出去时清理残留）。
+   * 用于"拖出回收站 = 还原到目标位置"成功后清理孤儿 info 文件。
+   * 只接受文件名（不含路径分隔符），防止路径逃逸。
+   */
+  ipcMain.handle('fs:trash-remove-info', async (_, names: string[]) => {
+    const infoDir = path.join(getTrashRoot(), 'info');
+
+    await Promise.all(names.map(async (name) => {
+      if (typeof name !== 'string' || name.includes('/') || name.includes('\\') || !name || name === '.' || name === '..') {
+        return;
+      }
+      await fs.rm(path.join(infoDir, name + '.trashinfo'), { force: true }).catch(() => { /* info 可能不存在 */ });
+    }));
+  });
+
+  /**
+   * 清空回收站（删除 files/ 与 info/ 下全部条目）。
+   * @returns 被删除的条目数
+   */
+  ipcMain.handle('fs:trash-empty', async () => {
+    const filesDir = path.join(getTrashRoot(), 'files');
+    const infoDir = path.join(getTrashRoot(), 'info');
+
+    let names: string[];
+    try {
+      names = await fs.readdir(filesDir);
+    } catch {
+      return 0;
+    }
+
+    await Promise.all(names.map(async (name) => {
+      await fs.rm(path.join(filesDir, name), { recursive: true, force: true }).catch(() => { /* skip */ });
+      await fs.rm(path.join(infoDir, name + '.trashinfo'), { force: true }).catch(() => { /* skip */ });
+    }));
+
+    return names.length;
   });
 
   // Copy source to dest recursively. Does not overwrite existing files.
@@ -645,6 +904,16 @@ export function registerFsHandlers() {
   // Uses fs.realpath — throws ENOENT if the path does not exist.
   ipcMain.handle('fs:realpath', async (_, p: string) => {
     return fs.realpath(p);
+  });
+
+  // Return basic file info for a single path (used by dashboard pins).
+  ipcMain.handle('fs:stat', async (_, p: string) => {
+    try {
+      const stats = await fs.stat(p);
+      return { isDirectory: stats.isDirectory(), size: stats.size, mtime: stats.mtime };
+    } catch {
+      return null;
+    }
   });
 
   // Compute directory size in bytes using du -sb. Returns 0 on failure.

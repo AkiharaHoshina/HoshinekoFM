@@ -154,6 +154,17 @@
     opacity: 1;
 }
 
+/* 未挂载分区上的挂载按钮：常显，悬停时更亮 */
+.sidebar-mount-btn {
+    flex-shrink: 0;
+    opacity: 0.6;
+    transition: opacity 0.15s ease;
+}
+
+.sidebar-mount-btn:hover {
+    opacity: 1;
+}
+
 .sidebar-label {
     overflow: hidden;
     text-overflow: ellipsis;

@@ -34,6 +34,13 @@
     color: var(--md-sys-color-on-surface);
 }
 
+.tab-item.drag-over {
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: -2px;
+}
+
 .tab-title {
     flex: 1;
     white-space: nowrap;
