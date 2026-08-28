@@ -17,8 +17,6 @@ interface SettingsDialogProps {
   onViewModeChange: (mode: "grid" | "list") => void;
   filledIcons: boolean;
   onToggleFilledIcons: () => void;
-  onImportCss: () => void;
-  customCssPath?: string;
   locale: Locale;
   onLocaleChange: (locale: Locale) => void;
   marqueeEnabled: boolean;
@@ -43,8 +41,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onViewModeChange,
   filledIcons,
   onToggleFilledIcons,
-  onImportCss,
-  customCssPath,
   locale,
   onLocaleChange,
   marqueeEnabled,
@@ -233,28 +229,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               </div>
             </div>
             <Switch selected={showHomeStorageUsage} onClick={onToggleShowHomeStorageUsage} />
-          </div>
-        </div>
-
-        <Divider />
-
-        {/* Customization */}
-        <div className="settings-section">
-          <div className="settings-section-header">
-            {t("settings.customization")}
-          </div>
-          <div className="settings-css-row">
-            <div className="settings-css-row__info">
-              <div className="settings-row__label">
-                {t("settings.custom_css")}
-              </div>
-              {customCssPath && (
-                <div className="settings-css-row__path">{customCssPath}</div>
-              )}
-            </div>
-            <Button variant="outlined" onClick={onImportCss}>
-              {t("settings.import_css")}
-            </Button>
           </div>
         </div>
 

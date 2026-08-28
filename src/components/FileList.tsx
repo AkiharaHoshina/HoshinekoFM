@@ -296,17 +296,6 @@ const FileListComponent: React.FC<FileListProps> = ({
     return () => document.removeEventListener("dragend", onDragEnd, true);
   }, [endDrag]);
 
-  const handleItemDoubleClick = useCallback(
-    (file: IFile) => {
-      if (renameTimeoutRef.current !== null) {
-        clearTimeout(renameTimeoutRef.current);
-        renameTimeoutRef.current = null;
-      }
-      onNavigate(file);
-    },
-    [onNavigate],
-  );
-
   const handleRenameInputChange = useCallback((value: string) => {
     setRenameValue(value);
   }, []);
@@ -461,7 +450,6 @@ const FileListComponent: React.FC<FileListProps> = ({
             onContextMenu,
             onImageError: handleImageError,
             onItemClick: handleItemClick,
-            onItemDoubleClick: handleItemDoubleClick,
             onFileDragStart: handleFileDragStart,
             onRenameInputChange: handleRenameInputChange,
             onRenameSubmit: handleRenameSubmit,

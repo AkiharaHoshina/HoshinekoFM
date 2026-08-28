@@ -2,9 +2,9 @@ import { ipcMain, app, shell } from 'electron';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { promisify } from 'util';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { detectMimeBatch } from '../fsUtils';
-import { getMountMap, resolveAccessibleParent } from '../shared';
+import { getMountMap, resolveAccessibleParent, getExecError } from '../shared';
 
 const execAsync = promisify(exec);
 
@@ -787,10 +787,33 @@ export function registerFsHandlers() {
     return true;
   });
 
-  // Open a file/directory with the system default handler. Returns error string if failed.
+  /**
+   * Open a file/directory with the system default handler. Returns error string if failed.
+   *
+   * 不用 shell.openPath：它在 Linux/Wayland 上会为 xdg-activation 令牌
+   * 跑嵌套消息循环（focus_launched_process），合成器未及时应答（例如
+   * 打开文件后立刻切换目录、焦点变化）时 promise 永不落定，导致
+   * ipcMain.handle 的回复通道被 GC 后以「reply was never sent」拒绝。
+   * 这里直接 spawn xdg-open，spawn/error 事件必然落定 promise。
+   */
   ipcMain.handle('fs:open', async (_, filePath: string) => {
-    const error = await shell.openPath(filePath);
-    return error;
+    if (typeof filePath !== 'string' || !filePath) return 'Invalid path';
+    return new Promise<string>((resolve) => {
+      try {
+        const child = spawn('xdg-open', [filePath], {
+          detached: true,
+          stdio: 'ignore',
+          env: { ...process.env, MM_NOTTTY: '1' },
+        });
+        child.on('error', (err: Error) => resolve(err.message));
+        child.on('spawn', () => {
+          child.unref();
+          resolve('');
+        });
+      } catch (e) {
+        resolve(getExecError(e).message);
+      }
+    });
   });
 
   // Extract archives: .zip via unzip, .tar/.gz/.xz via tar. Extracts to archive's parent dir.

@@ -118,9 +118,6 @@ const zhAC = {
   'settings.list': '列表',
   'settings.icon_size': '图标大小',
   'settings.filled_icons': '实心图标',
-  'settings.customization': '个性化',
-  'settings.custom_css': '自定义 CSS',
-  'settings.import_css': '导入 CSS',
   // ── 设置弹窗-新增-修改于7月3日第二版 ──
   'settings.behavior': '行为',
   'settings.language': '淫语',
@@ -497,6 +494,8 @@ const zhAC = {
   'theme.pick_wallpaper': '选择壁纸',
   'theme.wallpaper_not_found': '未检测到壁纸，请点击「选择壁纸」手动选择',
   'theme.generate_failed': '主题生成失败',
+  'theme.import_matugen': '导入 matugen 主题',
+  'theme.matugen_not_found': '未找到 matugen 主题文件（~/.config/matugen/theme.css）',
   'theme.hex': '十六进制',
   'picker.title': '调色盘',
   'theme.preset.purple': '紫色',

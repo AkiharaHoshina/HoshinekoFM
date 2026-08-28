@@ -23,7 +23,6 @@ interface RowData {
   onContextMenu?: (e: React.MouseEvent, file: IFile) => void;
   onImageError: (path: string) => void;
   onItemClick: (e: React.MouseEvent, file: IFile) => void;
-  onItemDoubleClick: (file: IFile) => void;
   onFileDragStart: (e: React.DragEvent, file: IFile) => void;
   onRenameInputChange: (value: string) => void;
   onRenameSubmit: () => void;
@@ -226,7 +225,6 @@ function ListRowItem({
         triggerRipple(e, e.currentTarget as HTMLElement);
       }}
       onClick={(e) => data.onItemClick(e, file)}
-      onDoubleClick={() => data.onItemDoubleClick(file)}
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest?.(".file-rename-input")) return;
         e.preventDefault();
@@ -305,7 +303,6 @@ function GridRowItem({
         triggerRipple(e, e.currentTarget as HTMLElement);
       }}
       onClick={(e) => data.onItemClick(e, file)}
-      onDoubleClick={() => data.onItemDoubleClick(file)}
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest?.(".file-rename-input")) return;
         e.preventDefault();

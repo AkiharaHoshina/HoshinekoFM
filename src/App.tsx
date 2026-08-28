@@ -314,7 +314,6 @@ function AppContent() {
     "settings.filledIcons",
     false,
   );
-  const [customCssPath, setCustomCssPath] = useState<string>("");
   const [locale, setLocaleState] = useLocalStorage<Locale>(
     "settings.locale",
     getLocale(),
@@ -363,32 +362,6 @@ function AppContent() {
     void ThemeService.applyTheme(themeConfig);
   }, [themeConfig]);
 
-  const handleLoadCustomCss = async (path: string) => {
-    try {
-      const css = await window.electron.readFile(path);
-      if (css) {
-        let style = document.getElementById("custom-user-css");
-        if (!style) {
-          style = document.createElement("style");
-          style.id = "custom-user-css";
-          document.head.appendChild(style);
-        }
-        style.textContent = css;
-        setCustomCssPath(path);
-        localStorage.setItem("customCssPath", path);
-      }
-    } catch (err) {
-      console.error("Failed to load custom css", err);
-    }
-  };
-
-  const handleImportCss = async () => {
-    const path = await window.electron.openFileDialog();
-    if (path) {
-      handleLoadCustomCss(path);
-    }
-  };
-
   const loadHome = () => {
     handleAddTab("app://dashboard");
   };
@@ -414,11 +387,6 @@ function AppContent() {
       }
     };
     init();
-
-    const storedCssPath = localStorage.getItem("customCssPath");
-    if (storedCssPath) {
-      handleLoadCustomCss(storedCssPath); // eslint-disable-line react-hooks/set-state-in-effect
-    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1162,8 +1130,6 @@ function AppContent() {
           onViewModeChange={setViewMode}
           filledIcons={filledIcons}
           onToggleFilledIcons={() => setFilledIcons(!filledIcons)}
-          customCssPath={customCssPath}
-          onImportCss={handleImportCss}
           locale={locale}
           onLocaleChange={handleLocaleChange}
           marqueeEnabled={marqueeEnabled}

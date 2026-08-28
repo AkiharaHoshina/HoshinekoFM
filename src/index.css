@@ -42,6 +42,12 @@ md-icon {
   vertical-align: middle;
 }
 
+/* 实心图标：字体为可变轴字体（FILL 0-1，默认 0），
+   md-icon 不处理 filled 属性，需显式把 FILL 轴拨到 1 */
+md-icon[filled] {
+  font-variation-settings: 'FILL' 1;
+}
+
 :root {
   --md-ref-typeface-plain: 'Roboto', 'Noto Sans SC', sans-serif;
   --md-ref-typeface-brand: 'Roboto', 'Noto Sans SC', sans-serif;

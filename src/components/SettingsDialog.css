@@ -78,27 +78,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.settings-css-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.settings-css-row__info {
-  min-width: 0;
-  flex: 1;
-  margin-right: 16px;
-}
-
-.settings-css-row__path {
-  font-size: 12px;
-  color: var(--md-sys-color-on-surface-variant);
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .settings-select {
   width: 160px;
 }

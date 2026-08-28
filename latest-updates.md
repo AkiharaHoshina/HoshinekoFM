@@ -366,3 +366,35 @@
 ### 其他
 
 - 版本号升至 `0.11.9`
+
+## v0.11.10 — 主题导入、右键菜单分组与多项修复
+
+### 颜色设置迭代
+
+- 新增「导入 matugen 主题」按钮（与调色盘/选择壁纸并列）：读取 `~/.config/matugen/theme.css` 即时预览，可经应用/确定持久化（`kind:'matugen'`）；文件缺失或为空时 toast 报错
+- 删除一级设置中「个性化 → 导入 CSS」旧功能（无效功能下线）：SettingsDialog 移除该区块与 props，App 移除 customCssPath 状态、handleLoadCustomCss/handleImportCss 及启动时旧 CSS 注入
+- i18n：删除 `settings.customization`/`custom_css`/`import_css` ×12，新增 `theme.import_matugen`/`theme.matugen_not_found` ×12
+
+### 地址栏胶囊右键菜单分组
+
+- 重新分组：第一组 = 主页 + 根目录 + 回收站；第二组 = 其他特殊目录（/dev、挂载设备）
+- 软链接胶囊的「转到软链接目标」置于第一组组首；第二组为空时不渲染多余分隔线
+
+### 实心图标修复
+
+- `Icon` 的 `filled` 属性此前无效：@material/web 2.4.1 的 md-icon 不处理 filled 属性，可变字体 FILL 轴始终为 0
+- `index.css` 新增 `md-icon[filled] { font-variation-settings: 'FILL' 1; }`，文件列表/设置/仪表盘等所有实心图标用法一并生效
+
+### 双击重复打开修复
+
+- 文件项同时存在两条打开路径：onClick 内的手动双击检测（500ms 阈值）与 onDoubleClick 事件，一次物理双击触发两次导航
+- 移除 onDoubleClick 打开路径（Row.tsx 双行组件 + RowData 字段 + handleItemDoubleClick），保留 onClick 手动检测为唯一入口；慢速双击重命名、拖拽取消、框选逻辑不变
+
+### fs:open 挂起修复（reply was never sent）
+
+- 根因：`shell.openPath` 在 Linux/Wayland 上为 xdg-activation 令牌跑嵌套消息循环，合成器未及时应答（打开文件后立刻切换目录、焦点变化）时 promise 永不落定；ipcMain.handle 的回复通道（cppgc ReplyChannel）被 GC 兜底后以「reply was never sent」拒绝
+- 修复：`fs:open` 改为直接 spawn `xdg-open`（detached + MM_NOTTTY），spawn/error 事件保证 promise 必落定，不再经 xdg-activation 嵌套循环
+
+### 其他
+
+- 版本号升至 `0.11.10`

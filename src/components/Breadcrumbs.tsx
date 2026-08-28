@@ -5,6 +5,7 @@ import { IconButton } from "./IconButton";
 import { Icon } from "./Icon";
 import { Chip } from "./md";
 import { ContextMenu } from "./ContextMenu";
+import type { ContextMenuItem } from "./ContextMenu";
 import { useDrag } from "../contexts/DragContext";
 import type { IFile } from "../types/files";
 import type { DragClaimResult } from "../types/electron.d";
@@ -461,80 +462,88 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   // 所有胶囊（特殊挂载/回收站/主页/根目录/普通路径段）统一右键菜单：
   // 软链接目标 + 回收站 + 主页 + 根目录 + 设备目录，互相跳转补齐，
   // 与当前胶囊相同的入口自动排除。
-  const ctxMenuNode = breadcrumbCtxMenu ? (
-    <ContextMenu
-      x={breadcrumbCtxMenu.x}
-      y={breadcrumbCtxMenu.y}
-      items={[
-        ...(breadcrumbCtxMenu.symlinkTarget
-          ? [{
-            label: t("symlink.go_to_target"),
-            icon: "arrow_forward",
-            action: () => {
-              onNavigate(breadcrumbCtxMenu.symlinkTarget!);
-              setBreadcrumbCtxMenu(null);
-            },
-          }]
-          : []),
-        ...(breadcrumbCtxMenu.realPath !== "trash://"
-          ? [{
-            label: t("breadcrumbs.go_to_trash"),
-            icon: "delete",
-            action: () => {
-              onNavigate("trash://");
-              setBreadcrumbCtxMenu(null);
-            },
-          }]
-          : []),
-        ...(ownHome && breadcrumbCtxMenu.realPath !== ownHome
-          ? [{
-            label: t("breadcrumbs.go_to_home"),
-            icon: "home",
-            action: () => {
-              onNavigate(ownHome);
-              setBreadcrumbCtxMenu(null);
-            },
-          }]
-          : []),
-        ...(breadcrumbCtxMenu.realPath !== "/"
-          ? [{
-            label: t("breadcrumbs.go_to_root"),
-            icon: "tag",
-            action: () => {
-              onNavigate("/");
-              setBreadcrumbCtxMenu(null);
-            },
-          }]
-          : []),
-        ...(breadcrumbCtxMenu.realPath !== "/dev"
-          ? [{
-            label: t("breadcrumbs.go_to_dev"),
-            icon: "memory",
-            action: () => {
-              onNavigate("/dev");
-              setBreadcrumbCtxMenu(null);
-            },
-          }]
-          : []),
-        ...(specialMountMenuEntries.length > 0
-          ? [{ divider: true, label: "", action: () => {} }]
-          : []),
-        ...specialMountMenuEntries
-          .filter((s) => s.mountpoint !== breadcrumbCtxMenu.realPath)
-          .map((s) => ({
-            label: s.config.showPath
-              ? `${t(s.config.labelKey)} ${s.mountpoint.split('/').filter(Boolean).pop()}`
-              : t(s.config.labelKey),
-            icon: s.config.icon,
-            action: () => {
-              onNavigate(s.mountpoint);
-              setBreadcrumbCtxMenu(null);
-            },
-          })),
-      ]}
-      onClose={() => setBreadcrumbCtxMenu(null)}
-    />
-  ) : null;
+  // 分组：第一组 = 主页 + 根目录 + 回收站；第二组 = 其他特殊目录（/dev / 挂载设备）。
+  const ctxMenuNode = breadcrumbCtxMenu ? (() => {
+    const items: ContextMenuItem[] = [];
+    if (breadcrumbCtxMenu.symlinkTarget) {
+      items.push({
+        label: t("symlink.go_to_target"),
+        icon: "arrow_forward",
+        action: () => {
+          onNavigate(breadcrumbCtxMenu.symlinkTarget!);
+          setBreadcrumbCtxMenu(null);
+        },
+      });
+    }
+    if (ownHome && breadcrumbCtxMenu.realPath !== ownHome) {
+      items.push({
+        label: t("breadcrumbs.go_to_home"),
+        icon: "home",
+        action: () => {
+          onNavigate(ownHome);
+          setBreadcrumbCtxMenu(null);
+        },
+      });
+    }
+    if (breadcrumbCtxMenu.realPath !== "/") {
+      items.push({
+        label: t("breadcrumbs.go_to_root"),
+        icon: "tag",
+        action: () => {
+          onNavigate("/");
+          setBreadcrumbCtxMenu(null);
+        },
+      });
+    }
+    if (breadcrumbCtxMenu.realPath !== "trash://") {
+      items.push({
+        label: t("breadcrumbs.go_to_trash"),
+        icon: "delete",
+        action: () => {
+          onNavigate("trash://");
+          setBreadcrumbCtxMenu(null);
+        },
+      });
+    }
+
+    const specialGroup: ContextMenuItem[] = [];
+    if (breadcrumbCtxMenu.realPath !== "/dev") {
+      specialGroup.push({
+        label: t("breadcrumbs.go_to_dev"),
+        icon: "memory",
+        action: () => {
+          onNavigate("/dev");
+          setBreadcrumbCtxMenu(null);
+        },
+      });
+    }
+    specialGroup.push(...specialMountMenuEntries
+      .filter((s) => s.mountpoint !== breadcrumbCtxMenu.realPath)
+      .map((s) => ({
+        label: s.config.showPath
+          ? `${t(s.config.labelKey)} ${s.mountpoint.split('/').filter(Boolean).pop()}`
+          : t(s.config.labelKey),
+        icon: s.config.icon,
+        action: () => {
+          onNavigate(s.mountpoint);
+          setBreadcrumbCtxMenu(null);
+        },
+      })));
+
+    if (specialGroup.length > 0) {
+      items.push({ divider: true, label: "", action: () => {} });
+      items.push(...specialGroup);
+    }
+
+    return (
+      <ContextMenu
+        x={breadcrumbCtxMenu.x}
+        y={breadcrumbCtxMenu.y}
+        items={items}
+        onClose={() => setBreadcrumbCtxMenu(null)}
+      />
+    );
+  })() : null;
 
   // 回收站虚拟目录：渲染单个胶囊，样式与主页/根目录胶囊一致。
   // 所有 hooks 已在此处之前执行完毕，early return 不会破坏 hooks 顺序。

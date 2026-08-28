@@ -111,6 +111,14 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
     await applyWallpaper(path);
   }, [applyWallpaper, wallpaperBusy]);
 
+  /** 「导入 matugen 主题」按钮：读取 ~/.config/matugen/theme.css 并即时预览 */
+  const importMatugen = useCallback(async () => {
+    const cfg: ThemeConfig = { kind: 'matugen' };
+    setDraft(cfg);
+    const ok = await ThemeService.loadTheme();
+    if (!ok) showToast(t('theme.matugen_not_found'), 'error');
+  }, []);
+
   /** 调色盘确定：以所选颜色为种子生成自定义主题 */
   const handlePickerClose = useCallback((color: string | null) => {
     setPickerOpen(false);
@@ -242,13 +250,16 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
                 <span className="theme-color-special-desc">{t('theme.custom_desc')}</span>
               </button>
             </div>
-            {/* 调色盘入口（三级对话框）+ 独立选图按钮 */}
+            {/* 调色盘入口（三级对话框）+ 独立选图按钮 + 导入 matugen 主题 */}
             <div className="theme-color-palette-row">
               <Button variant="outlined" icon={<Icon name="colorize" />} onClick={() => setPickerOpen(true)}>
                 {t('theme.palette')}
               </Button>
               <Button variant="outlined" icon={<Icon name="image" />} onClick={() => { void pickWallpaper(); }}>
                 {t('theme.pick_wallpaper')}
+              </Button>
+              <Button variant="outlined" icon={<Icon name="file_open" />} onClick={() => { void importMatugen(); }}>
+                {t('theme.import_matugen')}
               </Button>
             </div>
           </div>
