@@ -163,6 +163,8 @@ const ruUA = {
   'settings.behavior': 'Поведение',
   'settings.language': 'Язык',
   'settings.marquee_text': 'Бегущая строка',
+  'settings.about': 'О приложении',
+  'settings.version': 'Версия',
 
   // ── Toast 消息 ──
   'toast.copied_items': (n: number) => plural(n, 'Скопирован {n} элемент', 'Скопировано {n} элемента', 'Скопировано {n} элементов'),

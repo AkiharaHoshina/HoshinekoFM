@@ -122,6 +122,8 @@ const koKR = {
   'settings.behavior': '동작',
   'settings.language': '언어',
   'settings.marquee_text': '스크롤 텍스트',
+  'settings.about': '정보',
+  'settings.version': '버전',
 
   // ── Toast 메시지 ──
   'toast.copied_items': (n: number) => `${n}개 항목을 복사했습니다`,

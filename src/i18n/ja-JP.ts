@@ -121,6 +121,8 @@ const jaJP = {
   'settings.behavior': '動作',
   'settings.language': '言語',
   'settings.marquee_text': 'スクロールテキスト',
+  'settings.about': 'アプリについて',
+  'settings.version': 'バージョン',
 
   // ── Toast 消息 ──
   'toast.copied_items': (n: number) => `${n} 個の項目をコピーしました`,

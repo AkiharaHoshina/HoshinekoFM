@@ -122,6 +122,8 @@ const koKP = {
   'settings.behavior': '동작',
   'settings.language': '언어',
   'settings.marquee_text': '흐르는 원문',
+  'settings.about': '정보',
+  'settings.version': '버전',
 
   // ── Toast 메시지 ──
   'toast.copied_items': (n: number) => `${n}개 항목을 복사하였습니다`,

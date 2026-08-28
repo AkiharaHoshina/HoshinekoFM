@@ -121,6 +121,8 @@ const zhCT = {
   'settings.behavior': '行為',
   'settings.language': '語言',
   'settings.marquee_text': '跑馬燈文字',
+  'settings.about': '關於',
+  'settings.version': '版本',
 
   // ── Toast 訊息 ──
   'toast.copied_items': (n: number) => `已複製 ${n} 個項目`,

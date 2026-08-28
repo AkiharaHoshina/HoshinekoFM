@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol, net, ipcMain, type WebContents } from 'electron';
+import { app, BrowserWindow, protocol, net, ipcMain, shell, type WebContents } from 'electron';
 import path from 'path';
 import url from 'url';
 import os from 'os';
@@ -165,6 +165,23 @@ ipcMain.handle('theme:get-css', async () => {
     return await fs.readFile(themePath, 'utf-8');
   } catch {
     return null;
+  }
+});
+
+/** 返回应用版本号（package.json 的 version），设置弹窗"关于"部分显示 */
+ipcMain.handle('app:get-version', () => app.getVersion());
+
+/**
+ * 用系统默认浏览器打开外部链接。
+ * 仅允许 http/https 协议，防止任意 scheme 被打开。
+ */
+ipcMain.handle('shell:open-external', async (_event, url: string) => {
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return false;
+  try {
+    await shell.openExternal(url);
+    return true;
+  } catch {
+    return false;
   }
 });
 

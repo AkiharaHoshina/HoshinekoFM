@@ -121,6 +121,8 @@ const zhCN = {
   'settings.behavior': '行为',
   'settings.language': '语言',
   'settings.marquee_text': '滚动文本',
+  'settings.about': '关于',
+  'settings.version': '版本',
 
   // ── Toast 消息 ──
   'toast.copied_items': (n: number) => `已复制 ${n} 个项目`,

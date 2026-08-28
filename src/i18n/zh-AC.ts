@@ -122,6 +122,8 @@ const zhAC = {
   'settings.behavior': '行为',
   'settings.language': '淫语',
   'settings.marquee_text': '滚动文本',
+  'settings.about': '关于',
+  'settings.version': '版本',
 
 
   // ── Toast 消息 ──

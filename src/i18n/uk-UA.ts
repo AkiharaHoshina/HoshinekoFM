@@ -160,6 +160,8 @@ const ukUA = {
   'settings.behavior': 'Поведінка',
   'settings.language': 'Мова',
   'settings.marquee_text': 'Біжучий текст',
+  'settings.about': 'Про застосунок',
+  'settings.version': 'Версія',
 
   // ── Toast 消息 ──
   'toast.copied_items': (n: number) => plural(n, 'Скопійовано {n} елемент', 'Скопійовано {n} елементи', 'Скопійовано {n} елементів'),

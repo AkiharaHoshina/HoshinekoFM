@@ -132,6 +132,8 @@ const enUS = {
   'settings.behavior': 'Behavior',
   'settings.language': 'Language',
   'settings.marquee_text': 'Marquee text',
+  'settings.about': 'About',
+  'settings.version': 'Version',
 
   // ── Toast 消息 ──
   'toast.copied_items': (n: number) => n === 1 ? 'Copied 1 item' : `Copied ${n} items`,

@@ -46,6 +46,8 @@ contextBridge.exposeInMainWorld('electron', {
   },
   getStorageUsage: () => ipcRenderer.invoke('system:get-storage-usage'),
   getStartupPath: () => ipcRenderer.invoke('app:get-startup-path'),
+  getVersion: () => ipcRenderer.invoke('app:get-version'),
+  openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   exists: (path: string) => ipcRenderer.invoke('fs:exists', path),
   existsBatch: (paths: string[]) => ipcRenderer.invoke('fs:exists-batch', paths),
   setIcon: (iconPath: string) => ipcRenderer.invoke('window:set-icon', iconPath),

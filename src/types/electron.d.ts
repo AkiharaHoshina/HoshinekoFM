@@ -97,6 +97,10 @@ export interface IElectronAPI {
     clipboardClear: () => Promise<void>;
     onClipboardChange: (callback: (data: ClipboardData | null) => void) => () => void;
     getStartupPath: () => Promise<string | null>;
+    /** 应用版本号（package.json 的 version） */
+    getVersion: () => Promise<string>;
+    /** 用系统默认浏览器打开外部 http/https 链接 */
+    openExternal: (url: string) => Promise<boolean>;
     search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string }) => Promise<IFile[]>;
     getDirectorySize: (path: string) => Promise<number>;
     setIcon: (iconType: string) => Promise<void>;

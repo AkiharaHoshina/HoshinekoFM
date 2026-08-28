@@ -46,6 +46,22 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   const langOptions = getLanguageOptions();
 
   /**
+   * 应用版本号（来自主进程 app.getVersion()）。
+   * 加载失败时显示 '-'。
+   */
+  const [version, setVersion] = useState<string>('-');
+
+  useEffect(() => {
+    if (!open) return;
+    if (window.electron) {
+      void window.electron.getVersion().then(setVersion).catch(() => setVersion('-'));
+    }
+  }, [open]);
+
+  /** GitHub 项目仓库地址 */
+  const GITHUB_REPO_URL = 'https://github.com/AkiharaHoshina/HoshinekoFM';
+
+  /**
    * 语言选择的应用时机：选择时只更新本地预览（pendingLocale），
    * 点击「确定」或关闭对话框（退出 = 确定）时才调用 onLocaleChange
    * 真正应用并同步到所有窗口，避免其他窗口在用户犹豫选择时立即响应。
@@ -203,6 +219,27 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             </div>
             <Button variant="outlined" onClick={onImportCss}>
               {t("settings.import_css")}
+            </Button>
+          </div>
+        </div>
+
+        <Divider />
+
+        {/* About */}
+        <div className="settings-section">
+          <div className="settings-section-header">
+            {t("settings.about")}
+          </div>
+          <div className="settings-about-row">
+            <span className="settings-row__label">{t("settings.version")}</span>
+            <span className="settings-about-version">{version}</span>
+          </div>
+          <div className="settings-about-row">
+            <Button
+              variant="outlined"
+              onClick={() => { void window.electron.openExternal(GITHUB_REPO_URL); }}
+            >
+              GitHub
             </Button>
           </div>
         </div>
