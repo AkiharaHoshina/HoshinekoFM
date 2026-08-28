@@ -106,8 +106,11 @@ body {
 .main-content {
   flex: 1;
   height: 100%;
-  background: var(--md-sys-color-background);
-  border-radius: 24px 0 0 0;
+  /* 文件浏览区背景与 Places（侧边栏）同色，使用同一个原子色
+     surface-container-low，保持左右两栏视觉一致。
+     左上不再切圆角：圆角会在标签页顶部与 Places 顶部之间
+     留下缺口（缝），去圆角后两者顶部平齐 */
+  background: var(--md-sys-color-surface-container-low);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -123,7 +126,8 @@ body {
   height: auto;
   display: flex;
   flex-direction: column;
-  background: var(--md-sys-color-surface);
+  /* 与文件浏览区同色：补上标签页与文件区之间的接缝 */
+  background: var(--md-sys-color-surface-container-low);
 }
 
 .empty-state {

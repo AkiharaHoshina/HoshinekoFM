@@ -9,6 +9,7 @@ import { startWatching, stopWatching, stopAllWatching } from './fsWatcher';
 import { registerFsHandlers } from './handlers/fs';
 import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor } from './handlers/system';
 import { registerWindowHandlers } from './handlers/window';
+import { registerThemeHandlers } from './handlers/theme';
 import { initJobHandlers } from './jobs';
 
 /** 所有打开的窗口（单实例多窗口，共享一个后端） */
@@ -228,6 +229,7 @@ ipcMain.handle('app:get-startup-path', (event) => {
 registerFsHandlers();
 registerSystemHandlers();
 registerWindowHandlers(getWindows);
+registerThemeHandlers();
 initJobHandlers();
 
 app.whenReady().then(() => {

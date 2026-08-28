@@ -62,6 +62,12 @@ export type DragClaimResult =
 
 export interface IElectronAPI {
     getThemeCss: () => Promise<string | null>;
+    /** DMS 系统主题信息（scheme / contrast / dark+light 全套角色） */
+    readDmsTheme: () => Promise<{ available: boolean; scheme?: string; contrast?: number; colors?: { dark: Record<string, string>; light: Record<string, string> } }>;
+    /** 探测当前壁纸图片路径，失败返回 null */
+    findWallpaper: () => Promise<string | null>;
+    /** 用 matugen 从壁纸图片生成 M3 颜色方案 CSS */
+    genWallpaperTheme: (imagePath: string, type: string, contrast: number) => Promise<{ success: boolean; css?: string; sourceColor?: string; error?: string }>;
     listDir: (path: string) => Promise<{ data: IFile[]; actualPath: string; error?: { code: string; originalPath: string } }>;
     getParentPath: (path: string) => Promise<string>;
     getHomePath: () => Promise<string>;

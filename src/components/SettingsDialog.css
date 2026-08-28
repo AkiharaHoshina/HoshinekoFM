@@ -115,3 +115,13 @@
   color: var(--md-sys-color-on-surface-variant);
   font-variant-numeric: tabular-nums;
 }
+
+/* 主题颜色入口行的种子色色点 */
+.settings-theme-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--md-sys-color-outline);
+  background-color: var(--md-sys-color-outline-variant);
+  flex-shrink: 0;
+}

@@ -1,8 +1,8 @@
 .tab-bar {
     display: flex;
     align-items: center;
-    background: var(--md-sys-color-surface);
-    /* Or surface-container */
+    /* 与文件浏览区 / Places 同色，标签条与内容区之间不出现接缝 */
+    background: var(--md-sys-color-surface-container-low);
     padding: 8px 8px 0;
     gap: 4px;
     height: 48px;
@@ -16,7 +16,8 @@
     max-width: 240px;
     height: 40px;
     padding: 0 12px;
-    background: var(--md-sys-color-surface-container-low);
+    /* 比标签条浅一级，未激活标签仍保持可见的胶囊轮廓 */
+    background: var(--md-sys-color-surface-container);
     color: var(--md-sys-color-on-surface-variant);
     border-radius: 12px 12px 0 0;
     cursor: pointer;

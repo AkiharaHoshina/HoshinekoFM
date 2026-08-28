@@ -1,0 +1,121 @@
+.color-picker-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 300px;
+  padding: 4px 0;
+}
+
+.color-picker-preview {
+  width: 100%;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.color-picker-sv {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  border-radius: 12px;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.color-picker-sv-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  background:
+    linear-gradient(to top, #000 0%, transparent 100%),
+    linear-gradient(to right, #fff 0%, transparent 100%);
+}
+
+.color-picker-sv-thumb {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.color-picker-hue {
+  position: relative;
+  width: 100%;
+  height: 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.color-picker-hue-thumb {
+  position: absolute;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.color-picker-hex-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.color-picker-hex-label {
+  font-size: 14px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.color-picker-hex-input {
+  flex: 1;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--md-sys-color-outline);
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  font-family: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+  outline: none;
+}
+
+.color-picker-hex-input:focus {
+  border-color: var(--md-sys-color-primary);
+}
+
+.color-picker-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.color-picker-preset {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--md-sys-color-outline-variant);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.color-picker-preset:hover {
+  transform: scale(1.15);
+}
+
+.color-picker-preset--selected {
+  border-color: var(--md-sys-color-on-surface);
+  box-shadow: 0 0 0 2px var(--md-sys-color-surface), 0 0 0 4px var(--md-sys-color-on-surface);
+}

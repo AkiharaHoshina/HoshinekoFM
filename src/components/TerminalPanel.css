@@ -6,8 +6,8 @@
   background: #1e1e1e;
   min-height: 0;
   flex-shrink: 0;
-  /* 左上圆角与 .main-content 的 24px 一致：深色终端与左侧 Places 的
-     直角衔接过于突兀，圆角后露出的角落与文件浏览区背景同色自然过渡 */
+  /* 左上圆角：深色终端与左侧 Places 的直角衔接过于突兀，
+     圆角后露出的角落与文件浏览区背景同色自然过渡 */
   border-radius: 24px 0 0 0;
   overflow: hidden;
 }

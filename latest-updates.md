@@ -320,3 +320,49 @@
 - 主页卡片命名与各语言侧栏「主页」按钮一致（zh-CN 主页 / zh-TW 首頁 / ja ホーム / ru Главная 等）
 - 新增 i18n 键（×12 语言）：`dashboard.storage`、`dashboard.home_storage`、`settings.show_home_storage`
 - 版本号升至 `0.11.8`
+
+## v0.11.9 — 终端面板重构与主题颜色系统
+
+### 仪表盘存储区 i18n 修复
+
+- 存储子区域标签（系统 / 主页）改为在状态中存 i18n 键、渲染时翻译，切换语言即时生效（此前文案固化在首屏语言）
+
+### 内置终端面板重构（半自由窗口 + M3 标题栏）
+
+- 面板抽取为 `TerminalPanel` 组件：左右撑满、底边固定，拖动标题栏调整高度（120px ~ 85% 视口，Pointer Capture），双击标题栏或重置按钮恢复默认 420px
+- 每次呼出恢复默认高度；窗口缩放时自动钳制高度
+- 标题栏 M3 化：surface-container 底色 + 阴影 + label-large 标题 + primary 图标，新增「重置大小」按钮
+- 面板左上 24px 圆角：圆角露出的角落与文件浏览区同色，弱化深色终端与 Places 的直角衔接
+- 新增 i18n 键（×12 语言）：`terminal.close`、`terminal.reset_size`、`terminal.drag_hint`
+
+### 主题颜色系统（设置 → 外观 → 主题颜色）
+
+- 一级入口：设置外观区「主题颜色」行（种子色圆点）→ 打开二级颜色设置对话框（内容宽度大于设置主对话框）
+- 二级 `ThemeColorDialog`：M3 预览卡（随选择全局即时预览）+ 12 个 M3 预设色盘 + 三个特殊颜色卡；底部 取消（回滚快照）/ 应用（保存不关闭）/ 确定（保存并关闭）
+- 特殊颜色卡：
+  - 系统主题：读取 DMS `dms-colors.json` 全套 M3 角色生成；**暂禁用（显示「尚未支持」）**，结构保留待后续实现 DMS 对接
+  - 壁纸取色：matugen 生成；探测链 DMS 配置 → niri config → gsettings → 用户壁纸目录，刻意排除 /usr/share 发行版默认壁纸
+  - 自定义：三级对话框内置色盘
+- 三级 `ColorPickerDialog`：自绘 M3 色盘（色相滑条 + 饱和度/明度方块 + hex 输入 + 预设种子色），Pointer Capture 拖拽
+- 生成引擎（混合）：预设/自定义用 `@material/material-color-utilities`（HCT，支持 tonal-spot/vibrant/rainbow 等 9 种 scheme）；壁纸用 matugen CLI（临时模板目录输出深色/浅色全套 CSS 变量，无 TTY 环境补 `--source-color-index 0`）
+- 输出统一注入 `<style id="app-theme">`：深色 `:root` + 浅色 `@media (prefers-color-scheme: light)`，并补 `--border-color` 别名
+- 持久化 `settings.theme` 跨窗口同步；未配置时保留传统 matugen theme.css 加载
+- 新 IPC：`theme:read-dms` / `theme:find-wallpaper` / `theme:gen-wallpaper`（路径白名单 + scheme 白名单校验）
+- 新增 i18n 键约 30 个（×12 语言）
+
+### 主题迭代修复
+
+- 壁纸取色：探测失败 toast 引导手动选择；matugen 生成失败 toast 报错（不再静默回退）；「选择壁纸」独立按钮与「调色盘」并列
+- 多对话框滚轮失效修复：全局 wheel 处理器改为放行「任一」打开的 md-dialog 内滚动（此前只检查 DOM 中第一个，二级/三级对话框滚轮被 preventDefault）
+- 确定/应用后颜色回退修复：md-dialog 程序化关闭（open=false）会派发 close 事件、二次触发取消回滚，用 `confirmedRef` 区分「确定关闭」与「取消」，快照不再顶掉已应用颜色
+
+### 背景统一
+
+- 文件浏览区背景改用 `surface-container-low`，与 Places 同一原子色
+- 标签条与文件浏览区同色，补上两者之间的接缝（标签页未下移）；未激活标签改为浅一级的 `surface-container` 保持胶囊轮廓
+- `.main-content` 移除左上 24px 圆角：标签页顶部与 Places 顶部平齐
+- `.sidebar` 移除 16px 圆角与上下 12px 留白：Places 背景贴边延伸到窗口顶部，圆角处漏出的旧深色（`--md-sys-color-background`）消失
+
+### 其他
+
+- 版本号升至 `0.11.9`

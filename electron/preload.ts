@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('electron', {
   getThemeCss: () => ipcRenderer.invoke('theme:get-css'),
+  readDmsTheme: () => ipcRenderer.invoke('theme:read-dms'),
+  findWallpaper: () => ipcRenderer.invoke('theme:find-wallpaper'),
+  genWallpaperTheme: (imagePath: string, type: string, contrast: number) => ipcRenderer.invoke('theme:gen-wallpaper', imagePath, type, contrast),
   listDir: (path: string) => ipcRenderer.invoke('fs:list-dir', path),
   getParentPath: (path: string) => ipcRenderer.invoke('fs:get-parent', path),
   getHomePath: () => ipcRenderer.invoke('fs:get-home'),

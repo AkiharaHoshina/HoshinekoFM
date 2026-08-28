@@ -1,0 +1,175 @@
+.theme-color-content {
+  min-width: 520px;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── 预览卡 ── */
+.theme-color-preview {
+  background-color: var(--md-sys-color-surface-container-low);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.theme-color-preview-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.theme-color-preview-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface);
+}
+
+.theme-color-preview-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background-color: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.theme-color-preview-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.theme-color-preview-card {
+  flex: 1;
+  background-color: var(--md-sys-color-surface-container);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.theme-color-preview-card-line {
+  height: 8px;
+  border-radius: 4px;
+  background-color: var(--md-sys-color-outline-variant);
+}
+
+.theme-color-preview-card-line:last-child {
+  width: 60%;
+  background-color: var(--md-sys-color-primary-container);
+}
+
+.theme-color-preview-btn {
+  width: 64px;
+  height: 36px;
+  border-radius: 20px;
+  background-color: var(--md-sys-color-primary);
+}
+
+/* ── 分区标题 ── */
+.theme-color-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.theme-color-section-header {
+  font-size: 14px;
+  color: var(--md-sys-color-primary);
+  font-weight: 500;
+}
+
+/* ── 预设色盘 ── */
+.theme-color-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+}
+
+.theme-color-preset {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px solid var(--md-sys-color-outline-variant);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.theme-color-preset:hover {
+  transform: scale(1.1);
+}
+
+.theme-color-preset--selected {
+  border-color: var(--md-sys-color-on-surface);
+  box-shadow: 0 0 0 2px var(--md-sys-color-surface), 0 0 0 4px var(--md-sys-color-on-surface);
+}
+
+/* ── 特殊颜色卡 ── */
+.theme-color-specials {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.theme-color-special {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background-color: var(--md-sys-color-surface-container-low);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background-color 0.1s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.theme-color-special:hover:not(:disabled) {
+  background-color: var(--md-sys-color-surface-container);
+}
+
+.theme-color-special:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.theme-color-special--selected {
+  border-color: var(--md-sys-color-primary);
+  box-shadow: 0 0 0 1px var(--md-sys-color-primary);
+}
+
+.theme-color-special-icon {
+  color: var(--md-sys-color-primary);
+}
+
+.theme-color-special-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface);
+}
+
+.theme-color-special-desc {
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
+}
+
+.theme-color-palette-row {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+}

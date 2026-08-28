@@ -16,6 +16,7 @@ import { Icon } from "./components/Icon";
 import { ContextMenu } from "./components/ContextMenu";
 import type { ContextMenuItem } from "./components/ContextMenu";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { ThemeColorDialog } from "./components/ThemeColorDialog";
 import { TerminalPanel, DEFAULT_TERMINAL_HEIGHT } from "./components/TerminalPanel";
 import type { IFile, GvfsVolume } from "./types/files";
 import { Dialog } from "./components/Dialog";
@@ -26,6 +27,7 @@ import { ExplorerTab } from "./components/ExplorerTab";
 import { OpenWithDialog } from "./components/OpenWithDialog";
 import { PropertiesDialog } from "./components/PropertiesDialog";
 import { useLocalStorage } from "./hooks/useLocalStorage";
+import type { ThemeConfig } from "./types/theme";
 import {
   trashFiles,
   deleteFilesPermanently,
@@ -345,6 +347,22 @@ function AppContent() {
     false,
   );
 
+  /**
+   * 主题颜色配置（持久化于 settings.theme，跨窗口同步）。
+   * null = 未选择，走传统 matugen theme.css 加载。
+   */
+  const [themeConfig, setThemeConfig] = useLocalStorage<ThemeConfig | null>(
+    "settings.theme",
+    null,
+  );
+  /** 主题颜色二级对话框开关 */
+  const [themeColorOpen, setThemeColorOpen] = useState(false);
+
+  /** 主题配置变化时（含首次挂载）应用主题颜色 */
+  useEffect(() => {
+    void ThemeService.applyTheme(themeConfig);
+  }, [themeConfig]);
+
   const handleLoadCustomCss = async (path: string) => {
     try {
       const css = await window.electron.readFile(path);
@@ -381,7 +399,6 @@ function AppContent() {
     if (hasInitialized.current) return;
     hasInitialized.current = true;
 
-    ThemeService.loadTheme();
     ThemeService.init();
 
     const init = async () => {
@@ -413,9 +430,11 @@ function AppContent() {
         e.preventDefault();
         return;
       }
-      const openDialog = document.querySelector('md-dialog[open]');
-      if (openDialog) {
-        if (openDialog.contains(target)) return;
+      // 多对话框叠加时（设置 → 主题颜色 → 调色盘），必须允许滚轮在
+      // 「任一」打开的对话框内滚动；只检查第一个 md-dialog[open] 会
+      // 把其他对话框的原生滚动全部 preventDefault 掉
+      const openDialogs = Array.from(document.querySelectorAll('md-dialog[open]'));
+      if (openDialogs.length > 0 && !openDialogs.some((d) => d.contains(target))) {
         e.preventDefault();
       }
     };
@@ -1151,6 +1170,15 @@ function AppContent() {
           onToggleMarquee={() => setMarqueeEnabled(!marqueeEnabled)}
           showHomeStorageUsage={showHomeStorageUsage}
           onToggleShowHomeStorageUsage={() => setShowHomeStorageUsage(!showHomeStorageUsage)}
+          onThemeColor={() => setThemeColorOpen(true)}
+          themeSeedColor={themeConfig?.seed}
+        />
+
+        <ThemeColorDialog
+          open={themeColorOpen}
+          current={themeConfig}
+          onSave={(cfg) => setThemeConfig(cfg)}
+          onClose={() => setThemeColorOpen(false)}
         />
       </main>
     </div>

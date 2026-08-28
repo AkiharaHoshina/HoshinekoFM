@@ -4,8 +4,10 @@
     padding: 16px;
     display: flex;
     flex-direction: column;
-    border-radius: 16px;
-    margin: 12px 0 12px 0;
+    /* 面板式布局：与导航栏、主内容区一致贴边到窗口顶部。
+       去掉圆角与上下留白——圆角角落会露出 app-shell 的旧深色
+       （--md-sys-color-background）形成错误的色块 */
+    margin: 0;
     /* flex 子项默认 min-height:auto 会被内容撑大超过视口，
        导致 overflow-y:auto 永不触发、设备多时按钮溢出屏幕；
        显式置 0 让侧边栏可收缩，滚动条才生效 */

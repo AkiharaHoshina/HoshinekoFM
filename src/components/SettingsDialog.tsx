@@ -26,6 +26,10 @@ interface SettingsDialogProps {
   /** 是否显示主页（/home）子区域的存储占用（默认关闭） */
   showHomeStorageUsage: boolean;
   onToggleShowHomeStorageUsage: () => void;
+  /** 打开主题颜色二级对话框 */
+  onThemeColor: () => void;
+  /** 当前主题种子色（入口行的色点展示，可为空） */
+  themeSeedColor?: string;
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({
@@ -47,6 +51,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onToggleMarquee,
   showHomeStorageUsage,
   onToggleShowHomeStorageUsage,
+  onThemeColor,
+  themeSeedColor,
 }) => {
   const langOptions = getLanguageOptions();
 
@@ -184,6 +190,20 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               </div>
             </div>
             <Switch selected={filledIcons} onClick={onToggleFilledIcons} />
+          </div>
+
+          {/* 主题颜色入口：打开二级颜色设置对话框 */}
+          <div className="settings-row" onClick={onThemeColor}>
+            <div className="settings-row__start">
+              <Icon name="palette" />
+              <div className="settings-row__label">
+                {t("settings.theme_color")}
+              </div>
+            </div>
+            <span
+              className="settings-theme-dot"
+              style={themeSeedColor ? { backgroundColor: themeSeedColor } : undefined}
+            />
           </div>
         </div>
 
