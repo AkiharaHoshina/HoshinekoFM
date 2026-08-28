@@ -15,39 +15,62 @@ The Hoshineko file explorer is a modification and reconstruction of [bhimio1](ht
 ## Features
 
 - **Material Design 3 Interface**: sleek, modern UI with dynamic theming.
-- **Performance First**:A file list processing mechanism refactored based on technologies like virtual lists, though frankly speaking, the performance is still limited by Electron and the web interface.
-- **Tabs**: Tabbed navigation support.
-- **Omnibar**: Unified search and address bar, compatible with fd and standard shell commands.
-- **Built-in Terminal Emulator**: Built-in terminal emulator support.
-- **Preview Support**: Quick look for common file types.
+- **Performance First**: a virtualized file list (react-window) in grid/list views, semantic grouping, and multi-key sorting.
+- **Tabs**: tabbed navigation with virtual paths (`app://dashboard`, `trash://`), per-tab independent state.
+- **Omnibar**: unified address bar and search (`find -iname`, limited to 100 results).
+- **Built-in Terminal**: embedded terminal (xterm.js + node-pty, per-window sessions), plus "open in the system default terminal" for directories and executables (7-level terminal detection chain).
+- **Trash (freedesktop spec)**: `trash://` view with restore, permanent delete, empty trash, and automatic refresh on external changes.
+- **Multi-Window**: all windows share one backend; single-instance lock opens new windows; cross-window clipboard (persisted across restarts) and cross-window language sync.
+- **Devices**: full `lsblk` device tree, mount/unmount/eject via `udisksctl`, UDisks2 hot-plug monitoring (with polling fallback), and MTP phones / PTP cameras via GVfs (mount-on-click, USB address-drift handling).
+- **Drag & Drop**: native OS drag (LocalSend and other apps receive real files); same-window drops onto folders, breadcrumb chips, tabs, and sidebar places/devices; M3 move/copy/cancel dialogs with conflict resolution (skip/auto-rename/manual rename/cancel); Wayland synthetic-drop fallback and edge auto-scroll.
+- **Batch Operations**: copy/move/trash/delete via a job pipeline with progress toasts, cancellation, and partial-failure reporting; cross-device moves (EXDEV) fall back to copy+delete.
+- **Pinned Items**: pin files and folders to the dashboard and pin folders to the sidebar — via the system file picker, the folder context menu, or dragging a folder onto the pin button.
+- **Dashboard**: greeting, a unified storage region (system `/`, home, and hot-plugged external devices as clickable list items), pinned items, and recent files.
+- **Smart Context Menu**: menu items generated dynamically per item type (files/folders/devices/trash/background), with touch long-press support.
+- **Selection & Shortcuts**: Ctrl/Shift multi-select, Ctrl+A, rubber-band selection (4 modes with edge auto-scroll), Delete/Shift+Delete/Ctrl+C/X/V, F5.
+- **Internationalization**: 12 languages, apply-on-confirm with cross-window sync.
 
 ## Refactoring and modification of core functionalities from material-3-file-explorer project
-- **Free for Multi Selection**: Features multi-selection capabilities, with optimized drag-and-drop transmission for applications such as LocalSend.
-- **Better File Categorization**:Refactored file categorization mechanism to support a wider range of file types; includes icon display for specific device types within the /dev directory (this feature is currently under active development).
-- **Convenient and Smart Right-Click Menu**:Refactored the context menu architecture to dynamically display specific menu items based on the selected item type, while extending menu features; the menu design is optimized for long-press gestures on touchscreen devices.
+
+- **Free for Multi Selection**: features multi-selection capabilities, with optimized drag-and-drop transmission for applications such as LocalSend.
+- **Better File Categorization**: refactored file categorization mechanism to support a wider range of file types; includes icon display for specific device types within the `/dev` directory.
+- **Convenient and Smart Right-Click Menu**: refactored the context menu architecture to dynamically display specific menu items based on the selected item type, while extending menu features; the menu design is optimized for long-press gestures on touchscreen devices.
 - **The rest includes a massive amount of refactoring and completion relative to the [material-3-file-explorer](https://github.com/bhimio1/material-3-file-explorer) project, equipping it with the characteristics of a modern file manager.**
 
-##Internationalization
+## Internationalization
 
-###/ Currently Supported
+### Currently Supported
 
-| Code | Native Name | Chinese Description | English Description) |
+| Code | Native Name | Chinese Description | English Description |
 | :--- | :--- | :--- | :--- |
-| **zh-CN** | 简体中文 | 简体中文 | Simplified Chinese |
-| **zh-HK** | 繁體中文（香港） | 繁体中文（香港） | Traditional Chinese (Hong Kong) |
+| **zh-CN** | 中文 | 简体中文 | Simplified Chinese |
+| **zh-HK** | 繁體中文 (香港) | 繁体中文（香港） | Traditional Chinese (Hong Kong) |
 | **zh-CT** | 粵語 | 粤语 | Cantonese |
-| **zh-TW** | 正體中文（台灣） | 正体中文（台湾） | Traditional Chinese (Taiwan) |
+| **zh-TW** | 繁體中文 (台灣) | 正体中文（台湾） | Traditional Chinese (Taiwan) |
+| **zh-AC** | 交流电中文 | 交流电中文 | AC Chinese |
 | **en-US** | English | 英语 | English |
 | **ja-JP** | 日本語 | 日语 | Japanese |
-| **ko-KR** | 한국어（대한민국） | 韩语（大韩民国） | Korean (Republic of Korea) |
-| **ko-KP** | 한국어（조선민주주의인민공화국） | 韩语（朝鲜民主主义人民共和国） | Korean (Democratic People's Republic of Korea) |
-| **ko-CN** | 조선어（중국） | 朝鲜语（中国） | Korean (China) |
-| **ru-UA** | Русский（Украина） | 俄语（乌克兰） | Russian (Ukraine) |
-| **uk-UA** | Українська（Україна） | 乌克兰语（乌克兰） | Ukrainian (Ukraine) |
+| **ko-KR** | 한국어 (대한민국) | 韩语（大韩民国） | Korean (Republic of Korea) |
+| **ko-KP** | 한국어 (조선민주주의인민공화국) | 韩语（朝鲜民主主义人民共和国） | Korean (Democratic People's Republic of Korea) |
+| **ko-CN** | 조선어 (중국) | 朝鲜语（中国） | Korean (China) |
+| **ru-UA** | Русский (Украина) | 俄语（乌克兰） | Russian (Ukraine) |
+| **uk-UA** | Українська | 乌克兰语（乌克兰） | Ukrainian (Ukraine) |
 
-### 计划支持 / Planned Support
+### Planned Support
 
-暂无。
+None at the moment.
+
+## Not Yet Implemented
+
+- File preview (quick look) — advertised in early README versions, not yet in the codebase.
+- Custom terminal launcher (defined via an external config file).
+- Built-in color palette / inheriting desktop environment (DMS) colors — only Matugen CSS and custom CSS import are supported.
+- Creating archives (compressing to zip/tar) — only extraction is available.
+- Formatting devices without a filesystem.
+- Favorites/bookmarks, batch rename, and permission editing (permissions are view-only).
+- Automatic updates.
+- Cross-platform support (Linux only; relies on inotify, udisks2, dbus-next, gvfs, and GNU coreutils).
+- Automated tests.
 
 ## Custom Theme Colors (Matugen)
 
