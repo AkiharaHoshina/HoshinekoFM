@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import path from 'path';
-import { promises as fs } from 'fs';
+import { promises as fs, watch as fsWatch } from 'fs';
 import os from 'os';
 import { spawn, exec, execFile } from 'child_process';
 import { promisify } from 'util';
@@ -310,6 +310,441 @@ export async function setupUdisks2Monitor(getWindows: () => BrowserWindow[]) {
   }
 }
 
+// ── GVfs 会话设备（MTP 手机 / PTP 相机）──
+
+/**
+ * GVfs 会话设备条目。手机选「传输文件」（MTP）或相机（PTP）时，
+ * gvfs 栈（gvfsd-mtp / gvfs-gphoto2）在用户会话里管理它们——这类设备
+ * 不出现在 `lsblk` / UDisks2 的块设备树里，必须单独枚举。
+ *
+ * 已挂载的由 gvfs FUSE 根目录枚举（挂载点直接可浏览）；
+ * 未挂载的（插着但未自动挂载，或用户卸载过）由 `gio mount -l` 枚举，
+ * 可经 `gio mount -d <unix-device>` 挂载。
+ */
+export interface GvfsVolume {
+  /** 显示名（gvfs-info 的 display name / gio 卷名，通常为手机/相机型号） */
+  name: string;
+  /** 挂载类别：mtp = 手机（MTP/AFC），gphoto2 = 相机（PTP） */
+  kind: 'mtp' | 'gphoto2';
+  /** FUSE 挂载点绝对路径；未挂载时为 null */
+  mountpoint: string | null;
+  /** GVfs URI（已 percent 解码，如 `mtp:host=[usb:001,012]`）；可能为 null */
+  uri: string | null;
+  /** 未挂载卷的设备标识（unix-device，如 `/dev/bus/usb/001/012`），用于 `gio mount -d` */
+  deviceId: string | null;
+  /** 是否已挂载 */
+  mounted: boolean;
+}
+
+/** gvfs FUSE 聚合根目录（gvfsd-fuse 挂载在用户运行时目录下） */
+function getGvfsRoot(): string {
+  return path.join('/run/user', String(os.userInfo().uid), 'gvfs');
+}
+
+/** gio 轮询间隔：检测未挂载卷的插拔（已挂载变化由 inotify 即时感知） */
+const GVFS_POLL_INTERVAL_MS = 3000;
+
+let gvfsWatcher: ReturnType<typeof fsWatch> | null = null;
+let gvfsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+let previousGvfsVolumesJson = '';
+
+/**
+ * 用 gvfs-info 查询挂载根目录的显示名（手机型号等）。
+ * gvfs-info 缺失或查询失败时回退到传入的默认值
+ * （解码后的 URI，如 `mtp:host=[usb:001,012]`）。
+ */
+async function getGvfsDisplayName(mountpoint: string, fallback: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('gvfs-info', [mountpoint], { timeout: 3000 });
+    const match = stdout.match(/^display name:\s*(.+)$/m);
+    if (match && match[1]) return match[1].trim();
+  } catch { /* gvfs-info 不可用或查询超时，用 URI 兜底 */ }
+  return fallback;
+}
+
+/**
+ * 从已挂载卷的 URI 推导 unix-device 标识
+ * （如 `mtp:host=[usb:001,014]` → `/dev/bus/usb/001/014`）。
+ * USB 总线地址不稳定（重枚举会变），仅用于本次会话内的匹配。
+ */
+function deriveUsbDeviceId(uri: string | null): string | null {
+  if (!uri) return null;
+  const m = uri.match(/\[usb:(\d{1,3}),(\d{1,3})\]/i);
+  if (!m) return null;
+  return `/dev/bus/usb/${m[1]}/${m[2]}`;
+}
+
+/**
+ * 枚举已挂载的 gvfs 设备：列 gvfs FUSE 根目录（每个挂载对应一个子目录，
+ * 目录名即 percent 编码的 URI），仅保留 MTP / PTP 类（手机与相机）。
+ */
+async function listMountedGvfsVolumes(): Promise<GvfsVolume[]> {
+  const root = getGvfsRoot();
+  let entries: string[];
+  try {
+    entries = await fs.readdir(root);
+  } catch {
+    // gvfsd-fuse 未运行（无 gvfs 会话）：返回空列表
+    return [];
+  }
+
+  const volumes: GvfsVolume[] = [];
+  for (const entry of entries) {
+    let uri = entry;
+    try {
+      uri = decodeURIComponent(entry);
+    } catch { /* 非法编码时保留原名 */ }
+    const kind = uri.startsWith('mtp:') ? 'mtp' : uri.startsWith('gphoto2:') ? 'gphoto2' : null;
+    if (!kind) continue;
+    const mountpoint = path.join(root, entry);
+    volumes.push({
+      name: await getGvfsDisplayName(mountpoint, uri),
+      kind,
+      mountpoint,
+      uri,
+      deviceId: deriveUsbDeviceId(uri),
+      mounted: true,
+    });
+  }
+  return volumes;
+}
+
+/** `gio mount -l` 解析出的卷（中间结构） */
+interface ParsedGioVolume {
+  name: string;
+  /** 卷监视器类型（如 GProxyVolumeMonitorMTP） */
+  monitor: string;
+  /** unix-device 标识（如 /dev/bus/usb/001/012） */
+  deviceId: string | null;
+  /** 是否已有 Mount 条目 */
+  mounted: boolean;
+  /** Mount 条目中的 URI */
+  uri: string | null;
+}
+
+/**
+ * 解析 `LC_ALL=C gio mount -l -i` 输出，提取全部卷。
+ * 行格式（英文固定）：`Volume(N): <name>` 开始一个卷块，
+ * 块内 `Type: GProxyVolume (<Monitor>)` 给出监视器类型、
+ * `unix-device: '<path>'` 给出设备标识、`Mount(N): <name> -> <uri>` 表示已挂载。
+ */
+function parseGioMountList(stdout: string): ParsedGioVolume[] {
+  const volumes: ParsedGioVolume[] = [];
+  let current: ParsedGioVolume | null = null;
+  for (const line of stdout.split('\n')) {
+    if (/^Drive\(\d+\):/.test(line)) {
+      // 驱动器块开始：其 ids 段不属于任何卷
+      current = null;
+      continue;
+    }
+    const volMatch = line.match(/^\s*Volume\(\d+\): (.*)$/);
+    if (volMatch) {
+      current = { name: volMatch[1].trim(), monitor: '', deviceId: null, mounted: false, uri: null };
+      volumes.push(current);
+      continue;
+    }
+    if (!current) continue;
+    const typeMatch = line.match(/GProxyVolume \((GProxyVolumeMonitor\w+)\)/);
+    if (typeMatch) current.monitor = typeMatch[1];
+    const devMatch = line.match(/unix-device: '([^']+)'/);
+    if (devMatch) current.deviceId = devMatch[1];
+    const mountMatch = line.match(/^\s*Mount\(\d+\): .+ -> (\S+)$/);
+    if (mountMatch) {
+      current.mounted = true;
+      current.uri = mountMatch[1];
+    }
+  }
+  return volumes;
+}
+
+/** 卷监视器类型 → 设备类别（仅手机/相机类，其余返回 null） */
+function gioMonitorToKind(monitor: string): 'mtp' | 'gphoto2' | null {
+  if (monitor === 'GProxyVolumeMonitorGPhoto2') return 'gphoto2';
+  if (monitor === 'GProxyVolumeMonitorMTP' || monitor === 'GProxyVolumeMonitorAfc') return 'mtp';
+  return null;
+}
+
+/**
+ * 把 `gio mount -l` 的 Mount URI 转成 gvfs FUSE 根目录名的候选形式。
+ * FUSE 目录名形如 `mtp:host=<host>`（host percent 编码），gio 打印的
+ * URI 形如 `mtp://<host>/`，两侧编码形式可能不同，生成多种候选逐一比对。
+ */
+function uriToFuseCandidates(uri: string): string[] {
+  const m = uri.match(/^(mtp|gphoto2):\/\/(.*?)\/?$/);
+  if (!m) return [];
+  const scheme = m[1];
+  const host = m[2];
+  const candidates = new Set<string>([`${scheme}:host=${host}`]);
+  try { candidates.add(`${scheme}:host=${decodeURIComponent(host)}`); } catch { /* 非法编码 */ }
+  try { candidates.add(`${scheme}:host=${encodeURIComponent(host)}`); } catch { /* 无法编码 */ }
+  return [...candidates];
+}
+
+/**
+ * 合并枚举全部 gvfs 会话设备：
+ * - 已挂载：来自 gvfs FUSE 根目录（带挂载点），并按 URI 与 gio 卷列表
+ *   关联补上显示名与 unix-device——MTP 挂载点的 URI 不含 USB 地址
+ *   （如三星的 `mtp:host=SAMSUNG_SAMSUNG_Android_XXX`），
+ *   无法从 URI 推导 deviceId，必须靠关联补齐
+ * - 未挂载：来自 `gio mount -l`（带 unix-device，可挂载）；
+ *   deviceId 与某个已挂载卷重复的是 gio 尚未更新 Mount 行的陈旧条目，
+ *   剔除，避免侧边栏同时显示同一设备的两个条目
+ */
+async function listGvfsVolumes(): Promise<GvfsVolume[]> {
+  const fuseVolumes = await listMountedGvfsVolumes();
+
+  let gioVolumes: ParsedGioVolume[] = [];
+  try {
+    const { stdout } = await execFileAsync('gio', ['mount', '-l', '-i'], {
+      env: { ...process.env, LC_ALL: 'C' },
+      timeout: 5000,
+    });
+    gioVolumes = parseGioMountList(stdout);
+  } catch { /* gio 不可用：仅显示已挂载设备 */ }
+
+  // gio 中已挂载的卷（有 Mount 条目）按候选 URI 建索引
+  const gioMountedByUri = new Map<string, ParsedGioVolume>();
+  for (const gv of gioVolumes) {
+    if (!gioMonitorToKind(gv.monitor) || !gv.mounted || !gv.uri) continue;
+    for (const cand of uriToFuseCandidates(gv.uri)) {
+      gioMountedByUri.set(cand, gv);
+    }
+  }
+
+  // 关联：FUSE 条目补显示名与 deviceId
+  const mounted = fuseVolumes.map(fv => {
+    const gioEntry = fv.uri ? gioMountedByUri.get(fv.uri) : undefined;
+    if (!gioEntry) return fv;
+    return {
+      ...fv,
+      name: gioEntry.name || fv.name,
+      deviceId: gioEntry.deviceId ?? fv.deviceId,
+    };
+  });
+
+  const mountedDeviceIds = new Set(
+    mounted.map(v => v.deviceId).filter((d): d is string => !!d)
+  );
+
+  const unmounted: GvfsVolume[] = [];
+  for (const gv of gioVolumes) {
+    const kind = gioMonitorToKind(gv.monitor);
+    if (!kind || gv.mounted) continue;
+    if (gv.deviceId && mountedDeviceIds.has(gv.deviceId)) continue; // 陈旧条目
+    unmounted.push({
+      name: gv.name,
+      kind,
+      mountpoint: null,
+      uri: gv.uri,
+      deviceId: gv.deviceId,
+      mounted: false,
+    });
+  }
+  return [...mounted, ...unmounted];
+}
+
+/**
+ * 尝试对 gvfs 根目录建立 inotify 监听：手机挂载/卸载会在根目录下
+ * 创建/删除子目录。根目录不存在（gvfsd-fuse 未运行）时静默跳过，
+ * 由常开轮询在根目录出现后重试。
+ */
+function tryGvfsWatch(getWindows: () => BrowserWindow[]) {
+  if (gvfsWatcher) return;
+  try {
+    gvfsWatcher = fsWatch(getGvfsRoot(), () => scheduleGvfsRefresh(getWindows));
+    gvfsWatcher.on('error', () => {
+      // 根目录被卸载（gvfsd-fuse 退出）：watcher 失效，由轮询兜底并重试
+      gvfsWatcher?.close();
+      gvfsWatcher = null;
+    });
+  } catch { /* 根目录不存在：轮询兜底 */ }
+}
+
+/** 防抖刷新 gvfs 设备列表，变化时广播给所有窗口 */
+function scheduleGvfsRefresh(getWindows: () => BrowserWindow[]) {
+  if (gvfsRefreshTimer) clearTimeout(gvfsRefreshTimer);
+  gvfsRefreshTimer = setTimeout(async () => {
+    gvfsRefreshTimer = null;
+    try {
+      const volumes = await listGvfsVolumes();
+      const json = JSON.stringify(volumes);
+      if (json !== previousGvfsVolumesJson) {
+        previousGvfsVolumesJson = json;
+        console.log(
+          '[gvfs] volumes changed:',
+          volumes.map(v => `${v.name}(${v.kind},${v.mounted ? `mounted@${v.mountpoint}` : `unmounted@${v.deviceId}`})`).join(' | ') || '(none)'
+        );
+        for (const win of getWindows()) {
+          if (win && !win.isDestroyed()) {
+            win.webContents.send('system:gvfs-changed', volumes);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('GVfs refresh error:', e);
+    }
+  }, 300);
+}
+
+/**
+ * 启动 gvfs 会话设备监听（MTP 手机 / PTP 相机）。
+ * 与 UDisks2 监听互补：块设备走 lsblk/udisks，gvfs 设备走这里。
+ * - inotify：已挂载状态变化即时感知
+ * - 常开轮询（应用生命周期内不停止）：未挂载卷的插拔（gvfs 无对应
+ *   事件）与 gvfs 根目录探测
+ * 初始化后立即刷新一次，供已打开的窗口拿到初始列表。
+ */
+export function setupGvfsMonitor(getWindows: () => BrowserWindow[]) {
+  tryGvfsWatch(getWindows);
+  setInterval(() => {
+    tryGvfsWatch(getWindows);
+    void scheduleGvfsRefresh(getWindows);
+  }, GVFS_POLL_INTERVAL_MS);
+  void scheduleGvfsRefresh(getWindows);
+}
+
+/** `system:mount-gvfs` 的结构化返回 */
+export interface GvfsMountResult {
+  success: boolean;
+  /** 挂载成功的挂载点；已挂载/自动挂载时也尽量补齐供前端跳转 */
+  mountpoint?: string;
+  /** 结构化错误码：TIMEOUT / NO_SUCH_DEVICE / INVALID_DEVICE */
+  code?: 'TIMEOUT' | 'NO_SUCH_DEVICE' | 'INVALID_DEVICE';
+  /** 非结构化错误信息（原始 stderr 等） */
+  error?: string;
+}
+
+/**
+ * 单次 `gio mount -d` 尝试。
+ * 超时（execFile 的 timeout kill 掉 gio 进程）与「设备不存在/地址漂移」
+ * 映射为结构化错误码，其余失败透传原始信息。
+ *
+ * gio 以 0 退出即视为成功——MTP 挂载的输出可能只有警告（stderr）而没有
+ * 「Mounted … at …」行，此时挂载点由 {@link mountGvfsRobust} 的观察循环
+ * 通过重新枚举补齐。
+ */
+async function tryMountGvfsInner(deviceId: string): Promise<GvfsMountResult> {
+  try {
+    const { stdout } = await execFileAsync('gio', ['mount', '-d', deviceId], {
+      env: { ...process.env, LC_ALL: 'C' },
+      timeout: 20000,
+    });
+    const mountMatch = stdout.match(/Mounted .+ at (.+)$/m);
+    if (mountMatch) return { success: true, mountpoint: mountMatch[1].trim() };
+    return { success: true };
+  } catch (e) {
+    const err = e as { killed?: boolean; code?: string | number };
+    const { stderr, message } = getExecError(e);
+    if (err.killed || err.code === 'ETIMEDOUT' || /timed? ?out/i.test(message)) {
+      return { success: false, code: 'TIMEOUT' };
+    }
+    if (/already mounted/i.test(stderr)) return { success: true };
+    if (/no volume for device|doesn'?t exist|no such file/i.test(`${stderr} ${message}`)) {
+      return { success: false, code: 'NO_SUCH_DEVICE', error: stderr || message };
+    }
+    return { success: false, error: stderr || message || 'Mount failed' };
+  }
+}
+
+/** 带日志的单次挂载尝试（诊断用） */
+async function tryMountGvfs(deviceId: string): Promise<GvfsMountResult> {
+  const result = await tryMountGvfsInner(deviceId);
+  console.log(`[gvfs] try mount deviceId=${deviceId} result=${JSON.stringify(result)}`);
+  return result;
+}
+
+/**
+ * 稳健挂载 gvfs 卷。快照数据（deviceId / 挂载状态）最多滞后约 3 秒，
+ * 手机切换 USB 模式（如三星：仅充电 → 传输文件）时会重枚举：
+ * 总线地址漂移 + gvfs 需要数秒重新探测注册新卷，因此：
+ * 1. 单次尝试 `gio mount -d`
+ * 2. 观察循环（每次先等待再重新枚举）：
+ *    - 失败：等待 gvfs 重枚举探测 / gvfsd 后台收尾；发现已挂载 → 成功；
+ *      发现地址漂移 → 换新地址重试
+ *    - 成功但无挂载点：等待挂载点出现（gio 只报 exit 0 或 gvfsd 仍在收尾）
+ * 3. 同名卷已换新 deviceId → 用新地址重试；卷名也变了时兜底启发式：
+ *    旧地址已消失且仅剩一个未挂载的手机/相机卷 → 直接用
+ * 4. 循环耗尽后最后补查一次
+ *
+ * 超时后的等待间隔更长：gio 被 kill 后 gvfsd 往往还需数秒才能完成挂载。
+ *
+ * @param deviceId - 侧边栏快照中的 unix-device（如 /dev/bus/usb/001/012）
+ * @param nameHint - 卷显示名，用于漂移后的匹配（重试新地址）
+ */
+async function mountGvfsRobust(deviceId: string, nameHint?: string): Promise<GvfsMountResult> {
+  /** 在当前卷列表中找已挂载的目标（优先 deviceId，回退显示名，最后兜底） */
+  const findMounted = async (devId: string): Promise<GvfsVolume | null> => {
+    const volumes = await listGvfsVolumes();
+    const byDevice = volumes.find(v => v.mounted && v.mountpoint && v.deviceId === devId);
+    if (byDevice?.mountpoint) return byDevice;
+    if (nameHint) {
+      const byName = volumes.find(v => v.mounted && v.mountpoint && v.name === nameHint);
+      if (byName?.mountpoint) return byName;
+    }
+    // 兜底：gio 尚未更新（无 Mount 条目可关联）的过渡窗口，
+    // 仅剩一个已挂载的手机/相机卷时直接视为目标
+    const mountedVols = volumes.filter(v => v.mounted && v.mountpoint);
+    return mountedVols.length === 1 ? mountedVols[0] : null;
+  };
+
+  /**
+   * 在未挂载卷中找重试目标：
+   * 1. 同名卷（地址漂移后 gvfs 已注册新卷）
+   * 2. 兜底：旧地址已不在列表且仅剩一个未挂载的手机/相机卷时直接用
+   *    （切换 USB 模式后卷名可能变化）
+   * 旧地址仍在列表时不做他卷启发式——此时失败可能是瞬态错误而非漂移。
+   */
+  const findFresh = async (currentId: string): Promise<GvfsVolume | null> => {
+    const volumes = await listGvfsVolumes();
+    const unmounted = volumes.filter(v => !v.mounted && v.deviceId);
+    if (nameHint) {
+      const byName = unmounted.find(v => v.name === nameHint);
+      if (byName) return byName;
+    }
+    if (unmounted.some(v => v.deviceId === currentId)) return null;
+    return unmounted.length === 1 ? unmounted[0] : null;
+  };
+
+  const MAX_ATTEMPTS = 3;
+  const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+  console.log(`[gvfs] mount start deviceId=${deviceId} name=${nameHint ?? ''}`);
+
+  let result = await tryMountGvfs(deviceId);
+  let currentId = deviceId;
+
+  // 超时后 gvfsd 仍需数秒收尾：观察间隔拉长
+  const delays = result.code === 'TIMEOUT' ? [2000, 3000, 4000] : [1200, 1800, 2500];
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (result.success && result.mountpoint) return result;
+
+    await sleep(delays[attempt] ?? 2500);
+    const nowMounted = await findMounted(currentId);
+    if (nowMounted?.mountpoint) {
+      console.log(`[gvfs] mount done (observed) currentId=${currentId} mountpoint=${nowMounted.mountpoint} attempt=${attempt}`);
+      return { success: true, mountpoint: nowMounted.mountpoint };
+    }
+
+    if (result.success) continue; // 已成功，只等挂载点出现
+
+    const fresh = await findFresh(currentId);
+    if (fresh?.deviceId && fresh.deviceId !== currentId) {
+      console.log(`[gvfs] mount retry with drifted id: ${currentId} -> ${fresh.deviceId}`);
+      currentId = fresh.deviceId;
+    }
+    result = await tryMountGvfs(currentId);
+  }
+
+  // 观察循环耗尽后最后补查一次
+  if (result.success && !result.mountpoint) {
+    const now = await findMounted(currentId);
+    if (now?.mountpoint) return { success: true, mountpoint: now.mountpoint };
+  }
+  console.log(`[gvfs] mount final result=${JSON.stringify(result)}`);
+  return result;
+}
+
 export function registerSystemHandlers() {
   ipcMain.handle('system:get-apps', async () => {
     if (appsCache) return appsCache;
@@ -540,6 +975,41 @@ export function registerSystemHandlers() {
   ipcMain.handle('system:get-all-devices', async () => getAllDevices());
 
   ipcMain.handle('system:has-device-watcher', async () => udisks2Available);
+
+  /**
+   * 当前 gvfs 会话设备列表（MTP 手机 / PTP 相机，含未挂载卷）。
+   * 前端侧边栏与块设备列表合并展示。
+   */
+  ipcMain.handle('system:get-gvfs-volumes', async () => listGvfsVolumes());
+
+  /**
+   * 挂载一个未挂载的 gvfs 卷（`gio mount -d <unix-device>`）。
+   * 设备标识必须位于 /dev/bus 下，防止任意路径被传给 gio。
+   * 用 {@link mountGvfsRobust} 处理 USB 地址漂移与自动挂载竞态。
+   */
+  ipcMain.handle('system:mount-gvfs', async (_event, deviceId: string, nameHint?: string) => {
+    if (typeof deviceId !== 'string' || !deviceId.startsWith('/dev/bus/')) {
+      return { success: false, code: 'INVALID_DEVICE' };
+    }
+    return mountGvfsRobust(deviceId, typeof nameHint === 'string' ? nameHint : undefined);
+  });
+
+  /**
+   * 卸载一个 gvfs 会话挂载（`gio mount -u`）。
+   * 挂载点必须位于 gvfs 根目录下，防止任意路径被传给 gio。
+   */
+  ipcMain.handle('system:unmount-gvfs', async (_event, mountpoint: string) => {
+    if (typeof mountpoint !== 'string' || !mountpoint.startsWith(getGvfsRoot() + path.sep)) {
+      return { success: false, error: 'Invalid mountpoint' };
+    }
+    try {
+      await execFileAsync('gio', ['mount', '-u', mountpoint]);
+      return { success: true };
+    } catch (e) {
+      const { stderr, message } = getExecError(e);
+      return { success: false, error: stderr || message || 'Unmount failed' };
+    }
+  });
 
   ipcMain.handle('system:get-mount-map', async () => {
     const map = await getMountMap();

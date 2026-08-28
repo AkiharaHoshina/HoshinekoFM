@@ -55,6 +55,9 @@ contextBridge.exposeInMainWorld('electron', {
   getDirectorySize: (path: string) => ipcRenderer.invoke('system:get-directory-size', path),
   getDrives: () => ipcRenderer.invoke('system:get-drives'),
   getAllDevices: () => ipcRenderer.invoke('system:get-all-devices'),
+  getGvfsVolumes: () => ipcRenderer.invoke('system:get-gvfs-volumes'),
+  mountGvfs: (deviceId: string, name: string) => ipcRenderer.invoke('system:mount-gvfs', deviceId, name),
+  unmountGvfs: (mountpoint: string) => ipcRenderer.invoke('system:unmount-gvfs', mountpoint),
   getMountMap: () => ipcRenderer.invoke('system:get-mount-map'),
   mountDevice: (devicePath: string) => ipcRenderer.invoke('system:mount-device', devicePath),
   unmountDevice: (devicePath: string) => ipcRenderer.invoke('system:unmount-device', devicePath),
@@ -98,6 +101,12 @@ contextBridge.exposeInMainWorld('electron', {
     const handler = (_: Electron.IpcRendererEvent, devices: unknown[]) => callback(devices);
     ipcRenderer.on('system:devices-changed', handler);
     return () => ipcRenderer.removeListener('system:devices-changed', handler);
+  },
+  // GVfs session devices (MTP phones / PTP cameras) event push
+  onGvfsChange: (callback: (volumes: unknown[]) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, volumes: unknown[]) => callback(volumes);
+    ipcRenderer.on('system:gvfs-changed', handler);
+    return () => ipcRenderer.removeListener('system:gvfs-changed', handler);
   },
   hasDeviceWatcher: () => ipcRenderer.invoke('system:has-device-watcher'),
 

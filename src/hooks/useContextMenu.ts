@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { IFile, AllDevice } from '../types/files';
+import type { IFile, AllDevice, GvfsVolume } from '../types/files';
 import type { ContextMenuItem } from '../components/ContextMenu';
 
 export function useContextMenu() {
@@ -15,6 +15,11 @@ export function useContextMenu() {
     x: number;
     y: number;
     device: AllDevice;
+  } | null>(null);
+  const [gvfsContextMenu, setGvfsContextMenu] = useState<{
+    x: number;
+    y: number;
+    volume: GvfsVolume;
   } | null>(null);
 
   const handleContextMenu = useCallback(
@@ -35,12 +40,22 @@ export function useContextMenu() {
     [],
   );
 
+  const handleGvfsContextMenu = useCallback(
+    (e: React.MouseEvent, volume: GvfsVolume) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setGvfsContextMenu({ x: e.clientX, y: e.clientY, volume });
+    },
+    [],
+  );
+
   const handleBgMenuItems = useCallback((items: ContextMenuItem[]) => {
     setBgMenuItems(items);
   }, []);
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
   const closeDeviceContextMenu = useCallback(() => setDeviceContextMenu(null), []);
+  const closeGvfsContextMenu = useCallback(() => setGvfsContextMenu(null), []);
 
   return {
     contextMenu,
@@ -48,10 +63,14 @@ export function useContextMenu() {
     bgMenuItems,
     deviceContextMenu,
     setDeviceContextMenu,
+    gvfsContextMenu,
+    setGvfsContextMenu,
     handleContextMenu,
     handleDeviceContextMenu,
+    handleGvfsContextMenu,
     handleBgMenuItems,
     closeContextMenu,
     closeDeviceContextMenu,
+    closeGvfsContextMenu,
   };
 }

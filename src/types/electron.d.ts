@@ -1,4 +1,4 @@
-import type { IFile, AllDevice } from './files';
+import type { IFile, AllDevice, GvfsVolume } from './files';
 
 export interface IDrive {
     name: string;
@@ -109,6 +109,16 @@ export interface IElectronAPI {
     getStorageUsage: () => Promise<{ total: number; used: number; free: number } | null>;
     getDrives: () => Promise<IDrive[]>;
     getAllDevices: () => Promise<AllDevice[]>;
+    /** GVfs 会话设备列表（MTP 手机 / PTP 相机，含未挂载卷） */
+    getGvfsVolumes: () => Promise<GvfsVolume[]>;
+    /**
+     * 挂载一个未挂载的 GVfs 卷（gio mount -d），成功时返回挂载点。
+     * name 用于失败后按显示名匹配新 USB 地址重试。
+     * 结构化错误码：TIMEOUT / NO_SUCH_DEVICE / INVALID_DEVICE。
+     */
+    mountGvfs: (deviceId: string, name: string) => Promise<{ success: boolean; mountpoint?: string; code?: string; error?: string }>;
+    /** 卸载一个 GVfs 会话挂载（gio mount -u） */
+    unmountGvfs: (mountpoint: string) => Promise<{ success: boolean; error?: string }>;
     getMountMap: () => Promise<Record<string, { source: string; fstype: string }>>;
     mountDevice: (devicePath: string) => Promise<{ success: boolean; mountpoint?: string; error?: string }>;
     unmountDevice: (devicePath: string) => Promise<{ success: boolean; error?: string }>;
@@ -142,6 +152,8 @@ export interface IElectronAPI {
     // Device event push
     onDeviceChange: (callback: (devices: AllDevice[]) => void) => () => void;
     hasDeviceWatcher: () => Promise<boolean>;
+    // GVfs session devices (MTP phones / PTP cameras) event push
+    onGvfsChange: (callback: (volumes: GvfsVolume[]) => void) => () => void;
 
     // Job system (batch file operations with progress + cancel)
     startJob: (params: StartJobParams) => Promise<string>;

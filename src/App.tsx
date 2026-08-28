@@ -17,7 +17,7 @@ import { ContextMenu } from "./components/ContextMenu";
 import type { ContextMenuItem } from "./components/ContextMenu";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { TerminalPane } from "./components/TerminalPane";
-import type { IFile } from "./types/files";
+import type { IFile, GvfsVolume } from "./types/files";
 import { Dialog } from "./components/Dialog";
 import { Button } from "./components/Button";
 import { OutlinedTextField } from "./components/md";
@@ -74,11 +74,14 @@ function AppContent() {
     contextMenu,
     bgMenuItems,
     deviceContextMenu,
+    gvfsContextMenu,
     handleContextMenu,
     handleDeviceContextMenu,
+    handleGvfsContextMenu,
     handleBgMenuItems,
     closeContextMenu,
     closeDeviceContextMenu,
+    closeGvfsContextMenu,
   } = useContextMenu();
 
   const {
@@ -123,7 +126,20 @@ function AppContent() {
     handleDeviceMount,
     handleDeviceUnmount,
     handleDeviceEject,
+    handleGvfsUnmount,
+    handleGvfsMount,
   } = useDeviceActions();
+
+  /**
+   * 卸载 gvfs 卷；若当前标签页正停留于该挂载点（含子目录），
+   * 先跳回仪表盘，避免停留在已失效的 FUSE 目录页
+   */
+  const handleGvfsUnmountWithNav = useCallback((volume: GvfsVolume) => {
+    if (volume.mountpoint && currentPath.startsWith(volume.mountpoint)) {
+      handleSidebarNavigate("app://dashboard");
+    }
+    handleGvfsUnmount(volume);
+  }, [currentPath, handleSidebarNavigate, handleGvfsUnmount]);
 
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalCwd, setTerminalCwd] = useState<string | undefined>(undefined);
@@ -626,6 +642,9 @@ function AppContent() {
         onDeviceMount={handleDeviceMount}
         onDeviceUnmount={handleDeviceUnmount}
         onDeviceEject={handleDeviceEject}
+        onGvfsMount={handleGvfsMount}
+        onGvfsUnmount={handleGvfsUnmountWithNav}
+        onGvfsContextMenu={handleGvfsContextMenu}
         marqueeEnabled={marqueeEnabled}
       />
 
@@ -771,6 +790,38 @@ function AppContent() {
               return items;
             })()}
             onClose={closeDeviceContextMenu}
+          />
+        )}
+
+        {gvfsContextMenu && (
+          <ContextMenu
+            x={gvfsContextMenu.x}
+            y={gvfsContextMenu.y}
+            items={(() => {
+              const v = gvfsContextMenu.volume;
+              const items: ContextMenuItem[] = [];
+              if (v.mounted) {
+                items.push({
+                  label: t("device.unmount"),
+                  icon: "eject",
+                  action: () => {
+                    handleGvfsUnmountWithNav(v);
+                    closeGvfsContextMenu();
+                  },
+                });
+              } else if (v.deviceId) {
+                items.push({
+                  label: t("device.mount"),
+                  icon: "hard_drive",
+                  action: () => {
+                    void handleGvfsMount(v);
+                    closeGvfsContextMenu();
+                  },
+                });
+              }
+              return items;
+            })()}
+            onClose={closeGvfsContextMenu}
           />
         )}
 

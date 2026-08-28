@@ -161,6 +161,10 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     setSearchQuery('');
 
     if (path === 'app://dashboard') {
+      // 虚拟路径也要记录进 loadingPathRef：导航守卫按「上次加载的路径」
+      // 判断是否跳过，不记录会导致从虚拟页导航回上次的真实路径时被
+      // 错误跳过（例如从回收站点设备回跳挂载点，视图停留在回收站）
+      loadingPathRef.current = path;
       setCurrentPath(path);
       onPathChange(tabId, path);
       return;
@@ -168,6 +172,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
     // 回收站是虚拟目录，直接读取 freedesktop 规范的 Trash 目录
     if (path === 'trash://') {
+      loadingPathRef.current = path;
       setCurrentPath(path);
       onPathChange(tabId, path);
       const data = await FileSystemService.listTrash();

@@ -1,4 +1,4 @@
-import type { IFile, AllDevice } from '../types/files';
+import type { IFile, AllDevice, GvfsVolume } from '../types/files';
 
 export const FileSystemService = {
   async getPlaces(): Promise<Array<{ name: string; path: string; icon: string }>> {
@@ -51,6 +51,18 @@ export const FileSystemService = {
 
   async getAllDevices(): Promise<AllDevice[]> {
     return window.electron.getAllDevices();
+  },
+
+  async getGvfsVolumes(): Promise<GvfsVolume[]> {
+    return window.electron.getGvfsVolumes();
+  },
+
+  async mountGvfs(deviceId: string, name: string): Promise<{ success: boolean; mountpoint?: string; code?: string; error?: string }> {
+    return window.electron.mountGvfs(deviceId, name);
+  },
+
+  async unmountGvfs(mountpoint: string): Promise<{ success: boolean; error?: string }> {
+    return window.electron.unmountGvfs(mountpoint);
   },
 
   async getMountMap(): Promise<Record<string, { source: string; fstype: string }>> {

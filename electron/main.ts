@@ -7,7 +7,7 @@ import { setupPtyHandlers, killAllPty } from './pty';
 import { getThumbnail } from './fsUtils';
 import { startWatching, stopWatching, stopAllWatching } from './fsWatcher';
 import { registerFsHandlers } from './handlers/fs';
-import { registerSystemHandlers, setupUdisks2Monitor } from './handlers/system';
+import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor } from './handlers/system';
 import { registerWindowHandlers } from './handlers/window';
 import { initJobHandlers } from './jobs';
 
@@ -244,6 +244,7 @@ app.whenReady().then(() => {
   });
   createWindow();
   setupUdisks2Monitor(getWindows);
+  setupGvfsMonitor(getWindows);
 });
 
 app.on('window-all-closed', () => {

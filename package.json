@@ -1,7 +1,7 @@
 {
   "name": "material-3-file-manager",
   "private": true,
-  "version": "0.11.5",
+  "version": "0.11.6",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -59,6 +59,9 @@
       "dist-electron/**/*",
       "dist/**/*"
     ],
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    },
     "linux": {
       "target": [
         "AppImage"

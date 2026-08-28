@@ -134,6 +134,36 @@ export interface AllDevice {
     children?: AllDevice[];
 }
 
+/**
+ * GVfs 会话设备（MTP 手机 / PTP 相机）。
+ * 这类设备不走内核块设备层（不出现在 lsblk / UDisks2），
+ * 由 gvfs 栈在用户会话中管理，需要单独枚举。
+ * 已挂载的带 FUSE 挂载点（可直接浏览），未挂载的带设备标识（可挂载）。
+ */
+export interface GvfsVolume {
+    /**
+     * 显示名（gvfs-info 的 display name / gio 卷名，
+     * 通常为手机/相机型号；获取失败时回退为解码后的 GVfs URI）。
+     */
+    name: string;
+    /** 挂载类别：mtp = 手机（MTP/AFC），gphoto2 = 相机（PTP） */
+    kind: 'mtp' | 'gphoto2';
+    /**
+     * FUSE 挂载点绝对路径（/run/user/<uid>/gvfs/<uri>），
+     * 与普通目录一样可直接浏览；未挂载时为 null。
+     */
+    mountpoint: string | null;
+    /** GVfs URI（如 `mtp:host=[usb:001,012]`），已 percent 解码；可能为 null */
+    uri: string | null;
+    /**
+     * 未挂载卷的设备标识（unix-device，如 `/dev/bus/usb/001/012`），
+     * 用于 `gio mount -d` 挂载。
+     */
+    deviceId: string | null;
+    /** 是否已挂载 */
+    mounted: boolean;
+}
+
 export interface IFileSystemAPI {
     listDir: (path: string) => Promise<IFile[]>;
 }
