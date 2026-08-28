@@ -349,6 +349,9 @@ const ruUA = {
   // ── 终端 ──
   'terminal.title': 'Терминал',
   'terminal.process_exited': '\r\nПроцесс завершён.\r\n',
+  'terminal.close': 'Закрыть',
+  'terminal.reset_size': 'Сбросить размер',
+  'terminal.drag_hint': 'Перетащите, чтобы изменить высоту',
 
   // ── 回收站 ──
   'tab.trash': 'Корзина',

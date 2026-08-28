@@ -308,6 +308,9 @@ const zhCT = {
   // ── 終端 ──
   'terminal.title': '終端機',
   'terminal.process_exited': '\r\n進程已退出。\r\n',
+  'terminal.close': '關閉',
+  'terminal.reset_size': '重設大小',
+  'terminal.drag_hint': '拖曳調整高度',
 
   // ── 回收站 ──
   'tab.trash': '垃圾桶',

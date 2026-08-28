@@ -35,7 +35,11 @@ interface DashboardProps {
 
 /** 仪表盘存储子区域条目：一个目录或设备的存储占用（列表形式） */
 interface StorageCard {
-    /** 展示名（系统 / 主页 / 设备名） */
+    /**
+     * 展示名：系统/主页为 i18n 键（dashboard.system_storage /
+     * dashboard.home_storage），外接设备为设备名（非键，翻译时原样返回）。
+     * 渲染时统一经 ti() 解析，保证切换语言后立即更新。
+     */
     label: string;
     /** 副标题（外接设备为挂载点路径，可空） */
     subtitle?: string;
@@ -77,8 +81,6 @@ const labelToKey: Record<string, string> = {
   'Good Afternoon': 'dashboard.good_afternoon',
   'Good Evening': 'dashboard.good_evening',
   'Welcome back to your command center.': 'dashboard.welcome',
-  'System Storage': 'dashboard.system_storage',
-  'Home Storage': 'dashboard.home_storage',
   'Storage': 'dashboard.storage',
   'used': 'dashboard.used',
   'total': 'dashboard.total',
@@ -128,8 +130,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
       try {
         const home = await window.electron.getHomePath();
         const targets: Array<{ label: string; subtitle?: string; path: string; icon: string; isHome?: boolean }> = [
-          { label: t('System Storage'), path: '/', icon: 'hard_drive' },
-          { label: t('Home Storage'), path: home, icon: 'home', isHome: true },
+          { label: 'dashboard.system_storage', path: '/', icon: 'hard_drive' },
+          { label: 'dashboard.home_storage', path: home, icon: 'home', isHome: true },
         ];
 
         const devices = await window.electron.getAllDevices();
@@ -270,7 +272,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
                   <Icon name={card.icon} className="storage-sub-icon" />
                   <div className="storage-sub-body">
                     <div className="storage-sub-top">
-                      <span className="storage-sub-label">{card.label}</span>
+                      <span className="storage-sub-label">{ti(card.label)}</span>
                       {!card.hideUsage && (
                         <span className="storage-sub-stats">
                           {formatBytes(card.used)} {t('used')} · {formatBytes(card.total)} {t('total')}

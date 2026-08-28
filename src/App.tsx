@@ -13,11 +13,10 @@ import { NavigationRail } from "./components/NavigationRail";
 import { Sidebar, type SidebarPinnedItem } from "./components/Sidebar";
 import type { PinnedItem } from "./components/Dashboard";
 import { Icon } from "./components/Icon";
-import { IconButton } from "./components/IconButton";
 import { ContextMenu } from "./components/ContextMenu";
 import type { ContextMenuItem } from "./components/ContextMenu";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { TerminalPane } from "./components/TerminalPane";
+import { TerminalPanel, DEFAULT_TERMINAL_HEIGHT } from "./components/TerminalPanel";
 import type { IFile, GvfsVolume } from "./types/files";
 import { Dialog } from "./components/Dialog";
 import { Button } from "./components/Button";
@@ -144,9 +143,15 @@ function AppContent() {
 
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalCwd, setTerminalCwd] = useState<string | undefined>(undefined);
+  /**
+   * 终端面板当前高度（px）。每次呼出时恢复默认高度，
+   * 打开期间可由标题栏拖动调整（TerminalPanel 受控回调）。
+   */
+  const [terminalHeight, setTerminalHeight] = useState(DEFAULT_TERMINAL_HEIGHT);
 
   const openTerminalAt = useCallback((path: string) => {
     setTerminalCwd(path);
+    setTerminalHeight(DEFAULT_TERMINAL_HEIGHT);
     setTerminalOpen(true);
   }, []);
 
@@ -419,6 +424,8 @@ function AppContent() {
   }, []);
 
   const toggleTerminal = () => {
+    // 每次呼出恢复默认高度（关闭时重置无副作用）
+    setTerminalHeight(DEFAULT_TERMINAL_HEIGHT);
     setTerminalOpen((prev) => !prev);
   };
 
@@ -876,29 +883,17 @@ function AppContent() {
         </div>
 
         {terminalOpen && (
-          <div className="terminal-panel">
-            <div className="terminal-panel-header">
-              <span style={{ fontSize: "12px", fontWeight: 500 }}>
-                {t("terminal.title")}
-              </span>
-              <div style={{ flex: 1 }} />
-              <IconButton
-                onClick={() => setTerminalOpen(false)}
-                style={{ width: 24, height: 24 }}
-              >
-                <Icon name="close" size={16} />
-              </IconButton>
-            </div>
-            <div style={{ flex: 1, position: "relative" }}>
-              <TerminalPane
-                cwd={
-                  terminalCwd ||
-                  tabs.find((t) => t.id === activeTabId)?.path ||
-                  undefined
-                }
-              />
-            </div>
-          </div>
+          <TerminalPanel
+            cwd={
+              terminalCwd ||
+              tabs.find((t) => t.id === activeTabId)?.path ||
+              undefined
+            }
+            height={terminalHeight}
+            onHeightChange={setTerminalHeight}
+            onResetHeight={() => setTerminalHeight(DEFAULT_TERMINAL_HEIGHT)}
+            onClose={() => setTerminalOpen(false)}
+          />
         )}
 
         {contextMenu && (

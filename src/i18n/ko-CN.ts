@@ -318,6 +318,9 @@ const koCN = {
   // ── 터미널 ──
   'terminal.title': '단말기',
   'terminal.process_exited': '\r\n프로세스가 종료되었습니다.\r\n',
+  'terminal.close': '닫기',
+  'terminal.reset_size': '크기 재설정',
+  'terminal.drag_hint': '드래그하여 높이 조절',
 
   // ── 回收站 ──
   'tab.trash': '휴지통',

@@ -308,6 +308,9 @@ const zhCN = {
   // ── 终端 ──
   'terminal.title': '终端',
   'terminal.process_exited': '\r\n进程已退出。\r\n',
+  'terminal.close': '关闭',
+  'terminal.reset_size': '重置大小',
+  'terminal.drag_hint': '拖动调整高度',
 
   // ── 回收站 ──
   'tab.trash': '回收站',

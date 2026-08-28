@@ -318,6 +318,9 @@ const enUS = {
   // ── 终端 ──
   'terminal.title': 'Terminal',
   'terminal.process_exited': '\r\nProcess exited.\r\n',
+  'terminal.close': 'Close',
+  'terminal.reset_size': 'Reset size',
+  'terminal.drag_hint': 'Drag to resize',
 
   // ── 回收站 ──
   'tab.trash': 'Trash',

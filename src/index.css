@@ -126,20 +126,6 @@ body {
   background: var(--md-sys-color-surface);
 }
 
-.terminal-panel {
-  height: 300px;
-  border-top: 1px solid var(--border-color);
-  display: flex;
-  flex-direction: column;
-}
-
-.terminal-panel-header {
-  display: flex;
-  align-items: center;
-  padding: 4px 8px;
-  background: var(--surface-variant);
-}
-
 .empty-state {
   display: flex;
   align-items: center;

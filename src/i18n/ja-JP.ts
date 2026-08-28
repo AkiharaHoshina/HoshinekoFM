@@ -308,6 +308,9 @@ const jaJP = {
   // ── 终端 ──
   'terminal.title': 'ターミナル',
   'terminal.process_exited': '\r\nプロセスが終了しました。\r\n',
+  'terminal.close': '閉じる',
+  'terminal.reset_size': 'サイズをリセット',
+  'terminal.drag_hint': 'ドラッグで高さを調整',
 
   // ── 回收站 ──
   'tab.trash': 'ゴミ箱',

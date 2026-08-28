@@ -346,6 +346,9 @@ const ukUA = {
   // ── 终端 ──
   'terminal.title': 'Термінал',
   'terminal.process_exited': '\r\nПроцес завершено.\r\n',
+  'terminal.close': 'Закрити',
+  'terminal.reset_size': 'Скинути розмір',
+  'terminal.drag_hint': 'Перетягніть, щоб змінити висоту',
 
   // ── 回收站 ──
   'tab.trash': 'Кошик',
