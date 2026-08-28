@@ -31,6 +31,7 @@ const jaJP = {
   'context_menu.delete_permanent': '完全に削除',
   'drop.same_dir': 'ファイルは既にこのフォルダーにあります',
   'drop.no_paths': 'ドラッグされたファイルのパスを取得できませんでした',
+  'drop.target_unreadable': '対象フォルダーを読み取れません',
   'context_menu.properties': 'プロパティ',
   'context_menu.new_folder': '新しいフォルダー',
   'context_menu.new_file': '新しいファイル',
@@ -38,6 +39,8 @@ const jaJP = {
   'context_menu.select_all': 'すべて選択',
   'context_menu.pin': 'ダッシュボードにピン留め',
   'context_menu.unpin': 'ダッシュボードのピン留めを外す',
+  'context_menu.pin_sidebar': 'サイドバーにピン留め',
+  'context_menu.unpin_sidebar': 'サイドバーのピン留めを解除',
   'context_menu.extract_here': 'ここに展開',
 
   // ── 弹窗按钮 ──
@@ -201,6 +204,12 @@ const jaJP = {
   'sidebar.music': 'ミュージック',
   'sidebar.pictures': 'ピクチャ',
   'sidebar.videos': 'ビデオ',
+  'sidebar.pinned': 'ピン留め',
+  'sidebar.add_pin': 'フォルダーをピン留め',
+  'sidebar.unpin': 'ピン留めを解除',
+  'sidebar.already_pinned': 'このフォルダーは既にピン留めされています',
+  'sidebar.pin_via_file_manager': 'ファイルマネージャーで選択',
+  'sidebar.pin_single_folder': 'フォルダーを1つドラッグしてピン留め',
 
   // ── 导航栏 ──
   'nav.dashboard': 'ダッシュボード',

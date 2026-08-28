@@ -10,7 +10,8 @@ import { ClipboardProvider, useClipboard } from "./contexts/ClipboardContext";
 import { DragProvider } from "./contexts/DragContext";
 import { ThemeService } from "./services/ThemeService";
 import { NavigationRail } from "./components/NavigationRail";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, type SidebarPinnedItem } from "./components/Sidebar";
+import type { PinnedItem } from "./components/Dashboard";
 import { Icon } from "./components/Icon";
 import { IconButton } from "./components/IconButton";
 import { ContextMenu } from "./components/ContextMenu";
@@ -173,6 +174,117 @@ function AppContent() {
       setActiveTabId(tabId);
     },
     [setActiveTabId],
+  );
+
+  /**
+   * 拖到侧边栏条目（位置/设备）的内部拖放请求，由当前活动标签页的
+   * ExplorerTab 消费。与标签页落点的区别：带显式 targetPath（目标
+   * 不是当前目录，ExplorerTab 需先拉取目标目录列表再执行）。
+   */
+  const [pendingSidebarDrop, setPendingSidebarDrop] = useState<{
+    files: IFile[];
+    operation: "move" | "copy";
+    sourcePath: string;
+    targetPath: string;
+  } | null>(null);
+
+  const handleSidebarDropFiles = useCallback(
+    (targetPath: string, files: IFile[], operation: "move" | "copy", sourcePath: string) => {
+      setPendingSidebarDrop({ targetPath, files, operation, sourcePath });
+    },
+    [],
+  );
+
+  /**
+   * 侧边栏固定目录状态。上提到 App 而非留在 Sidebar 内：
+   * 同窗口两个 useLocalStorage 同键实例不会互相同步（storage 事件
+   * 只在跨窗口触发），文件右键菜单「固定到侧边栏」与侧边栏需要
+   * 共享同一份状态，故由 App 持有并下发。
+   */
+  const [pinnedDirs, setPinnedDirs] = useLocalStorage<SidebarPinnedItem[]>(
+    "sidebar.pinned",
+    [],
+  );
+
+  /** 固定一个已校验的目录路径到侧边栏（去重，重复时提示） */
+  const pinSidebarDir = useCallback(
+    (path: string) => {
+      if (pinnedDirs.some((p) => p.path === path)) {
+        showToast(t("sidebar.already_pinned"), "info");
+        return;
+      }
+      const name = path.split("/").pop() || path;
+      setPinnedDirs((prev) => [...prev, { name, path, isDir: true }]);
+    },
+    [pinnedDirs, setPinnedDirs],
+  );
+
+  /** 从侧边栏移除固定目录 */
+  const unpinSidebarDir = useCallback(
+    (path: string) => {
+      setPinnedDirs((prev) => prev.filter((p) => p.path !== path));
+    },
+    [setPinnedDirs],
+  );
+
+  /**
+   * 仪表盘固定项状态。上提到 App 而非留在 Dashboard 内：
+   * 同窗口两个 useLocalStorage 同键实例不会互相同步（storage 事件
+   * 只在跨窗口触发），文件/文件夹右键菜单「固定到仪表盘」与仪表盘
+   * 需要共享同一份状态，故由 App 持有并下发。
+   */
+  const [dashboardPinned, setDashboardPinned] = useLocalStorage<PinnedItem[]>(
+    "dashboard.pinned",
+    [],
+  );
+
+  /**
+   * dashboard.pinned 键在挂载前是否已存在。用于首次启动播种默认
+   * 固定项（主页/下载/文档），不覆盖用户自己的固定列表（或用户
+   * 清空全部固定项的选择）。
+   */
+  const hasStoredDashboardPins = useRef<boolean>(
+    localStorage.getItem("dashboard.pinned") !== null,
+  );
+
+  /**
+   * 首次启动播种默认固定项（从真实 home 目录解析，而非硬编码）。
+   * 逻辑自 Dashboard 上提，语义保持不变。
+   */
+  useEffect(() => {
+    if (hasStoredDashboardPins.current) return;
+    if (!window.electron.getHomePath) return;
+    window.electron.getHomePath().then((home) => {
+      setDashboardPinned([
+        { name: "Home", path: home, isDir: true },
+        { name: "Downloads", path: `${home}/Downloads`, isDir: true },
+        { name: "Documents", path: `${home}/Documents`, isDir: true },
+      ]);
+    });
+  }, [setDashboardPinned]);
+
+  /** 追加仪表盘固定项（与 Dashboard 的文件管理器选择流程共用） */
+  const pinDashboardItem = useCallback(
+    (name: string, path: string, isDir: boolean) => {
+      setDashboardPinned((prev) => [...prev, { name, path, isDir }]);
+    },
+    [setDashboardPinned],
+  );
+
+  /** 按路径移除仪表盘固定项（右键菜单，移除全部同路径条目） */
+  const unpinDashboardItem = useCallback(
+    (path: string) => {
+      setDashboardPinned((prev) => prev.filter((p) => p.path !== path));
+    },
+    [setDashboardPinned],
+  );
+
+  /** 按索引移除仪表盘固定项（仪表盘悬停关闭按钮） */
+  const removeDashboardPinAt = useCallback(
+    (index: number) => {
+      setDashboardPinned((prev) => prev.filter((_, i) => i !== index));
+    },
+    [setDashboardPinned],
   );
 
   const { clipboard, copy, cut, clear: clearClipboard } = useClipboard();
@@ -417,6 +529,38 @@ function AppContent() {
             },
           }]
           : []),
+        ...(item.isDirectory
+          ? [{
+            label: pinnedDirs.some((p) => p.path === item.path)
+              ? t("context_menu.unpin_sidebar")
+              : t("context_menu.pin_sidebar"),
+            icon: "push_pin",
+            action: () => {
+              if (pinnedDirs.some((p) => p.path === item.path)) {
+                unpinSidebarDir(item.path);
+              } else {
+                pinSidebarDir(item.path);
+              }
+              closeContextMenu();
+            },
+          }]
+          : []),
+        ...(item.mime !== "inode/blockdevice"
+          ? [{
+            label: dashboardPinned.some((p) => p.path === item.path)
+              ? t("context_menu.unpin")
+              : t("context_menu.pin"),
+            icon: "push_pin",
+            action: () => {
+              if (dashboardPinned.some((p) => p.path === item.path)) {
+                unpinDashboardItem(item.path);
+              } else {
+                pinDashboardItem(item.name, item.path, item.isDirectory);
+              }
+              closeContextMenu();
+            },
+          }]
+          : []),
         { divider: true, label: "", action: () => {} },
         {
           label: t("context_menu.copy"),
@@ -646,6 +790,10 @@ function AppContent() {
         onGvfsUnmount={handleGvfsUnmountWithNav}
         onGvfsContextMenu={handleGvfsContextMenu}
         marqueeEnabled={marqueeEnabled}
+        onDropFiles={handleSidebarDropFiles}
+        pinnedDirs={pinnedDirs}
+        onPinPath={pinSidebarDir}
+        onUnpinPath={unpinSidebarDir}
       />
 
       <main className="main-content">
@@ -692,8 +840,20 @@ function AppContent() {
                 onScrollToComplete={handleScrollToComplete}
                 onMountDevice={handleDeviceMount}
                 marqueeEnabled={marqueeEnabled}
-                pendingDrop={pendingTabDrop?.tabId === tab.id ? pendingTabDrop : null}
-                onPendingDropHandled={() => setPendingTabDrop(null)}
+                pendingDrop={
+                  pendingTabDrop?.tabId === tab.id
+                    ? pendingTabDrop
+                    : tab.id === activeTabId
+                      ? pendingSidebarDrop
+                      : null
+                }
+                onPendingDropHandled={() => {
+                  setPendingTabDrop(null);
+                  setPendingSidebarDrop(null);
+                }}
+                dashboardPinned={dashboardPinned}
+                onDashboardPinItem={pinDashboardItem}
+                onDashboardRemovePin={removeDashboardPinAt}
               />
             </div>
           ))}

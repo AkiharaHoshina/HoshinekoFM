@@ -26,7 +26,7 @@ import {
 } from '../utils/fileOperations';
 
 import { Omnibar } from './Omnibar';
-import { Dashboard } from './Dashboard';
+import { Dashboard, type PinnedItem } from './Dashboard';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useDrag } from '../contexts/DragContext';
 import { t } from '../i18n';
@@ -69,11 +69,30 @@ interface ExplorerTabProps {
     onMountDevice?: (devicePath: string) => Promise<{ success: boolean; mountpoint?: string; error?: string }>;
     marqueeEnabled: boolean;
     /** 拖到本标签页的内部文件请求（来自 TabBar），消费后需回调 onPendingDropHandled */
-    pendingDrop?: { files: IFile[]; operation: "move" | "copy"; sourcePath: string } | null;
+    /**
+     * 待执行的内部拖放请求（拖到标签页或侧边栏条目）。
+     * targetPath 仅侧边栏落点携带：目标不是当前目录，
+     * 消费时需先拉取目标目录列表；不带时目标 = 当前目录（标签页落点）。
+     */
+    pendingDrop?: {
+      files: IFile[];
+      operation: "move" | "copy";
+      sourcePath: string;
+      targetPath?: string;
+    } | null;
     onPendingDropHandled?: () => void;
+    /**
+     * 仪表盘固定项列表（受控：状态由 App 持有，与右键菜单「固定到仪表盘」
+     * 共享，透传给 Dashboard）。
+     */
+    dashboardPinned: PinnedItem[];
+    /** 追加仪表盘固定项（Dashboard 的文件管理器选择流程使用） */
+    onDashboardPinItem: (name: string, path: string, isDir: boolean) => void;
+    /** 按索引移除仪表盘固定项（Dashboard 悬停关闭按钮使用） */
+    onDashboardRemovePin: (index: number) => void;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -991,20 +1010,43 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     []
   );
 
-  // ── 拖放到标签页的请求（由 TabBar 触发，App 转发到这里）──
+  // ── 拖放到标签页/侧边栏条目的请求（由 TabBar/Sidebar 触发，App 转发到这里）──
   useEffect(() => {
     if (!pendingDrop) return;
-    if (currentPathRef.current === 'app://dashboard') {
+    // 目标：侧边栏落点用显式 targetPath，标签页落点用当前目录
+    const targetPath = pendingDrop.targetPath ?? currentPathRef.current;
+    if (targetPath === 'app://dashboard') {
       onPendingDropHandled?.();
       return;
     }
-    // 拖到回收站标签页 = 移入回收站
-    if (currentPathRef.current === 'trash://') {
+    // 拖到回收站（回收站标签页或侧边栏 Trash 条目）= 移入回收站
+    if (targetPath === 'trash://') {
       void trashFiles(
         pendingDrop.files.map((f) => f.path),
         () => loadPathRef.current?.('trash://'),
       );
       onPendingDropHandled?.();
+      return;
+    }
+    if (pendingDrop.targetPath) {
+      // 侧边栏落点：目标不是当前目录，先拉目标目录列表（供冲突检测）
+      // 再走完整落点管线（动作对话框 → 冲突 → 批量任务）
+      void (async () => {
+        try {
+          const { data: targetFiles } = await FileSystemService.listDir(targetPath);
+          void handleDropOnTargetRef.current(
+            pendingDrop.files,
+            targetPath,
+            pendingDrop.operation,
+            targetFiles,
+            pendingDrop.sourcePath,
+          );
+        } catch {
+          showToast(t('drop.target_unreadable'), 'error');
+        } finally {
+          onPendingDropHandled?.();
+        }
+      })();
       return;
     }
     void handleDropOnTargetRef.current(
@@ -1088,6 +1130,9 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           <Dashboard
             onNavigate={(p: string) => loadPath(p, true)}
             onOpenFile={(p: string) => openFile(p)}
+            pinnedItems={dashboardPinned}
+            onPinItem={onDashboardPinItem}
+            onRemovePin={onDashboardRemovePin}
           />
         </div>
       ) : (

@@ -54,6 +54,7 @@ const ukUA = {
   'context_menu.delete_permanent': 'Видалити назавжди',
   'drop.same_dir': 'Файли вже в цій папці',
   'drop.no_paths': 'Не вдалося отримати шляхи перетягнутих файлів',
+  'drop.target_unreadable': 'Не вдалося прочитати цільову папку',
   'context_menu.properties': 'Властивості',
   'context_menu.new_folder': 'Нова папка',
   'context_menu.new_file': 'Новий файл',
@@ -61,6 +62,8 @@ const ukUA = {
   'context_menu.select_all': 'Вибрати все',
   'context_menu.pin': 'Закріпити на панелі',
   'context_menu.unpin': 'Відкріпити від панелі',
+  'context_menu.pin_sidebar': 'Закріпити на бічній панелі',
+  'context_menu.unpin_sidebar': 'Відкріпити від бічної панелі',
   'context_menu.extract_here': 'Розпакувати сюди',
 
   // ── 弹窗按钮 ──
@@ -240,6 +243,12 @@ const ukUA = {
   'sidebar.music': 'Музика',
   'sidebar.pictures': 'Зображення',
   'sidebar.videos': 'Відео',
+  'sidebar.pinned': 'Закріплені',
+  'sidebar.add_pin': 'Закріпити папку',
+  'sidebar.unpin': 'Відкріпити',
+  'sidebar.already_pinned': 'Папку вже закріплено',
+  'sidebar.pin_via_file_manager': 'Вибрати через файловий менеджер',
+  'sidebar.pin_single_folder': 'Перетягніть одну папку для закріплення',
 
   // ── 导航栏 ──
   'nav.dashboard': 'Панель',

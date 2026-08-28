@@ -16,6 +16,14 @@ interface SidebarPartitionItemProps {
   onDeviceEject?: (devicePath: string) => void;
   marqueeEnabled: boolean;
   showEject?: boolean;
+  /**
+   * 同窗口拖放目标标识（`device:<devicePath>`），由侧边栏的文档级
+   * 拖放监听用 closest('[data-sidebar-target]') 定位。
+   * 不传则该条目不可作为拖放目标。
+   */
+  dropTarget?: string;
+  /** 拖拽悬停高亮：当前光标命中的目标条目 */
+  dragOver?: boolean;
 }
 
 export const SidebarPartitionItem: React.FC<SidebarPartitionItemProps> = ({
@@ -28,11 +36,14 @@ export const SidebarPartitionItem: React.FC<SidebarPartitionItemProps> = ({
   onDeviceEject,
   marqueeEnabled,
   showEject = false,
+  dropTarget,
+  dragOver = false,
 }) => {
   return (
     <div
       key={device.name}
-      className={`sidebar-item sidebar-partition ${!device.mounted ? "unmounted" : ""} ${isActive ? "active" : ""}`}
+      className={`sidebar-item sidebar-partition ${!device.mounted ? "unmounted" : ""} ${isActive ? "active" : ""} ${dragOver ? "drag-over" : ""}`}
+      data-sidebar-target={dropTarget}
       role="button"
       tabIndex={0}
       onClick={() => onPartitionClick(device)}

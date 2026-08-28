@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Icon } from './Icon';
 import { ContextMenu } from './ContextMenu';
 import './Dashboard.css';
@@ -10,6 +10,15 @@ interface DashboardProps {
     onNavigate: (path: string) => void;
     /** 固定的是文件时点击打开文件（而非进入目录） */
     onOpenFile?: (path: string) => void;
+    /**
+     * 仪表盘固定项列表（受控：状态由 App 持有，
+     * 与文件右键菜单「固定到仪表盘」共享）。
+     */
+    pinnedItems: PinnedItem[];
+    /** 追加一个固定项（App 侧写入持久化存储） */
+    onPinItem: (name: string, path: string, isDir: boolean) => void;
+    /** 按索引移除固定项（悬停关闭按钮） */
+    onRemovePin: (index: number) => void;
 }
 
 interface StorageStats {
@@ -18,9 +27,13 @@ interface StorageStats {
     free: number;
 }
 
-interface PinnedItem {
+/** 仪表盘固定项（文件或目录），持久化于 dashboard.pinned */
+export interface PinnedItem {
+    /** 显示名（路径最后一段或默认项名） */
     name: string;
+    /** 绝对路径 */
     path: string;
+    /** 图标名（默认固定项使用，用户自选可为空） */
     icon?: string;
     /** 是否为目录。false 表示文件，点击时用系统默认程序打开 */
     isDir?: boolean;
@@ -50,7 +63,7 @@ const t = (text: string): string => {
   return key ? (ti as any)(key) : text;
 };
 
-export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pinnedItems, onPinItem, onRemovePin }) => {
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
@@ -58,17 +71,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile }) 
     return 'Good Evening';
   }, []);
   const [storage, setStorage] = useState<StorageStats | null>(null);
-
-  /**
-   * Whether `dashboard.pinned` already existed in localStorage before this
-   * mount. Used to seed first-run defaults without clobbering the user's own
-   * pins (or their choice to remove every pin).
-   */
-  const hasStoredPins = useRef<boolean>(
-    localStorage.getItem('dashboard.pinned') !== null,
-  );
-
-  const [pinnedItems, setPinnedItems] = useLocalStorage<PinnedItem[]>('dashboard.pinned', []);
 
   const [recentFiles] = useLocalStorage<IFile[]>('dashboard.recent', []);
 
@@ -80,30 +82,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile }) 
     }
   }, []);
 
-  /**
-   * Seed default pins (Home/Downloads/Documents) from the real home
-   * directory on first launch. The previous defaults were hardcoded to
-   * `/home/bhimio`, which is wrong for every other user.
-   */
-  useEffect(() => {
-    if (hasStoredPins.current) return;
-    if (!window.electron) return;
-
-    window.electron.getHomePath().then((home) => {
-      setPinnedItems([
-        { name: 'Home', path: home, isDir: true },
-        { name: 'Downloads', path: `${home}/Downloads`, isDir: true },
-        { name: 'Documents', path: `${home}/Documents`, isDir: true },
-      ]);
-    });
-  }, [setPinnedItems]);
-
   const [pinMenuPos, setPinMenuPos] = useState<{ x: number; y: number } | null>(null);
 
   /**
    * 添加固定项。文件点击后打开，目录点击后导航进入。
    * Linux 上 GTK 文件选择器 openFile/openDirectory 互斥，
    * 因此文件与目录必须用两个独立的对话框入口。
+   * 写入经 onPinItem 交给 App（与右键菜单固定共享同一份状态）。
    */
   const addPin = async (kind: 'file' | 'folder') => {
     if (!window.electron) return;
@@ -114,12 +99,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile }) 
     const stat = await window.electron.stat(path);
     if (!stat) return;
     const name = path.split('/').pop() || path;
-    setPinnedItems(prev => [...prev, { name, path, isDir: stat.isDirectory }]);
+    onPinItem(name, path, stat.isDirectory);
   };
 
   const handleRemovePin = (e: React.MouseEvent, index: number) => {
     e.stopPropagation();
-    setPinnedItems(prev => prev.filter((_, i) => i !== index));
+    onRemovePin(index);
   };
 
   const formatBytes = (bytes: number) => {

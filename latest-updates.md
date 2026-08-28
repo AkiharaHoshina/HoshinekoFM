@@ -218,3 +218,80 @@
 
 - 版本号升至 `0.11.4`
 - 变更全部通过 `tsc -b`、`tsc -p electron/tsconfig.json` 与 ESLint 验证；语言同步与确定时应用逻辑经双窗口 Electron 测试骨架（加载真实构建产物）端到端验证
+
+## v0.11.5 — 设置弹窗新增关于区
+
+### 关于区
+
+- 设置弹窗底部新增「关于」区：显示应用版本号与 GitHub 项目链接
+- 版本号来自主进程新增的 `app:get-version` IPC（`app.getVersion()`），加载失败时显示 `-`
+- 新增 `shell:open-external` IPC：用系统默认浏览器打开外部链接，仅允许 http/https，防止任意 scheme 被打开
+- 相关文案覆盖全部 12 种语言
+
+### 其他
+
+- 版本号升至 `0.11.5`
+
+## v0.11.6 — MTP 手机 / PTP 相机支持（GVfs 会话设备）
+
+### GVfs 会话设备枚举
+
+- 手机（MTP/AFC）与相机（PTP）不走内核块设备层（`lsblk` / UDisks2 看不到），由 gvfs 栈在用户会话中管理，需要单独枚举
+- 已挂载设备：枚举 gvfs FUSE 根目录（`/run/user/<uid>/gvfs`），用 `gvfs-info` 查显示名（手机/相机型号，失败回退解码后的 URI），从 URI 推导 USB 设备标识
+- 未挂载卷：解析 `LC_ALL=C gio mount -l -i` 输出，按卷监视器类型归类（`GProxyVolumeMonitorMTP`/`Afc` → 手机，`GPhoto2` → 相机）
+- 双源合并：gio 的 Mount 条目与 FUSE 条目按 URI 候选形式关联、互相补齐显示名与 deviceId——MTP 挂载点 URI 不含 USB 地址（如 `mtp:host=SAMSUNG_...`），必须靠 gio 关联补齐
+- 陈旧条目剔除：deviceId 与已挂载卷重复的 gio 卷（Mount 行尚未更新）不再重复显示
+
+### 挂载 / 卸载
+
+- 新增 IPC：`system:get-gvfs-volumes` / `system:mount-gvfs`（`gio mount -d`）/ `system:unmount-gvfs`（`gio mount -u`）
+- 挂载设备标识强制校验 `/dev/bus` 前缀（`INVALID_DEVICE`），结构化错误码：`TIMEOUT` / `NO_SUCH_DEVICE` / `INVALID_DEVICE`
+- `mountGvfsRobust` 稳健挂载：处理 USB 总线地址漂移与自动挂载竞态——观察循环最多 3 次重试、超时后间隔拉长、同名卷换新地址重试、旧地址消失且仅剩一个同类卷时兜底直用
+- 前端兜底：后端报失败后再轮询确认 gvfsd 后台是否实际已完成挂载，避免「实际成功但提示失败」
+
+### 侧边栏集成
+
+- 设备区与块设备合并展示：手机（`smartphone`）/ 相机（`photo_camera`）图标区分，已挂载显示挂载点，未挂载显示类别文案与挂载按钮
+- 点击：已挂载直接进入目录；未挂载先刷新最新卷列表（处理总线地址漂移，侧边栏快照最长滞后约 3 秒），挂载成功后自动跳转挂载点
+- 右键菜单：未挂载 → 挂载；已挂载 → 卸载
+- 卸载时若当前标签页正停留于该挂载点（含子目录），自动跳回仪表盘，避免停留在已失效的 FUSE 目录
+- 事件推送 `system:gvfs-changed` 广播所有窗口；inotify 监听 gvfs 根目录（即时感知挂载/卸载）+ 3 秒轮询兜底（未挂载卷插拔与根目录探测）
+
+### 修复
+
+- 虚拟路径（`app://dashboard`、`trash://`）导航时补记 `loadingPathRef`：修复从虚拟页导航回上次真实路径被导航守卫错误跳过的问题（例如从回收站点击设备回跳挂载点，视图停留在回收站）
+
+### 其他
+
+- 设备挂载/卸载相关提示文案覆盖全部 12 种语言
+- 版本号升至 `0.11.6`
+
+## v0.11.7 — 侧边栏拖放、固定目录与仪表盘固定
+
+### 侧边栏拖放（移动/复制对话框）
+
+- 同窗口把文件（夹）拖到侧边栏条目（位置/设备分区/MTP-PTP 卷）→ M3 移动/复制/取消对话框 → 复用完整落点管线（冲突处理 + 批量任务 + 回收站语义）
+- 未挂载的设备/卷先挂载再落点（复用既有稳健挂载与进度 toast）；拖到回收站条目 = 移入回收站；同目录拦截提示
+- 路由复用 TabBar 的文档级捕获监听 + `elementFromPoint` 模式（`data-sidebar-target`）；Wayland 合成 drop 兜底已接入 `nativeDragTracker`
+
+### 侧边栏滚动
+
+- 修复设备多时按钮溢出屏幕无滚动条：`.sidebar` 增 `min-height: 0`（flex `min-height: auto` 陷阱），原有 `overflow-y: auto` 生效
+- 拖拽边缘自动滚动：光标贴近侧边栏上下边缘（64px）时 rAF 循环滚动，离边缘越近越快
+
+### 侧边栏固定目录（Pin）
+
+- 竖向顺序：位置 → 已固定目录（空时隐藏）→ 固定按钮 → 设备；`sidebar.pinned` 独立存储键 + 跨窗口同步
+- 固定按钮：点击进入 armed 高亮状态，拖入恰好一个文件夹即固定；右键菜单「使用文件管理器选择」保留原选择器流程
+- 文件/文件夹右键菜单新增「固定到侧边栏 / 从侧边栏取消固定」（目录）；固定项与 Place 路径相同时高亮让位固定项
+- 修复：固定按钮与位置条目间距不一致；取消固定（×）按钮随名称漂移（label 增 `flex:1; min-width:0`，作用域限定）
+
+### 仪表盘固定（右键菜单）
+
+- 文件与文件夹右键菜单新增「固定到仪表盘 / 从仪表盘取消固定」（块设备除外），复用既有 `context_menu.pin/unpin` 文案
+- `dashboard.pinned` 状态上提 App（同窗口 useLocalStorage 同键实例不同步），Dashboard 受控化；原「添加固定项」文件管理器选择流程与首次启动默认项播种不变
+
+### 其他
+
+- 新增 i18n 键（×12 语言）：`sidebar.pinned`、`sidebar.add_pin`、`sidebar.unpin`、`sidebar.already_pinned`、`sidebar.pin_via_file_manager`、`sidebar.pin_single_folder`、`context_menu.pin_sidebar`、`context_menu.unpin_sidebar`、`drop.target_unreadable`
+- 版本号升至 `0.11.7`

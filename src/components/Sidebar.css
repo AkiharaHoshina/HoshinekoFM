@@ -6,6 +6,10 @@
     flex-direction: column;
     border-radius: 16px;
     margin: 12px 0 12px 0;
+    /* flex 子项默认 min-height:auto 会被内容撑大超过视口，
+       导致 overflow-y:auto 永不触发、设备多时按钮溢出屏幕；
+       显式置 0 让侧边栏可收缩，滚动条才生效 */
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-width: thin;
@@ -79,6 +83,13 @@
 .sidebar-item.active {
     background-color: var(--md-sys-color-secondary-container);
     color: var(--md-sys-color-on-secondary-container);
+}
+
+/* 同窗口拖放悬停高亮（落点提示） */
+.sidebar-item.drag-over {
+    outline: 2px dashed var(--md-sys-color-primary);
+    outline-offset: -2px;
+    background-color: var(--md-sys-color-surface-container-high);
 }
 
 .sidebar-item:active {
@@ -169,4 +180,43 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* 固定目录条目的移除按钮：悬停显现（与设备弹出按钮同款交互） */
+.sidebar-pin-remove {
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.sidebar-item:hover .sidebar-pin-remove {
+    opacity: 1;
+}
+
+/* 固定条目标签：占据剩余宽度并按需截断，
+   保证右侧取消固定（×）按钮始终钉在最右，不随名称长度漂移。
+   作用域限定在固定条目，避免影响设备头/分区条目的 column 布局 */
+.sidebar-pin-label {
+    flex: 1;
+    min-width: 0;
+}
+
+/* 添加固定目录按钮：弱化外观，与普通位置条目区分 */
+.sidebar-add-pin {
+    color: var(--md-sys-color-primary);
+}
+
+.sidebar-add-pin .sidebar-icon {
+    font-size: 20px;
+}
+
+/* armed（按下等待拖入文件夹）状态：常亮提示 */
+.sidebar-add-pin.pin-armed {
+    background-color: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+}
+
+/* 固定按钮区：与上方列表保持与条目间一致的间距 */
+.sidebar-pin-section {
+    margin-top: 4px;
 }

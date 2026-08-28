@@ -31,6 +31,7 @@ const zhCT = {
   'context_menu.delete_permanent': '永久刪除',
   'drop.same_dir': '檔案已喺呢個資料夾入面',
   'drop.no_paths': '攞唔到拖曳檔案嘅路徑',
+  'drop.target_unreadable': '讀唔到目標資料夾',
   'context_menu.properties': '屬性',
   'context_menu.new_folder': '新資料夾',
   'context_menu.new_file': '新檔案',
@@ -38,6 +39,8 @@ const zhCT = {
   'context_menu.select_all': '全選',
   'context_menu.pin': '固定到儀表板',
   'context_menu.unpin': '從儀表板取消固定',
+  'context_menu.pin_sidebar': '固定到側邊欄',
+  'context_menu.unpin_sidebar': '從側邊欄取消固定',
   'context_menu.extract_here': '喺呢度解壓',
 
   // ── 彈窗按鈕 ──
@@ -201,6 +204,12 @@ const zhCT = {
   'sidebar.music': '音樂',
   'sidebar.pictures': '圖片',
   'sidebar.videos': '影片',
+  'sidebar.pinned': '已固定',
+  'sidebar.add_pin': '固定資料夾',
+  'sidebar.unpin': '取消固定',
+  'sidebar.already_pinned': '呢個資料夾已經固定咗',
+  'sidebar.pin_via_file_manager': '用檔案管理員揀',
+  'sidebar.pin_single_folder': '請拖動單個資料夾嚟固定',
 
   // ── 導航欄 ──
   'nav.dashboard': '儀表板',

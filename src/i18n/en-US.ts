@@ -31,6 +31,7 @@ const enUS = {
   'context_menu.delete_permanent': 'Permanently Delete',
   'drop.same_dir': 'Files are already in this folder',
   'drop.no_paths': 'Could not read the dragged files',
+  'drop.target_unreadable': 'Cannot read the target folder',
   'context_menu.properties': 'Properties',
   'context_menu.new_folder': 'New folder',
   'context_menu.new_file': 'New file',
@@ -38,6 +39,8 @@ const enUS = {
   'context_menu.select_all': 'Select all',
   'context_menu.pin': 'Pin to dashboard',
   'context_menu.unpin': 'Unpin from dashboard',
+  'context_menu.pin_sidebar': 'Pin to Sidebar',
+  'context_menu.unpin_sidebar': 'Unpin from Sidebar',
   'context_menu.extract_here': 'Extract to this folder',
 
   // ── 弹窗按钮 ──
@@ -212,6 +215,12 @@ const enUS = {
   'sidebar.music': 'Music',
   'sidebar.pictures': 'Pictures',
   'sidebar.videos': 'Videos',
+  'sidebar.pinned': 'Pinned',
+  'sidebar.add_pin': 'Pin Folder',
+  'sidebar.unpin': 'Unpin',
+  'sidebar.already_pinned': 'This folder is already pinned',
+  'sidebar.pin_via_file_manager': 'Select via file manager',
+  'sidebar.pin_single_folder': 'Drag a single folder to pin it',
 
   // ── 导航栏 ──
   'nav.dashboard': 'Dashboard',

@@ -31,6 +31,7 @@ const zhAC = {
   'context_menu.delete_permanent': '永久删除',
   'drop.same_dir': '文件已在该目录中',
   'drop.no_paths': '无法获取拖拽文件的路径',
+  'drop.target_unreadable': '无法读取目标文件夹',
   'context_menu.properties': '属性',
   'context_menu.new_folder': '新建目录',
   'context_menu.new_file': '新建文件',
@@ -38,6 +39,8 @@ const zhAC = {
   'context_menu.select_all': '全选',
   'context_menu.pin': '固定到仪表板',
   'context_menu.unpin': '从仪表板取消固定',
+  'context_menu.pin_sidebar': '固定到侧边栏',
+  'context_menu.unpin_sidebar': '从侧边栏取消固定',
   'context_menu.extract_here': '释放到当前目录',
 
   // ── 弹窗按钮 ──
@@ -203,6 +206,12 @@ const zhAC = {
   'sidebar.music': '音乐',
   'sidebar.pictures': '图片',
   'sidebar.videos': '视频',
+  'sidebar.pinned': '已固定',
+  'sidebar.add_pin': '固定文件夹',
+  'sidebar.unpin': '取消固定',
+  'sidebar.already_pinned': '该文件夹已固定',
+  'sidebar.pin_via_file_manager': '使用文件管理器选择',
+  'sidebar.pin_single_folder': '请拖动单个文件夹进行固定',
 
   // ── 导航栏 ──
   'nav.dashboard': '仪表板',

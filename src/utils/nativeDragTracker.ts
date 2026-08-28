@@ -106,6 +106,8 @@ function resolveTargetKey(x: number, y: number): string | null {
   if (tab?.dataset.tabId) return 'tab:' + tab.dataset.tabId;
   const item = el.closest('.file-list-item') as HTMLElement | null;
   if (item?.dataset.path) return 'item:' + item.dataset.path;
+  const sidebar = el.closest('[data-sidebar-target]') as HTMLElement | null;
+  if (sidebar?.dataset.sidebarTarget) return 'sidebar:' + sidebar.dataset.sidebarTarget;
   const bc = el.closest('.breadcrumb-chip, .breadcrumb-item, .breadcrumb-root') as HTMLElement | null;
   if (bc) {
     const text = (bc.textContent || '').trim();

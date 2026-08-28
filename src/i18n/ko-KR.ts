@@ -32,6 +32,7 @@ const koKR = {
   'context_menu.delete_permanent': '영구 삭제',
   'drop.same_dir': '파일이 이미 이 폴더에 있습니다',
   'drop.no_paths': '드래그한 파일의 경로를 가져올 수 없습니다',
+  'drop.target_unreadable': '대상 폴더를 읽을 수 없습니다',
   'context_menu.properties': '속성',
   'context_menu.new_folder': '새 폴더',
   'context_menu.new_file': '새 파일',
@@ -39,6 +40,8 @@ const koKR = {
   'context_menu.select_all': '모두 선택',
   'context_menu.pin': '대시보드에 고정',
   'context_menu.unpin': '대시보드에서 고정 해제',
+  'context_menu.pin_sidebar': '사이드바에 고정',
+  'context_menu.unpin_sidebar': '사이드바에서 고정 해제',
   'context_menu.extract_here': '여기에 압축 풀기',
 
   // ── 팝업 버튼 ──
@@ -202,6 +205,12 @@ const koKR = {
   'sidebar.music': '음악',
   'sidebar.pictures': '사진',
   'sidebar.videos': '동영상',
+  'sidebar.pinned': '고정됨',
+  'sidebar.add_pin': '폴더 고정',
+  'sidebar.unpin': '고정 해제',
+  'sidebar.already_pinned': '이미 고정된 폴더입니다',
+  'sidebar.pin_via_file_manager': '파일 관리자로 선택',
+  'sidebar.pin_single_folder': '폴더 하나를 끌어서 고정하세요',
 
   // ── 내비게이션 바 ──
   'nav.dashboard': '대시보드',
