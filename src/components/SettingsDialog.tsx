@@ -23,6 +23,9 @@ interface SettingsDialogProps {
   onLocaleChange: (locale: Locale) => void;
   marqueeEnabled: boolean;
   onToggleMarquee: () => void;
+  /** 是否显示主页（/home）子区域的存储占用（默认关闭） */
+  showHomeStorageUsage: boolean;
+  onToggleShowHomeStorageUsage: () => void;
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({
@@ -42,6 +45,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onLocaleChange,
   marqueeEnabled,
   onToggleMarquee,
+  showHomeStorageUsage,
+  onToggleShowHomeStorageUsage,
 }) => {
   const langOptions = getLanguageOptions();
 
@@ -198,6 +203,16 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               </div>
             </div>
             <Switch selected={marqueeEnabled} onClick={onToggleMarquee} />
+          </div>
+
+          <div className="settings-row" onClick={onToggleShowHomeStorageUsage}>
+            <div className="settings-row__start">
+              <Icon name="home" />
+              <div className="settings-row__label">
+                {t("settings.show_home_storage")}
+              </div>
+            </div>
+            <Switch selected={showHomeStorageUsage} onClick={onToggleShowHomeStorageUsage} />
           </div>
         </div>
 

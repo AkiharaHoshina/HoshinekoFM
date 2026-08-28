@@ -124,6 +124,7 @@ const zhCN = {
   'settings.behavior': '行为',
   'settings.language': '语言',
   'settings.marquee_text': '滚动文本',
+  'settings.show_home_storage': '显示主页存储占用',
   'settings.about': '关于',
   'settings.version': '版本',
 
@@ -224,6 +225,8 @@ const zhCN = {
   'dashboard.good_evening': '晚上好',
   'dashboard.welcome': '欢迎回到您的控制中心。',
   'dashboard.system_storage': '系统存储',
+  'dashboard.home_storage': '主页',
+  'dashboard.storage': '存储',
   'dashboard.used': '已用',
   'dashboard.total': '总量',
   'dashboard.loading': '正在加载统计数据...',

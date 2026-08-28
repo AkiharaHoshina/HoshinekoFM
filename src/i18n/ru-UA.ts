@@ -166,6 +166,7 @@ const ruUA = {
   'settings.behavior': 'Поведение',
   'settings.language': 'Язык',
   'settings.marquee_text': 'Бегущая строка',
+  'settings.show_home_storage': 'Показывать занятость домашнего хранилища',
   'settings.about': 'О приложении',
   'settings.version': 'Версия',
 
@@ -266,6 +267,8 @@ const ruUA = {
   'dashboard.good_evening': 'Добрый вечер',
   'dashboard.welcome': 'С возвращением на вашу панель.',
   'dashboard.system_storage': 'Системное хранилище',
+  'dashboard.home_storage': 'Главная',
+  'dashboard.storage': 'Хранилище',
   'dashboard.used': 'Использовано',
   'dashboard.total': 'Всего',
   'dashboard.loading': 'Загрузка статистики...',

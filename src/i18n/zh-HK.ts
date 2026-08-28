@@ -124,6 +124,7 @@ const zhHK = {
   'settings.behavior': '行為',
   'settings.language': '語言',
   'settings.marquee_text': '滾動文字',
+  'settings.show_home_storage': '顯示主頁儲存佔用',
   'settings.about': '關於',
   'settings.version': '版本',
 
@@ -224,6 +225,8 @@ const zhHK = {
   'dashboard.good_evening': '晚安',
   'dashboard.welcome': '歡迎來到控制中心。',
   'dashboard.system_storage': '系統儲存空間',
+  'dashboard.home_storage': '主頁',
+  'dashboard.storage': '儲存',
   'dashboard.used': '已用',
   'dashboard.total': '總計',
   'dashboard.loading': '正在載入統計資料...',

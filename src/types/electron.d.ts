@@ -107,6 +107,11 @@ export interface IElectronAPI {
     exists: (path: string) => Promise<boolean>;
     existsBatch: (paths: string[]) => Promise<Record<string, boolean>>;
     getStorageUsage: () => Promise<{ total: number; used: number; free: number } | null>;
+    /**
+     * 批量查询路径所属文件系统的存储占用（statfs，按查询路径逐条返回；
+     * 单条失败跳过）。
+     */
+    getStorageUsages: (paths: string[]) => Promise<Array<{ path: string; total: number; used: number; free: number }>>;
     getDrives: () => Promise<IDrive[]>;
     getAllDevices: () => Promise<AllDevice[]>;
     /** GVfs 会话设备列表（MTP 手机 / PTP 相机，含未挂载卷） */

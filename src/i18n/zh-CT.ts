@@ -124,6 +124,7 @@ const zhCT = {
   'settings.behavior': '行為',
   'settings.language': '語言',
   'settings.marquee_text': '跑馬燈文字',
+  'settings.show_home_storage': '顯示主頁儲存佔用',
   'settings.about': '關於',
   'settings.version': '版本',
 
@@ -224,6 +225,8 @@ const zhCT = {
   'dashboard.good_evening': '晚安',
   'dashboard.welcome': '歡迎返到你嘅控制中心。',
   'dashboard.system_storage': '系統儲存空間',
+  'dashboard.home_storage': '主頁',
+  'dashboard.storage': '儲存',
   'dashboard.used': '已用',
   'dashboard.total': '總量',
   'dashboard.loading': '載入緊統計數據...',

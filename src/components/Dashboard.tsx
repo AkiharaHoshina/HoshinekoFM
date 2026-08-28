@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Icon } from './Icon';
 import { ContextMenu } from './ContextMenu';
+import { MarqueeText } from './MarqueeText';
 import './Dashboard.css';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import type { IFile } from '../types/files';
+import type { IFile, AllDevice } from '../types/files';
+import { isExternalDevice, getDeviceTitle } from '../utils/deviceUtils';
 import { t as ti } from '../i18n';
 
 interface DashboardProps {
@@ -19,9 +21,30 @@ interface DashboardProps {
     onPinItem: (name: string, path: string, isDir: boolean) => void;
     /** 按索引移除固定项（悬停关闭按钮） */
     onRemovePin: (index: number) => void;
+    /**
+     * 滚动文本开关：开启时「最近访问」与「固定项」的超长名称
+     * 单行滚动显示；关闭时最近访问为单行省略号、固定项最多 3 行截断。
+     */
+    marqueeEnabled: boolean;
+    /**
+     * 是否显示主页（/home）子区域的存储占用信息（设置项，默认关闭）。
+     * 关闭时主页子区域仅作为导航入口；系统与设备子区域不受影响。
+     */
+    showHomeStorageUsage: boolean;
 }
 
-interface StorageStats {
+/** 仪表盘存储子区域条目：一个目录或设备的存储占用（列表形式） */
+interface StorageCard {
+    /** 展示名（系统 / 主页 / 设备名） */
+    label: string;
+    /** 副标题（外接设备为挂载点路径，可空） */
+    subtitle?: string;
+    /** 点击跳转路径（系统 → /，主页 → home，设备 → 挂载点） */
+    path: string;
+    /** 图标名（hard_drive / home / usb / smartphone / photo_camera） */
+    icon: string;
+    /** 是否隐藏占用信息（/home 与 / 同分区时主页子区域仅保留导航） */
+    hideUsage: boolean;
     total: number;
     used: number;
     free: number;
@@ -39,12 +62,24 @@ export interface PinnedItem {
     isDir?: boolean;
 }
 
+/** 递归收集已挂载的外接设备（含磁盘下的分区），挂载点作为存储卡片目标 */
+function collectMountedExternal(list: AllDevice[], out: Array<{ label: string; mountpoint: string }>): void {
+  for (const d of list) {
+    if (d.mounted && d.mountpoint && isExternalDevice(d)) {
+      out.push({ label: getDeviceTitle(d), mountpoint: d.mountpoint });
+    }
+    if (d.children) collectMountedExternal(d.children, out);
+  }
+}
+
 const labelToKey: Record<string, string> = {
   'Good Morning': 'dashboard.good_morning',
   'Good Afternoon': 'dashboard.good_afternoon',
   'Good Evening': 'dashboard.good_evening',
   'Welcome back to your command center.': 'dashboard.welcome',
   'System Storage': 'dashboard.system_storage',
+  'Home Storage': 'dashboard.home_storage',
+  'Storage': 'dashboard.storage',
   'used': 'dashboard.used',
   'total': 'dashboard.total',
   'Loading stats...': 'dashboard.loading',
@@ -63,24 +98,107 @@ const t = (text: string): string => {
   return key ? (ti as any)(key) : text;
 };
 
-export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pinnedItems, onPinItem, onRemovePin }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pinnedItems, onPinItem, onRemovePin, marqueeEnabled, showHomeStorageUsage }) => {
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
     if (hour < 18) return 'Good Afternoon';
     return 'Good Evening';
   }, []);
-  const [storage, setStorage] = useState<StorageStats | null>(null);
+  const [storageCards, setStorageCards] = useState<StorageCard[]>([]);
 
   const [recentFiles] = useLocalStorage<IFile[]>('dashboard.recent', []);
 
+  /**
+   * 组装存储子区域：顺序固定为 系统（/）→ 主页（home）→ 已挂载外接设备
+   * （块设备分区递归收集 + gvfs 卷，识别到即追加在尾部）。
+   * 批量 statfs 查询后按查询路径合并。
+   * 主页子区域的占用信息由设置项「显示主页存储占用」控制（默认隐藏）。
+   * 设备热插拔事件（UDisks2 / GVfs）到达时刷新，拔出自动移除条目；
+   * 无设备 watcher 时 5 秒轮询兜底。
+   */
   useEffect(() => {
-    if (window.electron) {
-      window.electron.getStorageUsage().then(stats => {
-        if (stats) setStorage(stats);
-      });
-    }
-  }, []);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    let cleanupDevice: (() => void) | null = null;
+    let cleanupGvfs: (() => void) | null = null;
+    let disposed = false;
+
+    const refresh = async () => {
+      if (!window.electron) return;
+      try {
+        const home = await window.electron.getHomePath();
+        const targets: Array<{ label: string; subtitle?: string; path: string; icon: string; isHome?: boolean }> = [
+          { label: t('System Storage'), path: '/', icon: 'hard_drive' },
+          { label: t('Home Storage'), path: home, icon: 'home', isHome: true },
+        ];
+
+        const devices = await window.electron.getAllDevices();
+        const mountedExternal: Array<{ label: string; mountpoint: string }> = [];
+        collectMountedExternal(devices, mountedExternal);
+        for (const d of mountedExternal) {
+          targets.push({ label: d.label, subtitle: d.mountpoint, path: d.mountpoint, icon: 'usb' });
+        }
+
+        const volumes = await window.electron.getGvfsVolumes();
+        for (const v of volumes) {
+          if (v.mounted && v.mountpoint) {
+            targets.push({
+              label: v.name,
+              subtitle: v.mountpoint,
+              path: v.mountpoint,
+              icon: v.kind === 'gphoto2' ? 'photo_camera' : 'smartphone',
+            });
+          }
+        }
+
+        const usages = await window.electron.getStorageUsages(targets.map((x) => x.path));
+        const byPath = new Map(usages.map((u) => [u.path, u]));
+        const cards: StorageCard[] = [];
+        for (const x of targets) {
+          const u = byPath.get(x.path);
+          if (!u) continue;
+          // 仅主页受设置控制：关闭「显示主页存储占用」时隐藏占用信息，
+          // 保留子区域作为导航入口；系统与设备子区域始终显示占用。
+          const hideUsage = x.isHome ? !showHomeStorageUsage : false;
+          cards.push({
+            label: x.label,
+            subtitle: x.subtitle,
+            path: x.path,
+            icon: x.icon,
+            hideUsage,
+            total: u.total,
+            used: u.used,
+            free: u.free,
+          });
+        }
+        if (!disposed) setStorageCards(cards);
+      } catch {
+        // 查询失败保持当前卡片不变
+      }
+    };
+
+    const init = async () => {
+      await refresh();
+      if (!window.electron) return;
+      const hasWatcher = await window.electron.hasDeviceWatcher();
+      if (hasWatcher) {
+        cleanupDevice = window.electron.onDeviceChange(() => { void refresh(); });
+        if (window.electron.onGvfsChange) {
+          cleanupGvfs = window.electron.onGvfsChange(() => { void refresh(); });
+        }
+      } else {
+        interval = setInterval(() => { void refresh(); }, 5000);
+      }
+    };
+    void init();
+
+    return () => {
+      disposed = true;
+      if (interval) clearInterval(interval);
+      if (cleanupDevice) cleanupDevice();
+      if (cleanupGvfs) cleanupGvfs();
+    };
+  }, [showHomeStorageUsage]);
 
   const [pinMenuPos, setPinMenuPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -114,9 +232,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
     return parseFloat((bytes / Math.pow(k, n)).toFixed(1)) + ' ' + ['B', 'KB', 'MB', 'GB', 'TB'][n];
   };
 
-  const getUsagePercent = () => {
-    if (!storage) return 0;
-    return (storage.used / storage.total) * 100;
+  const getUsagePercent = (card: StorageCard) => {
+    if (!card.total) return 0;
+    return (card.used / card.total) * 100;
   };
 
   return (
@@ -130,17 +248,46 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
         <div className="dashboard-card storage-card">
           <div className="card-header">
             <Icon name="hard_drive" filled />
-            <span>{t('System Storage')}</span>
+            <span>{t('Storage')}</span>
           </div>
-          {storage ? (
-            <div className="storage-info">
-              <div className="usage-bar">
-                <div className="usage-fill" style={{ width: `${getUsagePercent()}%` }}></div>
-              </div>
-              <div className="storage-text">
-                <span>{formatBytes(storage.used)} {t('used')}</span>
-                <span>{formatBytes(storage.total)} {t('total')}</span>
-              </div>
+          {storageCards.length > 0 ? (
+            <div className="storage-list">
+              {storageCards.map((card) => (
+                <div
+                  key={`${card.label}-${card.path}`}
+                  className="storage-sub"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onNavigate(card.path)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onNavigate(card.path);
+                    }
+                  }}
+                  title={card.subtitle ?? card.path}
+                >
+                  <Icon name={card.icon} className="storage-sub-icon" />
+                  <div className="storage-sub-body">
+                    <div className="storage-sub-top">
+                      <span className="storage-sub-label">{card.label}</span>
+                      {!card.hideUsage && (
+                        <span className="storage-sub-stats">
+                          {formatBytes(card.used)} {t('used')} · {formatBytes(card.total)} {t('total')}
+                        </span>
+                      )}
+                    </div>
+                    {!card.hideUsage && (
+                      <div className="usage-bar">
+                        <div className="usage-fill" style={{ width: `${getUsagePercent(card)}%` }}></div>
+                      </div>
+                    )}
+                    {card.subtitle && (
+                      <div className="storage-sub-subtitle" title={card.subtitle}>{card.subtitle}</div>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="storage-loading">{t('Loading stats...')}</div>
@@ -165,7 +312,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
                     size={32}
                   />
                 </div>
-                <span>{t(item.name)}</span>
+                {marqueeEnabled ? (
+                  <MarqueeText
+                    enabled
+                    className="pinned-name-marquee"
+                    title={item.path}
+                  >
+                    {t(item.name)}
+                  </MarqueeText>
+                ) : (
+                  <span className="pinned-name" title={item.path}>{t(item.name)}</span>
+                )}
                 <div className="pin-remove" onClick={(e) => handleRemovePin(e, idx)} title={ti('dashboard.unpin_tooltip')}>
                   <Icon name="close" size={14} />
                 </div>
@@ -218,7 +375,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
               recentFiles.slice(0, 10).map((file, idx) => (
                 <div key={idx} className="recent-item" onClick={() => onNavigate(file.path)}>
                   <Icon name={file.isDirectory ? 'folder' : 'article'} size={20} />
-                  <span className="recent-name">{t(file.name)}</span>
+                  <MarqueeText enabled={marqueeEnabled} className="recent-name" title={file.path}>
+                    {t(file.name)}
+                  </MarqueeText>
                   <span className="recent-path">{file.path}</span>
                 </div>
               ))

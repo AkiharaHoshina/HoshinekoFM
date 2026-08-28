@@ -295,3 +295,28 @@
 
 - 新增 i18n 键（×12 语言）：`sidebar.pinned`、`sidebar.add_pin`、`sidebar.unpin`、`sidebar.already_pinned`、`sidebar.pin_via_file_manager`、`sidebar.pin_single_folder`、`context_menu.pin_sidebar`、`context_menu.unpin_sidebar`、`drop.target_unreadable`
 - 版本号升至 `0.11.7`
+
+## v0.11.8 — 仪表盘存储区重构与长名称溢出修复
+
+### 仪表盘存储区重构
+
+- 存储占用合并为单一「存储」区域（卡片），内部为**列表子区域**（M3 列表项），顺序固定：系统（/）→ 主页 → 已挂载外接设备（识别到追加尾部，拔出自动消失）
+- 子区域显示：图标 + 标签 + 用量条 + used/total（设备含挂载点副标题，超长省略）；hover/焦点 M3 状态层，**点击跳转**到对应目录或设备挂载点（键盘可操作）
+- 后端新增 `system:get-storage-usages(paths[])`：主进程 `fs.promises.statfs` 批量查询（单条失败跳过，无 shell 解析）；原 `getStorageUsage` 保留
+- 外接设备枚举复用块设备树（递归收集已挂载分区）+ gvfs 卷；订阅 `devices-changed`/`gvfs-changed` 事件刷新，无 watcher 时 5 秒轮询兜底
+
+### 主页存储占用设置
+
+- 设置 → 行为新增「显示主页存储占用」开关（`settings.showHomeStorageUsage`），**默认关闭**：主页子区域仅作导航入口；开启后显示用量条与数字
+- 持久化 + 跨窗口同步（与其他设置一致）；系统与设备子区域始终显示占用，不受影响
+
+### 名称溢出修复（最近访问 / 固定项）
+
+- 「最近访问」超长名称：UI 范围内截断结尾 `…`；开启滚动文本时自动滚动显示；路径列与图标不再被挤压
+- 「固定项」名称：滚动文本关闭时保留换行、最多 3 行截断 `…`；开启时单行滚动显示
+
+### 其他
+
+- 主页卡片命名与各语言侧栏「主页」按钮一致（zh-CN 主页 / zh-TW 首頁 / ja ホーム / ru Главная 等）
+- 新增 i18n 键（×12 语言）：`dashboard.storage`、`dashboard.home_storage`、`settings.show_home_storage`
+- 版本号升至 `0.11.8`

@@ -334,6 +334,12 @@ function AppContent() {
     true,
   );
 
+  /** 是否显示主页（/home）子区域的存储占用（默认关闭 = 仅导航） */
+  const [showHomeStorageUsage, setShowHomeStorageUsage] = useLocalStorage<boolean>(
+    "settings.showHomeStorageUsage",
+    false,
+  );
+
   const handleLoadCustomCss = async (path: string) => {
     try {
       const css = await window.electron.readFile(path);
@@ -854,6 +860,7 @@ function AppContent() {
                 dashboardPinned={dashboardPinned}
                 onDashboardPinItem={pinDashboardItem}
                 onDashboardRemovePin={removeDashboardPinAt}
+                showHomeStorageUsage={showHomeStorageUsage}
               />
             </div>
           ))}
@@ -1147,6 +1154,8 @@ function AppContent() {
           onLocaleChange={handleLocaleChange}
           marqueeEnabled={marqueeEnabled}
           onToggleMarquee={() => setMarqueeEnabled(!marqueeEnabled)}
+          showHomeStorageUsage={showHomeStorageUsage}
+          onToggleShowHomeStorageUsage={() => setShowHomeStorageUsage(!showHomeStorageUsage)}
         />
       </main>
     </div>

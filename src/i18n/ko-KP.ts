@@ -125,6 +125,7 @@ const koKP = {
   'settings.behavior': '동작',
   'settings.language': '언어',
   'settings.marquee_text': '흐르는 원문',
+  'settings.show_home_storage': '초기 화면 기억장치 사용량 표시',
   'settings.about': '정보',
   'settings.version': '버전',
 
@@ -234,6 +235,8 @@ const koKP = {
   'dashboard.good_evening': '안녕하십니까',
   'dashboard.welcome': '조종 중심에 오신 것을 환영합니다.',
   'dashboard.system_storage': '체계 기억장치',
+  'dashboard.home_storage': '초기 화면',
+  'dashboard.storage': '기억장치',
   'dashboard.used': '사용됨',
   'dashboard.total': '전체',
   'dashboard.loading': '통계 자료를 불러오는 중...',

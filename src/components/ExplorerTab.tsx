@@ -90,9 +90,11 @@ interface ExplorerTabProps {
     onDashboardPinItem: (name: string, path: string, isDir: boolean) => void;
     /** 按索引移除仪表盘固定项（Dashboard 悬停关闭按钮使用） */
     onDashboardRemovePin: (index: number) => void;
+    /** 是否显示主页（/home）子区域的存储占用（设置项，默认关闭） */
+    showHomeStorageUsage: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, showHomeStorageUsage }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -1133,6 +1135,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
             pinnedItems={dashboardPinned}
             onPinItem={onDashboardPinItem}
             onRemovePin={onDashboardRemovePin}
+            marqueeEnabled={marqueeEnabled}
+            showHomeStorageUsage={showHomeStorageUsage}
           />
         </div>
       ) : (

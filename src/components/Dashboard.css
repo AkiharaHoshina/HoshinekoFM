@@ -68,11 +68,82 @@
     transition: width 1s ease-out;
 }
 
-.storage-text {
+/* 存储子区域列表：每个子区域是 M3 列表项，宽度恒定（略小于卡片内宽） */
+.storage-list {
     display: flex;
-    justify-content: space-between;
-    font-size: 14px;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.storage-sub {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    min-width: 0;
+}
+
+.storage-sub:hover,
+.storage-sub:focus-visible {
+    background-color: var(--md-sys-color-surface-container-highest);
+}
+
+.storage-sub:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+}
+
+.storage-sub-icon {
+    flex-shrink: 0;
+    font-size: 24px;
     color: var(--md-sys-color-on-surface-variant);
+}
+
+.storage-sub-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.storage-sub-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.storage-sub-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--md-sys-color-on-surface);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.storage-sub-stats {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    white-space: nowrap;
+}
+
+.storage-sub .usage-bar {
+    margin-bottom: 0;
+}
+
+/* 设备子区域挂载点：超长省略 */
+.storage-sub-subtitle {
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Pinned Widget */
@@ -91,6 +162,7 @@
     padding: 8px;
     border-radius: 12px;
     transition: background-color 0.2s;
+    min-width: 0;
 }
 
 .pinned-item:hover {
@@ -140,13 +212,22 @@
     border-radius: 8px;
     cursor: pointer;
     transition: background-color 0.2s;
+    min-width: 0;
 }
 
 .recent-item:hover {
     background-color: var(--md-sys-color-surface-container-high);
 }
 
+/* 最近访问图标不参与收缩，名称超长时由名称截断 */
+.recent-item md-icon {
+    flex-shrink: 0;
+}
+
 .recent-name {
+    /* 占据剩余宽度并按需截断/滚动，超长名称保持在 UI 范围内 */
+    flex: 1;
+    min-width: 0;
     font-weight: 500;
     color: var(--md-sys-color-on-surface);
 }
@@ -160,6 +241,23 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 200px;
+    flex-shrink: 0;
+}
+
+/* 固定项名称（滚动文本关闭）：保留换行，最多 3 行，超出截断为 … */
+.pinned-name {
+    max-width: 100%;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
+    word-break: break-word;
+}
+
+/* 固定项名称（滚动文本开启）：单行滚动显示，宽度受条目约束 */
+.pinned-name-marquee {
+    max-width: 100%;
 }
 
 /* Pin Remove Button */

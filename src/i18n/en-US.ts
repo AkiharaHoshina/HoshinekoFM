@@ -135,6 +135,7 @@ const enUS = {
   'settings.behavior': 'Behavior',
   'settings.language': 'Language',
   'settings.marquee_text': 'Marquee text',
+  'settings.show_home_storage': 'Show home storage usage',
   'settings.about': 'About',
   'settings.version': 'Version',
 
@@ -235,6 +236,8 @@ const enUS = {
   'dashboard.good_evening': 'Good evening',
   'dashboard.welcome': 'Welcome back to your dashboard.',
   'dashboard.system_storage': 'System Storage',
+  'dashboard.home_storage': 'Home',
+  'dashboard.storage': 'Storage',
   'dashboard.used': 'Used',
   'dashboard.total': 'Total',
   'dashboard.loading': 'Loading statistics...',

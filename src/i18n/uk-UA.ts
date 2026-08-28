@@ -163,6 +163,7 @@ const ukUA = {
   'settings.behavior': 'Поведінка',
   'settings.language': 'Мова',
   'settings.marquee_text': 'Біжучий текст',
+  'settings.show_home_storage': 'Показувати заповнення домашнього сховища',
   'settings.about': 'Про застосунок',
   'settings.version': 'Версія',
 
@@ -263,6 +264,8 @@ const ukUA = {
   'dashboard.good_evening': 'Доброго вечора',
   'dashboard.welcome': 'Вітаємо з поверненням на вашу панель.',
   'dashboard.system_storage': 'Системне сховище',
+  'dashboard.home_storage': 'Домашній',
+  'dashboard.storage': 'Сховище',
   'dashboard.used': 'Використано',
   'dashboard.total': 'Усього',
   'dashboard.loading': 'Завантаження статистики...',

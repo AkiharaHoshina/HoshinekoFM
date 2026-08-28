@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('electron', {
     return () => ipcRenderer.removeListener('clipboard:changed', handler);
   },
   getStorageUsage: () => ipcRenderer.invoke('system:get-storage-usage'),
+  getStorageUsages: (paths: string[]) => ipcRenderer.invoke('system:get-storage-usages', paths),
   getStartupPath: () => ipcRenderer.invoke('app:get-startup-path'),
   getVersion: () => ipcRenderer.invoke('app:get-version'),
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),

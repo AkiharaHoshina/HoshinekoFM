@@ -125,6 +125,7 @@ const koCN = {
   'settings.behavior': '동작',
   'settings.language': '언어',
   'settings.marquee_text': '스크롤 텍스트',
+  'settings.show_home_storage': '홈 스토리지 사용량 표시',
   'settings.about': '정보',
   'settings.version': '버전',
 
@@ -234,6 +235,8 @@ const koCN = {
   'dashboard.good_evening': '좋은 저녁입니다',
   'dashboard.welcome': '컨트롤 센터에 오신 것을 환영합니다.',
   'dashboard.system_storage': '시스템 스토리지',
+  'dashboard.home_storage': '홈',
+  'dashboard.storage': '스토리지',
   'dashboard.used': '사용됨',
   'dashboard.total': '전체',
   'dashboard.loading': '통계 데이터를 불러오는 중...',

@@ -124,6 +124,7 @@ const jaJP = {
   'settings.behavior': '動作',
   'settings.language': '言語',
   'settings.marquee_text': 'スクロールテキスト',
+  'settings.show_home_storage': 'ホームのストレージ使用量を表示',
   'settings.about': 'アプリについて',
   'settings.version': 'バージョン',
 
@@ -224,6 +225,8 @@ const jaJP = {
   'dashboard.good_evening': 'こんばんは',
   'dashboard.welcome': 'コントロールセンターへようこそ。',
   'dashboard.system_storage': 'システムストレージ',
+  'dashboard.home_storage': 'ホーム',
+  'dashboard.storage': 'ストレージ',
   'dashboard.used': '使用済み',
   'dashboard.total': '合計',
   'dashboard.loading': '統計データを読み込み中...',

@@ -972,6 +972,40 @@ export function registerSystemHandlers() {
     }
   });
 
+  /**
+   * 批量查询路径所属文件系统的存储占用（statfs，按查询路径逐条返回）。
+   * 前端仪表盘用：系统（/）、家目录、已挂载外接设备（含 gvfs FUSE 挂载点）
+   * 一次 IPC 批量获取。statfs 返回整个文件系统的块统计——/home 与 / 同分区
+   * 时两条数值相同（前端按需决定是否都展示）。
+   * 单条失败（路径不存在/无权限）跳过该条目，不影响其余。
+   */
+  ipcMain.handle('system:get-storage-usages', async (_event, paths: unknown) => {
+    try {
+      if (!Array.isArray(paths)) return [];
+      const list = paths.filter((p): p is string => typeof p === 'string' && p.length > 0);
+      if (list.length === 0) return [];
+
+      const results: Array<{ path: string; total: number; used: number; free: number }> = [];
+      for (const p of list) {
+        try {
+          const s = await fs.statfs(p);
+          results.push({
+            path: p,
+            total: s.blocks * s.bsize,
+            used: (s.blocks - s.bfree) * s.bsize,
+            free: s.bavail * s.bsize,
+          });
+        } catch {
+          // 该路径已不存在（设备刚拔出）或无权限：跳过
+        }
+      }
+      return results;
+    } catch (e) {
+      console.error('Failed to get storage usages', e);
+      return [];
+    }
+  });
+
   ipcMain.handle('system:get-all-devices', async () => getAllDevices());
 
   ipcMain.handle('system:has-device-watcher', async () => udisks2Available);
