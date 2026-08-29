@@ -308,6 +308,12 @@ const zhHK = {
   'terminal.close': '關閉',
   'terminal.reset_size': '重設大小',
   'terminal.drag_hint': '拖曳調整高度',
+  'terminal.menu.copy': '複製',
+  'terminal.menu.paste': '貼上',
+  'terminal.menu.export_log': '匯出完整日誌',
+  'terminal.menu.clear': '清除螢幕',
+  'terminal.log_exported': '日誌已匯出',
+  'terminal.log_empty': '暫無日誌可匯出',
 
   // ── 回收站 ──
   'tab.trash': '資源回收筒',

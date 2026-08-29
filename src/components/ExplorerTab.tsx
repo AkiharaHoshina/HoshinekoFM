@@ -1150,16 +1150,9 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               </IconButton>
             </div>
           )}
-          {currentPath === 'trash://' && files.length === 0 && (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--md-sys-color-on-surface-variant)' }}>
-              <div style={{ textAlign: 'center' }}>
-                <Icon name="delete" size={48} />
-                <p style={{ marginTop: '12px', fontSize: '14px' }}>{t('trash.empty')}</p>
-              </div>
-            </div>
-          )}
           <div
-            style={{ flex: 1, overflow: 'hidden' }}
+            style={{ flex: 1, overflow: 'hidden', position: 'relative' }}
+            data-drop-target="filelist"
             onDragOver={(e) => {
               e.preventDefault();
               e.dataTransfer.dropEffect = 'copy';
@@ -1257,7 +1250,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                 if (targetPath) {
                   const targetFile = filesForFileListRef.current.find((f) => f.path === targetPath);
                   if (targetFile?.isDirectory && targetPath !== currentPath) {
-                    const dropEffect = e.dataTransfer.dropEffect;
+                    const dropEffect = e.dataTransfer ? e.dataTransfer.dropEffect : null;
                     const operation: "move" | "copy" =
                       dropEffect === 'copy' ? 'copy'
                         : dropEffect === 'move' ? 'move'
@@ -1300,6 +1293,24 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               }
             }}
           >
+            {currentPath === 'trash://' && files.length === 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--md-sys-color-on-surface-variant)',
+                  pointerEvents: 'none',
+                }}
+              >
+                <div style={{ textAlign: 'center' }}>
+                  <Icon name="delete" size={48} />
+                  <p style={{ marginTop: '12px', fontSize: '14px' }}>{t('trash.empty')}</p>
+                </div>
+              </div>
+            )}
             <FileList
               files={sortedFiles}
               selectedFiles={selectedFiles}

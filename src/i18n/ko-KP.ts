@@ -318,6 +318,12 @@ const koKP = {
   'terminal.close': '닫기',
   'terminal.reset_size': '크기 재설정',
   'terminal.drag_hint': '드래그하여 높이 조절',
+  'terminal.menu.copy': '복사',
+  'terminal.menu.paste': '붙여넣기',
+  'terminal.menu.export_log': '전체 로그 내보내기',
+  'terminal.menu.clear': '화면 지우기',
+  'terminal.log_exported': '로그를 내보내였습니다',
+  'terminal.log_empty': '내보낼 로그가 없습니다',
 
   // ── 回收站 ──
   'tab.trash': '휴지통',

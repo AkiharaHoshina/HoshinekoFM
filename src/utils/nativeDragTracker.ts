@@ -8,7 +8,8 @@
  *    收不到 drop，而源窗口会收到一次"幻影 drop-back"。
  *
  * 方案：
- * - 拖拽期间跟踪悬停目标（标签页/文件条目/地址栏胶囊）与位置采样；
+ * - 拖拽期间跟踪悬停目标（标签页/文件条目/文件列表背景/侧边栏/
+ *   地址栏胶囊）与位置采样；
  * - 拖拽事件静默 ≥ SILENCE_MS（事件停止 = 释放或拖出）且光标静止
  *   （最后两个采样点距离 ≤ 阈值）且悬停目标 ≥ HOVER_MS → 在最后悬停
  *   位置合成一个 drop 事件，交给既有处理器（走 dragState 或主进程
@@ -21,6 +22,10 @@
  *   会话结束后不再抑制——晚到的幻影由主进程 claim 仲裁（单次消费 +
  *   源窗口 500ms 让位）返回 consumed 静默处理，绝不误伤下一次
  *   合法的跨窗口拖放。
+ * - 拖拽会话中途出现事件静默（Wayland 事件抖动）导致兜底提前收尾后，
+ *   dragover 恢复到达会重新武装跟踪：一次 400ms 静默不至于让本次
+ *   会话的兜底永久失效。真实 drop 收尾后的残留 dragover 由冷却窗口
+ *   挡掉，不会合成出重复的 drop。
  */
 
 /** 拖拽事件静默多久后判定为"已放下/已拖出" */
@@ -34,6 +39,14 @@ const STILL_WINDOW_MS = 800;
 
 /** 静止判定的位移阈值（像素）：最后两个采样点距离超过该值视为移动中 */
 const STILL_RADIUS_PX = 6;
+
+/** 真实 drop 收尾后忽略残留 dragover 的冷却窗口（毫秒）：防止重新武装
+ *  后由残留事件合成出重复的 drop */
+const REARM_COOLDOWN_MS = 1000;
+
+/** 最近一次真实 DOM drop 的时间戳（0 = 从未发生），dragover 重新武装时
+ *  据此判定是否仍处于冷却期 */
+let lastRealDropAt = 0;
 
 let tracking = false;
 let concluded = false;
@@ -65,6 +78,7 @@ export function startNativeDragTracking() {
   hoverSince = 0;
   recentPoints.length = 0;
   ownDragActive = true;
+  lastRealDropAt = 0;
   clearSilenceTimer();
 }
 
@@ -97,6 +111,8 @@ function clearSilenceTimer() {
 /**
  * 解析光标所在位置的可放置目标。
  * 与 TabBar / FileList / Breadcrumbs 使用相同的选择器，保证兜底路由一致。
+ * 文件列表空白背景也作为目标（bg:filelist）：跨窗口拖放到浏览区空白处时
+ * 兜底才有机会合成 drop，否则真实 drop 未派发时整次拖放静默丢失。
  * 地址栏胶囊没有 data-path，用其文本内容做稳定标识（悬停期间不变）。
  */
 function resolveTargetKey(x: number, y: number): string | null {
@@ -106,6 +122,9 @@ function resolveTargetKey(x: number, y: number): string | null {
   if (tab?.dataset.tabId) return 'tab:' + tab.dataset.tabId;
   const item = el.closest('.file-list-item') as HTMLElement | null;
   if (item?.dataset.path) return 'item:' + item.dataset.path;
+  // 文件浏览区（含空回收站占位等 FileList 未铺满的区域）整体视为背景目标
+  const fileList = el.closest('[data-drop-target], .file-list-container') as HTMLElement | null;
+  if (fileList) return 'bg:filelist';
   const sidebar = el.closest('[data-sidebar-target]') as HTMLElement | null;
   if (sidebar?.dataset.sidebarTarget) return 'sidebar:' + sidebar.dataset.sidebarTarget;
   const bc = el.closest('.breadcrumb-chip, .breadcrumb-item, .breadcrumb-root') as HTMLElement | null;
@@ -131,20 +150,20 @@ function cursorWasStill(now: number): boolean {
   return Math.hypot(last.x - prev.x, last.y - prev.y) <= STILL_RADIUS_PX;
 }
 
-/** 会话结束收尾：清除本窗口的会话期标志，并清理 DragContext 陈旧状态 */
+/** 会话结束收尾：清除本窗口的会话期标志，并清理悬停高亮与 DragContext 陈旧状态 */
 function concludeSession() {
   concluded = true;
   tracking = false;
   lastPoint = null;
   hoverKey = null;
   clearSilenceTimer();
+  // 真实 drop / 被其他窗口消费的收尾路径此前不派发 dragend，
+  // 导致 DragContext 残留陈旧 dragState、文件夹行/标签页悬停高亮卡死——
+  // 这里补发合成 dragend 让 FileList/TabBar/Sidebar/DragContext 的清理
+  // 逻辑照常执行（foreign 会话同样需要清高亮）。
+  document.dispatchEvent(new DragEvent('dragend'));
   if (trackingKind === 'own') {
     ownDragActive = false;
-    // 真实 drop / 被其他窗口消费的收尾路径此前不派发 dragend，
-    // 导致 DragContext 残留陈旧 dragState——下一次拖入本窗口的
-    // drop 会被容器误判为同窗口拖放而静默返回。这里补发合成 dragend
-    // 让 FileList/DragContext 的清理逻辑照常执行。
-    document.dispatchEvent(new DragEvent('dragend'));
   }
 }
 
@@ -207,17 +226,35 @@ function onSilence() {
   }
 }
 
+/**
+ * 以外部拖拽身份武装悬停跟踪（dragenter 进入本窗口，或会话中途静默
+ * 收尾后 dragover 恢复到达）。当前悬停目标留待首个 dragover 采样解析。
+ */
+function armForeignTracking() {
+  tracking = true;
+  concluded = false;
+  trackingKind = 'foreign';
+  lastPoint = null;
+  hoverKey = null;
+  hoverSince = Date.now();
+  recentPoints.length = 0;
+}
+
 function onDragEvent(e: DragEvent) {
   if (e.type === 'dragenter' && !tracking) {
     // 外部/跨窗口拖拽进入本窗口：武装悬停跟踪，
     // 即使真实 drop 事件不派发也能靠合成 drop 兜底
-    tracking = true;
-    concluded = false;
-    trackingKind = 'foreign';
-    lastPoint = null;
-    hoverKey = null;
-    hoverSince = Date.now();
-    recentPoints.length = 0;
+    armForeignTracking();
+  } else if (
+    e.type === 'dragover' &&
+    (!tracking || concluded) &&
+    Date.now() - lastRealDropAt >= REARM_COOLDOWN_MS
+  ) {
+    // 会话中途的事件静默曾让兜底提前收尾（concluded），但 dragover
+    // 恢复到达说明拖拽仍在进行：重新武装，一次 400ms 静默不至于让
+    // 本次会话的兜底永久失效。真实 drop 收尾后的残留 dragover 由
+    // 冷却窗口挡掉，不会合成出重复的 drop。
+    armForeignTracking();
   }
   if (!tracking || concluded) return;
   if (e.type === 'dragover') {
@@ -233,7 +270,8 @@ function onDragEvent(e: DragEvent) {
     clearSilenceTimer();
     silenceTimer = setTimeout(onSilence, SILENCE_MS);
   } else if (e.type === 'drop') {
-    // 真实 DOM drop 已发生：正常路径处理，tracker 只收尾
+    // 真实 DOM drop 已发生：记录时间戳（供重新武装冷却判定），tracker 只收尾
+    lastRealDropAt = Date.now();
     concludeSession();
   }
 }

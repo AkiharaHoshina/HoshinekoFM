@@ -155,6 +155,17 @@ export interface IElectronAPI {
     ptyOnData: (pid: number, callback: (data: string) => void) => () => void;
     ptyOnExit: (pid: number, callback: () => void) => () => void;
 
+    // 终端右键菜单辅助
+    /** 写入系统剪贴板文本（终端「复制」） */
+    ptyClipboardWrite: (text: string) => Promise<void>;
+    /** 读取系统剪贴板文本（终端「粘贴」） */
+    ptyClipboardRead: () => Promise<string>;
+    /**
+     * 导出完整终端日志到 txt（保存对话框 + 写文件）。
+     * 返回 ok = 已写入成功；canceled = 用户在对话框中取消。
+     */
+    ptyExportLog: (content: string) => Promise<{ ok: boolean; canceled: boolean; path?: string }>;
+
     // File watching
     watchDirectory: (dir: string) => Promise<void>;
     unwatchDirectory: (dir: string) => Promise<void>;

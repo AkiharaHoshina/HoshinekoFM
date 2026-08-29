@@ -318,6 +318,12 @@ const enUS = {
   'terminal.close': 'Close',
   'terminal.reset_size': 'Reset size',
   'terminal.drag_hint': 'Drag to resize',
+  'terminal.menu.copy': 'Copy',
+  'terminal.menu.paste': 'Paste',
+  'terminal.menu.export_log': 'Export full log',
+  'terminal.menu.clear': 'Clear screen',
+  'terminal.log_exported': 'Log exported',
+  'terminal.log_empty': 'Nothing to export yet',
 
   // ── 回收站 ──
   'tab.trash': 'Trash',

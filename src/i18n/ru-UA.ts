@@ -349,6 +349,12 @@ const ruUA = {
   'terminal.close': 'Закрыть',
   'terminal.reset_size': 'Сбросить размер',
   'terminal.drag_hint': 'Перетащите, чтобы изменить высоту',
+  'terminal.menu.copy': 'Копировать',
+  'terminal.menu.paste': 'Вставить',
+  'terminal.menu.export_log': 'Экспортировать весь журнал',
+  'terminal.menu.clear': 'Очистить экран',
+  'terminal.log_exported': 'Журнал экспортирован',
+  'terminal.log_empty': 'Журнал пока пуст',
 
   // ── 回收站 ──
   'tab.trash': 'Корзина',

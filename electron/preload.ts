@@ -91,6 +91,11 @@ contextBridge.exposeInMainWorld('electron', {
     return () => ipcRenderer.removeListener(`terminal:exit:${pid}`, handler);
   },
 
+  // 终端右键菜单辅助：系统剪贴板读写与日志导出
+  ptyClipboardWrite: (text: string) => ipcRenderer.invoke('terminal:clipboard-write', text),
+  ptyClipboardRead: () => ipcRenderer.invoke('terminal:clipboard-read') as Promise<string>,
+  ptyExportLog: (content: string) => ipcRenderer.invoke('terminal:export-log', content) as Promise<{ ok: boolean; canceled: boolean; path?: string }>,
+
   // File watching
   watchDirectory: (dir: string) => ipcRenderer.invoke('fs:watch-dir', dir),
   unwatchDirectory: (dir: string) => ipcRenderer.invoke('fs:unwatch-dir', dir),

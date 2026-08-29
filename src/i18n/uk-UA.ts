@@ -346,6 +346,12 @@ const ukUA = {
   'terminal.close': 'Закрити',
   'terminal.reset_size': 'Скинути розмір',
   'terminal.drag_hint': 'Перетягніть, щоб змінити висоту',
+  'terminal.menu.copy': 'Копіювати',
+  'terminal.menu.paste': 'Вставити',
+  'terminal.menu.export_log': 'Експортувати весь журнал',
+  'terminal.menu.clear': 'Очистити екран',
+  'terminal.log_exported': 'Журнал експортовано',
+  'terminal.log_empty': 'Журнал поки порожній',
 
   // ── 回收站 ──
   'tab.trash': 'Кошик',

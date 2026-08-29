@@ -308,6 +308,12 @@ const zhCN = {
   'terminal.close': '关闭',
   'terminal.reset_size': '重置大小',
   'terminal.drag_hint': '拖动调整高度',
+  'terminal.menu.copy': '复制',
+  'terminal.menu.paste': '粘贴',
+  'terminal.menu.export_log': '导出完整日志',
+  'terminal.menu.clear': '清除屏幕',
+  'terminal.log_exported': '日志已导出',
+  'terminal.log_empty': '暂无日志可导出',
 
   // ── 回收站 ──
   'tab.trash': '回收站',

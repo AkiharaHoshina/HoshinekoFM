@@ -1,6 +1,7 @@
-import { ipcMain, BrowserWindow, type WebContents } from 'electron';
+import { ipcMain, BrowserWindow, clipboard, dialog, type WebContents } from 'electron';
 import * as pty from 'node-pty';
 import os from 'os';
+import fs from 'fs';
 
 interface PtySession {
   process: pty.IPty;
@@ -95,6 +96,49 @@ export function setupPtyHandlers() {
     if (session) {
       session.process.kill();
       sessions.delete(pid);
+    }
+  });
+
+  // ── 终端右键菜单辅助 IPC ──
+
+  /**
+   * 写入系统剪贴板（终端「复制」）。走主进程 clipboard 模块，
+   * 避免 file:// 页面下 navigator.clipboard 的权限/焦点限制。
+   */
+  ipcMain.handle('terminal:clipboard-write', (_event, text: string) => {
+    if (typeof text === 'string' && text.length > 0) {
+      clipboard.writeText(text);
+    }
+  });
+
+  /** 读取系统剪贴板文本（终端「粘贴」）。 */
+  ipcMain.handle('terminal:clipboard-read', () => clipboard.readText());
+
+  /**
+   * 导出完整终端日志到 txt 文件（终端「导出完整日志」）：
+   * 弹保存对话框，写入渲染端传来的纯文本内容。
+   * 返回 { ok, canceled, path }：ok = 已写入成功；canceled = 用户取消。
+   */
+  ipcMain.handle('terminal:export-log', async (event, content: string) => {
+    if (typeof content !== 'string') return { ok: false, canceled: false };
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const options: Electron.SaveDialogOptions = {
+      title: 'Export terminal log',
+      defaultPath: `${os.homedir()}/terminal-log-${stamp}.txt`,
+      filters: [{ name: 'Text', extensions: ['txt'] }],
+    };
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const result = await (win
+      ? dialog.showSaveDialog(win, options)
+      : dialog.showSaveDialog(options));
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+
+    try {
+      fs.writeFileSync(result.filePath, content, 'utf8');
+      return { ok: true, canceled: false, path: result.filePath };
+    } catch {
+      return { ok: false, canceled: false };
     }
   });
 }

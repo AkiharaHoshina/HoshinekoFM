@@ -308,6 +308,12 @@ const jaJP = {
   'terminal.close': '閉じる',
   'terminal.reset_size': 'サイズをリセット',
   'terminal.drag_hint': 'ドラッグで高さを調整',
+  'terminal.menu.copy': 'コピー',
+  'terminal.menu.paste': '貼り付け',
+  'terminal.menu.export_log': '完全なログをエクスポート',
+  'terminal.menu.clear': '画面をクリア',
+  'terminal.log_exported': 'ログをエクスポートしました',
+  'terminal.log_empty': 'エクスポートするログがありません',
 
   // ── 回收站 ──
   'tab.trash': 'ゴミ箱',
