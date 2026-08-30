@@ -43,6 +43,19 @@ import {
   type ConflictResult,
 } from '../utils/fileConflict';
 
+/**
+ * 自然排序 collator（惰性单例）：数字段按数值比较，
+ * 避免逐字符比较把多位数拆开（file2 < file3 < file23，
+ * 而 localeCompare 默认会把 3 排在 23 后面）；大小写不敏感。
+ */
+let naturalCollator: Intl.Collator | null = null;
+function getNaturalCollator(): Intl.Collator {
+  if (!naturalCollator) {
+    naturalCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+  }
+  return naturalCollator;
+}
+
 interface ExplorerTabProps {
     tabId: string;
     isActive: boolean;
@@ -637,7 +650,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       let result = 0;
       switch (sortBy) {
       case 'name':
-        result = a.name.localeCompare(b.name);
+        result = getNaturalCollator().compare(a.name, b.name);
         break;
       case 'size':
         result = a.size - b.size;

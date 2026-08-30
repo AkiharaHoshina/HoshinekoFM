@@ -469,6 +469,11 @@
 - 前端两处（`ThemeColorDialog.applyWallpaper` 与 `ThemeService` case `'wallpaper'`）：`res.css` 存在照旧注入；否则用 `seedToCss(sourceColor, {scheme, contrast})` 生成整套 CSS（与预设/自定义同一 HCT 引擎）；`scheme-smart` 无 JS 对应，自动回退 tonal-spot
 - 验证：`npx tsc -b`、`npm run lint`、`npm run build` 全部通过；Electron 实测解码+直方图取色（图标 → `#19b7f4`）
 
+### A-Z 排序自然数修复
+
+- 问题：名称排序用逐字符 `localeCompare`，多位数被拆开比较——`3` 排在 `23` 后面（正序应为 2 < 3 < 10 < 23）
+- 修复：文件列表名称排序改用惰性单例 `Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })`（数字段按数值比较，大小写不敏感）；面包屑特殊挂载菜单的挂载点排序同样加 `{ numeric: true }`（`sda2` 正确排在 `sda10` 前）
+
 - 版本号升至 `0.11.13`
 
 

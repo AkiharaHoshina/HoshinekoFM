@@ -202,7 +202,8 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       .filter(([mp]) => mp.split('/').filter(Boolean).length <= 2)
       .map(([mp, info]) => ({ mountpoint: mp, source: info.source, config: MOUNT_SOURCE_DISPLAY[info.source] }))
       .filter((e) => e.config && e.mountpoint !== '/dev')
-      .sort((a, b) => a.mountpoint.localeCompare(b.mountpoint));
+      // 自然排序：数字段按数值比较（sda2 在 sda10 前，而不是逐字符把 10 拆成 1 和 0）
+      .sort((a, b) => a.mountpoint.localeCompare(b.mountpoint, undefined, { numeric: true }));
   }, [mountMap]);
 
   useEffect(() => {
