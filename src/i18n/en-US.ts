@@ -239,11 +239,18 @@ const enUS = {
   'dashboard.total': 'Total',
   'dashboard.loading': 'Loading statistics...',
   'dashboard.pinned': 'Pinned',
-  'dashboard.add': 'Add',
-  'dashboard.pin_folder': 'Pin Folder',
-  'dashboard.pin_file': 'Pin File',
-  'dashboard.recent': 'Recent',
+  'dashboard.add': 'Add',  'dashboard.recent': 'Recent',
+
+  'dashboard.already_pinned': 'Already pinned',
   'dashboard.no_recent': 'No recently accessed files.',
+  'picker.title_file': 'Select File',
+  'picker.title_folder': 'Select Folder',
+  'picker.title_files': 'Select Files',
+
+  'picker.title_items': 'Select Items',
+  'picker.select': 'Select',
+  'picker.cancel': 'Cancel',
+  'picker.selected_count': (n: number) => `${n} selected`,
   'dashboard.unpin_tooltip': 'Unpin',
 
   // ── 选择模式 ──
@@ -287,6 +294,14 @@ const enUS = {
   'drag.trash_restore_title': 'Restore to this location?',
   'drag.trash_restore_message': (dir: string) => `Restore items to "${dir}"? Restoring moves them out of the trash.`,
   'breadcrumbs.go_to_dev': 'Go to device directory',
+
+  'breadcrumbs.go_to_devpts': 'Go to virtual terminals',
+
+  'breadcrumbs.go_to_proc': 'Go to kernel info',
+
+  'breadcrumbs.go_to_sysfs': 'Go to kernel objects',
+
+  'breadcrumbs.go_to_tmpfs': 'Go to temporary directory',
   'breadcrumbs.root_title': (mp: string) => `Root Directory\n${mp}`,
   'breadcrumbs.dev': 'Devices',
   'breadcrumbs.dev_title': (mp: string) => `Device Directory\n${mp}`,

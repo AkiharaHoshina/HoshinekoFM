@@ -142,13 +142,13 @@ export const ColorPickerDialog: React.FC<ColorPickerDialogProps> = ({ open, init
           />
         </div>
 
-        {/* 预设种子色 */}
+        {/* 预设种子色：快捷取色 chip，不做选中态（避免与主题设置的预设选中状态混淆） */}
         <div className="color-picker-presets">
           {THEME_PRESETS.map((p) => (
             <button
               key={p.id}
               type="button"
-              className={`color-picker-preset${hex === p.seed.toUpperCase() ? ' color-picker-preset--selected' : ''}`}
+              className="color-picker-preset"
               style={{ backgroundColor: p.seed }}
               title={p.seed}
               onClick={() => {

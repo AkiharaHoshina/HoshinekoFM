@@ -230,11 +230,18 @@ const zhAC = {
   'dashboard.total': '总量',
   'dashboard.loading': '正在加载统计数据...',
   'dashboard.pinned': '固定项',
-  'dashboard.add': '添加',
-  'dashboard.pin_folder': '固定文件夹',
-  'dashboard.pin_file': '固定文件',
-  'dashboard.recent': '最近访问',
+  'dashboard.add': '添加',  'dashboard.recent': '最近访问',
+
+  'dashboard.already_pinned': '该条目已固定',
   'dashboard.no_recent': '暂无最近访问的文件。',
+  'picker.title_file': '选择文件',
+  'picker.title_folder': '选择文件夹',
+  'picker.title_files': '选择文件',
+
+  'picker.title_items': '选择项目',
+  'picker.select': '选择',
+  'picker.cancel': '取消',
+  'picker.selected_count': (n: number) => `已选择 ${n} 项`,
   'dashboard.unpin_tooltip': '取消固定',
 
   // ── 选择模式 ──
@@ -278,6 +285,14 @@ const zhAC = {
   'drag.trash_restore_title': '还原到该位置？',
   'drag.trash_restore_message': (dir: string) => `将项目还原到"${dir}"？还原会将其移出回收站。`,
   'breadcrumbs.go_to_dev': '转到设备目录',
+
+  'breadcrumbs.go_to_devpts': '转到虚拟终端',
+
+  'breadcrumbs.go_to_proc': '转到内核信息',
+
+  'breadcrumbs.go_to_sysfs': '转到内核对象',
+
+  'breadcrumbs.go_to_tmpfs': '转到临时目录',
   'breadcrumbs.root_title': (mp: string) => `根目录\n${mp}`,
   'breadcrumbs.dev': '设备',
   'breadcrumbs.dev_title': (mp: string) => `设备目录\n${mp}`,

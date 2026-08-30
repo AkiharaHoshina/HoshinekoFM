@@ -228,11 +228,18 @@ const zhCT = {
   'dashboard.total': '總量',
   'dashboard.loading': '載入緊統計數據...',
   'dashboard.pinned': '固定項',
-  'dashboard.add': '加入',
-  'dashboard.pin_folder': '固定資料夾',
-  'dashboard.pin_file': '固定檔案',
-  'dashboard.recent': '最近存取',
+  'dashboard.add': '加入',  'dashboard.recent': '最近存取',
+
+  'dashboard.already_pinned': '呢個項目已經固定咗',
   'dashboard.no_recent': '暫時冇最近存取嘅檔案。',
+  'picker.title_file': '選擇檔案',
+  'picker.title_folder': '選擇資料夾',
+  'picker.title_files': '選擇檔案',
+
+  'picker.title_items': '選擇項目',
+  'picker.select': '選擇',
+  'picker.cancel': '取消',
+  'picker.selected_count': (n: number) => `已選取 ${n} 項`,
   'dashboard.unpin_tooltip': '取消固定',
 
   // ── 選擇模式 ──
@@ -276,6 +283,14 @@ const zhCT = {
   'drag.trash_restore_title': '還原到呢個位置？',
   'drag.trash_restore_message': (dir: string) => `將項目還原到「${dir}」？還原會將其移出垃圾桶。`,
   'breadcrumbs.go_to_dev': '去裝置目錄',
+
+  'breadcrumbs.go_to_devpts': '去虛擬終端',
+
+  'breadcrumbs.go_to_proc': '去核心資訊',
+
+  'breadcrumbs.go_to_sysfs': '去核心物件',
+
+  'breadcrumbs.go_to_tmpfs': '去臨時目錄',
   'breadcrumbs.root_title': (mp: string) => `根目錄\n${mp}`,
   'breadcrumbs.dev': '設備',
   'breadcrumbs.dev_title': (mp: string) => `設備目錄\n${mp}`,

@@ -8,7 +8,7 @@ export type ThemeKind = 'preset' | 'custom' | 'system' | 'wallpaper' | 'matugen'
 export interface ThemeConfig {
   /** 来源类别 */
   kind: ThemeKind;
-  /** 预设/自定义的种子色（#RRGGBB） */
+  /** 种子色（#RRGGBB）：预设/自定义的所选颜色；壁纸取色时保存测算出的原子色 */
   seed?: string;
   /** 预设 id（对应 THEME_PRESETS 的 id 项） */
   presetId?: string;

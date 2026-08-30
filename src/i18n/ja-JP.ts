@@ -228,11 +228,18 @@ const jaJP = {
   'dashboard.total': '合計',
   'dashboard.loading': '統計データを読み込み中...',
   'dashboard.pinned': 'ピン留めされた項目',
-  'dashboard.add': '追加',
-  'dashboard.pin_folder': 'フォルダーを固定',
-  'dashboard.pin_file': 'ファイルを固定',
-  'dashboard.recent': '最近使用した項目',
+  'dashboard.add': '追加',  'dashboard.recent': '最近使用した項目',
+
+  'dashboard.already_pinned': '既にピン留めされています',
   'dashboard.no_recent': '最近使用したファイルはありません。',
+  'picker.title_file': 'ファイルを選択',
+  'picker.title_folder': 'フォルダを選択',
+  'picker.title_files': 'ファイルを選択',
+
+  'picker.title_items': '項目を選択',
+  'picker.select': '選択',
+  'picker.cancel': 'キャンセル',
+  'picker.selected_count': (n: number) => `${n} 件選択`,
   'dashboard.unpin_tooltip': 'ピン留めを外す',
 
   // ── 选择模式 ──
@@ -276,6 +283,14 @@ const jaJP = {
   'drag.trash_restore_title': 'ここに元に戻しますか？',
   'drag.trash_restore_message': (dir: string) => `項目を「${dir}」に元に戻しますか？ゴミ箱から移動されます。`,
   'breadcrumbs.go_to_dev': 'デバイスディレクトリへ移動',
+
+  'breadcrumbs.go_to_devpts': '仮想端末へ移動',
+
+  'breadcrumbs.go_to_proc': 'カーネル情報へ移動',
+
+  'breadcrumbs.go_to_sysfs': 'カーネルオブジェクトへ移動',
+
+  'breadcrumbs.go_to_tmpfs': '一時ディレクトリへ移動',
   'breadcrumbs.root_title': (mp: string) => `ルートディレクトリ\n${mp}`,
   'breadcrumbs.dev': 'デバイス',
   'breadcrumbs.dev_title': (mp: string) => `デバイスディレクトリ\n${mp}`,

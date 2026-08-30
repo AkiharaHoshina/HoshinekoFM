@@ -39,6 +39,8 @@ interface MountDisplayConfig {
   icon: string;
   /** i18n key：Chip 标签文字 */
   labelKey: string;
+  /** i18n key：右键跳转菜单项文字（统一带「转到」语义前缀） */
+  goToKey: string;
   /** i18n key：Chip tooltip，参数为 mountpoint 路径 */
   titleKey: string;
   /** 是否在标签后追加 mountpoint 最后一段路径名 */
@@ -47,11 +49,11 @@ interface MountDisplayConfig {
 
 /** mountSource → 显示配置。通过 getMountMap() 返回的 source 字段动态匹配。 */
 const MOUNT_SOURCE_DISPLAY: Record<string, MountDisplayConfig> = {
-  devtmpfs: { icon: 'devices', labelKey: 'breadcrumbs.dev', titleKey: 'breadcrumbs.dev_title', showPath: false },
-  devpts:   { icon: 'terminal_2', labelKey: 'breadcrumbs.devpts', titleKey: 'breadcrumbs.devpts_title', showPath: false },
-  proc:     { icon: 'developer_board', labelKey: 'breadcrumbs.proc', titleKey: 'breadcrumbs.proc_title', showPath: false },
-  sysfs:    { icon: 'stacks', labelKey: 'breadcrumbs.sysfs', titleKey: 'breadcrumbs.sysfs_title', showPath: false },
-  tmpfs:    { icon: 'auto_delete', labelKey: 'breadcrumbs.tmpfs', titleKey: 'breadcrumbs.tmpfs_title', showPath: true },
+  devtmpfs: { icon: 'devices', labelKey: 'breadcrumbs.dev', goToKey: 'breadcrumbs.go_to_dev', titleKey: 'breadcrumbs.dev_title', showPath: false },
+  devpts:   { icon: 'terminal_2', labelKey: 'breadcrumbs.devpts', goToKey: 'breadcrumbs.go_to_devpts', titleKey: 'breadcrumbs.devpts_title', showPath: false },
+  proc:     { icon: 'developer_board', labelKey: 'breadcrumbs.proc', goToKey: 'breadcrumbs.go_to_proc', titleKey: 'breadcrumbs.proc_title', showPath: false },
+  sysfs:    { icon: 'stacks', labelKey: 'breadcrumbs.sysfs', goToKey: 'breadcrumbs.go_to_sysfs', titleKey: 'breadcrumbs.sysfs_title', showPath: false },
+  tmpfs:    { icon: 'auto_delete', labelKey: 'breadcrumbs.tmpfs', goToKey: 'breadcrumbs.go_to_tmpfs', titleKey: 'breadcrumbs.tmpfs_title', showPath: true },
 };
 
 /**
@@ -139,9 +141,6 @@ interface SymlinkInfo {
 interface BreadcrumbCtxMenuState {
   x: number;
   y: number;
-  realPath: string;
-  /** 当 Chip 是软链接时，记录软链接目标路径 */
-  symlinkTarget?: string;
 }
 
 export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
@@ -326,18 +325,15 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   );
 
   const handleBreadcrumbContextMenu = useCallback(
-    (e: React.MouseEvent, realPath: string) => {
+    (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      const info = symlinkInfo.get(realPath);
       setBreadcrumbCtxMenu({
         x: e.clientX,
         y: e.clientY,
-        realPath,
-        symlinkTarget: info?.isSymlink && info.target ? info.target : undefined,
       });
     },
-    [symlinkInfo],
+    [],
   );
 
   const matchedHome = findBestHome(sanitizedPath, homeMap);
@@ -414,7 +410,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
                 onDragEnter={(e) => handleDragEnter(e, segmentPath)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, segmentPath)}
-                onContextMenu={(e) => handleBreadcrumbContextMenu(e, segmentPath)}
+                onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
                 className={`breadcrumb-chip${dragOverPath === segmentPath ? " drag-over" : ""}`}
               >
                 <Icon name={segSpecial.config.icon} slot="icon" />
@@ -444,7 +440,6 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
             onDragEnter={(e) => handleDragEnter(e, segmentPath)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, segmentPath)}
-            onContextMenu={(e) => handleBreadcrumbContextMenu(e, segmentPath)}
             className={`breadcrumb-item${isSymlinkDir ? " symlink" : ""}${dragOverPath === segmentPath ? " drag-over" : ""}`}
             style={{ fontWeight: isLast ? 600 : 400 }}
             title={
@@ -460,23 +455,12 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     });
   };
 
-  // 所有胶囊（特殊挂载/回收站/主页/根目录/普通路径段）统一右键菜单：
-  // 软链接目标 + 回收站 + 主页 + 根目录 + 设备目录，互相跳转补齐，
-  // 与当前胶囊相同的入口自动排除。
-  // 分组：第一组 = 主页 + 根目录 + 回收站；第二组 = 其他特殊目录（/dev / 挂载设备）。
+  // 所有胶囊统一为同一份右键跳转菜单：与「主页」胶囊在主页时的
+  // 内容、分组、顺序完全一致——第一组 = 主页 + 根目录 + 回收站；
+  // 第二组 = 设备目录（/dev）+ 特殊挂载。不再按当前胶囊动态增删条目。
   const ctxMenuNode = breadcrumbCtxMenu ? (() => {
     const items: ContextMenuItem[] = [];
-    if (breadcrumbCtxMenu.symlinkTarget) {
-      items.push({
-        label: t("symlink.go_to_target"),
-        icon: "arrow_forward",
-        action: () => {
-          onNavigate(breadcrumbCtxMenu.symlinkTarget!);
-          setBreadcrumbCtxMenu(null);
-        },
-      });
-    }
-    if (ownHome && breadcrumbCtxMenu.realPath !== ownHome) {
+    if (ownHome) {
       items.push({
         label: t("breadcrumbs.go_to_home"),
         icon: "home",
@@ -486,55 +470,48 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
         },
       });
     }
-    if (breadcrumbCtxMenu.realPath !== "/") {
-      items.push({
+    items.push(
+      {
         label: t("breadcrumbs.go_to_root"),
         icon: "tag",
         action: () => {
           onNavigate("/");
           setBreadcrumbCtxMenu(null);
         },
-      });
-    }
-    if (breadcrumbCtxMenu.realPath !== "trash://") {
-      items.push({
+      },
+      {
         label: t("breadcrumbs.go_to_trash"),
         icon: "delete",
         action: () => {
           onNavigate("trash://");
           setBreadcrumbCtxMenu(null);
         },
-      });
-    }
+      },
+    );
 
-    const specialGroup: ContextMenuItem[] = [];
-    if (breadcrumbCtxMenu.realPath !== "/dev") {
-      specialGroup.push({
+    const specialGroup: ContextMenuItem[] = [
+      {
         label: t("breadcrumbs.go_to_dev"),
         icon: "memory",
         action: () => {
           onNavigate("/dev");
           setBreadcrumbCtxMenu(null);
         },
-      });
-    }
-    specialGroup.push(...specialMountMenuEntries
-      .filter((s) => s.mountpoint !== breadcrumbCtxMenu.realPath)
-      .map((s) => ({
+      },
+      // 特殊挂载入口与固定入口一致：标签统一带「转到」前缀（goToKey）
+      ...specialMountMenuEntries.map((s) => ({
         label: s.config.showPath
-          ? `${t(s.config.labelKey)} ${s.mountpoint.split('/').filter(Boolean).pop()}`
-          : t(s.config.labelKey),
+          ? `${t(s.config.goToKey)} ${s.mountpoint.split('/').filter(Boolean).pop()}`
+          : t(s.config.goToKey),
         icon: s.config.icon,
         action: () => {
           onNavigate(s.mountpoint);
           setBreadcrumbCtxMenu(null);
         },
-      })));
+      })),
+    ];
 
-    if (specialGroup.length > 0) {
-      items.push({ divider: true, label: "", action: () => {} });
-      items.push(...specialGroup);
-    }
+    items.push({ divider: true, label: "", action: () => {} }, ...specialGroup);
 
     return (
       <ContextMenu
@@ -558,7 +535,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
           onDragEnter={(e) => handleDragEnter(e, "trash://")}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, "trash://")}
-          onContextMenu={(e) => handleBreadcrumbContextMenu(e, "trash://")}
+          onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
           className={`breadcrumb-chip${dragOverPath === "trash://" ? " drag-over" : ""}`}
         >
           <Icon name="delete" slot="icon" />
@@ -592,7 +569,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
           onDragEnter={(e) => handleDragEnter(e, homeMatchPath)}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, homeMatchPath)}
-          onContextMenu={(e) => handleBreadcrumbContextMenu(e, homeMatchPath)}
+          onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
           className={`breadcrumb-chip${dragOverPath === homeMatchPath ? " drag-over" : ""}`}
         >
           <Icon name="home" slot="icon" />
@@ -610,7 +587,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
             <IconButton
               variant="standard"
               onClick={() => onNavigate("/")}
-              onContextMenu={(e) => handleBreadcrumbContextMenu(e, "/")}
+              onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
               className="breadcrumb-root"
               title={t("breadcrumbs.root_title", "/")}
             >
@@ -638,7 +615,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
                 onDragEnter={(e) => handleDragEnter(e, mountPath)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, mountPath)}
-                onContextMenu={(e) => handleBreadcrumbContextMenu(e, mountPath)}
+                onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
                 className={`breadcrumb-chip${dragOverPath === mountPath ? " drag-over" : ""}`}
               >
                 <Icon name={matchedSpecial!.config.icon} slot="icon" />
@@ -659,7 +636,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
           onDragEnter={(e) => handleDragEnter(e, "/")}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, "/")}
-          onContextMenu={(e) => handleBreadcrumbContextMenu(e, "/")}
+          onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
           className={`breadcrumb-chip${dragOverPath === "/" ? " drag-over" : ""}`}
         >
           <Icon name="tag" slot="icon" />
@@ -676,7 +653,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
           onDragEnter={(e) => handleDragEnter(e, "/")}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, "/")}
-          onContextMenu={(e) => handleBreadcrumbContextMenu(e, "/")}
+          onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
           className={`breadcrumb-root${dragOverPath === "/" ? " drag-over" : ""}`}
           title={t("breadcrumbs.root_title", "/")}
         >

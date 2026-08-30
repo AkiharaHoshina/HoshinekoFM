@@ -20,8 +20,6 @@ interface NavigationRailProps {
 }
 
 const labelToKey: Record<string, string> = {
-  'Dashboard': 'nav.dashboard',
-  'Home': 'nav.home',
   'Files': 'nav.files',
   'Terminal': 'nav.terminal',
   'Settings': 'nav.settings'

@@ -95,12 +95,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 主题颜色入口行的种子色色点 */
+/* 主题颜色入口行的种子色色点。
+   默认显示当前实际应用主题的主色（matugen/system 等无种子色的来源
+   也跟随主题变化）；有种子色（预设/自定义/壁纸取色）时由行内样式覆盖 */
 .settings-theme-dot {
   width: 20px;
   height: 20px;
   border-radius: 50%;
   border: 1px solid var(--md-sys-color-outline);
-  background-color: var(--md-sys-color-outline-variant);
+  background-color: var(--md-sys-color-primary);
   flex-shrink: 0;
 }

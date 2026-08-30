@@ -51,46 +51,60 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在打开时同步
   }, [open]);
 
-  /** 选择预设色盘：生成 CSS 并全局即时预览 */
+  /** 选择预设色盘：生成 CSS 并全局即时预览（含跨窗口广播） */
   const selectPreset = useCallback((seed: string, presetId: string) => {
     const cfg: ThemeConfig = { kind: 'preset', seed, presetId, scheme: 'scheme-tonal-spot', contrast: 0 };
     setDraft(cfg);
-    void ThemeService.applyTheme(cfg);
+    void ThemeService.applyTheme(cfg).then(() => ThemeService.broadcastPreview());
   }, []);
 
   /**
    * 应用壁纸取色配置：先经 matugen 生成并注入预览 CSS；
    * matugen 缺失/失败时后端返回种子色（fallback），用 JS HCT 引擎
    * （seedToCss，与预设/自定义同一引擎）生成 CSS。都失败才 toast 报错。
+   * 成功时把后端返回的种子色（原子色）存进草稿 seed——保存后设置主页
+   * 的色点/图标能显示壁纸测算出的原子色。
    */
   const applyWallpaper = useCallback(async (path: string) => {
     if (!window.electron?.genWallpaperTheme) return;
-    const cfg: ThemeConfig = {
+    const baseCfg: ThemeConfig = {
       kind: 'wallpaper',
       wallpaperPath: path,
       scheme: dmsInfo.scheme ?? 'scheme-tonal-spot',
       contrast: dmsInfo.contrast ?? 0,
     };
-    setDraft(cfg);
+    setDraft(baseCfg);
     setWallpaperBusy(true);
     try {
       const res = await window.electron.genWallpaperTheme(
         path,
-        cfg.scheme ?? 'scheme-tonal-spot',
-        cfg.contrast ?? 0,
+        baseCfg.scheme ?? 'scheme-tonal-spot',
+        baseCfg.contrast ?? 0,
       );
+      let previewed = false;
       if (res.success && res.css) {
         ThemeService.injectCss(res.css);
+        previewed = true;
       } else if (res.success && res.sourceColor) {
         const css = seedToCss(res.sourceColor, {
-          scheme: cfg.scheme,
-          contrast: cfg.contrast,
+          scheme: baseCfg.scheme,
+          contrast: baseCfg.contrast,
         });
-        if (css) ThemeService.injectCss(css);
-        else showToast(t('theme.generate_failed'), 'error');
+        if (css) {
+          ThemeService.injectCss(css);
+          previewed = true;
+        } else {
+          showToast(t('theme.generate_failed'), 'error');
+        }
       } else {
         showToast(t('theme.generate_failed'), 'error');
       }
+      if (previewed && res.sourceColor) {
+        // 补存测算出的原子色：保存后 settings.theme 携带 seed
+        setDraft({ ...baseCfg, seed: res.sourceColor });
+      }
+      // 跨窗口实时同步：壁纸取色结果立即广播到所有窗口
+      ThemeService.broadcastPreview();
     } finally {
       setWallpaperBusy(false);
     }
@@ -112,32 +126,34 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
     }
   }, [applyWallpaper, wallpaperBusy]);
 
-  /** 「选择壁纸」按钮：直接弹出文件选择器，用户自主选图 */
+  /** 「选择壁纸」按钮：打开内置文件选择器，用户自主选图 */
   const pickWallpaper = useCallback(async () => {
     if (!window.electron || wallpaperBusy) return;
-    const path = await window.electron.pickFile();
+    const picked = await window.electron.openPicker({ mode: 'file' });
+    const path = picked?.[0];
     if (!path) return; // 用户取消选择
     await applyWallpaper(path);
   }, [applyWallpaper, wallpaperBusy]);
 
-  /** 「导入 matugen 主题」按钮：读取 ~/.config/matugen/theme.css 并即时预览 */
+  /** 「导入 matugen 主题」按钮：读取 ~/.config/matugen/theme.css 并即时预览（含跨窗口广播） */
   const importMatugen = useCallback(async () => {
     const cfg: ThemeConfig = { kind: 'matugen' };
     setDraft(cfg);
     const ok = await ThemeService.loadTheme();
-    if (!ok) showToast(t('theme.matugen_not_found'), 'error');
+    if (ok) ThemeService.broadcastPreview();
+    else showToast(t('theme.matugen_not_found'), 'error');
   }, []);
 
-  /** 调色盘确定：以所选颜色为种子生成自定义主题 */
+  /** 调色盘确定：以所选颜色为种子生成自定义主题（含跨窗口广播） */
   const handlePickerClose = useCallback((color: string | null) => {
     setPickerOpen(false);
     if (!color) return;
     const cfg: ThemeConfig = { kind: 'custom', seed: color, scheme: 'scheme-tonal-spot', contrast: 0 };
     setDraft(cfg);
-    void ThemeService.applyTheme(cfg);
+    void ThemeService.applyTheme(cfg).then(() => ThemeService.broadcastPreview());
   }, []);
 
-  /** 取消：回滚快照并关闭 */
+  /** 取消：回滚快照并关闭；其他窗口同步回退到已保存主题 */
   const handleCancel = () => {
     // md-dialog 关闭时（含程序化 open=false）都会派发 close 事件；
     // 「确定」主动关闭后 close 事件会再次触发 onClose（Dialog 组件把
@@ -148,6 +164,8 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
       return;
     }
     ThemeService.restoreCss(snapshotRef.current);
+    // 预览结束：所有窗口（含本窗口）重新应用已保存主题
+    ThemeService.endPreview();
     onClose();
   };
 

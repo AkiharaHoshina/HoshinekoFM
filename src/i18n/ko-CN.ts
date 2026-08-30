@@ -238,11 +238,18 @@ const koCN = {
   'dashboard.total': '전체',
   'dashboard.loading': '통계 데이터를 불러오는 중...',
   'dashboard.pinned': '고정됨',
-  'dashboard.add': '추가',
-  'dashboard.pin_folder': '폴더 고정',
-  'dashboard.pin_file': '파일 고정',
-  'dashboard.recent': '최근 항목',
+  'dashboard.add': '추가',  'dashboard.recent': '최근 항목',
+
+  'dashboard.already_pinned': '이미 고정된 항목입니다',
   'dashboard.no_recent': '최근에 접근한 화일이 없습니다.',
+  'picker.title_file': '파일 선택',
+  'picker.title_folder': '폴더 선택',
+  'picker.title_files': '파일 선택',
+
+  'picker.title_items': '항목 선택',
+  'picker.select': '선택',
+  'picker.cancel': '취소',
+  'picker.selected_count': (n: number) => `${n}개 선택됨`,
   'dashboard.unpin_tooltip': '고정 해제',
 
   // ── 선택 모드 ──
@@ -286,6 +293,14 @@ const koCN = {
   'drag.trash_restore_title': '이 위치로 복원하시겠습니까?',
   'drag.trash_restore_message': (dir: string) => `항목을 "${dir}"(으)로 복원하시겠습니까? 복원하면 휴지통에서 이동됩니다.`,
   'breadcrumbs.go_to_dev': '장치 디렉토리로 이동',
+
+  'breadcrumbs.go_to_devpts': '가상 단말기로 이동',
+
+  'breadcrumbs.go_to_proc': '커널 정보로 이동',
+
+  'breadcrumbs.go_to_sysfs': '커널 객체로 이동',
+
+  'breadcrumbs.go_to_tmpfs': '임시 디렉토리로 이동',
   'breadcrumbs.root_title': (mp: string) => `루트 디렉토리\n${mp}`,
   'breadcrumbs.dev': '장치',
   'breadcrumbs.dev_title': (mp: string) => `장치 디렉토리\n${mp}`,

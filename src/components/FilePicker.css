@@ -1,0 +1,68 @@
+/* 文件选择器窗口布局：侧边栏 + 主区 + 底部操作栏 */
+
+.picker-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+    background: var(--md-sys-color-background);
+    overflow: hidden;
+}
+
+.picker-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+/* 选择器内的侧边栏宽度与主界面一致，宽度由 Sidebar.css 的 .sidebar 控制 */
+.picker-body .sidebar {
+    flex-shrink: 0;
+}
+
+.picker-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--md-sys-color-surface-container-low);
+    overflow: hidden;
+}
+
+.picker-topbar {
+    flex-shrink: 0;
+    padding: 8px 16px 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Omnibar 占满剩余宽度，排序/分组控件靠右（与主窗口顶栏同构） */
+.picker-topbar .omnibar {
+    flex: 1;
+    min-width: 0;
+}
+
+.picker-filelist {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.picker-footer {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+    background: var(--md-sys-color-surface-container);
+}
+
+.picker-hint {
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

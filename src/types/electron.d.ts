@@ -68,6 +68,14 @@ export interface IElectronAPI {
     findWallpaper: () => Promise<string | null>;
     /** 用 matugen 从壁纸图片生成 M3 颜色方案 CSS；matugen 缺失时 fallback=true 且只返回种子色 */
     genWallpaperTheme: (imagePath: string, type: string, contrast: number) => Promise<{ success: boolean; css?: string; sourceColor?: string; fallback?: boolean; error?: string }>;
+    /** 主题实时预览：把当前预览 CSS 发给主进程广播到所有窗口 */
+    previewTheme: (css: string) => void;
+    /** 主题预览结束（取消/关闭）：所有窗口重新应用已保存主题 */
+    endThemePreview: () => void;
+    /** 订阅其他窗口的主题预览 CSS（返回取消订阅函数） */
+    onThemePreview: (callback: (css: string) => void) => () => void;
+    /** 订阅主题预览结束（返回取消订阅函数） */
+    onThemePreviewEnd: (callback: () => void) => () => void;
     listDir: (path: string) => Promise<{ data: IFile[]; actualPath: string; error?: { code: string; originalPath: string } }>;
     getParentPath: (path: string) => Promise<string>;
     getHomePath: () => Promise<string>;
@@ -90,6 +98,12 @@ export interface IElectronAPI {
     openFileDialog: () => Promise<string | null>;
     pickFile: () => Promise<string | null>;
     pickDirectory: () => Promise<string | null>;
+    /** 打开内置文件选择器窗口；返回选中路径数组，取消/关窗返回 null */
+    openPicker: (options: { mode: 'file' | 'folder' | 'files' | 'items' }) => Promise<string[] | null>;
+    /** 选择器窗口读取自身配置（普通窗口返回 null） */
+    getPickerConfig: () => Promise<{ mode: 'file' | 'folder' | 'files' | 'items' } | null>;
+    /** 选择器窗口回传选中结果（null = 取消），主进程随后关闭该窗口 */
+    resolvePicker: (paths: string[] | null) => Promise<void>;
     readFile: (path: string) => Promise<string | null>;
     startDrag: (paths: string | string[], files?: DragFileMeta[]) => void;
     claimDragFiles: () => Promise<DragClaimResult>;

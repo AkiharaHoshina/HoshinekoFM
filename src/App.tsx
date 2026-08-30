@@ -8,6 +8,7 @@ import "react-toastify/dist/ReactToastify.css";
 import "./utils/toast.css";
 import { ClipboardProvider, useClipboard } from "./contexts/ClipboardContext";
 import { DragProvider } from "./contexts/DragContext";
+import type { SortBy, SortOrder } from "./utils/fileSort";
 import { ThemeService } from "./services/ThemeService";
 import { NavigationRail } from "./components/NavigationRail";
 import { Sidebar, type SidebarPinnedItem } from "./components/Sidebar";
@@ -270,12 +271,16 @@ function AppContent() {
     });
   }, [setDashboardPinned]);
 
-  /** 追加仪表盘固定项（与 Dashboard 的文件管理器选择流程共用） */
+  /** 追加仪表盘固定项（与仪表盘的选择器流程共用；去重，重复时提示） */
   const pinDashboardItem = useCallback(
     (name: string, path: string, isDir: boolean) => {
+      if (dashboardPinned.some((p) => p.path === path)) {
+        showToast(t("dashboard.already_pinned"), "info");
+        return;
+      }
       setDashboardPinned((prev) => [...prev, { name, path, isDir }]);
     },
-    [setDashboardPinned],
+    [dashboardPinned, setDashboardPinned],
   );
 
   /** 按路径移除仪表盘固定项（右键菜单，移除全部同路径条目） */
@@ -313,6 +318,20 @@ function AppContent() {
   const [filledIcons, setFilledIcons] = useLocalStorage<boolean>(
     "settings.filledIcons",
     false,
+  );
+  /**
+   * 排序/分组偏好（持久化于 settings.*，跨窗口同步）：
+   * 主窗口与文件选择器共用同一组键——任一侧调节，
+   * 另一侧经 storage 事件立即跟随，实现完全互相同步。
+   */
+  const [sortBy, setSortBy] = useLocalStorage<SortBy>("settings.sortBy", "name");
+  const [sortOrder, setSortOrder] = useLocalStorage<SortOrder>(
+    "settings.sortOrder",
+    "asc",
+  );
+  const [groupingEnabled, setGroupingEnabled] = useLocalStorage<boolean>(
+    "settings.groupingEnabled",
+    true,
   );
   const [locale, setLocaleState] = useLocalStorage<Locale>(
     "settings.locale",
@@ -360,6 +379,25 @@ function AppContent() {
   /** 主题配置变化时（含首次挂载）应用主题颜色 */
   useEffect(() => {
     void ThemeService.applyTheme(themeConfig);
+  }, [themeConfig]);
+
+  /**
+   * 主题实时预览订阅：其他窗口（如文件选择器）处于主题设置预览中时，
+   * 主进程广播的预览 CSS 直接注入本窗口——选择颜色后所有窗口立刻同步；
+   * 预览结束（取消/关闭）时重新应用本窗口已保存的主题配置。
+   */
+  useEffect(() => {
+    if (!window.electron?.onThemePreview || !window.electron?.onThemePreviewEnd) return;
+    const offPreview = window.electron.onThemePreview((css) => {
+      ThemeService.injectCss(css);
+    });
+    const offEnd = window.electron.onThemePreviewEnd(() => {
+      void ThemeService.applyTheme(themeConfig);
+    });
+    return () => {
+      offPreview();
+      offEnd();
+    };
   }, [themeConfig]);
 
   const loadHome = () => {
@@ -726,54 +764,30 @@ function AppContent() {
       <NavigationRail
         items={[
           {
-            icon: <Icon name="dashboard" />,
-            activeIcon: <Icon name="dashboard" filled />,
-            label: "Dashboard",
-            active: currentPath === "app://dashboard",
-            onClick: () => {
-              const existing = tabs.find((t) =>
-                t.path.startsWith("app://dashboard"),
-              );
-              if (existing) {
-                setActiveTabId(existing.id);
-              } else {
-                handleAddTab("app://dashboard");
-              }
-            },
-          },
-          {
-            icon: <Icon name="home" />,
-            activeIcon: <Icon name="home" filled />,
-            label: "Home",
-            active: currentPath.startsWith("/home"),
-            onClick: async () => {
-              const home = await window.electron.getHomePath();
-              const existingHomeTab = tabs.find((t) => t.path === home);
-              if (existingHomeTab) {
-                setActiveTabId(existingHomeTab.id);
-              } else {
-                handleAddTab(home);
-              }
-            },
-          },
-          {
             icon: <Icon name="folder" />,
             activeIcon: <Icon name="folder" filled />,
             label: "Files",
-            active: currentPath === "/",
+            // 浏览区入口常亮：无论当前浏览什么路径，"文件"都保持高亮
+            // （仪表盘/主页入口已移除——与 Places 栏重合，由侧边栏承担）。
+            // 设置对话框打开时抑制（让位给设置按钮高亮）。
+            active: !settingsDialogOpen,
             onClick: () => handleSidebarNavigate("/"),
           },
           {
             icon: <Icon name="terminal" />,
             activeIcon: <Icon name="terminal" filled />,
             label: "Terminal",
-            active: terminalOpen,
+            // 内置终端打开时与"文件"同时高亮（active 相互独立）；
+            // 设置对话框打开时同样抑制。
+            active: terminalOpen && !settingsDialogOpen,
             onClick: toggleTerminal,
           },
           {
             icon: <Icon name="settings" />,
             activeIcon: <Icon name="settings" filled />,
             label: "Settings",
+            // 设置对话框打开时高亮，其余时间不高亮
+            active: settingsDialogOpen,
             onClick: () => setSettingsDialogOpen(true),
           },
         ]}
@@ -835,6 +849,12 @@ function AppContent() {
                 iconSize={iconSize}
                 viewMode={viewMode}
                 filledIcons={filledIcons}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                groupingEnabled={groupingEnabled}
+                onSortByChange={setSortBy}
+                onSortOrderChange={setSortOrder}
+                onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}
                 refreshSignal={tab.version}
                 scrollToFileName={tab.pendingSelectFile}
                 onScrollToComplete={handleScrollToComplete}

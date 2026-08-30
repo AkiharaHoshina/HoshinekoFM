@@ -115,7 +115,3 @@
   transform: scale(1.15);
 }
 
-.color-picker-preset--selected {
-  border-color: var(--md-sys-color-on-surface);
-  box-shadow: 0 0 0 2px var(--md-sys-color-surface), 0 0 0 4px var(--md-sys-color-on-surface);
-}

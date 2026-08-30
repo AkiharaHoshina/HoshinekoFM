@@ -38,6 +38,26 @@ export const ThemeService = {
     this.injectCss(css ?? '');
   },
 
+  /**
+   * 预览广播：把当前窗口已注入的预览 CSS 发给主进程，
+   * 由主进程广播到所有窗口注入——选择颜色后所有窗口立刻同步。
+   * 未注入任何 CSS（预览为空）时不广播。
+   */
+  broadcastPreview() {
+    const css = this.getCurrentCss();
+    if (css !== null && window.electron?.previewTheme) {
+      window.electron.previewTheme(css);
+    }
+  },
+
+  /**
+   * 预览结束（取消/关闭主题对话框）：通知所有窗口
+   * 重新应用各自已保存的主题配置，回退预览期间的临时 CSS。
+   */
+  endPreview() {
+    window.electron?.endThemePreview?.();
+  },
+
   /** 传统 matugen 主题加载（未保存主题配置时使用） */
   async loadTheme() {
     try {
@@ -105,6 +125,15 @@ export const ThemeService = {
           // matugen 缺失/失败的兜底：后端只提取了种子色，
           // 用 JS HCT 引擎生成整套 CSS（与预设/自定义同一引擎）
           const css = seedToCss(res.sourceColor, {
+            scheme: config.scheme,
+            contrast: config.contrast,
+          });
+          this.injectCss(css || '');
+        } else if (config.seed) {
+          // 保存时存下的原子色兜底：壁纸文件被移动/删除等导致
+          // 重新取色整体失败时，仍用存储的种子色生成主题，
+          // 而不是回退到内置紫色
+          const css = seedToCss(config.seed, {
             scheme: config.scheme,
             contrast: config.contrast,
           });

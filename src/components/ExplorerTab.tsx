@@ -27,12 +27,13 @@ import {
 
 import { Omnibar } from './Omnibar';
 import { Dashboard, type PinnedItem } from './Dashboard';
+import { SortControls } from './SortControls';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useDrag } from '../contexts/DragContext';
 import { t } from '../i18n';
 import { extractDropPaths, samePathSet } from '../utils/dragDrop';
 import { shouldSuppressDrop } from '../utils/nativeDragTracker';
-import { getSemanticGroup, GROUP_ORDER } from '../utils/fileUtils';
+import { sortFiles, type SortBy, type SortOrder } from '../utils/fileSort';
 import type { ContextMenuItem } from './ContextMenu';
 import {
   checkConflicts,
@@ -42,19 +43,6 @@ import {
   type ConflictEntry,
   type ConflictResult,
 } from '../utils/fileConflict';
-
-/**
- * 自然排序 collator（惰性单例）：数字段按数值比较，
- * 避免逐字符比较把多位数拆开（file2 < file3 < file23，
- * 而 localeCompare 默认会把 3 排在 23 后面）；大小写不敏感。
- */
-let naturalCollator: Intl.Collator | null = null;
-function getNaturalCollator(): Intl.Collator {
-  if (!naturalCollator) {
-    naturalCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-  }
-  return naturalCollator;
-}
 
 interface ExplorerTabProps {
     tabId: string;
@@ -76,6 +64,18 @@ interface ExplorerTabProps {
     iconSize: number;
     viewMode: 'grid' | 'list';
     filledIcons: boolean;
+    /** 排序字段（受控：状态由 App 持有，settings.sortBy 持久化，与选择器同步） */
+    sortBy: SortBy;
+    /** 排序方向（受控：settings.sortOrder 持久化，与选择器同步） */
+    sortOrder: SortOrder;
+    /** 分组开关（受控：settings.groupingEnabled 持久化，与选择器同步） */
+    groupingEnabled: boolean;
+    /** 修改排序字段（App 写入持久化键，跨窗口同步） */
+    onSortByChange: (by: SortBy) => void;
+    /** 修改排序方向（App 写入持久化键，跨窗口同步） */
+    onSortOrderChange: (order: SortOrder) => void;
+    /** 切换分组开关（App 写入持久化键，跨窗口同步） */
+    onGroupingToggle: () => void;
     refreshSignal: number;
     scrollToFileName?: string;
     onScrollToComplete?: () => void;
@@ -107,7 +107,7 @@ interface ExplorerTabProps {
     showHomeStorageUsage: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, showHomeStorageUsage }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, onSortByChange, onSortOrderChange, onGroupingToggle, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, showHomeStorageUsage }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -624,43 +624,10 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     [loadPath, currentPath],
   );
 
-  // Sort State
-  const [sortBy, setSortBy] = useState<'name' | 'size' | 'date'>('name');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-
-  // Grouping State
-  const [groupingEnabled, setGroupingEnabled] = useState(true);
-
-  // Filter AND Sort files
+  // 过滤 + 分组 + 排序（共享逻辑：与文件选择器完全一致，
+  // 偏好经 settings.sortBy / settings.sortOrder / settings.groupingEnabled 同步）
   const sortedFiles = useMemo(() => {
-    const filtered = files.filter(f => showHiddenFiles || !f.name.startsWith('.'));
-    return filtered.sort((a: IFile, b: IFile) => {
-      if (groupingEnabled) {
-        const groupA = getSemanticGroup(a);
-        const groupB = getSemanticGroup(b);
-        if (groupA !== groupB) {
-          return GROUP_ORDER.indexOf(groupA) - GROUP_ORDER.indexOf(groupB);
-        }
-      } else {
-        if (a.isDirectory !== b.isDirectory) {
-          return a.isDirectory ? -1 : 1;
-        }
-      }
-
-      let result = 0;
-      switch (sortBy) {
-      case 'name':
-        result = getNaturalCollator().compare(a.name, b.name);
-        break;
-      case 'size':
-        result = a.size - b.size;
-        break;
-      case 'date':
-        result = a.mtime.getTime() - b.mtime.getTime();
-        break;
-      }
-      return sortOrder === 'asc' ? result : -result;
-    });
+    return sortFiles(files, { showHiddenFiles, sortBy, sortOrder, groupingEnabled });
   }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled]);
     // Selection State
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
@@ -1097,46 +1064,14 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               onDropExternalFiles={handleExternalDropOnBreadcrumb}
             />
           </div>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <IconButton
-              variant={groupingEnabled ? 'filled' : 'standard'}
-              onClick={() => setGroupingEnabled(!groupingEnabled)}
-              title={t('sort.toggle_grouping')}
-            >
-              <Icon name="view_agenda" />
-            </IconButton>
-            <div style={{ width: '1px', background: 'var(--md-sys-color-outline-variant)', margin: '0 4px' }} />
-            <IconButton
-              variant={sortBy === 'name' ? 'filled' : 'standard'}
-              onClick={() => {
-                if (sortBy === 'name') setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-                else { setSortBy('name'); setSortOrder('asc'); }
-              }}
-              title={t('sort.by_name')}
-            >
-              <Icon name="sort_by_alpha" />
-            </IconButton>
-            <IconButton
-              variant={sortBy === 'size' ? 'filled' : 'standard'}
-              onClick={() => {
-                if (sortBy === 'size') setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-                else { setSortBy('size'); setSortOrder('desc'); }
-              }}
-              title={t('sort.by_size')}
-            >
-              <Icon name="straighten" />
-            </IconButton>
-            <IconButton
-              variant={sortBy === 'date' ? 'filled' : 'standard'}
-              onClick={() => {
-                if (sortBy === 'date') setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-                else { setSortBy('date'); setSortOrder('desc'); }
-              }}
-              title={t('sort.by_date')}
-            >
-              <Icon name="calendar_today" />
-            </IconButton>
-          </div>
+          <SortControls
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            groupingEnabled={groupingEnabled}
+            onSortByChange={onSortByChange}
+            onSortOrderChange={onSortOrderChange}
+            onGroupingToggle={onGroupingToggle}
+          />
         </div>
       )}
 

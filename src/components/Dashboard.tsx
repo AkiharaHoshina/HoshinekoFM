@@ -107,28 +107,28 @@ function collectMountedExternal(list: AllDevice[], out: Array<{ label: string; m
   }
 }
 
+/**
+ * 固定项名称等历史英文文案 → i18n 键映射。
+ * 其余字符串直接作为 i18n 键解析（详见下方 t 包装函数）。
+ */
 const labelToKey: Record<string, string> = {
   'Good Morning': 'dashboard.good_morning',
   'Good Afternoon': 'dashboard.good_afternoon',
   'Good Evening': 'dashboard.good_evening',
-  'Welcome back to your command center.': 'dashboard.welcome',
-  'Storage': 'dashboard.storage',
-  'used': 'dashboard.used',
-  'total': 'dashboard.total',
-  'Loading stats...': 'dashboard.loading',
-  'Pinned': 'dashboard.pinned',
   'Home': 'sidebar.home',
   'Downloads': 'sidebar.downloads',
-  'Documents': 'sidebar.documents',
-  'Add': 'dashboard.add',
-  'Recent': 'dashboard.recent',
-  'No recent files yet.': 'dashboard.no_recent'
+  'Documents': 'sidebar.documents'
 };
 
+/**
+ * 仪表盘文本解析：历史英文文案经 labelToKey 映射到 i18n 键，
+ * 其余文本（已是 i18n 键或固定项名称）直接交给 ti() 解析——
+ * 非键文本原样返回，与历史行为一致。
+ */
 const t = (text: string): string => {
   const key = labelToKey[text];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return key ? (ti as any)(key) : text;
+  return (ti as any)(key ?? text);
 };
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pinnedItems, onPinItem, onRemovePin, marqueeEnabled, showHomeStorageUsage }) => {
@@ -246,24 +246,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
     };
   }, [showHomeStorageUsage]);
 
-  const [pinMenuPos, setPinMenuPos] = useState<{ x: number; y: number } | null>(null);
-
   /**
-   * 添加固定项。文件点击后打开，目录点击后导航进入。
-   * Linux 上 GTK 文件选择器 openFile/openDirectory 互斥，
-   * 因此文件与目录必须用两个独立的对话框入口。
-   * 写入经 onPinItem 交给 App（与右键菜单固定共享同一份状态）。
+   * 添加固定项（单一入口，文件与目录皆可、支持多选）。
+   * 内置选择器混合模式（items）→ 逐条 stat 校验 → onPinItem
+   * （App 侧去重 + toast）。此前文件/目录拆两个入口是 GTK 选择器
+   * openFile/openDirectory 互斥的限制，内置选择器无此限制。
    */
-  const addPin = async (kind: 'file' | 'folder') => {
+  const addPins = async () => {
     if (!window.electron) return;
-    const path = kind === 'file'
-      ? await window.electron.pickFile()
-      : await window.electron.pickDirectory();
-    if (!path) return;
-    const stat = await window.electron.stat(path);
-    if (!stat) return;
-    const name = path.split('/').pop() || path;
-    onPinItem(name, path, stat.isDirectory);
+    const picked = await window.electron.openPicker({ mode: 'items' });
+    if (!picked || picked.length === 0) return;
+    for (const path of picked) {
+      const stat = await window.electron.stat(path);
+      if (!stat) continue;
+      const name = path.split('/').pop() || path;
+      onPinItem(name, path, stat.isDirectory);
+    }
   };
 
   const handleRemovePin = (e: React.MouseEvent, index: number) => {
@@ -289,24 +287,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
       onContextMenu={(e) => {
         // 仪表盘背景右键：仅提供「刷新」（手动挂载后立即重拉存储子区域）。
         // preventDefault 阻止浏览器默认菜单；stopPropagation 与其他右键入口
-        // 保持一致（防止打开事件冒泡到 ContextMenu 的外部关闭监听器）；
-        // 同时关闭可能打开的固定菜单。
+        // 保持一致（防止打开事件冒泡到 ContextMenu 的外部关闭监听器）。
         e.preventDefault();
         e.stopPropagation();
-        setPinMenuPos(null);
         setRefreshMenuPos({ x: e.clientX, y: e.clientY });
       }}
     >
       <header className="dashboard-header">
         <h1 className="greeting">{t(greeting)}</h1>
-        <p className="subtitle">{t('Welcome back to your command center.')}</p>
+        <p className="subtitle">{t('dashboard.welcome')}</p>
       </header>
 
       <div className="dashboard-grid">
         <div className="dashboard-card storage-card">
           <div className="card-header">
             <Icon name="hard_drive" filled />
-            <span>{t('Storage')}</span>
+            <span>{t('dashboard.storage')}</span>
           </div>
           {storageCards.length > 0 ? (
             <div className="storage-list">
@@ -331,7 +327,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
                       <span className="storage-sub-label">{ti(card.label)}</span>
                       {!card.hideUsage && (
                         <span className="storage-sub-stats">
-                          {formatBytes(card.used)} {t('used')} · {formatBytes(card.total)} {t('total')}
+                          {formatBytes(card.used)} {t('dashboard.used')} · {formatBytes(card.total)} {t('dashboard.total')}
                         </span>
                       )}
                     </div>
@@ -348,14 +344,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
               ))}
             </div>
           ) : (
-            <div className="storage-loading">{t('Loading stats...')}</div>
+            <div className="storage-loading">{t('dashboard.loading')}</div>
           )}
         </div>
 
         <div className="dashboard-card pinned-card">
           <div className="card-header">
             <Icon name="push_pin" filled />
-            <span>{t('Pinned')}</span>
+            <span>{t('dashboard.pinned')}</span>
           </div>
           <div className="pinned-grid">
             {pinnedItems.map((item, idx) => (
@@ -391,36 +387,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
               onClick={(e) => {
                 e.stopPropagation();
                 setRefreshMenuPos(null);
-                setPinMenuPos({ x: e.clientX, y: e.clientY });
+                void addPins();
               }}
             >
               <div className="pinned-icon">
                 <Icon name="add" />
               </div>
-              <span>{t('Add')}</span>
+              <span>{t('dashboard.add')}</span>
             </div>
           </div>
         </div>
-
-        {pinMenuPos && (
-          <ContextMenu
-            x={pinMenuPos.x}
-            y={pinMenuPos.y}
-            items={[
-              {
-                label: ti('dashboard.pin_folder'),
-                icon: 'folder',
-                action: () => { void addPin('folder'); },
-              },
-              {
-                label: ti('dashboard.pin_file'),
-                icon: 'insert_drive_file',
-                action: () => { void addPin('file'); },
-              },
-            ]}
-            onClose={() => setPinMenuPos(null)}
-          />
-        )}
 
         {refreshMenuPos && (
           <ContextMenu
@@ -440,11 +416,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
         <div className="dashboard-card recent-card">
           <div className="card-header">
             <Icon name="history" filled />
-            <span>{t('Recent')}</span>
+            <span>{t('dashboard.recent')}</span>
           </div>
           <div className="recent-list">
             {recentFiles.length === 0 ? (
-              <div className="recent-placeholder">{t('No recent files yet.')}</div>
+              <div className="recent-placeholder">{t('dashboard.no_recent')}</div>
             ) : (
               recentFiles.slice(0, 10).map((file, idx) => (
                 <div key={idx} className="recent-item" onClick={() => onNavigate(file.path)}>

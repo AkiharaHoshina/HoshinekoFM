@@ -270,11 +270,18 @@ const ruUA = {
   'dashboard.total': 'Всего',
   'dashboard.loading': 'Загрузка статистики...',
   'dashboard.pinned': 'Закреплённые',
-  'dashboard.add': 'Добавить',
-  'dashboard.pin_folder': 'Закрепить папку',
-  'dashboard.pin_file': 'Закрепить файл',
-  'dashboard.recent': 'Недавние',
+  'dashboard.add': 'Добавить',  'dashboard.recent': 'Недавние',
+
+  'dashboard.already_pinned': 'Уже закреплено',
   'dashboard.no_recent': 'Нет недавно открытых файлов.',
+  'picker.title_file': 'Выбрать файл',
+  'picker.title_folder': 'Выбрать папку',
+  'picker.title_files': 'Выбрать файлы',
+
+  'picker.title_items': 'Выбрать элементы',
+  'picker.select': 'Выбрать',
+  'picker.cancel': 'Отмена',
+  'picker.selected_count': (n: number) => `Выбрано: ${n}`,
   'dashboard.unpin_tooltip': 'Открепить',
 
   // ── 选择模式 ──
@@ -318,6 +325,14 @@ const ruUA = {
   'drag.trash_restore_title': 'Восстановить сюда?',
   'drag.trash_restore_message': (dir: string) => `Восстановить элементы в «${dir}»? Восстановление переместит их из корзины.`,
   'breadcrumbs.go_to_dev': 'Перейти к каталогу устройств',
+
+  'breadcrumbs.go_to_devpts': 'Перейти к виртуальным терминалам',
+
+  'breadcrumbs.go_to_proc': 'Перейти к информации о ядре',
+
+  'breadcrumbs.go_to_sysfs': 'Перейти к объектам ядра',
+
+  'breadcrumbs.go_to_tmpfs': 'Перейти к временным файлам',
   'breadcrumbs.root_title': (mp: string) => `Корневой каталог\n${mp}`,
   'breadcrumbs.dev': 'Устройства',
   'breadcrumbs.dev_title': (mp: string) => `Каталог устройств\n${mp}`,

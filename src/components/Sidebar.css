@@ -219,12 +219,6 @@
     font-size: 20px;
 }
 
-/* armed（按下等待拖入文件夹）状态：常亮提示 */
-.sidebar-add-pin.pin-armed {
-    background-color: var(--md-sys-color-primary-container);
-    color: var(--md-sys-color-on-primary-container);
-}
-
 /* 固定按钮区：与上方列表保持与条目间一致的间距 */
 .sidebar-pin-section {
     margin-top: 4px;

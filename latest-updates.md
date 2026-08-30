@@ -492,6 +492,68 @@
 - 根因：行高 `LIST_ROW_HEIGHT(16)=28px`（行内 24px），输入框 `font: inherit` 继承根行高 1.5 → 文字 21px + padding 4px + border 2px ≈ 27px > 24px，被 `.file-list-item` 的 `overflow: hidden` 裁掉底部
 - 修复：`FileNameDisplay` 新增 `noHint` 属性（仅 `viewMode === 'list' && iconSize === 16` 时为 true），编辑框追加 `file-rename-input--no-hint` 类；CSS 加 `.file-rename-input--no-hint { border-bottom: none; }`——仅该组合隐藏提示线，其余尺寸/网格模式/其他样式不变
 
+### 内置文件选择器（独立窗口）
+
+- 程序内选择文件/文件夹不再依赖外部文件管理器：需要选择时由主进程开启独立选择器窗口（900×620 普通小窗，`parent` 关联发起窗口），选完把路径数组回传请求方并关窗
+- 布局：左侧栏（Places + 固定目录 + 设备；无仪表盘入口、无固定按钮、无移除按钮、无拖放落点——`Sidebar` 新增 `variant='picker'` 变体）+ 主区（Omnibar + 文件浏览区）+ 底栏（取消 / 选择按钮，无有效选中时禁用）
+- 选中语义：`file` 单选文件、`folder` 单选目录（双击进入目录）、`files` 框选/多选回传数组；双击文件 = 选中并立即确定；Enter 确定 / Esc 取消
+- IPC：`picker:open`（invoke，返回 `Promise<string[] | null>`，窗口直接关闭视为取消）、`picker:get-config`（选择器窗口读自身配置）、`picker:resolve`（回传并关窗）；选择器窗口以 `index.html?mode=picker` 加载，`main.tsx` 据此渲染 `FilePickerRoot`（自带 DragProvider + ToastContainer + 应用已保存主题）
+- 内部调用替换：仪表盘「固定文件/文件夹」与主题「选择壁纸」改走内置选择器；侧边栏「使用默认文件管理器选择」保留 GTK 对话框（用户显式选择了走系统文件管理器，语义如此）
+- i18n：新增 `picker.title_file / title_folder / title_files / select / cancel / selected_count` × 12 语言
+- 验证：`npx tsc -b`、`npm run lint`、`npm run build` 全部通过；Electron 端到端测试通过（真实构建 + 真实 preload：选择器 UI 渲染完整、resolvePicker 回传路径数组、直接关窗返回 null、标题 i18n 生效）
+- 远期（未实施）：外部程序调用选择器、设为默认文件管理器——`picker:open` 已按「独立请求方」设计，届时加无请求者的入口即可
+
+### 选择器迭代修复（主题同步、多选、固定按钮左键）
+
+- 主题即时同步：选择器窗口此前只在挂载时读一次 `settings.theme`——改用 `useLocalStorage('settings.theme')` 订阅 storage 事件，主题设置保存后选择器立即重应用（与主窗口同构）
+- 多选：`file` 模式此前强制单选且没有任何入口使用 `files` 模式——现在 `file`/`files` 都支持 ctrl 加选、shift 范围、框选多选并回传数组（`folder` 保持单选目录），调用方取首元素；Electron 端到端测试验证 ctrl+click 两个文件后点「选择」正确回传两条路径
+- 固定按钮左键：由「armed 高亮（提示拖文件夹固定）」改为**打开内置选择器（文件夹模式）→ 选中即固定**；右键菜单保留「使用默认文件管理器选择」（GTK）；armed 状态机与 `.pin-armed` 样式移除（拖文件夹到按钮固定不受影响，`handleSidebarDrop` 的 pin 分支独立）
+
+### 面包屑菜单统一、选择器回收站与框选修复
+
+- 面包屑右键跳转菜单统一：所有胶囊（含回收站/特殊挂载胶囊）现在显示与「主页胶囊在主页时」完全一致的菜单——第一组 = 主页 + 根目录 + 回收站，第二组 = 设备目录（/dev）+ 特殊挂载；不再按当前胶囊动态增删条目（统一语义下「转到软链接目标」条目被移除，主页条目常驻第一组）
+- 选择器回收站：选择器窗口「转到回收站」（面包屑菜单/Places）此前走 `listDir('trash://')` 报权限不足——`loadPath` 增加 `trash://` 分支走 `listTrash()`，回收站内容正常浏览
+- 选择器框选修复：此前框选必须从空白处按下（网格/列表铺满时几乎没有起点，从条目按下只会选中第一个文件）——`FileList` 新增 `allowBoxFromItems`（条目上按下也能框选，单击/双击不受影响）与 `disableNativeDrag`（拦截 dragstart，条目上的拖动交还给框选，选择器不向外部拖文件）；框选起点判定移出 `useRubberBandSelection`（主窗口行为不变）
+- 验证：Electron 端到端测试通过（从条目行上框选选中 18 个文件并回传、回收站导航正常、面包屑菜单各胶囊内容一致）
+
+### 选择器列表模式垂直框选修复
+
+- 现象：选择器窗口列表模式下框选无效——拖动橡皮筋框覆盖多行，只有第一个文件被选中（网格模式正常）
+- 根因：`useRubberBandSelection` 的框选生效条件此前要求「水平与垂直跨度都 > 2px」（`cw > 2 && ch > 2`），而列表模式的拖动方向以垂直为主，水平跨度可始终为 0——垂直拖拽永远无法触发框选，松开后落回普通单击只选中按下处第一个文件；网格模式因需斜向覆盖多列，天然满足双轴条件，故表现正常
+- 修复：条件改为「任一方向跨度 > 2px」即视为拖拽（`cw > 2 || ch > 2`），单击抖动（两轴均 ≤ 2px）仍不触发；橡皮筋框渲染条件同步放宽（`w > 0 || h > 0`）并给最小可见尺寸（4px），纯垂直拖动时框选反馈不再消失
+- 验证：Electron 端到端测试通过（列表模式纯垂直拖动选中 6 个文件、网格/斜向框选、单击单选与空处取消均无回归）
+
+### 固定功能二合一与多选
+
+- 侧边栏固定按钮支持多选：内置选择器 `folder` 模式由强制单选放开为多选（此前 `handleSetSelected` 只取首个有效条目）；固定按钮一次框选/ctrl 多选多个目录，逐条 stat 校验后交给 App 去重 + 提示；右键 GTK 兜底仍为单目录（系统对话框限制，语义不变）
+- 仪表盘「添加固定项」二合一：原来「固定文件 / 固定文件夹」两个菜单入口（GTK 选择器 openFile/openDirectory 互斥的遗留）合并为单一入口——点击「添加」直接打开内置选择器新 **`items` 混合模式**（文件与目录皆可选、支持框选多选、双击目录仍进入），选完批量固定
+- `items` 模式：`FilePicker` 的 `isSelectable` 对混合模式放行文件与目录；主进程白名单 `VALID_MODES` 与 `electron.d.ts` 类型同步新增；标题新增 `picker.title_items`（12 语言）
+- 仪表盘固定去重：`pinDashboardItem` 增加按路径去重，重复时 toast `dashboard.already_pinned`（12 语言）；移除废弃的 `dashboard.pin_folder / dashboard.pin_file` 键
+- 验证：`npx tsc -b`、`npm run lint` 通过；Electron 端到端测试通过（侧边栏固定按钮多选固定 2 个目录、仪表盘单入口混合多选固定文件+目录、重复固定提示、右键固定到仪表盘去重）
+
+### 第一批交互修复（功能栏精简、面包屑菜单、仪表盘本地化）
+
+- 功能栏（NavigationRail）精简：移除与 Places 栏功能重合的「仪表盘」「主页」按钮（入口仍由侧边栏/面包屑/启动兜底承担）；「文件」按钮改为常亮（无论当前浏览路径）；「终端」在终端打开时与「文件」同时高亮；「设置」不做高亮；`labelToKey` 清理死映射
+- 面包屑右键菜单：移除普通路径段胶囊的右键跳转菜单（`renderSegments` 普通分支不再挂 `onContextMenu`），仅特殊目录胶囊（主页/根目录/回收站/设备目录/特殊挂载）保留互相跳转菜单
+- 特殊目录胶囊菜单统一「转到」前缀：`MountDisplayConfig` 新增 `goToKey`，特殊挂载菜单项（虚拟终端/内核信息/内核对象/临时目录）改用 `breadcrumbs.go_to_devpts/proc/sysfs/tmpfs` 新键（12 语言），与固定入口（转到主页/根/回收站/设备目录）语义一致
+- 仪表盘本地化补全：`Storage/used/total/Loading stats.../Pinned/Recent/No recent files yet./Welcome back to your command center.` 8 处裸英文文案改用现有 `dashboard.*` 键；历史英文文案映射（`labelToKey`）收敛为仅固定项名称/问候语，其余文本直接作为 i18n 键解析
+- 验证：`npx tsc -b`、`npm run lint` 通过；Electron 端到端测试通过（功能栏仅剩文件/终端/设置且文件常亮、普通路径段右键无菜单、特殊胶囊菜单全量「转到」前缀、仪表盘各文案按 zh-CN 正确显示）
+
+### 主题实时同步、选择器排序控件与功能栏设置高亮
+
+- 主题跨窗口实时同步：新增 `theme:preview` / `theme:preview-end` 广播 IPC（主进程循环 `getWindows()` 广播，preload 暴露 `previewTheme/endThemePreview/onThemePreview/onThemePreviewEnd`）；主题设置里选择预设/壁纸取色/调色盘确定/导入 matugen 后立即广播预览 CSS，所有窗口（含文件选择器）注入同一份 CSS——选择颜色后立刻同步，不再等到按「确定」；取消/关闭时广播 `theme:preview-end`，各窗口重新应用已保存主题回退
+- 选择器排序/分组控件：排序逻辑抽为共享 `utils/fileSort.ts`（`sortFiles` + 自然排序 collator），按钮组抽为共享 `SortControls` 组件（主窗口 ExplorerTab 与选择器 picker-topbar 复用）；排序/分组偏好新增 `settings.sortBy / settings.sortOrder / settings.groupingEnabled` 持久化键并上提到 App（原来 ExplorerTab 私有 state 不持久化），选择器读写同一组键——任一侧调节，另一侧经 storage 事件立即跟随，与主窗口完全互相同步
+- 功能栏高亮：设置对话框打开时「设置」高亮、文件/终端抑制高亮；关闭后恢复（文件常亮、终端打开时同时高亮）
+- 验证：`npx tsc -b`、`npm run lint` 通过；Electron 端到端测试通过（选择预设后主窗口与选择器 CSS 即时一致、取消后双双回退已保存主题；主窗口按大小排序后选择器键值与列表顺序即时跟随、选择器切换分组主窗口即时跟随；设置打开/关闭时功能栏高亮切换正确）
+
+### 主题预设选中状态与原子色显示修复
+
+- 壁纸取色保存原子色：`ThemeColorDialog.applyWallpaper` 此前丢弃后端返回的 `sourceColor`——现在取色成功时把种子色存进草稿（`{ ...cfg, seed }`），「应用/确定」保存后 `settings.theme` 携带壁纸测算出的原子色；`ThemeConfig.seed` 字段说明同步更新
+- 壁纸主题兜底：`ThemeService.applyTheme` 的 wallpaper 分支在重新取色整体失败（壁纸文件被移动/删除等）时，改用存储的种子色经 JS HCT 引擎生成主题，而非直接回退内置紫色
+- 预设选中状态修正：调色盘（`ColorPickerDialog`）的预设 chip 此前按颜色相等高亮（自定义颜色恰好等于某预设种子时误显示选中）——移除该 `--selected` 逻辑与 CSS 规则；主题设置主网格保持按 `kind + presetId` 判定（壁纸/自定义时预设全不选中）
+- 设置主页原子色显示：主题颜色入口行的色点默认背景由灰色 `outline-variant` 改为 `var(--md-sys-color-primary)`（无种子色的 matugen/system 来源跟随实际主题主色）；左侧调色盘图标保持原色不变，仅右侧色点显示种子色
+- 验证：`npx tsc -b`、`npm run lint` 通过；Electron 端到端测试通过（壁纸取色保存 seed=#ff5500、设置页色点与图标显示该原子色、调色盘选 #6750A4 时主网格预设选中数为 0、保存的预设打开时正常选中、取消不影响已保存主题）
+
 - 版本号升至 `0.11.14`
 
 

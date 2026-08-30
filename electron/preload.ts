@@ -5,6 +5,19 @@ contextBridge.exposeInMainWorld('electron', {
   readDmsTheme: () => ipcRenderer.invoke('theme:read-dms'),
   findWallpaper: () => ipcRenderer.invoke('theme:find-wallpaper'),
   genWallpaperTheme: (imagePath: string, type: string, contrast: number) => ipcRenderer.invoke('theme:gen-wallpaper', imagePath, type, contrast),
+  // 主题实时预览：预览变化 → 主进程广播到所有窗口
+  previewTheme: (css: string) => ipcRenderer.send('theme:preview', css),
+  endThemePreview: () => ipcRenderer.send('theme:preview-end'),
+  onThemePreview: (callback: (css: string) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, css: string) => callback(css);
+    ipcRenderer.on('theme:preview-css', handler);
+    return () => ipcRenderer.removeListener('theme:preview-css', handler);
+  },
+  onThemePreviewEnd: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('theme:preview-end', handler);
+    return () => ipcRenderer.removeListener('theme:preview-end', handler);
+  },
   listDir: (path: string) => ipcRenderer.invoke('fs:list-dir', path),
   getParentPath: (path: string) => ipcRenderer.invoke('fs:get-parent', path),
   getHomePath: () => ipcRenderer.invoke('fs:get-home'),
@@ -27,6 +40,10 @@ contextBridge.exposeInMainWorld('electron', {
   openFileDialog: () => ipcRenderer.invoke('dialog:open-file'),
   pickFile: () => ipcRenderer.invoke('dialog:pick-file'),
   pickDirectory: () => ipcRenderer.invoke('dialog:pick-directory'),
+  // 内置文件选择器（独立窗口，mode: file | folder | files）
+  openPicker: (options: { mode: 'file' | 'folder' | 'files' }) => ipcRenderer.invoke('picker:open', options),
+  getPickerConfig: () => ipcRenderer.invoke('picker:get-config'),
+  resolvePicker: (paths: string[] | null) => ipcRenderer.invoke('picker:resolve', paths),
   readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path),
   startDrag: (paths: string | string[], files?: { path: string; name: string; isDirectory: boolean; trashOriginalPath?: string }[]) => ipcRenderer.send('dnd:start', { paths, files }),
   claimDragFiles: () => ipcRenderer.invoke('dnd:claim-files'),

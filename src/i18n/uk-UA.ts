@@ -267,11 +267,18 @@ const ukUA = {
   'dashboard.total': 'Усього',
   'dashboard.loading': 'Завантаження статистики...',
   'dashboard.pinned': 'Закріплені',
-  'dashboard.add': 'Додати',
-  'dashboard.pin_folder': 'Закріпити папку',
-  'dashboard.pin_file': 'Закріпити файл',
-  'dashboard.recent': 'Нещодавні',
+  'dashboard.add': 'Додати',  'dashboard.recent': 'Нещодавні',
+
+  'dashboard.already_pinned': 'Вже закріплено',
   'dashboard.no_recent': 'Немає нещодавно відкритих файлів.',
+  'picker.title_file': 'Вибрати файл',
+  'picker.title_folder': 'Вибрати папку',
+  'picker.title_files': 'Вибрати файли',
+
+  'picker.title_items': 'Вибрати елементи',
+  'picker.select': 'Вибрати',
+  'picker.cancel': 'Скасувати',
+  'picker.selected_count': (n: number) => `Вибрано: ${n}`,
   'dashboard.unpin_tooltip': 'Відкріпити',
 
   // ── 选择模式 ──
@@ -315,6 +322,14 @@ const ukUA = {
   'drag.trash_restore_title': 'Відновити сюди?',
   'drag.trash_restore_message': (dir: string) => `Відновити елементи у «${dir}»? Відновлення перемістить їх із кошика.`,
   'breadcrumbs.go_to_dev': 'Перейти до каталогу пристроїв',
+
+  'breadcrumbs.go_to_devpts': 'Перейти до віртуальних терміналів',
+
+  'breadcrumbs.go_to_proc': 'Перейти до інформації про ядро',
+
+  'breadcrumbs.go_to_sysfs': 'Перейти до об’єктів ядра',
+
+  'breadcrumbs.go_to_tmpfs': 'Перейти до тимчасових файлів',
   'breadcrumbs.root_title': (mp: string) => `Кореневий каталог\n${mp}`,
   'breadcrumbs.dev': 'Пристрої',
   'breadcrumbs.dev_title': (mp: string) => `Каталог пристроїв\n${mp}`,

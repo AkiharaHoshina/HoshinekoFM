@@ -82,8 +82,9 @@ export function useRubberBandSelection(
 
   const handleBackgroundMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    const target = e.target as HTMLElement;
-    if (target.closest(".file-list-item, .file-group-header")) return;
+    // 注意：是否「允许从条目上开始框选」由调用方（FileList）在
+    // 调进本函数之前决定——选择器窗口允许从条目按下框选，
+    // 主窗口保留「空白处按下才框选」以免干扰单击/拖拽。
 
     (document.activeElement as HTMLElement)?.blur();
     e.preventDefault();
@@ -154,7 +155,11 @@ export function useRubberBandSelection(
 
       const cw = cRight - cLeft;
       const ch = cBottom - cTop;
-      if (cw > 2 && ch > 2) {
+      // 框选生效条件：任一方向跨度 > 2px 即视为拖拽（而非单击抖动）。
+      // 列表模式下拖动方向以垂直为主，水平跨度可能一直为 0——
+      // 若要求两轴都 > 2px，垂直框选将永远不生效（网格模式因需斜向
+      // 覆盖多列才表现正常，这正是「列表模式框选无效」的根因）。
+      if (cw > 2 || ch > 2) {
         const boxPaths = new Set<string>();
         for (const ib of itemBoxesRef.current) {
           if (

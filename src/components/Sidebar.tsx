@@ -55,6 +55,12 @@ interface SidebarProps {
   onPinPath: (path: string) => void;
   /** 移除固定目录 */
   onUnpinPath: (path: string) => void;
+  /**
+   * 变体：'picker' 用于文件选择器窗口——隐藏仪表盘入口、固定按钮、
+   * 固定移除按钮、右键固定菜单与侧边栏拖放路由（选择器只导航不落点）。
+   * 默认 'default' 行为不变。
+   */
+  variant?: 'default' | 'picker';
 }
 
 /** 侧边栏拖放目标标识前缀与常量 */
@@ -96,15 +102,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   pinnedDirs,
   onPinPath,
   onUnpinPath,
+  variant = 'default',
 }) => {
+  const isPicker = variant === 'picker';
   const [places, setPlaces] = useState<
     Array<{ name: string; path: string; icon: string }>
   >([]);
   const [devices, setDevices] = useState<AllDevice[]>([]);
   const [gvfsVolumes, setGvfsVolumes] = useState<GvfsVolume[]>([]);
-
-  /** 固定按钮的 armed 状态：按下后按钮高亮，提示可拖文件夹固定 */
-  const [pinArmed, setPinArmed] = useState(false);
 
   /** 固定按钮右键菜单位置（null 表示关闭）；内含「使用文件管理器选择」 */
   const [pinMenuPos, setPinMenuPos] = useState<{ x: number; y: number } | null>(null);
@@ -331,7 +336,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         !files[0].trashOriginalPath
       ) {
         onPinPath(files[0].path);
-        setPinArmed(false);
       } else {
         showToast(t("sidebar.pin_single_folder"), "info");
       }
@@ -354,6 +358,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
    * 只接受同窗口内部拖拽（dragState 存活），跨窗口/外部拖放不作为目标。
    */
   useEffect(() => {
+    // 选择器变体不参与拖放落点：只导航、不接收文件
+    if (isPicker) return;
+
     /** 从光标坐标解析命中的侧边栏拖放目标标识（无目标返回 null） */
     const resolveTargetAt = (x: number, y: number): string | null => {
       const el = document.elementFromPoint(x, y);
@@ -412,7 +419,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       document.removeEventListener("dragend", onDragEnd, true);
       stopAutoScroll();
     };
-  }, [getDragState, handleSidebarDrop, stopAutoScroll, updateAutoScroll]);
+  }, [getDragState, handleSidebarDrop, stopAutoScroll, updateAutoScroll, isPicker]);
 
   /**
    * gvfs 卷点击：已挂载 → 进入目录；未挂载 → 挂载后进入。
@@ -520,56 +527,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onPinPath(path);
   };
 
+  /**
+   * 左键点击固定按钮：打开内置文件选择器（文件夹模式，支持多选）批量固定目录。
+   * openPicker → 逐个 stat 校验目录 → onPinPath（App 侧去重 + toast）。
+   * 拖文件夹到按钮上固定不受影响（handleSidebarDrop 的 pin 分支独立）。
+   */
+  const handlePickPinDir = async () => {
+    if (!window.electron?.openPicker) return;
+    const picked = await window.electron.openPicker({ mode: 'folder' });
+    if (!picked || picked.length === 0) return;
+    for (const path of picked) {
+      const stat = await window.electron.stat(path);
+      if (!stat || !stat.isDirectory) continue;
+      onPinPath(path);
+    }
+  };
+
   /** 移除固定目录（悬停时条目右侧的关闭按钮） */
   const handleRemovePinned = (e: React.MouseEvent, path: string) => {
     e.stopPropagation();
     onUnpinPath(path);
   };
 
-  /** 切换固定按钮的 armed 状态（armed 时高亮，提示可拖文件夹到按钮上） */
-  const togglePinArmed = () => {
-    setPinArmed((prev) => !prev);
-  };
-
-  /**
-   * armed 状态解除：Esc 或点击固定按钮以外区域时关闭，
-   * 拖放固定成功后 handleSidebarDrop 也会解除。
-   */
-  useEffect(() => {
-    if (!pinArmed) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPinArmed(false);
-    };
-    const onMouseDown = (e: MouseEvent) => {
-      const el = e.target as HTMLElement | null;
-      if (el && !el.closest(".sidebar-add-pin")) setPinArmed(false);
-    };
-    document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("mousedown", onMouseDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("mousedown", onMouseDown);
-    };
-  }, [pinArmed]);
-
   return (
     <aside className="sidebar" ref={asideRef}>
       <div className="sidebar-section">
         <h3 className="sidebar-title">{t("sidebar.places")}</h3>
         <div className="sidebar-list">
-          <button
-            className={`sidebar-item ${currentPath === "app://dashboard" ? "active" : ""}`}
-            onClick={() => onNavigate("app://dashboard")}
-          >
-            <Icon
-              name="dashboard"
-              className="sidebar-icon"
-              filled={currentPath === "app://dashboard"}
-            />
-            <span className="sidebar-label">
-              <MarqueeText enabled={marqueeEnabled}>{t("sidebar.dashboard")}</MarqueeText>
-            </span>
-          </button>
+          {!isPicker && (
+            <button
+              className={`sidebar-item ${currentPath === "app://dashboard" ? "active" : ""}`}
+              onClick={() => onNavigate("app://dashboard")}
+            >
+              <Icon
+                name="dashboard"
+                className="sidebar-icon"
+                filled={currentPath === "app://dashboard"}
+              />
+              <span className="sidebar-label">
+                <MarqueeText enabled={marqueeEnabled}>{t("sidebar.dashboard")}</MarqueeText>
+              </span>
+            </button>
+          )}
           {places.map((place) => {
             // 该 Place 已被用户固定时，高亮让位给固定条目（避免两处同时高亮）
             const pinnedSamePath = pinnedDirs.some((p) => p.path === place.path);
@@ -622,39 +621,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="sidebar-label sidebar-pin-label">
                   <MarqueeText enabled={marqueeEnabled}>{item.name}</MarqueeText>
                 </span>
-                <IconButton
-                  variant="standard"
-                  onClick={(e) => handleRemovePinned(e, item.path)}
-                  className="sidebar-pin-remove"
-                  title={t("sidebar.unpin")}
-                >
-                  <Icon name="close" />
-                </IconButton>
+                {!isPicker && (
+                  <IconButton
+                    variant="standard"
+                    onClick={(e) => handleRemovePinned(e, item.path)}
+                    className="sidebar-pin-remove"
+                    title={t("sidebar.unpin")}
+                  >
+                    <Icon name="close" />
+                  </IconButton>
+                )}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      <div className="sidebar-section sidebar-pin-section">
-        <div className="sidebar-list">
-          <button
-            className={`sidebar-item sidebar-add-pin ${pinArmed ? "pin-armed" : ""} ${dragOverTarget === TARGET_PIN ? "drag-over" : ""}`}
-            data-sidebar-target={TARGET_PIN}
-            onClick={togglePinArmed}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setPinMenuPos({ x: e.clientX, y: e.clientY });
-            }}
-            title={t("sidebar.add_pin")}
-          >
-            <Icon name="add" className="sidebar-icon" />
-            <span className="sidebar-label">
-              <MarqueeText enabled={marqueeEnabled}>{t("sidebar.add_pin")}</MarqueeText>
-            </span>
-          </button>
+      {!isPicker && (
+        <div className="sidebar-section sidebar-pin-section">
+          <div className="sidebar-list">
+            <button
+              className={`sidebar-item sidebar-add-pin ${dragOverTarget === TARGET_PIN ? "drag-over" : ""}`}
+              data-sidebar-target={TARGET_PIN}
+              onClick={() => { void handlePickPinDir(); }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setPinMenuPos({ x: e.clientX, y: e.clientY });
+              }}
+              title={t("sidebar.add_pin")}
+            >
+              <Icon name="add" className="sidebar-icon" />
+              <span className="sidebar-label">
+                <MarqueeText enabled={marqueeEnabled}>{t("sidebar.add_pin")}</MarqueeText>
+              </span>
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {(externalDisks.length > 0 || gvfsVolumes.length > 0) && (
         <div className="sidebar-section">
@@ -794,7 +797,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
 
-      {pinMenuPos && (
+      {!isPicker && pinMenuPos && (
         <ContextMenu
           x={pinMenuPos.x}
           y={pinMenuPos.y}

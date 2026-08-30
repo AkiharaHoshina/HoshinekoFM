@@ -45,6 +45,17 @@ interface FileListProps {
   scrollToFileName?: string;
   onScrollToComplete?: () => void;
   marqueeEnabled: boolean;
+  /**
+   * 允许橡皮筋框选从条目上开始（默认 false：仅在空白处按下才开始框选）。
+   * 选择器窗口铺满网格/列表时几乎没有空白起点，开启后从条目上按下
+   * 也能框选（单击/双击语义不受影响——未移动时仍走普通点击）。
+   */
+  allowBoxFromItems?: boolean;
+  /**
+   * 禁用原生 OS 拖拽（默认 false）。选择器窗口不向外部拖出文件，
+   * 开启后 dragstart 被拦截，条目上的按下+拖动交还给框选。
+   */
+  disableNativeDrag?: boolean;
 }
 
 // --- Main component ---
@@ -70,6 +81,8 @@ const FileListComponent: React.FC<FileListProps> = ({
   scrollToFileName,
   onScrollToComplete,
   marqueeEnabled,
+  allowBoxFromItems = false,
+  disableNativeDrag = false,
 }) => {
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -252,6 +265,11 @@ const FileListComponent: React.FC<FileListProps> = ({
   // --- Drag start（同步原生 OS 拖拽：外部程序才能收到真实文件）---
   const handleFileDragStart = useCallback(
     (e: React.DragEvent, file: IFile) => {
+      // 选择器窗口禁用拖出文件：拦截 dragstart，让按下+拖动交还给框选
+      if (disableNativeDrag) {
+        e.preventDefault();
+        return;
+      }
       lastDragRef.current = { path: file.path, time: Date.now() };
       lastClickRef.current = null;
 
@@ -282,7 +300,7 @@ const FileListComponent: React.FC<FileListProps> = ({
         );
       }
     },
-    [selectedFiles, files, currentPath, startDrag],
+    [selectedFiles, files, currentPath, startDrag, disableNativeDrag],
   );
 
   // Cleanup drag state on dragend.
@@ -387,7 +405,15 @@ const FileListComponent: React.FC<FileListProps> = ({
       ref={containerRef}
       className="file-list-container"
       style={{ width: "100%", height: "100%", position: "relative" }}
-      onMouseDown={handleBackgroundMouseDown}
+      onMouseDown={(e) => {
+        // 选择器窗口允许从条目上开始框选；默认仍需空白处按下（避免干扰单击/拖拽）
+        if (
+          allowBoxFromItems ||
+          !(e.target as HTMLElement).closest?.(".file-list-item, .file-group-header")
+        ) {
+          handleBackgroundMouseDown(e);
+        }
+      }}
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest?.(".file-rename-input")) return;
         e.preventDefault();
@@ -479,15 +505,17 @@ const FileListComponent: React.FC<FileListProps> = ({
           );
         }}
       />
-      {selectionBox && selectionBox.w > 0 && (
+      {selectionBox && (selectionBox.w > 0 || selectionBox.h > 0) && (
         <div
           className="selection-box"
           style={{
             position: "absolute",
             left: selectionBox.x,
             top: selectionBox.y,
-            width: selectionBox.w,
-            height: selectionBox.h,
+            // 纯垂直/水平拖动时对应跨度可能为 0（列表模式垂直框选很常见），
+            // 给一个最小可见宽度/高度，框选反馈才不会消失
+            width: Math.max(selectionBox.w, 4),
+            height: Math.max(selectionBox.h, 4),
             pointerEvents: "none",
             zIndex: 9999,
           }}

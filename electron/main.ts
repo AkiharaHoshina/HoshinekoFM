@@ -10,6 +10,7 @@ import { registerFsHandlers } from './handlers/fs';
 import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor } from './handlers/system';
 import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers } from './handlers/theme';
+import { registerPickerHandlers, type PickerConfig } from './handlers/picker';
 import { initJobHandlers } from './jobs';
 
 /** 所有打开的窗口（单实例多窗口，共享一个后端） */
@@ -17,6 +18,9 @@ const windows = new Set<BrowserWindow>();
 
 /** 每个窗口的启动路径（由启动参数解析，键为窗口实例） */
 const startupPathByWindow = new WeakMap<BrowserWindow, string | null>();
+
+/** 选择器窗口的配置（键为窗口实例；普通窗口无条目） */
+const pickerConfigByWindow = new WeakMap<BrowserWindow, PickerConfig>();
 
 /** 每个窗口注册的目录监听器（窗口关闭时统一移除） */
 const watchListenersByWindow = new WeakMap<WebContents, Map<string, (dir: string) => void>>();
@@ -62,12 +66,19 @@ async function resolveStartupPath(argv: string[]): Promise<string | null> {
  * 合成器（niri 等）视口跳转到旧窗口所在工作区）。
  *
  * @param startupArgs - 启动参数，用于解析窗口专属启动路径
+ * @param options - 附加选项；picker 模式创建文件选择器窗口
  * @returns 创建的窗口实例
  */
-async function createWindow(startupArgs: string[] = process.argv): Promise<BrowserWindow> {
+async function createWindow(
+  startupArgs: string[] = process.argv,
+  options: { picker?: boolean; pickerConfig?: PickerConfig; parent?: BrowserWindow } = {},
+): Promise<BrowserWindow> {
+  const isPicker = options.picker === true;
   const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: isPicker ? 900 : 1200,
+    height: isPicker ? 620 : 800,
+    minWidth: isPicker ? 640 : 480,
+    minHeight: isPicker ? 480 : 360,
     show: false,
     // 首帧渲染前的底色，避免白屏闪烁；ready-to-show 后才会真正显示窗口
     backgroundColor: '#1b1b1f',
@@ -78,10 +89,16 @@ async function createWindow(startupArgs: string[] = process.argv): Promise<Brows
       sandbox: false
     },
     autoHideMenuBar: true,
+    // 选择器窗口关联发起窗口：保持堆叠关系（Wayland 下经 xdg-foreign 处理）
+    ...(isPicker && options.parent ? { parent: options.parent } : {}),
   });
 
   const wc = win.webContents;
   windows.add(win);
+
+  if (isPicker && options.pickerConfig) {
+    pickerConfigByWindow.set(win, options.pickerConfig);
+  }
 
   // 窗口专属的启动路径（异步解析，保证渲染进程调用 get-startup-path 时已就绪；
   // 解析期间窗口已入集合，不影响 second-instance 的窗口定位）
@@ -112,10 +129,13 @@ async function createWindow(startupArgs: string[] = process.argv): Promise<Brows
   });
 
   if (process.env.NODE_ENV === 'development') {
-    win.loadURL('http://localhost:5173');
-    win.webContents.openDevTools();
+    win.loadURL('http://localhost:5173' + (isPicker ? '?mode=picker' : ''));
+    if (!isPicker) win.webContents.openDevTools();
   } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'));
+    win.loadFile(
+      path.join(__dirname, '../dist/index.html'),
+      isPicker ? { search: '?mode=picker' } : {},
+    );
   }
 
   return win;
@@ -166,6 +186,33 @@ ipcMain.handle('theme:get-css', async () => {
     return await fs.readFile(themePath, 'utf-8');
   } catch {
     return null;
+  }
+});
+
+/**
+ * 主题实时预览广播：设置窗口预览主题变化（选择预设/壁纸取色/
+ * 调色盘确定）时把 CSS 发给主进程，主进程广播到所有窗口，
+ * 各窗口注入同一份 CSS 实现「选择颜色后所有窗口立刻同步」。
+ * CSS 校验为字符串并限制长度，防止任意数据注入渲染进程。
+ */
+ipcMain.on('theme:preview', (_event, css: unknown) => {
+  if (typeof css !== 'string' || css.length > 2_000_000) return;
+  for (const win of getWindows()) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('theme:preview-css', css);
+    }
+  }
+});
+
+/**
+ * 主题预览结束（设置窗口取消/关闭）：广播通知所有窗口
+ * 重新应用各自已保存的主题配置，回退预览期间的临时 CSS。
+ */
+ipcMain.on('theme:preview-end', () => {
+  for (const win of getWindows()) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('theme:preview-end');
+    }
   }
 });
 
@@ -226,10 +273,19 @@ ipcMain.handle('app:get-startup-path', (event) => {
   return win ? (startupPathByWindow.get(win) ?? null) : null;
 });
 
+// 选择器窗口读取自身配置（普通窗口返回 null）
+ipcMain.handle('picker:get-config', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win ? (pickerConfigByWindow.get(win) ?? null) : null;
+});
+
 registerFsHandlers();
 registerSystemHandlers();
 registerWindowHandlers(getWindows);
 registerThemeHandlers();
+registerPickerHandlers((config, parent) =>
+  createWindow(process.argv, { picker: true, pickerConfig: config, parent }),
+);
 initJobHandlers();
 
 app.whenReady().then(() => {
