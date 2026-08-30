@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, nativeImage } from 'electron';
 import path from 'path';
 import os from 'os';
 import { promises as fs } from 'fs';
@@ -55,10 +55,12 @@ export interface DmsThemeResult {
 /** 壁纸取色生成结果 */
 export interface WallpaperThemeResult {
   success: boolean;
-  /** 生成的 CSS（dark 为 :root，light 包在 prefers-color-scheme 媒体查询里） */
+  /** 生成的 CSS（dark 为 :root，light 包在 prefers-color-scheme 媒体查询里）。fallback 模式下为 undefined，前端用 sourceColor + JS 引擎自行生成 */
   css?: string;
-  /** matugen 提取的种子色（#RRGGBB） */
+  /** 种子色（#RRGGBB）。matugen 模式从输出注释解析；fallback 模式由内置解码器提取 */
   sourceColor?: string;
+  /** true = matugen 缺失/失败，改由内置解码器提取种子色（CSS 未生成） */
+  fallback?: boolean;
   /** 失败原因（人类可读） */
   error?: string;
 }
@@ -245,9 +247,85 @@ function buildMatugenTemplate(): string {
 }
 
 /**
+ * 无 matugen 时的种子色提取兜底（纯 JS，无新依赖）：
+ * 解码图片 → 缩小到 64×64 → BGRA 位图 → 16 级/通道直方图分桶。
+ * 优先取「频次 × 饱和度」加权最高的桶中心（跳过透明像素与近黑/近白/
+ * 低饱和灰桶，避免取到边框、阴影之类的颜色）；全部被过滤时退回频次
+ * 最高的桶。nativeImage 只可靠支持 PNG/JPEG，其余格式可能解码失败。
+ *
+ * @param imagePath - 图片绝对路径
+ * @returns #RRGGBB 种子色；解码失败返回 null
+ */
+function extractSeedFromImage(imagePath: string): string | null {
+  try {
+    const img = nativeImage.createFromPath(imagePath);
+    if (img.isEmpty()) return null;
+    const small = img.resize({ width: 64, height: 64, quality: 'good' });
+    // Electron 43：getBitmap 已废弃，用 toBitmap 取 BGRA 位图
+    let buf = small.toBitmap();
+    if (!buf || buf.length === 0) {
+      // 位图表示不可用时经 PNG dataURL 重编码一次
+      buf = nativeImage.createFromDataURL(small.toDataURL()).toBitmap();
+    }
+    if (!buf || buf.length < 4) return null;
+
+    interface Bucket { r: number; g: number; b: number; n: number }
+    const buckets = new Map<number, Bucket>();
+    const px = Math.floor(buf.length / 4);
+    for (let i = 0; i < px; i++) {
+      // getBitmap 布局为 BGRA
+      const b = buf[i * 4];
+      const g = buf[i * 4 + 1];
+      const r = buf[i * 4 + 2];
+      const a = buf[i * 4 + 3];
+      if (a < 128) continue; // 跳过透明像素
+      const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+      const rec = buckets.get(key);
+      if (rec) {
+        rec.r += r; rec.g += g; rec.b += b; rec.n += 1;
+      } else {
+        buckets.set(key, { r, g, b, n: 1 });
+      }
+    }
+    if (buckets.size === 0) return null;
+
+    const pick = (filtered: boolean): string | null => {
+      let best: { r: number; g: number; b: number; score: number } | null = null;
+      for (const rec of buckets.values()) {
+        const r = rec.r / rec.n;
+        const g = rec.g / rec.n;
+        const b = rec.b / rec.n;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const lum = (r + g + b) / 3;
+        const sat = max === 0 ? 0 : (max - min) / max;
+        if (filtered) {
+          if (lum < 24 || lum > 232) continue;
+          if (sat < 0.08) continue;
+        }
+        const score = rec.n * (0.3 + sat);
+        if (!best || score > best.score) best = { r, g, b, score };
+      }
+      if (!best) return null;
+      const toHex = (v: number) => Math.round(v).toString(16).padStart(2, '0');
+      return `#${toHex(best.r)}${toHex(best.g)}${toHex(best.b)}`.toUpperCase();
+    };
+
+    return pick(true) ?? pick(false);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 用 matugen 从壁纸图片生成整套 M3 颜色方案 CSS。
  * matugen 无模板时不输出内容，因此写到临时目录：
  * 生成 config.toml + 模板 → 运行 → 读取输出 → 清理临时目录。
+ *
+ * matugen 缺失/失败时兜底：用内置解码器（nativeImage）从图片提取
+ * 种子色返回给渲染进程（`fallback: true`），CSS 由渲染进程用 JS HCT
+ * 引擎（@material/material-color-utilities）生成——主进程是 CJS，
+ * 无法加载该 ESM-only 库，因此种子色提取与 CSS 生成分开放在两侧。
  *
  * @param imagePath - 壁纸图片绝对路径（已通过存在性检查）
  * @param type - matugen scheme 类型（白名单校验）
@@ -296,6 +374,10 @@ async function genWallpaperTheme(imagePath: string, type: string, contrast: numb
     const seedMatch = css.match(/#[0-9a-fA-F]{6}/);
     return { success: true, css, sourceColor: seedMatch ? seedMatch[0] : undefined };
   } catch (e) {
+    const seed = extractSeedFromImage(imagePath);
+    if (seed) {
+      return { success: true, css: undefined, sourceColor: seed, fallback: true };
+    }
     const { message } = getExecError(e);
     return { success: false, error: message || 'matugen failed' };
   } finally {

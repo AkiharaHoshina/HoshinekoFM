@@ -459,3 +459,16 @@
 
 - 版本号升至 `0.11.12`
 
+## v0.11.13 — 无 matugen 环境的壁纸取色兜底
+
+### 壁纸 / 自选图片取色 fallback
+
+- 问题：壁纸取色与「选择壁纸」完全依赖 matugen CLI——未安装 matugen 的机器上 `theme:gen-wallpaper` spawn 失败（ENOENT），前端直接报 `theme.generate_failed`，无任何回退
+- 约束：`@material/material-color-utilities` 是 ESM-only，主进程为 CJS（实测 TS 把动态 `import()` 编译成 `require()`，运行时 ERR_REQUIRE_ESM）；渲染进程 canvas 取色会因 `media://` 非标准协议而污染。因此把「图片 → 种子色」与「种子色 → CSS」拆到两侧
+- 后端兜底：matugen 失败时用 `nativeImage` 解码图片 → 缩到 64×64 → `toBitmap()`（Electron 43 起 getBitmap 废弃）→ 16 级/通道直方图取色（跳过透明/近黑/近白/低饱和桶，频次×饱和度加权，全过滤退回频次最高桶），返回 `{ success: true, sourceColor, fallback: true }`；nativeImage 只可靠支持 PNG/JPEG，其余格式解码失败仍报错
+- 前端两处（`ThemeColorDialog.applyWallpaper` 与 `ThemeService` case `'wallpaper'`）：`res.css` 存在照旧注入；否则用 `seedToCss(sourceColor, {scheme, contrast})` 生成整套 CSS（与预设/自定义同一 HCT 引擎）；`scheme-smart` 无 JS 对应，自动回退 tonal-spot
+- 验证：`npx tsc -b`、`npm run lint`、`npm run build` 全部通过；Electron 实测解码+直方图取色（图标 → `#19b7f4`）
+
+- 版本号升至 `0.11.13`
+
+

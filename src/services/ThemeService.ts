@@ -99,7 +99,19 @@ export const ThemeService = {
           config.scheme ?? 'scheme-tonal-spot',
           config.contrast ?? 0,
         );
-        this.injectCss(res.success && res.css ? res.css : '');
+        if (res.success && res.css) {
+          this.injectCss(res.css);
+        } else if (res.success && res.sourceColor) {
+          // matugen 缺失/失败的兜底：后端只提取了种子色，
+          // 用 JS HCT 引擎生成整套 CSS（与预设/自定义同一引擎）
+          const css = seedToCss(res.sourceColor, {
+            scheme: config.scheme,
+            contrast: config.contrast,
+          });
+          this.injectCss(css || '');
+        } else {
+          this.injectCss('');
+        }
         break;
       }
       case 'matugen': {

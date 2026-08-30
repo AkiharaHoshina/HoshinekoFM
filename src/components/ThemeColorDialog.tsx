@@ -4,6 +4,7 @@ import { Button } from './Button';
 import { Icon } from './Icon';
 import { ColorPickerDialog } from './ColorPickerDialog';
 import { ThemeService } from '../services/ThemeService';
+import { seedToCss } from '../services/themeEngine';
 import { showToast } from '../utils/toast';
 import { t } from '../i18n';
 import { THEME_PRESETS, type ThemeConfig } from '../types/theme';
@@ -58,8 +59,9 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
   }, []);
 
   /**
-   * 应用壁纸取色配置：直接调用 matugen 生成并注入预览 CSS。
-   * 生成失败时 toast 报错（不回退预览）。
+   * 应用壁纸取色配置：先经 matugen 生成并注入预览 CSS；
+   * matugen 缺失/失败时后端返回种子色（fallback），用 JS HCT 引擎
+   * （seedToCss，与预设/自定义同一引擎）生成 CSS。都失败才 toast 报错。
    */
   const applyWallpaper = useCallback(async (path: string) => {
     if (!window.electron?.genWallpaperTheme) return;
@@ -79,6 +81,13 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
       );
       if (res.success && res.css) {
         ThemeService.injectCss(res.css);
+      } else if (res.success && res.sourceColor) {
+        const css = seedToCss(res.sourceColor, {
+          scheme: cfg.scheme,
+          contrast: cfg.contrast,
+        });
+        if (css) ThemeService.injectCss(css);
+        else showToast(t('theme.generate_failed'), 'error');
       } else {
         showToast(t('theme.generate_failed'), 'error');
       }
