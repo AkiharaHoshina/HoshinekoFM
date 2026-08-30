@@ -431,5 +431,22 @@
   - 兜底：`udisksctl power-off` 失败且 stderr 命中 mount/busy 时同样归类 `PARTITIONS_MOUNTED`（预检通过但真实占用的竞态）
 - 前端零改动，其余 `getMountMap` 调用者（fs.ts 挂载富化、get-mount-map IPC）行为不变
 
+### 右键菜单关闭逻辑修复（面包屑/omnibar 菜单需点击两次才能关掉）
+
+- 根因 1：`ContextMenu` 外部关闭只监听 document `click`（气泡）——右键与拖拽不产生 click 事件，旧菜单不关闭反而与文件右键菜单并存
+- 根因 2：监听器注册依赖 `[onClose]`，而所有调用方传内联箭头函数（每次父组件重渲染身份变化）→ 离散事件（mousedown/click）中 React 同步重渲染赶在事件冒泡到 document 前摘掉监听器，本次点击/拖拽扑空，下一次不触发同步重渲染时才生效——表现为「要两次才能关掉」
+- 修复：改监听 `mousedown` + `contextmenu`（任何鼠标按下立即关闭，右键先关旧菜单再开新菜单）；监听器一次性注册（deps `[]`），`onClose` 经 `onCloseRef` 取最新值；删除 `setTimeout(0)` 延迟注册（打开手势的 mousedown 先于组件挂载，无自关风险）
+- 受益范围：文件/面包屑/omnibar/设备/仪表盘所有右键菜单统一生效
+
+### 重命名输入框字体修复
+
+- 根因：`FileList.css` 末尾第二个 `.file-rename-input` 块（网格视图重构时追加的极简下划线样式）用 `font: inherit` 简写，连带把 font-size 重置为继承值——父级链无显式字号，落到根默认 16px，而文件名标签 `.file-name` 是 14px，进入重命名时字体明显变大
+- 修复：`font: inherit` 后补显式 `font-size: 14px`（保留家族/字重/行高继承），与标签一致
+
+### 损坏图片显示 broken_image 图标
+
+- 根因：缩略图 `<img>` 一直没有 `onError` 处理，`failedImages` 从未被填充，损坏图片一直显示浏览器原生的破图样式，回落分支永远不触发
+- 修复：`<img>` 加 `onError` 上报路径 → 记入 `failedImages` → 重渲染后显示 Material Symbols `broken_image` 图标（列表/网格视图一致）；颜色用 `--md-sys-color-outline` 灰调（适配深浅主题，比硬编码 #e3e3e3 更合理）
+
 - 版本号升至 `0.11.12`
 

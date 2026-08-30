@@ -54,15 +54,39 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
   const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number }>({ left: x, top: y });
 
+  /**
+   * 最新 onClose 引用。外部关闭监听器一次性注册（deps []），回调经 ref
+   * 取最新值——所有调用方都传内联箭头函数（每次父组件重渲染身份变化），
+   * 若把 onClose 直接放进依赖数组，监听器会被反复摘挂：离散事件
+   * （mousedown/click）中 React 同步重渲染会赶在事件冒泡到 document 之前
+   * 移除监听器，表现为「点击/拖拽两次才能关闭菜单」。
+   */
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
+    onCloseRef.current = onClose;
+  });
+
+  /**
+   * 菜单外部按下任意鼠标键（含右键、拖拽的按下）或触发 contextmenu 时关闭。
+   * 用 mousedown 而非 click：右键与拖拽不产生 click 事件，旧菜单在右键
+   * 按下时就关闭，随后 contextmenu 事件再打开新菜单，不会两个菜单并存。
+   * 打开手势（contextmenu / click）都发生在 mousedown 之后，且组件在打开
+   * 那一刻才挂载，因此无需 setTimeout 延迟注册。
+   */
+  useEffect(() => {
+    const handleOutside = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (menuRef.current && target && !menuRef.current.contains(target)) {
+        onCloseRef.current();
       }
     };
-    setTimeout(() => document.addEventListener('click', handleClickOutside), 0);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, [onClose]);
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('contextmenu', handleOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('contextmenu', handleOutside);
+    };
+  }, []);
 
   useEffect(() => {
     if (!menuRef.current) return;

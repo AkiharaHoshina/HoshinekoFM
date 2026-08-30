@@ -44,16 +44,21 @@ function FileIconDisplay({
   iconSize,
   filledIcons,
   hasFailed,
+  onImageError,
 }: {
   file: IFile;
   iconSize: number;
   filledIcons: boolean;
   hasFailed: boolean;
+  /** 图片加载/解码失败时上报（父级记入 failedImages，回落为 broken_image 图标） */
+  onImageError?: (path: string) => void;
 }) {
   const isImg = file.mime?.startsWith("image/") ?? false;
   const isBrokenSymlink = file.symlinkTarget
     ? file.mime === "inode/symlink"
     : false;
+  /** 图片文件但缩略图加载失败：显示 broken_image 图标而非损坏的原生缩略图 */
+  const isBrokenImage = isImg && hasFailed;
 
   return (
     <span
@@ -72,6 +77,7 @@ function FileIconDisplay({
           draggable={false}
           loading="lazy"
           decoding="async"
+          onError={() => onImageError?.(file.path)}
           style={{
             width: `${iconSize}px`,
             height: `${iconSize}px`,
@@ -83,17 +89,21 @@ function FileIconDisplay({
         <span className="file-icon-stack">
           <Icon
             name={
-              isBrokenSymlink
-                ? "link_off"
-                : getFileIconFromMime(file.mime, file.isDirectory)
+              isBrokenImage
+                ? "broken_image"
+                : isBrokenSymlink
+                  ? "link_off"
+                  : getFileIconFromMime(file.mime, file.isDirectory)
             }
             filled={filledIcons}
             className={
               file.isDirectory
                 ? "folder-icon"
-                : isBrokenSymlink
-                  ? "doc-icon broken-symlink-icon"
-                  : "doc-icon"
+                : isBrokenImage
+                  ? "doc-icon broken-image-icon"
+                  : isBrokenSymlink
+                    ? "doc-icon broken-symlink-icon"
+                    : "doc-icon"
             }
             style={{
               fontSize: `${iconSize}px`,
@@ -250,6 +260,7 @@ function ListRowItem({
         iconSize={data.iconSize}
         filledIcons={data.filledIcons}
         hasFailed={hasFailed}
+        onImageError={data.onImageError}
       />
       <FileNameDisplay
         file={file}
@@ -328,6 +339,7 @@ function GridRowItem({
         iconSize={data.iconSize}
         filledIcons={data.filledIcons}
         hasFailed={hasFailed}
+        onImageError={data.onImageError}
       />
       <FileNameDisplay
         file={file}

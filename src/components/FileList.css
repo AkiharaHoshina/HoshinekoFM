@@ -174,6 +174,10 @@
     color: #ef5350 !important;
 }
 
+.broken-image-icon {
+    color: var(--md-sys-color-outline);
+}
+
 .mountpoint-badge {
     filter: drop-shadow(1px 1px 0 var(--md-sys-color-surface));
 }
@@ -210,6 +214,10 @@
     border-bottom: 2px solid var(--md-sys-color-primary);
     background: transparent;
     color: inherit;
+    /* 继承家族/字重/行高，但字号显式 14px 与文件名标签 .file-name 一致。
+       font 简写会连带重置 font-size 为继承值（父级链无显式字号，
+       落到根默认 16px），导致进入重命名时字体变大，故不可再简写覆盖。 */
     font: inherit;
+    font-size: 14px;
     outline: none;
 }
