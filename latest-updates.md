@@ -421,5 +421,15 @@
 - 实现：`.dashboard-container` 上 `onContextMenu`（preventDefault + 记录坐标）→ 复用 `ContextMenu` 组件；effect 内经 `refreshRef` 暴露 `refresh` 给菜单 action（不重建订阅）；与固定按钮菜单互斥（打开一个关闭另一个）
 - 此前仪表盘页没有任何背景右键菜单（ExplorerTab 的背景菜单只挂在文件列表分支），无菜单冲突
 
+### 设备弹出误报修复（分区已卸载仍提示「需要先卸载所有挂载的项目」）
+
+- 根因：`system:eject-device` 弹出前预检读 `/proc/mounts`，但经 `getMountMap()` 走了 30 秒 TTL 缓存（供文件列表挂载富化复用）——卸载分区后立即弹出，缓存仍是卸载前的旧挂载表，随机误判 `PARTITIONS_MOUNTED`（是否复现取决于缓存最后填充时序）
+- 修复：
+  - `getMountMap(force = false)` 新增 force 参数：eject 预检用 `getMountMap(true)` 直读实时挂载表，绕过缓存
+  - 新增 `invalidateMountMapCache()`：挂载/卸载/弹出成功后清空缓存，文件列表挂载徽标不再最长 30 秒显示陈旧挂载点
+  - 分区归属匹配从 `source.startsWith(devicePath)` 收紧为「后缀 `p?`+数字」正则（覆盖 `sda1`/`nvme0n1p1`/`mmcblk0p1`，排除 `/dev/sdab` 对 `/dev/sda` 的误配）
+  - 兜底：`udisksctl power-off` 失败且 stderr 命中 mount/busy 时同样归类 `PARTITIONS_MOUNTED`（预检通过但真实占用的竞态）
+- 前端零改动，其余 `getMountMap` 调用者（fs.ts 挂载富化、get-mount-map IPC）行为不变
+
 - 版本号升至 `0.11.12`
 

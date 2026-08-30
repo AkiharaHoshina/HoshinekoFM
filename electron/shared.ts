@@ -28,10 +28,11 @@ let _mountMapCache: { map: Map<string, { source: string; fstype: string }>; ts: 
 /**
  * Parse `/proc/mounts` into a Map keyed by mountpoint.
  * Cached for {@link MOUNT_MAP_CACHE_TTL} ms to avoid re-reading on every
- * directory listing.
+ * directory listing. Pass `force = true` to bypass the cache and read the
+ * freshest mount table (e.g. eject pre-checks right after unmounting).
  */
-export async function getMountMap(): Promise<Map<string, { source: string; fstype: string }>> {
-  if (_mountMapCache && Date.now() - _mountMapCache.ts < MOUNT_MAP_CACHE_TTL) {
+export async function getMountMap(force = false): Promise<Map<string, { source: string; fstype: string }>> {
+  if (!force && _mountMapCache && Date.now() - _mountMapCache.ts < MOUNT_MAP_CACHE_TTL) {
     return _mountMapCache.map;
   }
 
@@ -57,4 +58,14 @@ export async function getMountMap(): Promise<Map<string, { source: string; fstyp
 
   _mountMapCache = { map, ts: Date.now() };
   return map;
+}
+
+/**
+ * Drop the cached mount map so the next {@link getMountMap} call re-reads
+ * `/proc/mounts`. Call after mount/unmount/eject operations that change the
+ * mount table — otherwise consumers (file-list mount enrichment etc.) keep
+ * seeing stale mountpoints for up to {@link MOUNT_MAP_CACHE_TTL} ms.
+ */
+export function invalidateMountMapCache(): void {
+  _mountMapCache = undefined;
 }

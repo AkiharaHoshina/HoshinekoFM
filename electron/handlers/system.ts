@@ -5,7 +5,7 @@ import os from 'os';
 import { spawn, exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import dbus from 'dbus-next';
-import { getMountMap, getExecError } from '../shared';
+import { getMountMap, invalidateMountMapCache, getExecError } from '../shared';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -1058,14 +1058,23 @@ export function registerSystemHandlers() {
     try {
       const { stdout, stderr } = await execAsync(`udisksctl mount -b "${devicePath}"`);
       const mountMatch = stdout.match(/Mounted .+ at (.+)/);
-      if (mountMatch) return { success: true, mountpoint: mountMatch[1].trim() };
+      if (mountMatch) {
+        invalidateMountMapCache();
+        return { success: true, mountpoint: mountMatch[1].trim() };
+      }
       const alreadyMatch = stderr.match(/already mounted at ['`](.+?)['`]/);
-      if (alreadyMatch) return { success: true, mountpoint: alreadyMatch[1] };
+      if (alreadyMatch) {
+        invalidateMountMapCache();
+        return { success: true, mountpoint: alreadyMatch[1] };
+      }
       return { success: false, error: stderr || 'Unknown error' };
     } catch (e) {
       const { stderr } = getExecError(e);
       const alreadyMatch = stderr.match(/already mounted at ['`](.+?)['`]/);
-      if (alreadyMatch) return { success: true, mountpoint: alreadyMatch[1] };
+      if (alreadyMatch) {
+        invalidateMountMapCache();
+        return { success: true, mountpoint: alreadyMatch[1] };
+      }
       return { success: false, error: stderr || getExecError(e).message || 'Mount failed' };
     }
   });
@@ -1073,6 +1082,7 @@ export function registerSystemHandlers() {
   ipcMain.handle('system:unmount-device', async (_event, devicePath: string) => {
     try {
       await execAsync(`udisksctl unmount -b "${devicePath}"`);
+      invalidateMountMapCache();
       return { success: true };
     } catch (e) {
       const { stderr, message } = getExecError(e);
@@ -1081,20 +1091,47 @@ export function registerSystemHandlers() {
   });
 
   /**
+   * 判断挂载源（/proc/mounts 的 source 字段）是否属于某个磁盘的分区：
+   * `/dev/sda1`、`/dev/nvme0n1p1`、`/dev/mmcblk0p1` 分别属于对应磁盘。
+   * 用「后缀 p?数字」匹配而非前缀 startsWith——后者会把 `/dev/sdab`
+   * 误判为 `/dev/sda` 的分区（多盘环境罕见但存在）。
+   * 磁盘本身被整体挂载时（source === devicePath，rest 为空）不算分区。
+   */
+  function isPartitionSourceOf(source: string, diskPath: string): boolean {
+    if (!source.startsWith(diskPath)) return false;
+    const rest = source.slice(diskPath.length);
+    return /^p?\d+$/.test(rest);
+  }
+
+  /**
    * Eject (power off) a device. Fails with a `code` of `PARTITIONS_MOUNTED`
    * when the device still has mounted partitions — the renderer translates
    * the code instead of receiving a hardcoded message.
+   * 预检必须读实时挂载表（getMountMap(true) 绕过 30s TTL 缓存）：
+   * 卸载分区后立即弹出时，缓存可能仍是卸载前的旧表，
+   * 会误报「分区仍挂载」。
    */
   ipcMain.handle('system:eject-device', async (_event, devicePath: string) => {
     try {
-      const mountMap = await getMountMap();
+      const mountMap = await getMountMap(true);
       for (const [, info] of mountMap) {
-        if (info.source && info.source.startsWith(devicePath) && info.source !== devicePath) {
+        if (isPartitionSourceOf(info.source, devicePath)) {
           return { success: false, code: 'PARTITIONS_MOUNTED' };
         }
       }
-      await execAsync(`udisksctl power-off -b "${devicePath}"`);
-      return { success: true };
+      try {
+        await execAsync(`udisksctl power-off -b "${devicePath}"`);
+        invalidateMountMapCache();
+        return { success: true };
+      } catch (e) {
+        const { stderr, message } = getExecError(e);
+        // 预检通过但 udisks 仍拒绝（竞态/设备占用）：busy/mounted 类
+        // 错误按「分区仍挂载」归类，前端给出同样明确的引导文案。
+        if (/mount|busy/i.test(stderr)) {
+          return { success: false, code: 'PARTITIONS_MOUNTED' };
+        }
+        return { success: false, error: stderr || message || 'Eject failed' };
+      }
     } catch (e) {
       const { stderr, message } = getExecError(e);
       return { success: false, error: stderr || message || 'Eject failed' };
