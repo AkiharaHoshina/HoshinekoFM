@@ -398,3 +398,28 @@
 ### 其他
 
 - 版本号升至 `0.11.10`
+
+## v0.11.12 — 仪表盘存储区设备子区域扩展（手动挂载分区）
+
+### 设备子区域判定重构
+
+- 收集规则从「已挂载外接设备」（`hotplug || rm || tran === 'usb'` 标志）改为「已挂载块设备分区 − 系统挂载点排除」：
+  - 手动挂载的内部分区（如 Windows NTFS 分区挂到 `/mnt/windows`）此前因无外接标志被排除，现在正常显示占用信息并追加在 /home 之后
+  - 外接 USB/SD 磁盘行为不变（已挂载即显示，拔出自动消失）
+- 排除清单：系统挂载点（`/`、`/home`、`/boot`、`/efi`、`/usr`、`/var`、`/tmp`、`/opt`、`/srv`、`/etc`，含子路径前缀匹配）与 loop 设备（AppImage/snap 挂载噪音）；swap 本就不计入已挂载
+- 设备图标按设备类型区分（USB `usb` / 可移动 `sd_card` / 加密 `encrypted` / 其余 `hard_drive`），不再一律 USB 图标
+- 设备标签单行化（`label · fstype · size`）：不再复用侧边栏 tooltip 的多行 `getDeviceTitle`（含换行，列表显示错乱）
+
+### 刷新兜底
+
+- 仪表盘存储区**常开 5 秒轮询**（与 UDisks2 / GVfs 事件订阅并存，`refreshing` 标志去重）：手动 `mount` 命令不产生 UDisks2 接口增删事件，此前有 watcher 时仪表盘永远感知不到手动挂载，轮询兜底后最长 5 秒内出现
+- MTP / PTP 手机相机链路不变（gvfs 卷挂载后照常追加）
+
+### 仪表盘右键刷新菜单
+
+- 仪表盘背景右键弹出 M3 菜单，内容只有「刷新」（复用 `context_menu.refresh` 文案，无新增 i18n）：立即重拉存储子区域（手动挂载后无需等 5 秒轮询）
+- 实现：`.dashboard-container` 上 `onContextMenu`（preventDefault + 记录坐标）→ 复用 `ContextMenu` 组件；effect 内经 `refreshRef` 暴露 `refresh` 给菜单 action（不重建订阅）；与固定按钮菜单互斥（打开一个关闭另一个）
+- 此前仪表盘页没有任何背景右键菜单（ExplorerTab 的背景菜单只挂在文件列表分支），无菜单冲突
+
+- 版本号升至 `0.11.12`
+

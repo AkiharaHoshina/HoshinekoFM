@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Icon } from './Icon';
 import { ContextMenu } from './ContextMenu';
 import { MarqueeText } from './MarqueeText';
 import './Dashboard.css';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import type { IFile, AllDevice } from '../types/files';
-import { isExternalDevice, getDeviceTitle } from '../utils/deviceUtils';
+import { getDeviceIcon } from '../utils/deviceUtils';
 import { t as ti } from '../i18n';
 
 interface DashboardProps {
@@ -66,11 +66,42 @@ export interface PinnedItem {
     isDir?: boolean;
 }
 
-/** 递归收集已挂载的外接设备（含磁盘下的分区），挂载点作为存储卡片目标 */
-function collectMountedExternal(list: AllDevice[], out: Array<{ label: string; mountpoint: string }>): void {
+/**
+ * 仪表盘设备子区域排除的「系统挂载点」：这些挂载点属于操作系统本身
+ * （或已有专用子区域，如 /home），不作为设备子区域展示。
+ * 前缀匹配（`/boot/` 覆盖 `/boot/efi` 等）。
+ */
+const SYSTEM_MOUNTPOINTS = ['/', '/home', '/boot', '/efi', '/usr', '/var', '/tmp', '/opt', '/srv', '/etc'];
+
+/** 挂载点是否属于系统挂载点（精确相等或为其子路径） */
+function isSystemMountpoint(mountpoint: string): boolean {
+  return SYSTEM_MOUNTPOINTS.some((s) => mountpoint === s || mountpoint.startsWith(s + '/'));
+}
+
+/**
+ * 单行设备名（仪表盘存储子区域用）：
+ * `label · fstype · size`，label 缺失时回退设备名（如 sda1）。
+ * 不用 {@link getDeviceTitle}——它返回含换行的多行串（设备路径与挂载点），
+ * 只适合侧边栏 tooltip，不适合列表标签。
+ */
+function getDeviceCardLabel(d: AllDevice): string {
+  const parts = [d.label || d.name];
+  if (d.fstype) parts.push(d.fstype);
+  if (d.size) parts.push(d.size);
+  return parts.join(' · ');
+}
+
+/**
+ * 递归收集所有已挂载的块设备分区（含磁盘本身），挂载点作为存储卡片目标。
+ * 不再依赖 hotplug/rm/tran 外接标志：手动挂载的内部分区（如 Windows 分区）
+ * 没有这些标志，但同样应显示占用信息——改为按「已挂载 + 非系统挂载点」判定，
+ * 排除 loop 设备（AppImage/snap 挂载噪音）与系统挂载点（见 {@link SYSTEM_MOUNTPOINTS}）。
+ * 携带原设备对象以便渲染时按设备类型选择图标。
+ */
+function collectMountedExternal(list: AllDevice[], out: Array<{ label: string; mountpoint: string; device: AllDevice }>): void {
   for (const d of list) {
-    if (d.mounted && d.mountpoint && isExternalDevice(d)) {
-      out.push({ label: getDeviceTitle(d), mountpoint: d.mountpoint });
+    if (d.mounted && d.mountpoint && d.type !== 'loop' && !isSystemMountpoint(d.mountpoint)) {
+      out.push({ label: getDeviceCardLabel(d), mountpoint: d.mountpoint, device: d });
     }
     if (d.children) collectMountedExternal(d.children, out);
   }
@@ -112,33 +143,44 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
   const [recentFiles] = useLocalStorage<IFile[]>('dashboard.recent', []);
 
   /**
-   * 组装存储子区域：顺序固定为 系统（/）→ 主页（home）→ 已挂载外接设备
+   * 供仪表盘右键菜单「刷新」调用。effect 挂载时赋值为内部 refresh 的
+   * 无参包装（refresh 是 effect 闭包内定义，需经 ref 暴露给菜单项 action）。
+   */
+  const refreshRef = useRef<() => void>(() => {});
+
+  /** 仪表盘背景右键菜单位置（null = 关闭），菜单内容只有「刷新」 */
+  const [refreshMenuPos, setRefreshMenuPos] = useState<{ x: number; y: number } | null>(null);
+
+  /**
+   * 组装存储子区域：顺序固定为 系统（/）→ 主页（home）→ 已挂载设备
    * （块设备分区递归收集 + gvfs 卷，识别到即追加在尾部）。
    * 批量 statfs 查询后按查询路径合并。
    * 主页子区域的占用信息由设置项「显示主页存储占用」控制（默认隐藏）。
-   * 设备热插拔事件（UDisks2 / GVfs）到达时刷新，拔出自动移除条目；
-   * 无设备 watcher 时 5 秒轮询兜底。
+   * 设备热插拔事件（UDisks2 / GVfs）到达时即时刷新；此外**常开 5 秒轮询兜底**——
+   * 手动 mount 命令（如挂载 Windows 分区）不产生 UDisks2 接口增删事件，
+   * 只有轮询能感知。并发刷新由 refreshing 标志去重，拔出设备自动移除条目。
    */
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
     let cleanupDevice: (() => void) | null = null;
     let cleanupGvfs: (() => void) | null = null;
     let disposed = false;
+    let refreshing = false;
 
     const refresh = async () => {
-      if (!window.electron) return;
-      try {
-        const home = await window.electron.getHomePath();
+      if (!window.electron || refreshing) return;
+      refreshing = true;
+      try {        const home = await window.electron.getHomePath();
         const targets: Array<{ label: string; subtitle?: string; path: string; icon: string; isHome?: boolean }> = [
           { label: 'dashboard.system_storage', path: '/', icon: 'hard_drive' },
           { label: 'dashboard.home_storage', path: home, icon: 'home', isHome: true },
         ];
 
         const devices = await window.electron.getAllDevices();
-        const mountedExternal: Array<{ label: string; mountpoint: string }> = [];
+        const mountedExternal: Array<{ label: string; mountpoint: string; device: AllDevice }> = [];
         collectMountedExternal(devices, mountedExternal);
         for (const d of mountedExternal) {
-          targets.push({ label: d.label, subtitle: d.mountpoint, path: d.mountpoint, icon: 'usb' });
+          targets.push({ label: d.label, subtitle: d.mountpoint, path: d.mountpoint, icon: getDeviceIcon(d.device) });
         }
 
         const volumes = await window.electron.getGvfsVolumes();
@@ -176,8 +218,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
         if (!disposed) setStorageCards(cards);
       } catch {
         // 查询失败保持当前卡片不变
+      } finally {
+        refreshing = false;
       }
     };
+    refreshRef.current = () => { void refresh(); };
 
     const init = async () => {
       await refresh();
@@ -188,9 +233,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
         if (window.electron.onGvfsChange) {
           cleanupGvfs = window.electron.onGvfsChange(() => { void refresh(); });
         }
-      } else {
-        interval = setInterval(() => { void refresh(); }, 5000);
       }
+      interval = setInterval(() => { void refresh(); }, 5000);
     };
     void init();
 
@@ -240,7 +284,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
   };
 
   return (
-    <div className="dashboard-container fade-in">
+    <div
+      className="dashboard-container fade-in"
+      onContextMenu={(e) => {
+        // 仪表盘背景右键：仅提供「刷新」（手动挂载后立即重拉存储子区域）。
+        // preventDefault 阻止浏览器默认菜单；同时关闭可能打开的固定菜单。
+        e.preventDefault();
+        setPinMenuPos(null);
+        setRefreshMenuPos({ x: e.clientX, y: e.clientY });
+      }}
+    >
       <header className="dashboard-header">
         <h1 className="greeting">{t(greeting)}</h1>
         <p className="subtitle">{t('Welcome back to your command center.')}</p>
@@ -334,6 +387,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
               className="pinned-item add-pin"
               onClick={(e) => {
                 e.stopPropagation();
+                setRefreshMenuPos(null);
                 setPinMenuPos({ x: e.clientX, y: e.clientY });
               }}
             >
@@ -362,6 +416,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
               },
             ]}
             onClose={() => setPinMenuPos(null)}
+          />
+        )}
+
+        {refreshMenuPos && (
+          <ContextMenu
+            x={refreshMenuPos.x}
+            y={refreshMenuPos.y}
+            items={[
+              {
+                label: ti('context_menu.refresh'),
+                icon: 'refresh',
+                action: () => { refreshRef.current(); },
+              },
+            ]}
+            onClose={() => setRefreshMenuPos(null)}
           />
         )}
 
