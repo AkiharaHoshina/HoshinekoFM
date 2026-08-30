@@ -371,8 +371,17 @@ async function genWallpaperTheme(imagePath: string, type: string, contrast: numb
     ], { timeout: 30000 });
 
     const css = await fs.readFile(outPath, 'utf-8');
-    const seedMatch = css.match(/#[0-9a-fA-F]{6}/);
-    return { success: true, css, sourceColor: seedMatch ? seedMatch[0] : undefined };
+    // 种子色优先从模板首行的 seed 注释精确解析（防止 CSS 变量里
+    // 的任意颜色被误认成种子色）；注释解析失败时退回全文第一个
+    // #RRGGBB。matugen 的 .hex 输出可能不带 # 前缀，两种情况都兼容。
+    const seedComment = css.match(/\/\*\s*seed:\s*(#[0-9a-fA-F]{6}|[0-9a-fA-F]{6})\s*\*\//);
+    const seedRaw = seedComment
+      ? seedComment[1]
+      : css.match(/#[0-9a-fA-F]{6}/)?.[0];
+    const sourceColor = seedRaw
+      ? (seedRaw.startsWith('#') ? seedRaw : `#${seedRaw}`)
+      : undefined;
+    return { success: true, css, sourceColor };
   } catch (e) {
     const seed = extractSeedFromImage(imagePath);
     if (seed) {

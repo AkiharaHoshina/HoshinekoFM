@@ -223,6 +223,7 @@ const koCN = {
   'nav.dashboard': '계기판',
   'nav.home': '홈',
   'nav.files': '화일',
+  'nav.trash': '휴지통',
   'nav.terminal': '단말기',
   'nav.settings': '설정',
 
@@ -337,6 +338,7 @@ const koCN = {
   'terminal.menu.paste': '붙여넣기',
   'terminal.menu.export_log': '전체 로그 내보내기',
   'terminal.menu.clear': '화면 지우기',
+  'terminal.menu.switch_dir': 'GUI 디렉토리로 이동',
   'terminal.log_exported': '로그를 내보냈습니다',
   'terminal.log_empty': '내보낼 로그가 없습니다',
 

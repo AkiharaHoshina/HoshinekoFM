@@ -98,9 +98,17 @@ export interface IElectronAPI {
     openFileDialog: () => Promise<string | null>;
     pickFile: () => Promise<string | null>;
     pickDirectory: () => Promise<string | null>;
-    /** 打开内置文件选择器窗口；返回选中路径数组，取消/关窗返回 null */
+    /**
+     * 打开内置文件选择器窗口；返回选中路径数组，取消/关窗返回 null。
+     * mode 为第三方程序接入时声明可选条目类型的接口：
+     * - 'file'：仅文件可选
+     * - 'folder'：仅文件夹可选
+     * - 'files'：仅文件可选（多选语义别名，与 file 行为一致）
+     * - 'items'：全部可选——文件与文件夹皆可选
+     * 四种模式均支持多选（框选），调用方按需取结果。
+     */
     openPicker: (options: { mode: 'file' | 'folder' | 'files' | 'items' }) => Promise<string[] | null>;
-    /** 选择器窗口读取自身配置（普通窗口返回 null） */
+    /** 选择器窗口读取自身配置（mode 声明见 openPicker；普通窗口返回 null） */
     getPickerConfig: () => Promise<{ mode: 'file' | 'folder' | 'files' | 'items' } | null>;
     /** 选择器窗口回传选中结果（null = 取消），主进程随后关闭该窗口 */
     resolvePicker: (paths: string[] | null) => Promise<void>;

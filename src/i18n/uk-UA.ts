@@ -252,6 +252,7 @@ const ukUA = {
   'nav.dashboard': 'Панель',
   'nav.home': 'Домашній',
   'nav.files': 'Файли',
+  'nav.trash': 'Кошик',
   'nav.terminal': 'Термінал',
   'nav.settings': 'Налаштування',
 
@@ -365,6 +366,7 @@ const ukUA = {
   'terminal.menu.paste': 'Вставити',
   'terminal.menu.export_log': 'Експортувати весь журнал',
   'terminal.menu.clear': 'Очистити екран',
+  'terminal.menu.switch_dir': 'Перейти до каталогу GUI',
   'terminal.log_exported': 'Журнал експортовано',
   'terminal.log_empty': 'Журнал поки порожній',
 

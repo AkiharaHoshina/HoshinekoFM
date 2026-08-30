@@ -36,6 +36,8 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
   const snapshotRef = useRef<string | null>(null);
   /** 「确定」主动关闭标志：md-dialog 的 close 事件二次触发时跳过取消回滚 */
   const confirmedRef = useRef(false);
+  /** 最近一次有效草稿：壁纸取色整体失败时回滚到它，防止「确定」保存无种子的坏配置 */
+  const draftRef = useRef<ThemeConfig | null>(current);
 
   // 打开时：记录快照（取消回滚用）、加载 DMS 可用性、初始化草稿
   useEffect(() => {
@@ -67,6 +69,8 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
    */
   const applyWallpaper = useCallback(async (path: string) => {
     if (!window.electron?.genWallpaperTheme) return;
+    // 取色前的最近有效草稿：整体失败时回滚，避免「确定」把无种子的坏配置存下去
+    const prevDraft = draftRef.current;
     const baseCfg: ThemeConfig = {
       kind: 'wallpaper',
       wallpaperPath: path,
@@ -99,9 +103,13 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
       } else {
         showToast(t('theme.generate_failed'), 'error');
       }
-      if (previewed && res.sourceColor) {
-        // 补存测算出的原子色：保存后 settings.theme 携带 seed
-        setDraft({ ...baseCfg, seed: res.sourceColor });
+      if (previewed) {
+        // 补存测算出的原子色：保存后 settings.theme 携带 seed，
+        // 设置主页的色点才能显示壁纸测算出的原子色
+        setDraft(res.sourceColor ? { ...baseCfg, seed: res.sourceColor } : baseCfg);
+      } else {
+        // 取色整体失败：回滚草稿——壁纸卡不显示选中态，确定也不会保存坏配置
+        setDraft(prevDraft);
       }
       // 跨窗口实时同步：壁纸取色结果立即广播到所有窗口
       ThemeService.broadcastPreview();
@@ -183,6 +191,11 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
   };
 
   const selectedKind = draft?.kind;
+
+  /** 草稿变化时记录最近有效值（供壁纸取色失败回滚使用） */
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   return (
     <>

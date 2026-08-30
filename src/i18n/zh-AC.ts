@@ -215,6 +215,7 @@ const zhAC = {
   'nav.dashboard': '仪表板',
   'nav.home': '主页',
   'nav.files': '文件',
+  'nav.trash': '回收站',
   'nav.terminal': '终端',
   'nav.settings': '设置',
 
@@ -329,6 +330,7 @@ const zhAC = {
   'terminal.menu.paste': '粘贴',
   'terminal.menu.export_log': '导出完整日志',
   'terminal.menu.clear': '清除屏幕',
+  'terminal.menu.switch_dir': '切换到图形界面目录',
   'terminal.log_exported': '日志已导出',
   'terminal.log_empty': '暂无日志可导出',
 

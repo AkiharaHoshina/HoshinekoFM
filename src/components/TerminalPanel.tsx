@@ -17,6 +17,10 @@ const MAX_TERMINAL_HEIGHT_RATIO = 0.85;
 interface TerminalPanelProps {
     /** 终端初始工作目录（可选，缺省使用 shell 默认目录） */
     cwd?: string;
+    /** 图形界面当前浏览的目录：右键菜单「切换到图形界面目录」的目标 */
+    currentDir?: string;
+    /** 显式 cd 请求（含递增 nonce）：「在此打开终端」等显式动作触发 */
+    cdRequest?: { path: string; nonce: number } | null;
     /** 面板当前高度（px，受控：由 App 持有） */
     height: number;
     /** 拖动标题栏调整高度时回调（App 更新 state） */
@@ -36,6 +40,8 @@ interface TerminalPanelProps {
  */
 export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   cwd,
+  currentDir,
+  cdRequest,
   height,
   onHeightChange,
   onResetHeight,
@@ -117,7 +123,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
         </IconButton>
       </div>
       <div className="terminal-panel-body">
-        <TerminalPane cwd={cwd} />
+        <TerminalPane cwd={cwd} currentDir={currentDir} cdRequest={cdRequest} />
       </div>
     </div>
   );

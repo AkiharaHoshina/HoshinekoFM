@@ -213,6 +213,7 @@ const zhCT = {
   'nav.dashboard': '儀表板',
   'nav.home': '主頁',
   'nav.files': '檔案',
+  'nav.trash': '垃圾桶',
   'nav.terminal': '終端機',
   'nav.settings': '設定',
 
@@ -274,23 +275,23 @@ const zhCT = {
   'breadcrumbs.root': '根目錄',
   'breadcrumbs.home': (user: string, dir: string) => `${user} 的家目錄\n${dir}`,
   'breadcrumbs.go_to_root': '轉到根目錄',
-  'breadcrumbs.go_to_home': '去主頁',
-  'breadcrumbs.go_to_trash': '去垃圾桶',
+  'breadcrumbs.go_to_home': '轉到主頁',
+  'breadcrumbs.go_to_trash': '轉到垃圾桶',
   'drag.action_title': '移動定複製？',
   'drag.action_message': (n: number, dir: string) => `將 ${n} 個項目移動或者複製到「${dir}」？`,
   'drag.button.move': '移動',
   'drag.button.copy': '複製',
   'drag.trash_restore_title': '還原到呢個位置？',
   'drag.trash_restore_message': (dir: string) => `將項目還原到「${dir}」？還原會將其移出垃圾桶。`,
-  'breadcrumbs.go_to_dev': '去裝置目錄',
+  'breadcrumbs.go_to_dev': '轉到裝置目錄',
 
-  'breadcrumbs.go_to_devpts': '去虛擬終端',
+  'breadcrumbs.go_to_devpts': '轉到虛擬終端',
 
-  'breadcrumbs.go_to_proc': '去核心資訊',
+  'breadcrumbs.go_to_proc': '轉到核心資訊',
 
-  'breadcrumbs.go_to_sysfs': '去核心物件',
+  'breadcrumbs.go_to_sysfs': '轉到核心物件',
 
-  'breadcrumbs.go_to_tmpfs': '去臨時目錄',
+  'breadcrumbs.go_to_tmpfs': '轉到臨時目錄',
   'breadcrumbs.root_title': (mp: string) => `根目錄\n${mp}`,
   'breadcrumbs.dev': '設備',
   'breadcrumbs.dev_title': (mp: string) => `設備目錄\n${mp}`,
@@ -327,6 +328,7 @@ const zhCT = {
   'terminal.menu.paste': '貼上',
   'terminal.menu.export_log': '匯出完整日誌',
   'terminal.menu.clear': '清除螢幕',
+  'terminal.menu.switch_dir': '切換到圖形介面目錄',
   'terminal.log_exported': '日誌已匯出',
   'terminal.log_empty': '暫無日誌可匯出',
 

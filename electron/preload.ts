@@ -40,8 +40,16 @@ contextBridge.exposeInMainWorld('electron', {
   openFileDialog: () => ipcRenderer.invoke('dialog:open-file'),
   pickFile: () => ipcRenderer.invoke('dialog:pick-file'),
   pickDirectory: () => ipcRenderer.invoke('dialog:pick-directory'),
-  // 内置文件选择器（独立窗口，mode: file | folder | files）
-  openPicker: (options: { mode: 'file' | 'folder' | 'files' }) => ipcRenderer.invoke('picker:open', options),
+  /**
+   * 内置文件选择器（独立窗口）。
+   * mode 是第三方程序接入时声明可选条目类型的接口：
+   * - 'file'：仅文件可选
+   * - 'folder'：仅文件夹可选
+   * - 'files'：仅文件可选（多选语义别名，与 file 行为一致）
+   * - 'items'：全部可选——文件与文件夹皆可选
+   * file/folder/files/items 均支持多选（框选），调用方按需取结果。
+   */
+  openPicker: (options: { mode: 'file' | 'folder' | 'files' | 'items' }) => ipcRenderer.invoke('picker:open', options),
   getPickerConfig: () => ipcRenderer.invoke('picker:get-config'),
   resolvePicker: (paths: string[] | null) => ipcRenderer.invoke('picker:resolve', paths),
   readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path),

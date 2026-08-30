@@ -1,7 +1,6 @@
 import React, { useRef, useEffect, useState, useMemo, useCallback } from "react";
 import "./Breadcrumbs.css";
 import { Button } from "./Button";
-import { IconButton } from "./IconButton";
 import { Icon } from "./Icon";
 import { Chip } from "./md";
 import { ContextMenu } from "./ContextMenu";
@@ -455,6 +454,41 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     });
   };
 
+  /**
+   * 渲染根目录胶囊（tag 图标 + 「根目录」标签）。
+   * 外观与处于根目录时的胶囊一致，与其他胶囊（主页/特殊挂载）
+   * 遵循同一套约定：软链接时斜体，位于路径末尾时加粗，其余常规字重。
+   *
+   * @param isLast - 根目录是否为路径最后一个元素（决定标签是否加粗）
+   * @returns 根目录胶囊 JSX
+   */
+  const renderRootChip = (isLast: boolean) => {
+    const rootSymlink = symlinkInfo.get("/");
+    const isRootSymlink = Boolean(rootSymlink?.isSymlink && rootSymlink.target);
+    return (
+      <Chip
+        title={
+          isRootSymlink
+            ? `${t("breadcrumbs.root_title", "/")}\n${t("symlink.tooltip", rootSymlink!.target!)}`
+            : t("breadcrumbs.root_title", "/")
+        }
+        onClick={() => onNavigate("/")}
+        onDragOver={handleDragOver}
+        onDragEnter={(e) => handleDragEnter(e, "/")}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, "/")}
+        onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
+        className={`breadcrumb-chip${dragOverPath === "/" ? " drag-over" : ""}`}
+      >
+        <Icon name="tag" slot="icon" />
+        {isRootSymlink
+          ? <span style={{ fontStyle: 'italic', fontWeight: isLast ? 600 : 400 }}>{t("breadcrumbs.root")}</span>
+          : <span style={{ fontWeight: isLast ? 600 : 400 }}>{t("breadcrumbs.root")}</span>
+        }
+      </Chip>
+    );
+  };
+
   // 所有胶囊统一为同一份右键跳转菜单：与「主页」胶囊在主页时的
   // 内容、分组、顺序完全一致——第一组 = 主页 + 根目录 + 回收站；
   // 第二组 = 设备目录（/dev）+ 特殊挂载。不再按当前胶囊动态增删条目。
@@ -583,17 +617,8 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
         </Chip>
       ) : isInSpecial ? (
         <>
-          {preSegments.length > 0 && (
-            <IconButton
-              variant="standard"
-              onClick={() => onNavigate("/")}
-              onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
-              className="breadcrumb-root"
-              title={t("breadcrumbs.root_title", "/")}
-            >
-              <Icon name="tag" />
-            </IconButton>
-          )}
+          {/* 根目录统一渲染为胶囊：与处于根目录时外观一致（非末尾，常规字重） */}
+          {preSegments.length > 0 && renderRootChip(false)}
           {renderSegments(preSegments, 0, false, true)}
           {preSegments.length > 0 && (
             <span className="breadcrumb-separator">/</span>
@@ -624,41 +649,11 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
             );
           })()}
         </>
-      ) : parts.length === 0 ? (
-        <Chip
-          title={
-            (symlinkInfo.get("/")?.isSymlink && symlinkInfo.get("/")?.target)
-              ? `${t("breadcrumbs.root_title", "/")}\n${t("symlink.tooltip", symlinkInfo.get("/")!.target!)}`
-              : t("breadcrumbs.root_title", "/")
-          }
-          onClick={() => onNavigate("/")}
-          onDragOver={handleDragOver}
-          onDragEnter={(e) => handleDragEnter(e, "/")}
-          onDragLeave={handleDragLeave}
-          onDrop={(e) => handleDrop(e, "/")}
-          onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
-          className={`breadcrumb-chip${dragOverPath === "/" ? " drag-over" : ""}`}
-        >
-          <Icon name="tag" slot="icon" />
-          {(symlinkInfo.get("/")?.isSymlink && symlinkInfo.get("/")?.target)
-            ? <span style={{ fontStyle: 'italic', fontWeight: 600 }}>{t("breadcrumbs.root")}</span>
-            : <span style={{ fontWeight: 600 }}>{t("breadcrumbs.root")}</span>
-          }
-        </Chip>
       ) : (
-        <IconButton
-          variant="standard"
-          onClick={() => onNavigate("/")}
-          onDragOver={handleDragOver}
-          onDragEnter={(e) => handleDragEnter(e, "/")}
-          onDragLeave={handleDragLeave}
-          onDrop={(e) => handleDrop(e, "/")}
-          onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
-          className={`breadcrumb-root${dragOverPath === "/" ? " drag-over" : ""}`}
-          title={t("breadcrumbs.root_title", "/")}
-        >
-          <Icon name="tag" />
-        </IconButton>
+        // 根目录及根目录下的普通路径：均渲染根目录胶囊，
+        // 位于末尾（正在浏览根目录）时加粗，否则常规字重——
+        // 与主页胶囊后的目录段表现一致。
+        renderRootChip(parts.length === 0)
       )}
 
       {renderSegments(

@@ -213,6 +213,7 @@ const zhTW = {
   'nav.dashboard': '儀表板',
   'nav.home': '首頁',
   'nav.files': '檔案',
+  'nav.trash': '資源回收筒',
   'nav.terminal': '終端機',
   'nav.settings': '設定',
 
@@ -327,6 +328,7 @@ const zhTW = {
   'terminal.menu.paste': '貼上',
   'terminal.menu.export_log': '匯出完整日誌',
   'terminal.menu.clear': '清除螢幕',
+  'terminal.menu.switch_dir': '切換至圖形介面目錄',
   'terminal.log_exported': '日誌已匯出',
   'terminal.log_empty': '暫無日誌可匯出',
 

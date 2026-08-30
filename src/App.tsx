@@ -147,6 +147,13 @@ function AppContent() {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalCwd, setTerminalCwd] = useState<string | undefined>(undefined);
   /**
+   * 显式「在此打开终端」请求：nonce 每次递增。
+   * 终端已打开时 TerminalPane 据此执行 cd；终端关闭时 path 作为启动目录。
+   * 图形界面浏览目录变化不再自动同步到终端（用户要求取消自动切换，
+   * 切换图形界面目录改为终端右键菜单的显式动作）。
+   */
+  const [terminalCdRequest, setTerminalCdRequest] = useState<{ path: string; nonce: number } | null>(null);
+  /**
    * 终端面板当前高度（px）。每次呼出时恢复默认高度，
    * 打开期间可由标题栏拖动调整（TerminalPanel 受控回调）。
    */
@@ -154,6 +161,7 @@ function AppContent() {
 
   const openTerminalAt = useCallback((path: string) => {
     setTerminalCwd(path);
+    setTerminalCdRequest((prev) => ({ path, nonce: (prev?.nonce ?? 0) + 1 }));
     setTerminalHeight(DEFAULT_TERMINAL_HEIGHT);
     setTerminalOpen(true);
   }, []);
@@ -378,8 +386,14 @@ function AppContent() {
 
   /** 主题配置变化时（含首次挂载）应用主题颜色 */
   useEffect(() => {
-    void ThemeService.applyTheme(themeConfig);
-  }, [themeConfig]);
+    void ThemeService.applyTheme(themeConfig).then((seed) => {
+      // 旧版本保存的壁纸主题没有 seed：应用成功后把测算出的原子色
+      // 回写进配置，设置主页的色点才能显示原子色而不是回退色
+      if (seed && themeConfig?.kind === 'wallpaper' && !themeConfig.seed) {
+        setThemeConfig({ ...themeConfig, seed });
+      }
+    });
+  }, [themeConfig, setThemeConfig]);
 
   /**
    * 主题实时预览订阅：其他窗口（如文件选择器）处于主题设置预览中时，
@@ -764,29 +778,45 @@ function AppContent() {
       <NavigationRail
         items={[
           {
+            icon: <Icon name="dashboard" />,
+            activeIcon: <Icon name="dashboard" filled />,
+            label: "Dashboard",
+            // 仪表盘位于功能栏最上方：仅在浏览仪表盘时高亮
+            active: !settingsDialogOpen && currentPath === "app://dashboard",
+            onClick: () => handleSidebarNavigate("app://dashboard"),
+          },
+          {
             icon: <Icon name="folder" />,
             activeIcon: <Icon name="folder" filled />,
             label: "Files",
-            // 浏览区入口常亮：无论当前浏览什么路径，"文件"都保持高亮
-            // （仪表盘/主页入口已移除——与 Places 栏重合，由侧边栏承担）。
-            // 设置对话框打开时抑制（让位给设置按钮高亮）。
-            active: !settingsDialogOpen,
+            // 浏览仪表盘/回收站以外的任何路径时高亮
+            active:
+              !settingsDialogOpen &&
+              currentPath !== "app://dashboard" &&
+              currentPath !== "trash://",
             onClick: () => handleSidebarNavigate("/"),
+          },
+          {
+            icon: <Icon name="delete" />,
+            activeIcon: <Icon name="delete" filled />,
+            label: "Trash",
+            // 回收站位于文件按钮下方：仅在浏览回收站时高亮（与仪表盘逻辑一致）
+            active: !settingsDialogOpen && currentPath === "trash://",
+            onClick: () => handleSidebarNavigate("trash://"),
           },
           {
             icon: <Icon name="terminal" />,
             activeIcon: <Icon name="terminal" filled />,
             label: "Terminal",
-            // 内置终端打开时与"文件"同时高亮（active 相互独立）；
-            // 设置对话框打开时同样抑制。
-            active: terminalOpen && !settingsDialogOpen,
+            // 内置终端打开时高亮，不影响其他按钮（active 相互独立）
+            active: !settingsDialogOpen && terminalOpen,
             onClick: toggleTerminal,
           },
           {
             icon: <Icon name="settings" />,
             activeIcon: <Icon name="settings" filled />,
             label: "Settings",
-            // 设置对话框打开时高亮，其余时间不高亮
+            // 设置对话框打开时高亮，并抑制其他按钮的高亮
             active: settingsDialogOpen,
             onClick: () => setSettingsDialogOpen(true),
           },
@@ -896,10 +926,16 @@ function AppContent() {
               tabs.find((t) => t.id === activeTabId)?.path ||
               undefined
             }
+            currentDir={tabs.find((t) => t.id === activeTabId)?.path || undefined}
+            cdRequest={terminalCdRequest}
             height={terminalHeight}
             onHeightChange={setTerminalHeight}
             onResetHeight={() => setTerminalHeight(DEFAULT_TERMINAL_HEIGHT)}
-            onClose={() => setTerminalOpen(false)}
+            onClose={() => {
+              setTerminalOpen(false);
+              // 关闭时清空显式启动目录，下次呼出以当前标签页目录启动
+              setTerminalCwd(undefined);
+            }}
           />
         )}
 

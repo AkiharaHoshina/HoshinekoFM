@@ -255,6 +255,7 @@ const ruUA = {
   'nav.dashboard': 'Панель',
   'nav.home': 'Главная',
   'nav.files': 'Файлы',
+  'nav.trash': 'Корзина',
   'nav.terminal': 'Терминал',
   'nav.settings': 'Настройки',
 
@@ -368,6 +369,7 @@ const ruUA = {
   'terminal.menu.paste': 'Вставить',
   'terminal.menu.export_log': 'Экспортировать весь журнал',
   'terminal.menu.clear': 'Очистить экран',
+  'terminal.menu.switch_dir': 'Перейти в каталог GUI',
   'terminal.log_exported': 'Журнал экспортирован',
   'terminal.log_empty': 'Журнал пока пуст',
 

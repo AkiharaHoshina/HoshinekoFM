@@ -213,6 +213,7 @@ const jaJP = {
   'nav.dashboard': 'ダッシュボード',
   'nav.home': 'ホーム',
   'nav.files': 'ファイル',
+  'nav.trash': 'ゴミ箱',
   'nav.terminal': 'ターミナル',
   'nav.settings': '設定',
 
@@ -327,6 +328,7 @@ const jaJP = {
   'terminal.menu.paste': '貼り付け',
   'terminal.menu.export_log': '完全なログをエクスポート',
   'terminal.menu.clear': '画面をクリア',
+  'terminal.menu.switch_dir': 'GUI側のディレクトリへ移動',
   'terminal.log_exported': 'ログをエクスポートしました',
   'terminal.log_empty': 'エクスポートするログがありません',
 

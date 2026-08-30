@@ -80,11 +80,13 @@ export const ThemeService = {
    * 任何失败/不可用时移除注入，回退到内置 M3 紫（fallback.css）。
    *
    * @param config - 持久化的主题配置；null 表示走传统 matugen 加载
+   * @returns 生效的种子色（#RRGGBB）；无种子概念或不可用时返回 null。
+   *   用于旧版本保存的无 seed 壁纸配置回填（设置主页色点显示原子色）
    */
-  async applyTheme(config: ThemeConfig | null) {
+  async applyTheme(config: ThemeConfig | null): Promise<string | null> {
     if (!config) {
       await this.loadTheme();
-      return;
+      return null;
     }
     try {
       switch (config.kind) {
@@ -96,10 +98,10 @@ export const ThemeService = {
         });
         if (css) this.injectCss(css);
         else this.injectCss('');
-        break;
+        return config.seed ?? null;
       }
       case 'system': {
-        if (!window.electron?.readDmsTheme) { this.injectCss(''); break; }
+        if (!window.electron?.readDmsTheme) { this.injectCss(''); return null; }
         const dms = await window.electron.readDmsTheme();
         if (dms.available && dms.colors) {
           const vars = dmsColorsToVars(dms.colors);
@@ -107,12 +109,12 @@ export const ThemeService = {
         } else {
           this.injectCss('');
         }
-        break;
+        return null;
       }
       case 'wallpaper': {
         if (!window.electron?.genWallpaperTheme || !config.wallpaperPath) {
           this.injectCss('');
-          break;
+          return null;
         }
         const res = await window.electron.genWallpaperTheme(
           config.wallpaperPath,
@@ -121,7 +123,9 @@ export const ThemeService = {
         );
         if (res.success && res.css) {
           this.injectCss(res.css);
-        } else if (res.success && res.sourceColor) {
+          return res.sourceColor ?? config.seed ?? null;
+        }
+        if (res.success && res.sourceColor) {
           // matugen 缺失/失败的兜底：后端只提取了种子色，
           // 用 JS HCT 引擎生成整套 CSS（与预设/自定义同一引擎）
           const css = seedToCss(res.sourceColor, {
@@ -129,7 +133,9 @@ export const ThemeService = {
             contrast: config.contrast,
           });
           this.injectCss(css || '');
-        } else if (config.seed) {
+          return res.sourceColor;
+        }
+        if (config.seed) {
           // 保存时存下的原子色兜底：壁纸文件被移动/删除等导致
           // 重新取色整体失败时，仍用存储的种子色生成主题，
           // 而不是回退到内置紫色
@@ -138,20 +144,21 @@ export const ThemeService = {
             contrast: config.contrast,
           });
           this.injectCss(css || '');
-        } else {
-          this.injectCss('');
+          return config.seed;
         }
-        break;
+        this.injectCss('');
+        return null;
       }
       case 'matugen': {
         await this.loadTheme();
-        break;
+        return null;
       }
       }
     } catch (e) {
       console.error('Failed to apply theme', e);
       this.injectCss('');
     }
+    return null;
   },
 
   init() {

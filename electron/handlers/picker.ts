@@ -1,8 +1,15 @@
 import { ipcMain, BrowserWindow } from 'electron';
 
-/** 文件选择器模式：单文件 / 单文件夹 / 多文件（框选）/ 混合条目（文件与文件夹皆可选、多选） */
+/**
+ * 文件选择器模式：第三方程序接入时以此声明可选条目类型。
+ * - `file`：仅文件可选
+ * - `folder`：仅文件夹可选
+ * - `files`：仅文件可选（多选语义别名，与 file 行为一致）
+ * - `items`：全部可选——文件与文件夹皆可选
+ * 四种模式均支持多选（框选），调用方按需取结果。
+ */
 export interface PickerConfig {
-  /** 选择模式 */
+  /** 选择模式（可选条目类型声明） */
   mode: 'file' | 'folder' | 'files' | 'items';
 }
 

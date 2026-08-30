@@ -224,6 +224,7 @@ const enUS = {
   'nav.dashboard': 'Dashboard',
   'nav.home': 'Home',
   'nav.files': 'Files',
+  'nav.trash': 'Trash',
   'nav.terminal': 'Terminal',
   'nav.settings': 'Settings',
 
@@ -337,6 +338,7 @@ const enUS = {
   'terminal.menu.paste': 'Paste',
   'terminal.menu.export_log': 'Export full log',
   'terminal.menu.clear': 'Clear screen',
+  'terminal.menu.switch_dir': 'Switch to file manager directory',
   'terminal.log_exported': 'Log exported',
   'terminal.log_empty': 'Nothing to export yet',
 
