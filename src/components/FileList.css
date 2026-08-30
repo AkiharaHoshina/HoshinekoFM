@@ -221,3 +221,10 @@
     font-size: 14px;
     outline: none;
 }
+
+/* 列表模式最小图标（16px）时行高不足以容纳带提示线的编辑框，
+   底部 border-bottom 会被行容器的 overflow:hidden 裁掉一半——
+   该组合下隐藏提示线（仅此组合，其余尺寸/网格模式不受影响） */
+.file-rename-input--no-hint {
+    border-bottom: none;
+}

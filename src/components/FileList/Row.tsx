@@ -142,6 +142,7 @@ function FileNameDisplay({
   style,
   marqueeTextStyle,
   marqueeEnabled,
+  noHint,
 }: {
   file: IFile;
   isRenaming: boolean;
@@ -153,6 +154,8 @@ function FileNameDisplay({
   style?: React.CSSProperties;
   marqueeTextStyle?: React.CSSProperties;
   marqueeEnabled: boolean;
+  /** 隐藏编辑框底部提示线（列表模式最小图标时行高不足，提示线会被裁掉一半） */
+  noHint?: boolean;
 }) {
   const isSymlink = !!file.symlinkTarget;
 
@@ -160,7 +163,7 @@ function FileNameDisplay({
     return (
       <input
         ref={renameInputRef}
-        className="file-rename-input"
+        className={`file-rename-input${noHint ? " file-rename-input--no-hint" : ""}`}
         type="text"
         value={renameValue}
         autoFocus
@@ -273,6 +276,7 @@ function ListRowItem({
         style={{ flex: 1, minWidth: 0 }}
         marqueeTextStyle={{ paddingRight: sp.paddingH }}
         marqueeEnabled={data.marqueeEnabled}
+        noHint={data.viewMode === "list" && data.iconSize === 16}
       />
       {!isRenaming && (
         <span
@@ -370,6 +374,7 @@ function GridRowItem({
         }
         marqueeTextStyle={{ paddingLeft: 0, paddingRight: 0 }}
         marqueeEnabled={data.marqueeEnabled}
+        noHint={data.viewMode === "list" && data.iconSize === 16}
       />
     </div>
   );

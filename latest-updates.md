@@ -486,6 +486,12 @@
   - `ContextMenu`：外部关闭监听恢复延迟到下一次宏任务注册（cleanup 中 clearTimeout），打开手势不会自关
   - `Dashboard`：背景右键补 `e.stopPropagation()`，与其他右键入口保持一致（双保险）
 
+### 列表模式 16px 重命名提示线被裁修复
+
+- 现象：列表模式最小图标（16px）时，编辑文件名输入框底部的提示线（border-bottom）被行容器裁掉一半
+- 根因：行高 `LIST_ROW_HEIGHT(16)=28px`（行内 24px），输入框 `font: inherit` 继承根行高 1.5 → 文字 21px + padding 4px + border 2px ≈ 27px > 24px，被 `.file-list-item` 的 `overflow: hidden` 裁掉底部
+- 修复：`FileNameDisplay` 新增 `noHint` 属性（仅 `viewMode === 'list' && iconSize === 16` 时为 true），编辑框追加 `file-rename-input--no-hint` 类；CSS 加 `.file-rename-input--no-hint { border-bottom: none; }`——仅该组合隐藏提示线，其余尺寸/网格模式/其他样式不变
+
 - 版本号升至 `0.11.14`
 
 
