@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import './ContextMenu.css';
 import { ListItem, Divider } from './md';
 import { Icon } from './Icon';
@@ -22,37 +22,52 @@ const MENU_PADDING = 8;
 const CURSOR_OFFSET_X = 4;
 const CURSOR_OFFSET_Y = 4;
 
-function clampPosition(x: number, y: number, width: number, height: number) {
-  const { innerWidth, innerHeight } = window;
+/**
+ * 根据菜单实测尺寸（width/height）一次性计算落点与最大高度。
+ * `maxHeight` 与定位**同源**（都由本次实测尺寸推出），
+ * 取 `min(内容高度, 视口剩余空间)`——既不超出内容、也不超出视口，
+ * 避免旧实现「从最终 top 反推 maxHeight」在内容增长后失真的问题。
+ */
+function computeMenuGeometry(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): { left: number; top: number; maxHeight: number } {
+  const { innerWidth: vw, innerHeight: vh } = window;
 
-  // Preferred: menu opens with cursor slightly inside, below-right
-  let newX = x - CURSOR_OFFSET_X;
-  let newY = y - CURSOR_OFFSET_Y;
-
-  // Available space in each direction (for the full content, unclamped — CSS overflow will scroll)
-  const spaceBelow = innerHeight - newY - MENU_PADDING;
-  const spaceAbove = (y + CURSOR_OFFSET_Y) - MENU_PADDING;
-  const spaceRight = innerWidth - newX - MENU_PADDING;
-  const spaceLeft = (x + CURSOR_OFFSET_X) - MENU_PADDING;
-
-  // Flip only if the opposite direction gives more room for the content
+  // 水平：默认右下展开，右侧空间不足且左侧更宽时翻转到左侧
+  let left = x - CURSOR_OFFSET_X;
+  const spaceRight = vw - left - MENU_PADDING;
+  const spaceLeft = x + CURSOR_OFFSET_X - MENU_PADDING;
   if (width > spaceRight && spaceLeft > spaceRight) {
-    newX = x - width + CURSOR_OFFSET_X;
+    left = x - width + CURSOR_OFFSET_X;
   }
+  left = Math.max(MENU_PADDING, Math.min(left, vw - width - MENU_PADDING));
+
+  // 垂直：默认下方展开，下方放不下且上方空间更大时翻转到上方
+  let top = y - CURSOR_OFFSET_Y;
+  const spaceBelow = vh - top - MENU_PADDING;
+  const spaceAbove = y + CURSOR_OFFSET_Y - MENU_PADDING;
   if (height > spaceBelow && spaceAbove > spaceBelow) {
-    newY = y - height + CURSOR_OFFSET_Y;
+    top = y - height + CURSOR_OFFSET_Y;
   }
+  top = Math.max(MENU_PADDING, Math.min(top, vh - height - MENU_PADDING));
 
-  // Keep menu within viewport bounds; overflow handles the rest
-  newX = Math.max(MENU_PADDING, Math.min(newX, innerWidth - width - MENU_PADDING));
-  newY = Math.max(MENU_PADDING, Math.min(newY, innerHeight - height - MENU_PADDING));
+  const maxHeight = Math.min(height, vh - top - MENU_PADDING);
 
-  return { left: newX, top: newY };
+  return { left, top, maxHeight };
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }) => {
   const menuRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number }>({ left: x, top: y });
+  const listRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; maxHeight: number }>(() => ({
+    left: x,
+    top: y,
+    // 初始值仅用于首帧前，useLayoutEffect 会在绘制前用实测尺寸校正
+    maxHeight: Math.max(0, window.innerHeight - (y + MENU_PADDING)),
+  }));
 
   /**
    * 最新 onClose 引用。外部关闭监听器一次性注册（deps []），回调经 ref
@@ -88,21 +103,49 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
     };
   }, []);
 
-  useEffect(() => {
-    if (!menuRef.current) return;
-    const el = menuRef.current;
-    const w = el.getBoundingClientRect().width;
-    const h = el.scrollHeight;
-    setPos(clampPosition(x, y, w, h));
+  /**
+   * 测量并定位。用 useLayoutEffect：在**绘制前**完成校正，
+   * 首帧即为正确位置与高度（底部右键不再先闪现一条被压缩的小菜单）。
+   * 菜单内容可能在打开后异步增长（如面包屑菜单的 symlinkInfo / 挂载表
+   * 到达后追加条目）——旧实现只采样一次、maxHeight 从最终 top 反推，
+   * 内容增长后菜单停留在旧限高上「缩成一团」。这里用 ResizeObserver
+   * 监听菜单容器与内容列表：内容增删、字体加载、web component 布局
+   * 变化都会触发重新测量，定位与 maxHeight 原子更新。
+   */
+  useLayoutEffect(() => {
+    const menuEl = menuRef.current;
+    if (!menuEl) return;
 
-    const handleResize = () => {
-      if (!menuRef.current) return;
-      const rW = menuRef.current.getBoundingClientRect().width;
-      const rH = menuRef.current.scrollHeight;
-      setPos(clampPosition(x, y, rW, rH));
+    const measure = () => {
+      const el = menuRef.current;
+      if (!el) return;
+      const w = el.getBoundingClientRect().width;
+      const h = el.scrollHeight;
+      setPos((prev) => {
+        const next = computeMenuGeometry(x, y, w, h);
+        if (
+          prev.left === next.left &&
+          prev.top === next.top &&
+          prev.maxHeight === next.maxHeight
+        ) {
+          return prev;
+        }
+        return next;
+      });
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+
+    measure();
+
+    const observer = new ResizeObserver(() => measure());
+    observer.observe(menuEl);
+    if (listRef.current) observer.observe(listRef.current);
+    const handleWindowResize = () => measure();
+    window.addEventListener('resize', handleWindowResize);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', handleWindowResize);
+    };
   }, [x, y]);
 
   return (
@@ -112,10 +155,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
       style={{
         left: pos.left,
         top: pos.top,
-        maxHeight: `calc(100vh - ${pos.top + MENU_PADDING}px)`,
+        maxHeight: `${pos.maxHeight}px`,
       }}
     >
-      <div className="context-menu-list">
+      <div className="context-menu-list" ref={listRef}>
         {items.map((item, index) => (
           item.divider ? (
             <Divider key={index} />

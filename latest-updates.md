@@ -448,5 +448,14 @@
 - 根因：缩略图 `<img>` 一直没有 `onError` 处理，`failedImages` 从未被填充，损坏图片一直显示浏览器原生的破图样式，回落分支永远不触发
 - 修复：`<img>` 加 `onError` 上报路径 → 记入 `failedImages` → 重渲染后显示 Material Symbols `broken_image` 图标（列表/网格视图一致）；颜色用 `--md-sys-color-outline` 灰调（适配深浅主题，比硬编码 #e3e3e3 更合理）
 
+### 右键菜单「缩成一团」修复（底部右键时高度减少、上方有空间）
+
+- 根因：定位只采样一次——`useEffect` 读一次 `scrollHeight` 计算翻转与 `maxHeight`（依赖仅 `[x, y]`），且 `maxHeight` 从最终 `top` 反推；菜单内容在打开后异步增长（面包屑 symlinkInfo / 挂载表补条目等）后限高停留在旧值，底部右键时表现为小可滚动条（滚动本身正常）
+- 修复：
+  - `useEffect` → `useLayoutEffect`：绘制前完成测量定位，消除底部右键的首帧压缩闪现
+  - `ResizeObserver` 监听菜单容器与内容列表：内容增删、字体加载、web component 布局变化触发重新测量（同值 bailout 防反馈环）
+  - `maxHeight` 改为与定位同源计算（`min(内容高度, 视口剩余空间)`），不再从最终 `top` 反推
+- 经 Electron 离屏测试复现并验证修复（真实 md-list-item，内容增长场景菜单完整展开）
+
 - 版本号升至 `0.11.12`
 
