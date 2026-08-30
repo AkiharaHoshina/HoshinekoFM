@@ -85,8 +85,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
    * 菜单外部按下任意鼠标键（含右键、拖拽的按下）或触发 contextmenu 时关闭。
    * 用 mousedown 而非 click：右键与拖拽不产生 click 事件，旧菜单在右键
    * 按下时就关闭，随后 contextmenu 事件再打开新菜单，不会两个菜单并存。
-   * 打开手势（contextmenu / click）都发生在 mousedown 之后，且组件在打开
-   * 那一刻才挂载，因此无需 setTimeout 延迟注册。
+   *
+   * 监听必须**延迟到下一次宏任务再挂**：打开手势（contextmenu / click）是
+   * 离散事件，React 会在事件分发中途同步 flush 重渲染与被动 effect——
+   * 若监听立即生效，同一个打开事件会继续冒泡到 document，被自家监听器
+   * 判为「点击外部」而立刻关闭（未 stopPropagation 的入口，如仪表盘
+   * 背景右键的刷新菜单，会表现为菜单一闪即没）。
    */
   useEffect(() => {
     const handleOutside = (event: MouseEvent) => {
@@ -95,9 +99,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
         onCloseRef.current();
       }
     };
-    document.addEventListener('mousedown', handleOutside);
-    document.addEventListener('contextmenu', handleOutside);
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleOutside);
+      document.addEventListener('contextmenu', handleOutside);
+    }, 0);
     return () => {
+      clearTimeout(timer);
       document.removeEventListener('mousedown', handleOutside);
       document.removeEventListener('contextmenu', handleOutside);
     };

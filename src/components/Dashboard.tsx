@@ -288,8 +288,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
       className="dashboard-container fade-in"
       onContextMenu={(e) => {
         // 仪表盘背景右键：仅提供「刷新」（手动挂载后立即重拉存储子区域）。
-        // preventDefault 阻止浏览器默认菜单；同时关闭可能打开的固定菜单。
+        // preventDefault 阻止浏览器默认菜单；stopPropagation 与其他右键入口
+        // 保持一致（防止打开事件冒泡到 ContextMenu 的外部关闭监听器）；
+        // 同时关闭可能打开的固定菜单。
         e.preventDefault();
+        e.stopPropagation();
         setPinMenuPos(null);
         setRefreshMenuPos({ x: e.clientX, y: e.clientY });
       }}
