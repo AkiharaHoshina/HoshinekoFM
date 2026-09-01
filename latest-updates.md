@@ -1,5 +1,40 @@
 # 更新日志
 
+## v0.11.17 — 文件预览面板（设置开关 + 挤压式预览区）
+
+### 预览面板
+
+- 设置 → 行为新增「文件预览」开关（`settings.filePreview`，**默认关闭**，跨窗口同步）
+- 开启后单选文件时，文件浏览区右侧「挤压」出预览区：顶端与文件区平齐（不碰地址栏/搜索条），与文件区一起随内置终端挤压（终端在 content-area 下方，flex 列自动生效）
+- **分隔条拖动**：Pointer Capture（照搬终端面板标题栏拖动），按行宽换算百分比、钳制 20%–60%；`settings.previewWidth` 持久化 + 跨窗口同步；拖动期间兄弟节点屏蔽指针（防 react-window 悬停/框选与视频控制条抢指针）
+- 显示条件：单选文件（非目录）→ 预览；**多选 → 「多个文件无法预览」占位**；取消选择/选中不可预览文件/目录/仪表盘视图 → 隐藏；回收站条目（path 为 Trash/files 真实文件，只读）与搜索结果均可预览
+- 渲染类型：图片 / 音频 / 视频 / PDF / 归档内容列表 / Markdown / 文本（见「渲染类型扩展」）；媒体加载失败显示错误占位；无法预览的类型显示「不支持的格式」占位
+- 标题栏：文件名 + 大小；媒体元素以 file.path 为 key，切换选中项整体重建；文本状态经「渲染期间重置」模式（React 官方 pattern，避免 effect 内 setState）
+
+### 后端：preview:// 协议与文本护栏
+
+- 新增 `preview://` 协议（与 `media://` 并存）：只允许绝对路径普通文件；**Range/206 分段支持**（单段 `bytes=a-b` / `a-` / `-b`，无效范围 416 + `Content-Range: bytes */size`）——视频 seek 依赖；`createReadStream` + `Readable.toWeb` 流式返回，大视频不整体缓冲；自动检测 MIME 填 Content-Type
+- **scheme 注册为 standard + corsEnabled**：pdf.js 经 fetch() 拉取预览文件，缺 corsEnabled 时跨源 fetch 直接失败（「Unexpected server response (0)」→ 一直加载失败）；URL 形态 `preview://localhost<路径>`（主机固定 localhost、路径在 pathname），pdf.js 的 URL 往返序列化不会吃掉首斜杠（`preview:///path` 空主机形态会被序列化成 `preview://path` 导致 400）
+- 与 `media://` 刻意分离：`media://` 对图片优先返回 ≤256px 缩略图（文件列表图标用），预览面板需要原图
+- 新增 `fs:read-preview-text`：stat 校验普通文件 + **512 KiB 上限**，超限返回 `TOO_LARGE`（含实际大小），其余 `INVALID_PATH` / `NOT_FILE` / `READ_FAILED` 结构化错误码，前端翻译提示（原 `fs:read-file` 不动）
+
+### 渲染类型扩展（音频 / PDF / 归档 / Markdown）
+
+- **音频**：`<audio controls>`（Chromium 原生解码）——`audio/*` mime + .mp3/.wav/.ogg/.flac/.m4a/.aac/.opus 扩展名兜底
+- **PDF**：pdfjs-dist 惰性加载（动态 import 独立 chunk + worker `?url`，主包体积不受影响）；逐页 canvas 渲染**前 5 页**，超过 5 页时尾部显示「全文共 N 页」说明；页面宽度随预览区宽度自适应缩放（ResizeObserver 测宽，观察挂在容器 ready 后挂载、拖动分隔条/窗口缩放实时重排，dpr 上限 2，宽度未测量前跳过渲染）；文档实例经 effect 作用域持有、cleanup 走 `loadingTask.destroy()`（pdf.js v6 API）
+- **归档内容列表**：新增 `fs:list-archive` IPC——zip 系（.zip/.jar/.apk）`unzip -Z1`、tar/压缩流系 `tar -tf`、.7z 优先 `bsdtar -tf` 再退 `7z l -slt` 解析 `Path = ` 行（空格文件名稳健）；扩展名优先 + mime 兜底判定；条目上限 5000（超出截断，返回 total，前端显示隐藏条数提示）；结构化错误码 INVALID_PATH / NOT_FILE / UNSUPPORTED / NO_TOOL / READ_FAILED
+- **Markdown**：marked 渲染 + DOMPurify 消毒（脚本/事件属性/危险协议全部移除后安全注入）；.md/.markdown 与 text/markdown mime；512 KiB 上限与文本同护栏
+- **MKV**：视频容器白名单加 `video/x-matroska`（与 WebM 同容器族，编码不支持时落到「加载失败」占位）；视频/音频扩展名兜底白名单（mime 缺失时也能识别）
+- **更多文本扩展名**：less/scss/sass/vue/svelte/tex/rst/swift/kt/pl/cs/dockerfile/properties/env 等；图片白名单加 .ico
+- 新依赖：`pdfjs-dist`、`marked`、`dompurify`（全部动态 import 代码分割，主 chunk 不受影响）
+- i18n 新增 3 键 × 12 语言：`preview.entries`（归档条目数）、`preview.archive_truncated`（截断隐藏条数）、`preview.pdf_more_pages`（PDF 超出 5 页说明）
+
+### i18n
+
+- 新增 7 键 × 12 语言：`settings.file_preview`、`preview.multiple`、`preview.too_large`、`preview.load_failed`、`preview.unsupported_format`、`preview.loading`、`preview.drag_hint`
+
+- 版本号升至 `0.11.17`
+
 ## v0.11.16 — 搜索定位与高级过滤、批量重命名、压缩、权限编辑与主题明暗
 
 ### 搜索：结果定位与高级过滤

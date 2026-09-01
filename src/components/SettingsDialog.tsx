@@ -28,6 +28,9 @@ interface SettingsDialogProps {
   /** 是否显示主页（/home）子区域的存储占用（默认关闭） */
   showHomeStorageUsage: boolean;
   onToggleShowHomeStorageUsage: () => void;
+  /** 文件预览面板开关（默认关闭） */
+  filePreviewEnabled: boolean;
+  onToggleFilePreview: () => void;
   /** 打开主题颜色二级对话框 */
   onThemeColor: () => void;
   /** 当前主题种子色（入口行的色点展示，可为空） */
@@ -53,6 +56,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onToggleMarquee,
   showHomeStorageUsage,
   onToggleShowHomeStorageUsage,
+  filePreviewEnabled,
+  onToggleFilePreview,
   onThemeColor,
   themeSeedColor,
 }) => {
@@ -268,6 +273,16 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               </div>
             </div>
             <Switch selected={showHomeStorageUsage} onClick={onToggleShowHomeStorageUsage} />
+          </div>
+
+          <div className="settings-row" onClick={onToggleFilePreview}>
+            <div className="settings-row__start">
+              <Icon name="preview" />
+              <div className="settings-row__label">
+                {t("settings.file_preview")}
+              </div>
+            </div>
+            <Switch selected={filePreviewEnabled} onClick={onToggleFilePreview} />
           </div>
         </div>
 

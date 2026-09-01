@@ -1,0 +1,265 @@
+/* ── 文件预览面板（文件浏览区右侧挤压出的区域）── */
+
+.file-preview-panel {
+  flex-shrink: 0;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--md-sys-color-surface-container-lowest);
+  border-left: 1px solid var(--md-sys-color-outline-variant);
+  overflow: hidden;
+}
+
+/* ── 标题栏 ── */
+.file-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.file-preview-header-icon {
+  color: var(--md-sys-color-primary);
+  flex-shrink: 0;
+}
+
+.file-preview-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-preview-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-preview-size {
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* ── 内容区 ── */
+.file-preview-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--md-sys-color-surface-container-low);
+}
+
+/* 图片/视频：占满内容区并等比缩放（视频带控制条） */
+.file-preview-media {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+/* 音频：居中，控制条占满宽度 */
+.file-preview-audio {
+  width: 100%;
+  margin: auto;
+}
+
+/* ── PDF：滚动容器 + 逐页 canvas ── */
+.file-preview-pdf {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.file-preview-pdf-page {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  background: #fff;
+  max-width: 100%;
+}
+
+/* 超出预览页数上限时的尾部说明 */
+.file-preview-pdf-more {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  padding: 6px 0 10px;
+  text-align: center;
+}
+
+/* ── 归档内容列表 ── */
+.file-preview-archive {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  text-align: left;
+  padding: 8px 10px;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--md-sys-color-on-surface);
+}
+
+.file-preview-archive-entry {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-preview-archive-truncated {
+  margin-top: 6px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 12px;
+}
+
+/* ── Markdown 渲染（已消毒）── */
+.file-preview-markdown {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  text-align: left;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--md-sys-color-on-surface);
+  word-break: break-word;
+}
+
+.file-preview-markdown h1,
+.file-preview-markdown h2,
+.file-preview-markdown h3,
+.file-preview-markdown h4,
+.file-preview-markdown h5,
+.file-preview-markdown h6 {
+  margin: 14px 0 6px;
+  line-height: 1.3;
+  color: var(--md-sys-color-on-surface);
+}
+
+.file-preview-markdown h1 { font-size: 20px; border-bottom: 1px solid var(--md-sys-color-outline-variant); padding-bottom: 6px; }
+.file-preview-markdown h2 { font-size: 17px; }
+.file-preview-markdown h3 { font-size: 15px; }
+.file-preview-markdown p { margin: 6px 0; }
+.file-preview-markdown a { color: var(--md-sys-color-primary); }
+.file-preview-markdown img { max-width: 100%; border-radius: 8px; }
+.file-preview-markdown code {
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: var(--md-sys-color-surface-container-high);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.file-preview-markdown pre {
+  background: var(--md-sys-color-surface-container-high);
+  padding: 10px;
+  border-radius: 8px;
+  overflow: auto;
+}
+.file-preview-markdown pre code { background: none; padding: 0; }
+.file-preview-markdown blockquote {
+  margin: 6px 0;
+  padding: 2px 12px;
+  border-left: 3px solid var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.file-preview-markdown ul,
+.file-preview-markdown ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+.file-preview-markdown hr {
+  border: none;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  margin: 12px 0;
+}
+.file-preview-markdown table {
+  border-collapse: collapse;
+  margin: 8px 0;
+}
+.file-preview-markdown th,
+.file-preview-markdown td {
+  border: 1px solid var(--md-sys-color-outline-variant);
+  padding: 4px 10px;
+}
+
+/* 文本：等宽、自动换行、滚动 */
+.file-preview-text {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  text-align: left;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--md-sys-color-on-surface);
+}
+
+/* 文本加载中 */
+.file-preview-loading {
+  margin: auto;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* 居中占位消息（多选 / 不支持格式 / 加载失败） */
+.file-preview-empty {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 13px;
+}
+
+/* ── 分隔条（拖动调整预览区比例）── */
+.file-preview-divider {
+  flex-shrink: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0 -1px;
+  z-index: 1;
+  touch-action: none;
+  transition: background-color 0.1s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.file-preview-divider:hover,
+.file-preview-row--dragging .file-preview-divider {
+  background: var(--md-sys-color-primary);
+  opacity: 0.6;
+}
+
+/* 拖动期间：光标固定 col-resize、禁止选中，兄弟节点（文件区/预览区）
+ * 停止接收指针事件——防止 react-window 悬停/框选与视频控制条抢指针 */
+.file-preview-row--dragging {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.file-preview-row--dragging > *:not(.file-preview-divider) {
+  pointer-events: none;
+}

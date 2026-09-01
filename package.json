@@ -1,7 +1,7 @@
 {
   "name": "material-3-file-manager",
   "private": true,
-  "version": "0.11.16",
+  "version": "0.11.17",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -23,7 +23,10 @@
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
     "dbus-next": "^0.10.2",
+    "dompurify": "^3.4.14",
+    "marked": "^18.0.11",
     "node-pty": "1.2.0-beta.14",
+    "pdfjs-dist": "^6.3.289",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-toastify": "^11.1.0",

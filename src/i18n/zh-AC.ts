@@ -146,6 +146,7 @@ const zhAC = {
   'settings.language': '淫语',
   'settings.marquee_text': '滚动文本',
   'settings.show_home_storage': '显示主页存储占用',
+  'settings.file_preview': '文件预览',
   'settings.about': '关于',
   'settings.version': '版本',
 
@@ -581,6 +582,16 @@ const zhAC = {
   'theme.preset.red': '红色',
   'theme.preset.pink': '粉色',
   'theme.preset.magenta': '紫红',
+  // ── 文件预览面板 ──
+  'preview.multiple': '多个文件无法预览',
+  'preview.too_large': '文件过大，无法预览',
+  'preview.load_failed': '预览加载失败',
+  'preview.loading': '预览加载中...',
+  'preview.drag_hint': '拖动调整预览区大小',
+  'preview.entries': (n: number) => `${n} 个条目`,
+  'preview.archive_truncated': (n: number) => `…还有 ${n} 个条目未显示`,
+  'preview.pdf_more_pages': (n: number) => `仅显示前 5 页，全文共 ${n} 页`,
+  'preview.unsupported_format': '不支持的格式',
 } as const;
 
 export const match = () => false;

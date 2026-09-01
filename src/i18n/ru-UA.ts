@@ -187,6 +187,7 @@ const ruUA = {
   'settings.language': 'Язык',
   'settings.marquee_text': 'Бегущая строка',
   'settings.show_home_storage': 'Показывать занятость домашнего хранилища',
+  'settings.file_preview': 'Предпросмотр файлов',
   'settings.about': 'О приложении',
   'settings.version': 'Версия',
 
@@ -623,6 +624,16 @@ const ruUA = {
   'theme.preset.red': 'Красный',
   'theme.preset.pink': 'Розовый',
   'theme.preset.magenta': 'Пурпурный',
+  // ── 文件预览面板 ──
+  'preview.multiple': 'Несколько файлов нельзя просмотреть',
+  'preview.too_large': 'Файл слишком большой для предпросмотра',
+  'preview.load_failed': 'Не удалось загрузить предпросмотр',
+  'preview.loading': 'Загрузка предпросмотра...',
+  'preview.drag_hint': 'Перетащите, чтобы изменить размер',
+  'preview.entries': (n: number) => `${n} элементов`,
+  'preview.archive_truncated': (n: number) => `…ещё ${n} элементов`,
+  'preview.pdf_more_pages': (n: number) => `Показаны первые 5 страниц из ${n}`,
+  'preview.unsupported_format': 'Неподдерживаемый формат',
 } as const;
 
 export const match = (lang: string) => lang.startsWith('ru');

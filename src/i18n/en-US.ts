@@ -156,6 +156,7 @@ const enUS = {
   'settings.language': 'Language',
   'settings.marquee_text': 'Marquee text',
   'settings.show_home_storage': 'Show home storage usage',
+  'settings.file_preview': 'File preview',
   'settings.about': 'About',
   'settings.version': 'Version',
 
@@ -589,6 +590,16 @@ const enUS = {
   'theme.preset.red': 'Red',
   'theme.preset.pink': 'Pink',
   'theme.preset.magenta': 'Magenta',
+  // ── 文件预览面板 ──
+  'preview.multiple': 'Multiple files cannot be previewed',
+  'preview.too_large': 'File too large to preview',
+  'preview.load_failed': 'Failed to load preview',
+  'preview.loading': 'Loading preview...',
+  'preview.drag_hint': 'Drag to resize',
+  'preview.entries': (n: number) => `${n} entries`,
+  'preview.archive_truncated': (n: number) => `...and ${n} more entries`,
+  'preview.pdf_more_pages': (n: number) => `Showing the first 5 of ${n} pages`,
+  'preview.unsupported_format': 'Unsupported format',
 } as const;
 
 export const match = (lang: string) => lang.startsWith('en');

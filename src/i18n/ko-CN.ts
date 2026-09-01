@@ -146,6 +146,7 @@ const koCN = {
   'settings.language': '언어',
   'settings.marquee_text': '스크롤 텍스트',
   'settings.show_home_storage': '홈 스토리지 사용량 표시',
+  'settings.file_preview': '파일 미리보기',
   'settings.about': '정보',
   'settings.version': '버전',
 
@@ -581,6 +582,16 @@ const koCN = {
   'theme.preset.red': '빨간색',
   'theme.preset.pink': '분홍색',
   'theme.preset.magenta': '자홍색',
+  // ── 文件预览面板 ──
+  'preview.multiple': '여러 파일은 미리 볼 수 없습니다',
+  'preview.too_large': '파일이 너무 커서 미리 볼 수 없습니다',
+  'preview.load_failed': '미리보기를 불러오지 못했습니다',
+  'preview.loading': '미리보기 불러오는 중...',
+  'preview.drag_hint': '드래그하여 미리보기 크기 조절',
+  'preview.entries': (n: number) => `항목 ${n}개`,
+  'preview.archive_truncated': (n: number) => `…외 ${n}개 항목`,
+  'preview.pdf_more_pages': (n: number) => `처음 5페이지까지만 표시됨（총 ${n}페이지）`,
+  'preview.unsupported_format': '지원되지 않는 형식',
 } as const;
 
 export const match = (lang: string) => lang === 'ko-CN';

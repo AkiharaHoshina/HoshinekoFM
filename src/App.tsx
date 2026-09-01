@@ -467,6 +467,21 @@ function AppContent() {
     false,
   );
 
+  /** 文件预览面板开关（默认关闭，设置 → 行为） */
+  const [filePreviewEnabled, setFilePreviewEnabled] = useLocalStorage<boolean>(
+    "settings.filePreview",
+    false,
+  );
+
+  /**
+   * 预览区宽度百分比（persisted settings.previewWidth，跨窗口同步）。
+   * ExplorerTab 拖动分隔条时写入；钳制范围 [20, 60] 在拖动端保证。
+   */
+  const [previewWidth, setPreviewWidth] = useLocalStorage<number>(
+    "settings.previewWidth",
+    35,
+  );
+
   /**
    * 主题颜色配置（持久化于 settings.theme，跨窗口同步）。
    * null = 未选择，走传统 matugen theme.css 加载。
@@ -1041,6 +1056,9 @@ function AppContent() {
                 onDashboardRemovePin={removeDashboardPinAt}
                 onDashboardReorderPin={reorderDashboardPin}
                 showHomeStorageUsage={showHomeStorageUsage}
+                filePreviewEnabled={filePreviewEnabled}
+                previewWidth={previewWidth}
+                onPreviewWidthChange={setPreviewWidth}
               />
             </div>
           ))}
@@ -1351,6 +1369,8 @@ function AppContent() {
           onToggleMarquee={() => setMarqueeEnabled(!marqueeEnabled)}
           showHomeStorageUsage={showHomeStorageUsage}
           onToggleShowHomeStorageUsage={() => setShowHomeStorageUsage(!showHomeStorageUsage)}
+          filePreviewEnabled={filePreviewEnabled}
+          onToggleFilePreview={() => setFilePreviewEnabled(!filePreviewEnabled)}
           onThemeColor={() => setThemeColorOpen(true)}
           themeSeedColor={themeConfig?.seed}
         />

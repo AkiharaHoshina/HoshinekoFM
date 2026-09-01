@@ -29,6 +29,7 @@ import {
 import { Omnibar } from './Omnibar';
 import { Dashboard, type PinnedItem } from './Dashboard';
 import { SortControls } from './SortControls';
+import { FilePreviewPanel } from './FilePreviewPanel';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useDrag } from '../contexts/DragContext';
 import { t } from '../i18n';
@@ -113,9 +114,15 @@ interface ExplorerTabProps {
     onDashboardReorderPin: (fromIndex: number, toIndex: number) => void;
     /** 是否显示主页（/home）子区域的存储占用（设置项，默认关闭） */
     showHomeStorageUsage: boolean;
+    /** 文件预览开关（设置项 settings.filePreview，默认关闭） */
+    filePreviewEnabled: boolean;
+    /** 预览区宽度（百分比，settings.previewWidth 持久化，跨窗口同步） */
+    previewWidth: number;
+    /** 修改预览区宽度（拖动分隔条时由 App 写入持久化键） */
+    onPreviewWidthChange: (width: number) => void;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, onSortByChange, onSortOrderChange, onGroupingToggle, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, onSortByChange, onSortOrderChange, onGroupingToggle, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -668,6 +675,66 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   const [modifiers, setModifiers] = useState({ ctrl: false, shift: false });
   const [suppressClickHint, setSuppressClickHint] = useState(false);
   const mouseDownRef = useRef(false);
+
+  // ── 文件预览面板 ──
+  /** 预览区宽度钳制范围（百分比） */
+  const PREVIEW_MIN_PCT = 20;
+  const PREVIEW_MAX_PCT = 60;
+
+  /**
+   * 预览面板显示状态（由设置开关 + 当前视图 + 选中集推导）：
+   * - 开关关闭 / 仪表盘视图 / 无选中 → 隐藏；
+   * - 多选 → 显示「多个文件无法预览」占位；
+   * - 单选文件（非目录）→ 显示该文件的预览；
+   * - 单选目录 / 条目缺失 → 隐藏。
+   * 回收站条目（path 为 Trash/files 内真实文件）与搜索结果（真实路径）
+   * 均可正常预览。
+   */
+  const previewState = useMemo<{ kind: 'hidden' } | { kind: 'multiple' } | { kind: 'file'; file: IFile }>(() => {
+    if (!filePreviewEnabled || currentPath === 'app://dashboard') return { kind: 'hidden' };
+    if (selectedFiles.size === 0) return { kind: 'hidden' };
+    if (selectedFiles.size > 1) return { kind: 'multiple' };
+    const path = Array.from(selectedFiles)[0];
+    const f = files.find((x) => x.path === path);
+    if (!f || f.isDirectory) return { kind: 'hidden' };
+    return { kind: 'file', file: f };
+  }, [filePreviewEnabled, currentPath, selectedFiles, files]);
+
+  /** 预览行容器引用（分隔条拖动时按行宽计算百分比） */
+  const previewRowRef = useRef<HTMLDivElement | null>(null);
+  /** 分隔条拖动中：行加 --dragging 类（禁止选中、兄弟节点屏蔽指针） */
+  const [previewDragging, setPreviewDragging] = useState(false);
+
+  /**
+   * 分隔条拖动：Pointer Capture 模式（照搬终端面板标题栏拖动）。
+   * 按下时记录起始指针 X 与起始宽度百分比，move 中按「指针左移
+   * = 预览区变宽」换算并钳制到 [20%, 60%]，经 onPreviewWidthChange
+   * 写入持久化键；up 时移除监听并解除拖动态。
+   */
+  const handlePreviewDividerPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const row = previewRowRef.current;
+    if (!row) return;
+    setPreviewDragging(true);
+    const totalWidth = row.getBoundingClientRect().width;
+    const startX = e.clientX;
+    const startPct = previewWidth;
+    const onMove = (ev: PointerEvent) => {
+      const pct = Math.min(
+        PREVIEW_MAX_PCT,
+        Math.max(PREVIEW_MIN_PCT, startPct + ((startX - ev.clientX) / totalWidth) * 100),
+      );
+      onPreviewWidthChange(pct);
+    };
+    const onUp = () => {
+      setPreviewDragging(false);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
 
   const handleSelectionModeChange = useCallback((mode: "replace" | "union" | "intersection" | "difference" | null) => {
     setSelectionMode(mode);
@@ -1239,189 +1306,216 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               )}
             </div>
           )}
-          <div
-            style={{ flex: 1, overflow: 'hidden', position: 'relative' }}
-            data-drop-target="filelist"
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = 'copy';
-            }}
-            onDrop={async (e) => {
-              e.preventDefault();
-              if (!currentPath) return;
-              // 幻影 drop-back（本窗口发起拖拽的会话期间，真实 drop 落在其他窗口）：
-              // 直接忽略，防止同一次拖放被重复处理
-              if (shouldSuppressDrop()) {
-                return;
-              }
+          {/* 文件列表 + 预览面板行容器：预览区在文件区右侧「挤压」出现，
+              两者一起随内置终端挤压（终端在 content-area 下方，flex 列自动生效） */}
+          <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+            <div
+              ref={previewRowRef}
+              className={previewDragging ? 'file-preview-row file-preview-row--dragging' : 'file-preview-row'}
+              style={{ display: 'flex', height: '100%', width: '100%' }}
+            >
+              <div
+                style={{ flex: 1, minWidth: 0, height: '100%' }}
+                data-drop-target="filelist"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'copy';
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  if (!currentPath) return;
+                  // 幻影 drop-back（本窗口发起拖拽的会话期间，真实 drop 落在其他窗口）：
+                  // 直接忽略，防止同一次拖放被重复处理
+                  if (shouldSuppressDrop()) {
+                    return;
+                  }
 
-              // ── 1) 同窗口内部拖拽（dragState 存活：Wayland 兜底合成 drop / X11 真实 drop）──
-              const dragState = getDragState();
-              if (dragState && dragState.files.length > 0) {
-                if (currentPath === 'trash://') {
-                  // 拖到回收站视图 = 移入回收站；已在回收站的条目无需再入
-                  if (dragState.files[0]?.trashOriginalPath) return;
-                  await trashFiles(dragState.files.map((f) => f.path), () => loadPath(currentPath));
-                  return;
-                }
-                const targetEl = document.elementFromPoint(e.clientX, e.clientY);
-                const itemEl = targetEl
-                  ? (targetEl as HTMLElement).closest('.file-list-item')
-                  : null;
-                const targetPath = itemEl?.getAttribute('data-path') ?? null;
-                if (targetPath) {
-                  const targetFile = filesForFileListRef.current.find((f) => f.path === targetPath);
-                  if (targetFile?.isDirectory && targetPath !== currentPath) {
-                    const operation: "move" | "copy" = e.shiftKey ? 'copy' : 'move';
+                  // ── 1) 同窗口内部拖拽（dragState 存活：Wayland 兜底合成 drop / X11 真实 drop）──
+                  const dragState = getDragState();
+                  if (dragState && dragState.files.length > 0) {
+                    if (currentPath === 'trash://') {
+                      // 拖到回收站视图 = 移入回收站；已在回收站的条目无需再入
+                      if (dragState.files[0]?.trashOriginalPath) return;
+                      await trashFiles(dragState.files.map((f) => f.path), () => loadPath(currentPath));
+                      return;
+                    }
+                    const targetEl = document.elementFromPoint(e.clientX, e.clientY);
+                    const itemEl = targetEl
+                      ? (targetEl as HTMLElement).closest('.file-list-item')
+                      : null;
+                    const targetPath = itemEl?.getAttribute('data-path') ?? null;
+                    if (targetPath) {
+                      const targetFile = filesForFileListRef.current.find((f) => f.path === targetPath);
+                      if (targetFile?.isDirectory && targetPath !== currentPath) {
+                        const operation: "move" | "copy" = e.shiftKey ? 'copy' : 'move';
+                        void handleDropOnTargetRef.current(
+                          dragState.files,
+                          targetFile.path,
+                          operation,
+                          filesForFileListRef.current,
+                          currentPathRef.current,
+                        );
+                        return;
+                      }
+                    }
+                    // 同目录背景放置：无意义，跳过
+                    if (dragState.sourcePath === currentPath) return;
                     void handleDropOnTargetRef.current(
                       dragState.files,
-                      targetFile.path,
-                      operation,
+                      currentPath,
+                      'move',
                       filesForFileListRef.current,
                       currentPathRef.current,
                     );
                     return;
                   }
-                }
-                // 同目录背景放置：无意义，跳过
-                if (dragState.sourcePath === currentPath) return;
-                void handleDropOnTargetRef.current(
-                  dragState.files,
-                  currentPath,
-                  'move',
-                  filesForFileListRef.current,
-                  currentPathRef.current,
-                );
-                return;
-              }
 
-              // ── 2) 跨窗口 / 外部应用：主进程登记仲裁 ──
-              const dtPaths = extractDropPaths(e.dataTransfer);
-              let claim: DragClaimResult;
-              try {
-                claim = await window.electron.claimDragFiles();
-              } catch {
-                claim = { status: 'none' };
-              }
-              if (claim.status === 'consumed') {
-                // 幻影 drop-back（同一次拖放已被另一窗口处理）：静默退出
-                return;
-              }
-              if (claim.status === 'granted') {
-                const metas = claim.files;
-                const paths = metas.map((m) => m.path);
-                if (dtPaths.length > 0 && !samePathSet(dtPaths, paths)) {
-                  // 外部应用拖入（登记是陈旧的）：按外部复制处理
-                  await importFiles(dtPaths.map((p) => ({ path: p })), currentPath, () => loadPath(currentPath));
-                  return;
-                }
-                // 本应用窗口间拖放：用元数据走内部管线
-                if (currentPath === 'trash://') {
-                  // 已在回收站的条目无需再入
-                  if (metas.length > 0 && metas[0].trashOriginalPath) return;
-                  await trashFiles(paths, () => loadPath(currentPath));
-                  return;
-                }
-                const entries: IFile[] = metas.map((m) => ({
-                  name: m.name,
-                  path: m.path,
-                  isDirectory: m.isDirectory,
-                  size: 0,
-                  mtime: new Date(),
-                  mime: null,
-                  trashOriginalPath: m.trashOriginalPath,
-                }));
-                const targetEl = document.elementFromPoint(e.clientX, e.clientY);
-                const itemEl = targetEl
-                  ? (targetEl as HTMLElement).closest('.file-list-item')
-                  : null;
-                const targetPath = itemEl?.getAttribute('data-path') ?? null;
-                if (targetPath) {
-                  const targetFile = filesForFileListRef.current.find((f) => f.path === targetPath);
-                  if (targetFile?.isDirectory && targetPath !== currentPath) {
-                    const dropEffect = e.dataTransfer ? e.dataTransfer.dropEffect : null;
-                    const operation: "move" | "copy" =
+                  // ── 2) 跨窗口 / 外部应用：主进程登记仲裁 ──
+                  const dtPaths = extractDropPaths(e.dataTransfer);
+                  let claim: DragClaimResult;
+                  try {
+                    claim = await window.electron.claimDragFiles();
+                  } catch {
+                    claim = { status: 'none' };
+                  }
+                  if (claim.status === 'consumed') {
+                    // 幻影 drop-back（同一次拖放已被另一窗口处理）：静默退出
+                    return;
+                  }
+                  if (claim.status === 'granted') {
+                    const metas = claim.files;
+                    const paths = metas.map((m) => m.path);
+                    if (dtPaths.length > 0 && !samePathSet(dtPaths, paths)) {
+                      // 外部应用拖入（登记是陈旧的）：按外部复制处理
+                      await importFiles(dtPaths.map((p) => ({ path: p })), currentPath, () => loadPath(currentPath));
+                      return;
+                    }
+                    // 本应用窗口间拖放：用元数据走内部管线
+                    if (currentPath === 'trash://') {
+                      // 已在回收站的条目无需再入
+                      if (metas.length > 0 && metas[0].trashOriginalPath) return;
+                      await trashFiles(paths, () => loadPath(currentPath));
+                      return;
+                    }
+                    const entries: IFile[] = metas.map((m) => ({
+                      name: m.name,
+                      path: m.path,
+                      isDirectory: m.isDirectory,
+                      size: 0,
+                      mtime: new Date(),
+                      mime: null,
+                      trashOriginalPath: m.trashOriginalPath,
+                    }));
+                    const targetEl = document.elementFromPoint(e.clientX, e.clientY);
+                    const itemEl = targetEl
+                      ? (targetEl as HTMLElement).closest('.file-list-item')
+                      : null;
+                    const targetPath = itemEl?.getAttribute('data-path') ?? null;
+                    if (targetPath) {
+                      const targetFile = filesForFileListRef.current.find((f) => f.path === targetPath);
+                      if (targetFile?.isDirectory && targetPath !== currentPath) {
+                        const dropEffect = e.dataTransfer ? e.dataTransfer.dropEffect : null;
+                        const operation: "move" | "copy" =
                       dropEffect === 'copy' ? 'copy'
                         : dropEffect === 'move' ? 'move'
                           : (e.shiftKey ? 'copy' : 'move');
-                    void handleDropOnTargetRef.current(
+                        void handleDropOnTargetRef.current(
+                          entries,
+                          targetFile.path,
+                          operation,
+                          filesForFileListRef.current,
+                          currentPathRef.current,
+                        );
+                        return;
+                      }
+                    }
+                    // 背景放置：同目录无意义
+                    const sourceDir = paths.length > 0
+                      ? paths[0].substring(0, paths[0].lastIndexOf('/'))
+                      : null;
+                    if (sourceDir === currentPath) return;
+                    // 跨窗口拖到背景：统一走 handleDropOnTarget 管线
+                    //（内部弹一次移动/复制/取消确认，绝不在此预先弹窗——
+                    // 否则会与 handleDropOnTarget 的对话框重复弹出）
+                    await handleDropOnTargetRef.current(
                       entries,
-                      targetFile.path,
-                      operation,
+                      currentPath,
+                      'move',
                       filesForFileListRef.current,
                       currentPathRef.current,
                     );
                     return;
                   }
-                }
-                // 背景放置：同目录无意义
-                const sourceDir = paths.length > 0
-                  ? paths[0].substring(0, paths[0].lastIndexOf('/'))
-                  : null;
-                if (sourceDir === currentPath) return;
-                // 跨窗口拖到背景：统一走 handleDropOnTarget 管线
-                //（内部弹一次移动/复制/取消确认，绝不在此预先弹窗——
-                // 否则会与 handleDropOnTarget 的对话框重复弹出）
-                await handleDropOnTargetRef.current(
-                  entries,
-                  currentPath,
-                  'move',
-                  filesForFileListRef.current,
-                  currentPathRef.current,
-                );
-                return;
-              }
 
-              // ── 3) 外部应用拖入：复制 ──
-              if (dtPaths.length > 0) {
-                await importFiles(
-                  dtPaths.map((p) => ({ path: p })),
-                  currentPath,
-                  () => loadPath(currentPath),
-                );
-              }
-            }}
-          >
-            {currentPath === 'trash://' && files.length === 0 && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'var(--md-sys-color-on-surface-variant)',
-                  pointerEvents: 'none',
+                  // ── 3) 外部应用拖入：复制 ──
+                  if (dtPaths.length > 0) {
+                    await importFiles(
+                      dtPaths.map((p) => ({ path: p })),
+                      currentPath,
+                      () => loadPath(currentPath),
+                    );
+                  }
                 }}
               >
-                <div style={{ textAlign: 'center' }}>
-                  <Icon name="delete" size={48} />
-                  <p style={{ marginTop: '12px', fontSize: '14px' }}>{t('trash.empty')}</p>
-                </div>
+                {currentPath === 'trash://' && files.length === 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--md-sys-color-on-surface-variant)',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <div style={{ textAlign: 'center' }}>
+                      <Icon name="delete" size={48} />
+                      <p style={{ marginTop: '12px', fontSize: '14px' }}>{t('trash.empty')}</p>
+                    </div>
+                  </div>
+                )}
+                <FileList
+                  files={sortedFiles}
+                  selectedFiles={selectedFiles}
+                  onSelect={stableHandleSelect}
+                  onNavigate={handleNavigate}
+                  onRename={handleRename}
+                  onContextMenu={handleFileContextMenu}
+                  onBackgroundContextMenu={handleBackgroundContextMenu}
+                  onDeselectAll={handleDeselectAll}
+                  onSetSelected={setSelectedFiles}
+                  onSelectionModeChange={handleSelectionModeChange}
+                  onHoverFile={handleHoverFile}
+                  onDropOnFolder={handleDropOnFolderCallback}
+                  currentPath={currentPath}
+                  iconSize={iconSize}
+                  viewMode={viewMode}
+                  filledIcons={filledIcons}
+                  groupingEnabled={groupingEnabled}
+                  scrollToFileName={scrollToFileName}
+                  onScrollToComplete={onScrollToComplete}
+                  marqueeEnabled={marqueeEnabled}
+                />
               </div>
-            )}
-            <FileList
-              files={sortedFiles}
-              selectedFiles={selectedFiles}
-              onSelect={stableHandleSelect}
-              onNavigate={handleNavigate}
-              onRename={handleRename}
-              onContextMenu={handleFileContextMenu}
-              onBackgroundContextMenu={handleBackgroundContextMenu}
-              onDeselectAll={handleDeselectAll}
-              onSetSelected={setSelectedFiles}
-              onSelectionModeChange={handleSelectionModeChange}
-              onHoverFile={handleHoverFile}
-              onDropOnFolder={handleDropOnFolderCallback}
-              currentPath={currentPath}
-              iconSize={iconSize}
-              viewMode={viewMode}
-              filledIcons={filledIcons}
-              groupingEnabled={groupingEnabled}
-              scrollToFileName={scrollToFileName}
-              onScrollToComplete={onScrollToComplete}
-              marqueeEnabled={marqueeEnabled}
-            />
+
+              {previewState.kind !== 'hidden' && (
+                <>
+                  <div
+                    className="file-preview-divider"
+                    role="separator"
+                    aria-orientation="vertical"
+                    title={t('preview.drag_hint')}
+                    onPointerDown={handlePreviewDividerPointerDown}
+                  />
+                  <FilePreviewPanel
+                    file={previewState.kind === 'file' ? previewState.file : undefined}
+                    multiple={previewState.kind === 'multiple'}
+                    width={previewWidth}
+                  />
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

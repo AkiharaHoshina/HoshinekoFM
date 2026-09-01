@@ -2,11 +2,33 @@ import { ipcMain, app, shell } from 'electron';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { promisify } from 'util';
-import { exec, spawn, type ChildProcess } from 'child_process';
-import { detectMimeBatch } from '../fsUtils';
+import { exec, execFile, spawn, type ChildProcess } from 'child_process';
+import { detectMimeBatch, detectMime } from '../fsUtils';
 import { getMountMap, resolveAccessibleParent, getExecError } from '../shared';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+/** 文本预览大小上限（512 KiB）：超过此大小的文件不在预览面板渲染文本 */
+const PREVIEW_TEXT_MAX_BYTES = 512 * 1024;
+
+/** 归档内容列表条目数上限：超过则截断并标记 truncated */
+const ARCHIVE_LIST_MAX_ENTRIES = 5000;
+
+/** zip 系 mime（unzip -Z1 可列） */
+const ZIP_MIMES = new Set(['application/zip', 'application/x-zip-compressed', 'application/java-archive']);
+/** tar/压缩流系 mime（tar -tf 可列） */
+const TAR_MIMES = new Set(['application/x-tar', 'application/gzip', 'application/x-gzip', 'application/x-xz', 'application/x-bzip2']);
+
+/** 检查命令是否可执行（`command -v`，POSIX 兼容） */
+async function commandExists(cmd: string): Promise<boolean> {
+  try {
+    await execFileAsync('sh', ['-c', `command -v "${cmd}"`], { timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Virtual filesystems where MIME detection via `file` command is wasteful */
 const VIRTUAL_FS_TYPES = new Set([
@@ -1010,6 +1032,122 @@ export function registerFsHandlers() {
       return await fs.readFile(filePath, 'utf-8');
     } catch {
       return null;
+    }
+  });
+
+  /**
+   * 读取文本预览内容（文件预览面板用）。
+   *
+   * 与 fs:read-file 的区别：先 stat 校验「普通文件 + 大小上限」
+   * （512 KiB，防止数百 MB 的日志/JSON 拖垮渲染进程），超限返回
+   * 结构化错误码 TOO_LARGE（附带实际大小），由前端翻译提示。
+   *
+   * @returns success + content；失败时 success=false 携带
+   *          INVALID_PATH / NOT_FILE / TOO_LARGE / READ_FAILED 错误码
+   */
+  ipcMain.handle('fs:read-preview-text', async (_, filePath: string) => {
+    if (typeof filePath !== 'string' || !filePath.startsWith('/')) {
+      return { success: false, code: 'INVALID_PATH' };
+    }
+    try {
+      const stats = await fs.stat(filePath);
+      if (!stats.isFile()) {
+        return { success: false, code: 'NOT_FILE' };
+      }
+      if (stats.size > PREVIEW_TEXT_MAX_BYTES) {
+        return { success: false, code: 'TOO_LARGE', size: stats.size };
+      }
+      const content = await fs.readFile(filePath, 'utf-8');
+      return { success: true, content };
+    } catch {
+      return { success: false, code: 'READ_FAILED' };
+    }
+  });
+
+  /**
+   * 列出归档文件的内容条目（文件预览面板的归档视图用）。
+   *
+   * 工具选择（扩展名优先，mime 兜底）：
+   * - zip 系（.zip/.jar/.apk）→ `unzip -Z1`（每行一个条目名，目录带尾斜杠）；
+   * - tar/压缩流系（.tar/.tgz/.tar.gz/.gz/.xz/.bz2 等）→ `tar -tf`；
+   * - .7z → 优先 `bsdtar -tf`（libarchive），无 bsdtar 时 `7z l -slt`
+   *   解析 `Path = ` 行（对含空格文件名稳健）。
+   *
+   * 条目数超过 ARCHIVE_LIST_MAX_ENTRIES 时截断并返回 truncated=true。
+   *
+   * @returns success + entries + truncated；失败时携带
+   *          INVALID_PATH / NOT_FILE / UNSUPPORTED（无法识别归档类型）/
+   *          NO_TOOL（7z 文件但 bsdtar 与 7z 均不可用）/ READ_FAILED
+   */
+  ipcMain.handle('fs:list-archive', async (_, filePath: string) => {
+    if (typeof filePath !== 'string' || !filePath.startsWith('/')) {
+      return { success: false, code: 'INVALID_PATH' };
+    }
+    try {
+      const stats = await fs.stat(filePath);
+      if (!stats.isFile()) return { success: false, code: 'NOT_FILE' };
+    } catch {
+      return { success: false, code: 'READ_FAILED' };
+    }
+
+    const lower = filePath.toLowerCase();
+    const ext = lower.slice(lower.lastIndexOf('.') < 0 ? lower.length : lower.lastIndexOf('.'));
+    // zip 系（含 .tar.gz 这类双后缀，取最后一段）
+    const isZipExt = ['.zip', '.jar', '.apk'].includes(ext);
+    const is7zExt = ext === '.7z';
+    const isTarExt = ['.tar', '.tgz', '.gz', '.xz', '.bz2', '.zst'].includes(ext);
+
+    let mime: string | null = null;
+    if (!isZipExt && !is7zExt && !isTarExt) {
+      mime = await detectMime(filePath).catch(() => null);
+    }
+
+    const useZip = isZipExt || (mime !== null && ZIP_MIMES.has(mime));
+    const use7z = is7zExt || mime === 'application/x-7z-compressed';
+    const useTar = !useZip && !use7z && (isTarExt || (mime !== null && TAR_MIMES.has(mime)));
+
+    try {
+      if (useZip) {
+        const { stdout } = await execFileAsync('unzip', ['-Z1', filePath], { timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
+        const all = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+        const truncated = all.length > ARCHIVE_LIST_MAX_ENTRIES;
+        return { success: true, entries: all.slice(0, ARCHIVE_LIST_MAX_ENTRIES), truncated, total: all.length };
+      }
+
+      if (use7z) {
+        const bsdtar = await commandExists('bsdtar');
+        if (bsdtar) {
+          const { stdout } = await execFileAsync('bsdtar', ['-tf', filePath], { timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
+          const all = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+          const truncated = all.length > ARCHIVE_LIST_MAX_ENTRIES;
+          return { success: true, entries: all.slice(0, ARCHIVE_LIST_MAX_ENTRIES), truncated, total: all.length };
+        }
+        const has7z = await commandExists('7z');
+        if (has7z) {
+          const { stdout } = await execFileAsync('7z', ['l', '-slt', filePath], { timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
+          const all = stdout
+            .split('\n')
+            .filter((l) => l.startsWith('Path = '))
+            .map((l) => l.slice('Path = '.length).trim())
+            .filter((p) => p && p !== path.basename(filePath));
+          const truncated = all.length > ARCHIVE_LIST_MAX_ENTRIES;
+          return { success: true, entries: all.slice(0, ARCHIVE_LIST_MAX_ENTRIES), truncated, total: all.length };
+        }
+        return { success: false, code: 'NO_TOOL' };
+      }
+
+      if (useTar) {
+        const { stdout } = await execFileAsync('tar', ['-tf', filePath], { timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
+        const all = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+        const truncated = all.length > ARCHIVE_LIST_MAX_ENTRIES;
+        return { success: true, entries: all.slice(0, ARCHIVE_LIST_MAX_ENTRIES), truncated, total: all.length };
+      }
+
+      return { success: false, code: 'UNSUPPORTED' };
+    } catch (e) {
+      const { message } = getExecError(e);
+      console.error('list archive failed', e);
+      return { success: false, code: 'READ_FAILED', error: message };
     }
   });
 

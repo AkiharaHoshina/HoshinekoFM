@@ -145,6 +145,7 @@ const jaJP = {
   'settings.language': '言語',
   'settings.marquee_text': 'スクロールテキスト',
   'settings.show_home_storage': 'ホームのストレージ使用量を表示',
+  'settings.file_preview': 'ファイルプレビュー',
   'settings.about': 'アプリについて',
   'settings.version': 'バージョン',
 
@@ -581,6 +582,16 @@ const jaJP = {
   'theme.preset.red': '赤',
   'theme.preset.pink': 'ピンク',
   'theme.preset.magenta': 'マゼンタ',
+  // ── 文件预览面板 ──
+  'preview.multiple': '複数のファイルはプレビューできません',
+  'preview.too_large': 'ファイルが大きすぎてプレビューできません',
+  'preview.load_failed': 'プレビューの読み込みに失敗しました',
+  'preview.loading': 'プレビューを読み込み中...',
+  'preview.drag_hint': 'ドラッグしてプレビューサイズを変更',
+  'preview.entries': (n: number) => `${n} 件のエントリ`,
+  'preview.archive_truncated': (n: number) => `…他に ${n} 件のエントリ`,
+  'preview.pdf_more_pages': (n: number) => `先頭 5 ページのみ表示（全 ${n} ページ）`,
+  'preview.unsupported_format': '対応していない形式です',
 } as const;
 
 export const match = (lang: string) => lang.startsWith('ja');

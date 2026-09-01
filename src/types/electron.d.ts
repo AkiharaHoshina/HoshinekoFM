@@ -135,6 +135,31 @@ export interface IElectronAPI {
     /** 选择器窗口回传选中结果（null = 取消），主进程随后关闭该窗口 */
     resolvePicker: (paths: string[] | null) => Promise<void>;
     readFile: (path: string) => Promise<string | null>;
+    /**
+     * 读取文本预览内容（预览面板用）。大小上限 512 KiB：
+     * 超限返回 `{ success: false, code: 'TOO_LARGE', size }`；
+     * 其他错误码：INVALID_PATH / NOT_FILE / READ_FAILED。
+     */
+    readPreviewText: (path: string) => Promise<{
+      success: boolean;
+      content?: string;
+      code?: 'INVALID_PATH' | 'NOT_FILE' | 'TOO_LARGE' | 'READ_FAILED';
+      size?: number;
+    }>;
+    /**
+     * 列出归档文件内容条目（预览面板归档视图用）。
+     * entries 上限 5000（超出 truncated=true）；
+     * 错误码：INVALID_PATH / NOT_FILE / UNSUPPORTED / NO_TOOL / READ_FAILED。
+     */
+    listArchive: (path: string) => Promise<{
+      success: boolean;
+      entries?: string[];
+      truncated?: boolean;
+      /** 完整条目总数（截断时用） */
+      total?: number;
+      code?: 'INVALID_PATH' | 'NOT_FILE' | 'UNSUPPORTED' | 'NO_TOOL' | 'READ_FAILED';
+      error?: string;
+    }>;
     startDrag: (paths: string | string[], files?: DragFileMeta[]) => void;
     claimDragFiles: () => Promise<DragClaimResult>;
     consumeDrag: () => Promise<void>;

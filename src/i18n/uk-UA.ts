@@ -184,6 +184,7 @@ const ukUA = {
   'settings.language': 'Мова',
   'settings.marquee_text': 'Біжучий текст',
   'settings.show_home_storage': 'Показувати заповнення домашнього сховища',
+  'settings.file_preview': 'Попередній перегляд файлів',
   'settings.about': 'Про застосунок',
   'settings.version': 'Версія',
 
@@ -620,6 +621,16 @@ const ukUA = {
   'theme.preset.red': 'Червоний',
   'theme.preset.pink': 'Рожевий',
   'theme.preset.magenta': 'Пурпуровий',
+  // ── 文件预览面板 ──
+  'preview.multiple': 'Кілька файлів не можна переглянути',
+  'preview.too_large': 'Файл занадто великий для перегляду',
+  'preview.load_failed': 'Не вдалося завантажити перегляд',
+  'preview.loading': 'Завантаження перегляду...',
+  'preview.drag_hint': 'Перетягніть, щоб змінити розмір',
+  'preview.entries': (n: number) => `${n} елементів`,
+  'preview.archive_truncated': (n: number) => `…ще ${n} елементів`,
+  'preview.pdf_more_pages': (n: number) => `Показано перші 5 сторінок із ${n}`,
+  'preview.unsupported_format': 'Непідтримуваний формат',
 } as const;
 
 export const match = (lang: string) => lang.startsWith('uk');

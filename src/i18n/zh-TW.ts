@@ -145,6 +145,7 @@ const zhTW = {
   'settings.language': '語言',
   'settings.marquee_text': '跑馬燈文字',
   'settings.show_home_storage': '顯示首頁儲存佔用',
+  'settings.file_preview': '檔案預覽',
   'settings.about': '關於',
   'settings.version': '版本',
 
@@ -581,6 +582,16 @@ const zhTW = {
   'theme.preset.red': '紅色',
   'theme.preset.pink': '粉色',
   'theme.preset.magenta': '紫紅',
+  // ── 文件预览面板 ──
+  'preview.multiple': '多個檔案無法預覽',
+  'preview.too_large': '檔案過大，無法預覽',
+  'preview.load_failed': '預覽載入失敗',
+  'preview.loading': '預覽載入中...',
+  'preview.drag_hint': '拖動調整預覽區大小',
+  'preview.entries': (n: number) => `${n} 個條目`,
+  'preview.archive_truncated': (n: number) => `…還有 ${n} 個條目未顯示`,
+  'preview.pdf_more_pages': (n: number) => `僅顯示前 5 頁，全文共 ${n} 頁`,
+  'preview.unsupported_format': '不支援的格式',
 } as const;
 
 export const match = (lang: string) => lang === 'zh-TW' || lang.toLowerCase() === 'zh-hant-tw';

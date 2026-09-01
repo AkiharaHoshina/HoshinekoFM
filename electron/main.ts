@@ -2,9 +2,10 @@ import { app, BrowserWindow, protocol, net, ipcMain, shell, type WebContents } f
 import path from 'path';
 import url from 'url';
 import os from 'os';
-import { promises as fs } from 'fs';
+import { promises as fs, createReadStream } from 'fs';
+import { Readable } from 'stream';
 import { setupPtyHandlers, killAllPty } from './pty';
-import { getThumbnail } from './fsUtils';
+import { getThumbnail, detectMime } from './fsUtils';
 import { startWatching, stopWatching, stopAllWatching } from './fsWatcher';
 import { registerFsHandlers } from './handlers/fs';
 import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor } from './handlers/system';
@@ -146,7 +147,12 @@ setupPtyHandlers();
 
 // Register protocol before app ready
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'media', privileges: { secure: true, supportFetchAPI: true, bypassCSP: true } }
+  { scheme: 'media', privileges: { secure: true, supportFetchAPI: true, bypassCSP: true } },
+  // preview 必须 standard + corsEnabled：pdf.js 经 fetch() 拉取预览文件，
+  // 缺 corsEnabled 时跨源 fetch 直接失败（Unexpected server response (0)）。
+  // standard 使 URL 按「主机+路径」解析（渲染侧统一用 preview://localhost
+  // 前缀，pdf.js 的 URL 往返序列化不会吃掉路径首斜杠）。
+  { scheme: 'preview', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true } }
 ]);
 
 // Wayland & GPU Flags
@@ -288,6 +294,39 @@ registerPickerHandlers((config, parent) =>
 );
 initJobHandlers();
 
+/**
+ * 解析单段 Range 请求头（`bytes=a-b` / `bytes=a-` / `bytes=-b`）。
+ *
+ * @param header - 原始 Range 头（如 `bytes=0-1023`）
+ * @param size - 文件总大小（字节）
+ * @returns 闭区间 [start, end]；无 Range 传 null 时返回 null；
+ *          头存在但无法解析（多段 range、语法错误、区间越界）时返回 'invalid'
+ */
+function parseRangeHeader(header: string | null, size: number): { start: number; end: number } | 'invalid' | null {
+  if (!header) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!m) return 'invalid';
+  const first = m[1];
+  const last = m[2];
+  if (first === '' && last === '') return 'invalid';
+  let start: number;
+  let end: number;
+  if (first === '') {
+    // 后缀范围 bytes=-N：文件最后 N 字节
+    const suffix = parseInt(last, 10);
+    if (!Number.isFinite(suffix) || suffix <= 0) return 'invalid';
+    start = Math.max(size - suffix, 0);
+    end = size - 1;
+  } else {
+    start = parseInt(first, 10);
+    end = last === '' ? size - 1 : parseInt(last, 10);
+    if (!Number.isFinite(start) || (last !== '' && !Number.isFinite(end))) return 'invalid';
+    end = Math.min(end, size - 1);
+  }
+  if (start < 0 || end < start || start >= size) return 'invalid';
+  return { start, end };
+}
+
 app.whenReady().then(() => {
   protocol.handle('media', async (request) => {
     const filePath = request.url.slice('media://'.length);
@@ -300,6 +339,72 @@ app.whenReady().then(() => {
 
     return net.fetch(url.pathToFileURL(decodedPath).toString());
   });
+
+  /**
+   * preview:// 协议：以原图/原文件（非缩略图）服务本地文件，
+   * 供文件预览面板加载图片/视频/音频/PDF。
+   *
+   * 与 media:// 的区别：media:// 对图片会优先返回 ≤256px 缩略图
+   * （文件列表图标用），且不处理 Range——预览面板需要原图与
+   * 视频 seek（206 分段响应），故独立协议。
+   *
+   * URL 形态为 `preview://localhost<绝对路径>`（scheme 注册为 standard，
+   * 主机固定 localhost、真实路径在 pathname 里）——pdf.js 会经
+   * `new URL()` 往返序列化 URL，`preview:///path` 的空主机形态会被
+   * 序列化成 `preview://path`（首斜杠被主机吃掉），pathname 形态
+   * 往返稳定。只允许绝对路径的普通文件；大文件以流式返回，不整体缓冲。
+   */
+  protocol.handle('preview', async (request) => {
+    const filePath = decodeURIComponent(new URL(request.url).pathname);
+    if (!path.isAbsolute(filePath)) {
+      return new Response('invalid path', { status: 400 });
+    }
+    let stats: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      stats = await fs.stat(filePath);
+    } catch {
+      return new Response('not found', { status: 404 });
+    }
+    if (!stats.isFile()) {
+      return new Response('not a regular file', { status: 400 });
+    }
+
+    const mime = await detectMime(filePath).catch(() => null);
+    const baseHeaders: Record<string, string> = {
+      'Accept-Ranges': 'bytes',
+      'Content-Type': mime ?? 'application/octet-stream',
+    };
+
+    // Range 支持：视频元素 seek/拖进度条依赖 206 分段响应
+    const rangeHeader = request.headers.get('Range');
+    if (rangeHeader) {
+      const parsed = parseRangeHeader(rangeHeader, stats.size);
+      if (parsed === 'invalid' || parsed === null) {
+        return new Response(null, {
+          status: 416,
+          headers: { 'Content-Range': `bytes */${stats.size}` },
+        });
+      }
+      const { start, end } = parsed;
+      const stream = createReadStream(filePath, { start, end });
+      return new Response(Readable.toWeb(stream) as unknown as BodyInit, {
+        status: 206,
+        headers: {
+          ...baseHeaders,
+          'Content-Length': String(end - start + 1),
+          'Content-Range': `bytes ${start}-${end}/${stats.size}`,
+        },
+      });
+    }
+
+    // 无 Range：全量流式返回（图片/小文件直接消费）
+    const stream = createReadStream(filePath);
+    return new Response(Readable.toWeb(stream) as unknown as BodyInit, {
+      status: 200,
+      headers: { ...baseHeaders, 'Content-Length': String(stats.size) },
+    });
+  });
+
   createWindow();
   setupUdisks2Monitor(getWindows);
   setupGvfsMonitor(getWindows);
