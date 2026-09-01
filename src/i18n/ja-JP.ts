@@ -163,6 +163,8 @@ const jaJP = {
   'settings.uninstall_integration': 'Portal 統合をアンインストール',
   'settings.integration_uninstalled': 'システム統合をアンインストールしました',
   'settings.integration_uninstall_failed': 'システム統合のアンインストールに失敗しました',
+  'settings.integration_confirm_title': 'システム統合をインストールする前に確認',
+  'settings.integration_confirm_message': 'HoshinekoFM はまだデフォルトのファイルマネージャーに設定されていません。先に「デフォルトのファイルマネージャーに設定」を完了することをおすすめします。完了していない場合、インストール後もフォルダーが他のアプリで開かれる可能性があります。続行しますか？',
   'settings.about': 'アプリについて',
   'settings.version': 'バージョン',
 

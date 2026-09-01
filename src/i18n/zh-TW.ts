@@ -163,6 +163,8 @@ const zhTW = {
   'settings.uninstall_integration': '解除安裝 Portal 整合',
   'settings.integration_uninstalled': '系統整合已解除安裝',
   'settings.integration_uninstall_failed': '系統整合解除安裝失敗',
+  'settings.integration_confirm_title': '安裝系統整合前確認',
+  'settings.integration_confirm_message': '尚未將 HoshinekoFM 設為預設檔案管理員。建議先完成「設為預設檔案管理員」，否則安裝後目錄預設開啟可能無法正常使用本應用。仍要繼續安裝嗎？',
   'settings.about': '關於',
   'settings.version': '版本',
 

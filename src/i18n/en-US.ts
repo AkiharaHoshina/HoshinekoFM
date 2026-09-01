@@ -174,6 +174,8 @@ const enUS = {
   'settings.uninstall_integration': 'Uninstall portal integration',
   'settings.integration_uninstalled': 'System integration uninstalled',
   'settings.integration_uninstall_failed': 'Failed to uninstall system integration',
+  'settings.integration_confirm_title': 'Before installing system integration',
+  'settings.integration_confirm_message': 'HoshinekoFM is not set as the default file manager yet. It is recommended to set it as default first, otherwise folders may still open with other apps. Continue anyway?',
   'settings.about': 'About',
   'settings.version': 'Version',
 

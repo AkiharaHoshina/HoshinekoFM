@@ -202,6 +202,8 @@ const ukUA = {
   'settings.uninstall_integration': 'Видалити інтеграцію portal',
   'settings.integration_uninstalled': 'Системну інтеграцію видалено',
   'settings.integration_uninstall_failed': 'Не вдалося видалити системну інтеграцію',
+  'settings.integration_confirm_title': 'Підтвердження перед встановленням системної інтеграції',
+  'settings.integration_confirm_message': 'HoshinekoFM ще не призначено файловим менеджером за замовчуванням. Рекомендується спочатку виконати «Зробити файловим менеджером за замовчуванням», інакше після встановлення папки можуть відкриватися іншими програмами. Продовжити встановлення?',
   'settings.about': 'Про застосунок',
   'settings.version': 'Версія',
 

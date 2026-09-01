@@ -87,6 +87,53 @@ const path = require('path');
     h.assert.strictEqual(r1.stdout.includes('[root]'), false, '--user-only 不应执行 root 级');
     h.assert.strictEqual(u1.stdout.includes('[root]'), false, '卸载 --user-only 不应执行 root 级');
 
+    // 用户级固定副本 + 桌面入口 Exec 统一（AppImage 场景，用伪 APPIMAGE 文件模拟）
+    const fakeApp = path.join(fakePkg, 'fake.AppImage');
+    fs.writeFileSync(fakeApp, 'fake appimage content');
+    const fakeDesktop = path.join(fakeHome, '.local', 'share', 'applications', 'HoshinekoFM.desktop');
+    fs.mkdirSync(path.dirname(fakeDesktop), { recursive: true });
+    fs.writeFileSync(fakeDesktop, '[Desktop Entry]\nExec="/old/path.AppImage" %U\n');
+    const runAsApp = (script) =>
+      spawnSync(script, ['--user-only'], {
+        env: { ...process.env, HOME: fakeHome, HOSHINEKO_PACKAGING_DIR: fakePkg, APPIMAGE: fakeApp },
+        encoding: 'utf-8',
+      });
+
+    const a1 = runAsApp(scriptPath);
+    h.assert.strictEqual(a1.status, 0, `带 APPIMAGE 的安装应成功：${a1.stderr}`);
+    const userBin = path.join(fakeHome, '.local', 'bin', 'HoshinekoFM');
+    h.assert.ok(fs.existsSync(userBin), '应创建用户级固定副本 ~/.local/bin/HoshinekoFM');
+    h.assert.strictEqual(
+      fs.readFileSync(userBin, 'utf-8'),
+      'fake appimage content',
+      '固定副本内容应与 APPIMAGE 一致',
+    );
+    const desktopAfterInstall = fs.readFileSync(fakeDesktop, 'utf-8');
+    h.assert.ok(
+      /^Exec=".*\/bin\/HoshinekoFM" %U$/m.test(desktopAfterInstall),
+      `桌面入口 Exec 应统一到固定路径：${desktopAfterInstall}`,
+    );
+
+    // 幂等：再次安装不重复复制（内容一致跳过）
+    const a2 = runAsApp(scriptPath);
+    h.assert.strictEqual(a2.status, 0);
+
+    // 卸载：桌面入口 Exec 恢复为 APPIMAGE 路径；非 AppImage 形态的伪文件不删除（魔数保护）
+    const b1 = runAsApp(uninstallPath);
+    h.assert.strictEqual(b1.status, 0, `带 APPIMAGE 的卸载应成功：${b1.stderr}`);
+    const desktopAfterUninstall = fs.readFileSync(fakeDesktop, 'utf-8');
+    h.assert.ok(
+      desktopAfterUninstall.includes(`Exec="${fakeApp}" %U`),
+      `桌面入口 Exec 应恢复为 APPIMAGE 路径：${desktopAfterUninstall}`,
+    );
+    h.assert.ok(fs.existsSync(userBin), '非 AppImage 形态（无魔数）的固定副本不应被误删');
+
+    // AppImage 魔数识别：带 "AI" 魔数的副本应被卸载移除
+    fs.writeFileSync(userBin, Buffer.concat([Buffer.alloc(8), Buffer.from('AI'), Buffer.from('rest')]));
+    const b2 = runAsApp(uninstallPath);
+    h.assert.strictEqual(b2.status, 0);
+    h.assert.strictEqual(fs.existsSync(userBin), false, 'AppImage 形态的固定副本应被卸载移除');
+
     // IPC 用户级安装/卸载（不弹 pkexec）：沙箱 HOME，验证
     // IPC → 临时目录复制 → 脚本执行 → 临时目录清理 完整链路
     const fakeHome2 = h.tempDir('hoshineko-e2e-ipc-home-');

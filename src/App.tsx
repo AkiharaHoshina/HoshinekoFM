@@ -546,6 +546,15 @@ function AppContent() {
   /** 一键安装系统集成（portal 配置 + D-Bus 激活文件，经 pkexec 授权） */
   const handleInstallIntegration = useCallback(async () => {
     if (integrationBusy) return;
+    // 未设为默认文件管理器时先提醒完成默认打开设置，否则安装后
+    // 目录默认打开（xdg-mime 关联）可能指向不存在的桌面入口
+    if (!isDefaultFileManager) {
+      const ok = await confirm(
+        t("settings.integration_confirm_title"),
+        t("settings.integration_confirm_message"),
+      );
+      if (!ok) return;
+    }
     setIntegrationBusy(true);
     try {
       const res = await window.electron?.installSystemIntegration();
@@ -559,7 +568,7 @@ function AppContent() {
     } finally {
       setIntegrationBusy(false);
     }
-  }, [integrationBusy]);
+  }, [integrationBusy, isDefaultFileManager, confirm]);
 
   /** 一键卸载系统集成（移除 portal 配置 + D-Bus 激活文件，经 pkexec 授权） */
   const handleUninstallIntegration = useCallback(async () => {

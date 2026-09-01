@@ -205,6 +205,8 @@ const ruUA = {
   'settings.uninstall_integration': 'Удалить интеграцию portal',
   'settings.integration_uninstalled': 'Системная интеграция удалена',
   'settings.integration_uninstall_failed': 'Не удалось удалить системную интеграцию',
+  'settings.integration_confirm_title': 'Подтверждение перед установкой системной интеграции',
+  'settings.integration_confirm_message': 'HoshinekoFM ещё не назначен файловым менеджером по умолчанию. Рекомендуется сначала выполнить «Сделать файловым менеджером по умолчанию», иначе после установки папки могут открываться другими программами. Продолжить установку?',
   'settings.about': 'О приложении',
   'settings.version': 'Версия',
 

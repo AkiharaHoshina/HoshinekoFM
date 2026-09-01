@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow, app } from 'electron';
 import path from 'path';
-import { promises as fs, watch as fsWatch } from 'fs';
+import { promises as fs, watch as fsWatch, existsSync } from 'fs';
 import os from 'os';
 import { spawn, exec, execFile } from 'child_process';
 import { promisify } from 'util';
@@ -847,14 +847,28 @@ export function registerSystemHandlers() {
   /** 用户级桌面入口（「设为默认文件管理器」时安装，xdg-mime 关联才能生效） */
   const USER_APPS_DIR = path.join(os.homedir(), '.local', 'share', 'applications');
   const DESKTOP_ENTRY_NAME = 'HoshinekoFM.desktop';
+  /** 系统集成安装的固定路径（install.sh root 级安装的 D-Bus 激活执行体） */
+  const SYSTEM_BIN_PATH = '/usr/local/bin/HoshinekoFM';
+  /** 用户级固定副本路径（install.sh 用户级部分安装，防原始 AppImage 被删） */
+  const userBinPath = path.join(os.homedir(), '.local', 'bin', 'HoshinekoFM');
 
   /** 生成桌面入口内容：Exec 按环境选择——
-   *  AppImage 用 APPIMAGE 路径；开发环境 = `<electron> "<appPath>" %U`
-   *  （只写 electron 二进制路径会启动空白窗口，必须带应用路径参数） */
+   *  固定安装路径（系统级 /usr/local/bin/HoshinekoFM 优先，其次用户级
+   *  ~/.local/bin/HoshinekoFM）存在时用固定路径（防原始 AppImage 被移动/
+   *  删除后默认打开失效）；否则 AppImage 用 APPIMAGE 路径；开发环境
+   *  = `<electron> "<appPath>" %U`（只写 electron 二进制路径会启动空白
+   *  窗口，必须带应用路径参数） */
   const buildDesktopEntry = () => {
-    const execLine = process.env.APPIMAGE
-      ? `Exec="${process.env.APPIMAGE}" %U`
-      : `Exec="${process.execPath}" "${app.getAppPath()}" %U`;
+    const fixedBin = existsSync(SYSTEM_BIN_PATH)
+      ? SYSTEM_BIN_PATH
+      : existsSync(userBinPath)
+        ? userBinPath
+        : null;
+    const execLine = fixedBin
+      ? `Exec="${fixedBin}" %U`
+      : process.env.APPIMAGE
+        ? `Exec="${process.env.APPIMAGE}" %U`
+        : `Exec="${process.execPath}" "${app.getAppPath()}" %U`;
     const iconLine = process.env.APPIMAGE
       ? '' // AppImage 集成通常自带 .desktop 与图标
       : `Icon=${path.join(app.getAppPath(), 'assets', 'icon.png')}`;
