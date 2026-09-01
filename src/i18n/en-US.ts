@@ -591,7 +591,7 @@ const enUS = {
   'theme.preset.pink': 'Pink',
   'theme.preset.magenta': 'Magenta',
   // ── 文件预览面板 ──
-  'preview.multiple': 'Multiple files cannot be previewed',
+  'preview.multiple': 'Multiple items cannot be previewed',
   'preview.too_large': 'File too large to preview',
   'preview.load_failed': 'Failed to load preview',
   'preview.loading': 'Loading preview...',

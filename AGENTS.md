@@ -9,9 +9,25 @@
 | `npm run build`          | `tsc -b && vite build && tsc -p electron/tsconfig.json`                                       |
 | `npm run electron:build` | `npm run build` → `scripts/set-cjs.cjs` → `electron-builder` (outputs AppImage to `release/`) |
 | `npm run lint`           | `eslint .` (flat config, ESLint v9)                                                           |
+| `npm run e2e`            | `npm run build` → run every `scripts/e2e/*.test.cjs` via `npx electron` (needs a display)     |
 
 No `typecheck` script — run `npx tsc -b` or `npx tsc --noEmit` for type-checking.
-No test framework, no test files.
+No unit-test framework — e2e tests live in `scripts/e2e/` (Electron main-process driven, no deps; see below).
+
+## e2e 测试（scripts/e2e/）
+
+- 运行：`npm run e2e`（先 build 保证测最新产物）；单跑：`npx electron scripts/e2e/<name>.test.cjs`。
+- 需要图形会话（本机 DISPLAY=:0 可跑；无头 CI 用 `xvfb-run -a npm run e2e`）。
+- 架构：`harness.cjs` 加载真实 `dist/index.html` + 真实 `dist-electron/preload.js`，用 `sendInputEvent` 模拟输入、`executeJavaScript` 断言；**不 import `electron/main.ts`**——harness 里的 scheme 注册、preview 协议、`app:get-startup-path`/`picker:get-config`/`fs:watch-dir` 等是 main.ts 顶层注册的**手工副本**，改 main.ts 时必须同步更新 harness（注释已互相指向）。
+- 已知坑点（写新用例必读）：
+  - **React 受控输入**：直接 `el.value =` 不触发 onChange，须用 prototype value setter + `input` 事件（`setReactInput`；md-* 文本域穿透 shadow root 找 input）。
+  - **双击 = 两次独立 click**（应用用 lastClickRef 手动检测，`doubleClickEl` 发两对 down/up，间隔 60ms）；间隔 > 500ms 的慢速双击进入行内重命名。
+  - **Dialog 有 250ms 串行化延迟**：内容常驻 DOM，断言对话框必须查 `md-dialog` 的 `open === true`，不是查内容是否存在；操作间 `waitDialogAnim()`。
+  - **缩放因子会话级共享**：任一窗口 setZoomFactor 后其他窗口 getZoomFactor 读到同值；同窗口直接 `localStorage.setItem` 不触发 storage 事件（跨窗口同步必须由另一窗口写入）。
+  - **picker `resolvePicker` 会立即关窗**：其自身 IPC 响应可能丢失，测试里必须 fire-and-forget（不能 await）。
+  - 菜单/按钮文案按中英文双匹配（`/取消|Cancel/`），规避系统语言差异。
+  - 对话框内容超出视口时点击前 `scrollIntoView`。
+- harness 有 120s 全局看门狗，任何挂起会强制退出并报 WATCHDOG TIMEOUT。
 
 ## Architecture
 

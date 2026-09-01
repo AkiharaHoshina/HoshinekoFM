@@ -583,7 +583,7 @@ const zhTW = {
   'theme.preset.pink': '粉色',
   'theme.preset.magenta': '紫紅',
   // ── 文件预览面板 ──
-  'preview.multiple': '多個檔案無法預覽',
+  'preview.multiple': '多個項目無法預覽',
   'preview.too_large': '檔案過大，無法預覽',
   'preview.load_failed': '預覽載入失敗',
   'preview.loading': '預覽載入中...',

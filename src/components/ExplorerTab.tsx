@@ -1067,6 +1067,11 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   const filesForFileListRef = useRef(files);
   // eslint-disable-next-line react-hooks/refs -- keep ref in sync during render for stable callbacks
   filesForFileListRef.current = files;
+  /** 显示序列表引用（与 FileList 渲染同源）：批量重命名按当前排序/分组
+   *  模式的视觉顺序取选中集——列表=从上到下，网格=行主序 */
+  const sortedFilesForFileListRef = useRef(sortedFiles);
+  // eslint-disable-next-line react-hooks/refs -- keep ref in sync during render for stable callbacks
+  sortedFilesForFileListRef.current = sortedFiles;
   const handleDropOnTargetRef = useRef(handleDropOnTarget);
   // eslint-disable-next-line react-hooks/refs -- keep ref in sync with latest handler
   handleDropOnTargetRef.current = handleDropOnTarget;
@@ -1076,9 +1081,11 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     if (file && !currentSelection.has(file.path)) {
       handleSelectRef.current(file, false, false);
     }
-    // 右键命中已选中文件时，把完整选中集传给上层菜单，批量操作才会作用于全部选中项
+    // 右键命中已选中文件时，把完整选中集传给上层菜单，批量操作才会作用于全部选中项；
+    // 按显示顺序（sortedFiles，与 FileList 渲染完全同序）过滤——
+    // 批量重命名对话框的文件顺序 = 当前排序/分组模式下的视觉顺序
     const selected = currentSelection.has(file.path)
-      ? filesForFileListRef.current.filter((f) => currentSelection.has(f.path))
+      ? sortedFilesForFileListRef.current.filter((f) => currentSelection.has(f.path))
       : [file];
 
     // 搜索模式：结果散落在多个子目录，App 的常规文件菜单（解压/固定到侧边栏等

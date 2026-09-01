@@ -1,5 +1,28 @@
 # 更新日志
 
+## v0.11.18 — 批量重命名菜单/顺序修正、文案调整与 e2e 测试套件固化
+
+### 批量重命名：多选菜单精简与对话框顺序修正
+
+- **多选右键菜单只显示「批量重命名...」**：单项「重命名」改为仅单选（`selectedFiles.length < 2`）时出现；右键未选中文件时选择集已先重置为单文件（既有行为），单项重命名不受影响
+- **对话框文件顺序跟随显示顺序**：根因是 `handleFileContextMenu` 用原始目录列表（`filesForFileListRef`）过滤选中集，而界面渲染的是 `sortedFiles`——新增 `sortedFilesForFileListRef`，选中集改由排序后的显示序列过滤：列表视图从上到下、网格视图行主序（左→右、上→下）、分组开启时与视觉分组一致；复制/剪切/删除等其余批量操作是集合语义，不受影响
+- i18n：`preview.multiple` × 12 语言「多个文件无法预览」→「多个项目无法预览」（Multiple items cannot be previewed）
+
+### e2e 测试套件固化（scripts/e2e/）
+
+- 新增公共 harness（`scripts/e2e/harness.cjs`）：加载真实 `dist` + 真实 preload；临时 userData 隔离；注册全部 IPC handler 与 media/preview 协议（main.ts 顶层注册的 handler 为手工副本，注释互指防漂移）；窗口工厂（启动路径解析 + picker 变体）；`sendInputEvent` 封装（zoom 感知坐标换算、双击=两次独立 click、右键）、`executeJavaScript`/`waitFor`、React 受控输入 setter（prototype value setter + md-* shadow 穿透）、`scrollIntoView`、fixtures（文件树/zip/最小 PDF/PNG）、120s 全局看门狗
+- 12 套用例（本机 DISPLAY=:0 全绿）：01 列表导航、02 行内重命名、03 右键菜单、04 设置对话框、05 主题跨窗口同步、06 内置文件选择器、07 界面缩放、08 剪贴板跨窗口、09 media/preview 协议（Range/206/416 回归）、10 归档列表、11 批量重命名（含本次菜单/顺序断言）、12 终端 PTY
+- 实施中实证并固化的新坑点（写入 AGENTS.md）：双击 = 两次独立 click（应用手动检测）；**缩放因子会话级共享**；同窗口 `localStorage.setItem` 不触发 storage 事件（跨窗口同步必须另一窗口写）；`picker:resolvePicker` 立即关窗致其 IPC 响应丢失（fire-and-forget）；Dialog 250ms 串行化延迟须断言 `md-dialog.open === true`；菜单/按钮文案中英文双匹配
+- `package.json` 新增 `"e2e": "npm run build && for f in scripts/e2e/*.test.cjs; do npx electron \"$f\" || exit 1; done"`；README 双语新增 Testing/测试 节（无头 CI 用 `xvfb-run -a`）
+
+### 待办决策（用户确认有意不做）
+
+- 收藏夹/书签：与仪表盘/侧边栏固定功能重合，不实施
+- 格式化无文件系统设备：高危操作交给专业磁盘工具，不实施
+- README「尚未实现」与进度.md 相应收敛（含 e2e 从待办移除）
+
+- 版本号升至 `0.11.18`
+
 ## v0.11.17 — 文件预览面板（设置开关 + 挤压式预览区）
 
 ### 预览面板

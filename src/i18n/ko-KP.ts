@@ -583,7 +583,7 @@ const koKP = {
   'theme.preset.pink': '분홍색',
   'theme.preset.magenta': '자홍색',
   // ── 文件预览面板 ──
-  'preview.multiple': '여러 파일은 미리 볼 수 없습니다',
+  'preview.multiple': '여러 항목은 미리 볼 수 없습니다',
   'preview.too_large': '파일이 너무 커서 미리 볼 수 없습니다',
   'preview.load_failed': '미리보기를 불러오지 못했습니다',
   'preview.loading': '미리보기 불러오는 중...',

@@ -785,14 +785,16 @@ function AppContent() {
             },
           }]
           : []),
-        {
-          label: t("context_menu.rename"),
-          icon: "edit",
-          action: () => {
-            openRenameDialog(item);
-            closeContextMenu();
-          },
-        },
+        ...(selectedFiles.length < 2
+          ? [{
+            label: t("context_menu.rename"),
+            icon: "edit",
+            action: () => {
+              openRenameDialog(item);
+              closeContextMenu();
+            },
+          }]
+          : []),
         ...(selectedFiles.length >= 2
           ? [{
             label: t("context_menu.batch_rename"),

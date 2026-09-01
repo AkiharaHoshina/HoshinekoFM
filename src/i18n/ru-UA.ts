@@ -625,7 +625,7 @@ const ruUA = {
   'theme.preset.pink': 'Розовый',
   'theme.preset.magenta': 'Пурпурный',
   // ── 文件预览面板 ──
-  'preview.multiple': 'Несколько файлов нельзя просмотреть',
+  'preview.multiple': 'Несколько элементов нельзя просмотреть',
   'preview.too_large': 'Файл слишком большой для предпросмотра',
   'preview.load_failed': 'Не удалось загрузить предпросмотр',
   'preview.loading': 'Загрузка предпросмотра...',

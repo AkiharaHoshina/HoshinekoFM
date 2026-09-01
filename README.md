@@ -68,11 +68,10 @@ None at the moment.
 
 ## Not Yet Implemented
 
-- Favorites/bookmarks.
-- Formatting devices without a filesystem.
+- Favorites/bookmarks (superseded by dashboard/sidebar pinning).
+- Formatting devices without a filesystem (intentionally left to dedicated disk tools).
 - Automatic updates.
 - Cross-platform support (Linux only; relies on inotify, udisks2, dbus-next, gvfs, and GNU coreutils).
-- Automated tests.
 
 ## Theming
 
@@ -145,6 +144,17 @@ Please switch to "Releases" page
    ```bash
    npm run electron:build
    ```
+
+## Testing
+
+End-to-end tests live in `scripts/e2e/` (12 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
+
+```bash
+npm run e2e                # builds first, then runs every scripts/e2e/*.test.cjs
+npx electron scripts/e2e/01-file-list.test.cjs   # run a single suite
+```
+
+A display session is required; on headless CI use `xvfb-run -a npm run e2e`. Known pitfalls (React controlled inputs, double-click semantics, dialog serialization delays, session-shared zoom) are documented in `AGENTS.md` and `scripts/e2e/harness.cjs`.
 
 ## License
 

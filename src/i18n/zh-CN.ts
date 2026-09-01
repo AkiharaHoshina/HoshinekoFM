@@ -582,7 +582,7 @@ const zhCN = {
   'theme.preset.pink': '粉色',
   'theme.preset.magenta': '紫红',
   // ── 文件预览面板 ──
-  'preview.multiple': '多个文件无法预览',
+  'preview.multiple': '多个项目无法预览',
   'preview.too_large': '文件过大，无法预览',
   'preview.load_failed': '预览加载失败',
   'preview.loading': '预览加载中...',

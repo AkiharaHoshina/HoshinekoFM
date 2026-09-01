@@ -68,11 +68,10 @@ Hoshineko 文件管理器是一款基于 Material 3 设计语言、Electron 和 
 
 ## 尚未实现
 
-- 收藏夹/书签。
-- 格式化无文件系统设备。
+- 收藏夹/书签（由仪表盘/侧边栏固定功能替代）。
+- 格式化无文件系统设备（有意留给专业磁盘工具）。
 - 自动更新。
 - 跨平台支持（仅 Linux；依赖 inotify、udisks2、dbus-next、gvfs 与 GNU coreutils）。
-- 自动化测试。
 
 ## 主题
 
@@ -145,6 +144,17 @@ scheme-monochrome：单色/黑白灰调。
    ```bash
    npm run electron:build
    ```
+
+## 测试
+
+端到端测试位于 `scripts/e2e/`（12 套用例，无测试框架——Electron 自身驱动真实构建，`sendInputEvent` 模拟输入、`executeJavaScript` 断言）：
+
+```bash
+npm run e2e                # 先构建，再依次运行 scripts/e2e/*.test.cjs
+npx electron scripts/e2e/01-file-list.test.cjs   # 单跑一套
+```
+
+需要图形会话；无头 CI 用 `xvfb-run -a npm run e2e`。已知坑点（React 受控输入、双击语义、对话框串行化延迟、会话级共享缩放）记录在 `AGENTS.md` 与 `scripts/e2e/harness.cjs`。
 
 ## 协议
 

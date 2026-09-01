@@ -583,7 +583,7 @@ const jaJP = {
   'theme.preset.pink': 'ピンク',
   'theme.preset.magenta': 'マゼンタ',
   // ── 文件预览面板 ──
-  'preview.multiple': '複数のファイルはプレビューできません',
+  'preview.multiple': '複数の項目はプレビューできません',
   'preview.too_large': 'ファイルが大きすぎてプレビューできません',
   'preview.load_failed': 'プレビューの読み込みに失敗しました',
   'preview.loading': 'プレビューを読み込み中...',

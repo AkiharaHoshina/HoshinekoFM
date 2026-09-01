@@ -622,7 +622,7 @@ const ukUA = {
   'theme.preset.pink': 'Рожевий',
   'theme.preset.magenta': 'Пурпуровий',
   // ── 文件预览面板 ──
-  'preview.multiple': 'Кілька файлів не можна переглянути',
+  'preview.multiple': 'Кілька елементів не можна переглянути',
   'preview.too_large': 'Файл занадто великий для перегляду',
   'preview.load_failed': 'Не вдалося завантажити перегляд',
   'preview.loading': 'Завантаження перегляду...',
