@@ -11,6 +11,18 @@
 - i18n 新增 3 键 × 12（`picker.title_save`/`picker.file_name`/`picker.confirm`）；e2e 14 扩展 SaveFile 全链路（选项翻译、预填断言、改名确定返回 `file://<dir>/x.txt`、取消 [1,{}]、回收站可见性双向断言）；harness `setReactInput` 补 `composed: true`（md-* 内部 input 事件穿透 shadow root）；e2e 13 旧断言同步「过滤只显示匹配文件」现行语义
 - docs/portal-filechooser.md：SaveFile 选项表、限制更新（不创建文件、无覆盖确认、忽略 filters、SaveFiles 不支持）
 
+### 迭代修复（安装偶发误报失败）
+
+- **根因**：`install.sh` 主入口的 EXIT trap `cleanup_stage() { [ -n "$stage" ] && rm -f "$stage"; }` 在 `set -e` 下，stage 为空时（开发模式 / 非 AppImage 运行）trap 以 1 结束——bash 的 EXIT trap 返回值成为脚本最终退出码 → **安装实际成功却被报「安装失败」**（root 级照常执行、用户级照常执行，仅退出码错了）
+- 修复：trap 改用 `if` 形式保证空 stage 时返回 0；失败 toast 附带脚本错误细节（stderr/输出最后一行，截尾 160 字符，安装/卸载同改），便于定位偶发失败
+- e2e 18 增补回归：完整模式 + 假 pkexec、无 APPIMAGE 时退出码必须为 0
+
+### 迭代修复（应用从已删除副本运行时安装失败）
+
+- **根因**（journal 抓 pkexec 命令行定位）：应用从固定副本（`/usr/local/bin/HoshinekoFM`）启动后若该副本被卸载删除，运行中实例的 `APPIMAGE` 指向已不存在的文件 → 安装脚本无暂存源，二进制从未恢复（「事实失败」），叠加上述 trap 退出码问题提示失败
+- 修复：暂存源回退链 APPIMAGE → 用户级副本 → 系统级副本；全部缺失时在弹提权**之前**明确报错「请从原始 AppImage 启动应用后重试」（失败 toast 直接显示原因）；用户级副本复制源同样回退到系统级副本；固定路径支持 `HOSHINEKO_SYSTEM_BIN`/`HOSHINEKO_USER_BIN` 环境变量覆盖（测试沙箱/定制安装）
+- e2e 18 增补：APPIMAGE 失效无副本 → 明确报错；APPIMAGE 失效但用户级副本存在 → 回退成功
+
 ### 服务模式 D-Bus 激活修复（Firefox「另存为」首次点不开）
 
 - **根因**（journal + dbus-monitor 抓包定位）：`--portal` 服务模式启动时无窗口，`window-all-closed` 立即触发 `app.quit()`——被激活的后端注册总线名后瞬间自杀，前端调用收到 `UnknownMethod`（journal：`Backend call failed: Method 'SaveFile' does not exist`）。Firefox 每次「另存为」都触发一次激活，进程起了又死，只有恰好赶上存活窗口的点击才成功——**表现为要点好几次**

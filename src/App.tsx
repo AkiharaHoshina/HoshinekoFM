@@ -567,7 +567,12 @@ function AppContent() {
         const status = await window.electron?.getSystemIntegrationStatus();
         if (status) setIntegrationStatus(status);
       } else {
-        showToast(t("settings.integration_failed"), "error");
+        // 附脚本错误细节（stderr 优先，截尾），便于定位偶发失败
+        const detail = (res?.error || res?.output || '').trim().split('\n').pop() || '';
+        showToast(
+          detail ? `${t("settings.integration_failed")}：${detail.slice(-160)}` : t("settings.integration_failed"),
+          "error",
+        );
       }
     } finally {
       setIntegrationBusy(false);
@@ -585,7 +590,11 @@ function AppContent() {
         const status = await window.electron?.getSystemIntegrationStatus();
         if (status) setIntegrationStatus(status);
       } else {
-        showToast(t("settings.integration_uninstall_failed"), "error");
+        const detail = (res?.error || res?.output || '').trim().split('\n').pop() || '';
+        showToast(
+          detail ? `${t("settings.integration_uninstall_failed")}：${detail.slice(-160)}` : t("settings.integration_uninstall_failed"),
+          "error",
+        );
       }
     } finally {
       setIntegrationBusy(false);

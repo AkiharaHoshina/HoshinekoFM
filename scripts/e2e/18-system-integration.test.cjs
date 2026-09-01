@@ -87,6 +87,70 @@ const path = require('path');
     h.assert.strictEqual(r1.stdout.includes('[root]'), false, '--user-only 不应执行 root 级');
     h.assert.strictEqual(u1.stdout.includes('[root]'), false, '卸载 --user-only 不应执行 root 级');
 
+    // 完整模式 + 假 pkexec、无 APPIMAGE：EXIT trap 不得把成功安装变失败
+    // （回归：stage 为空时旧写法 trap 返回 1 → 安装成功却报「安装失败」）。
+    // HOSHINEKO_SYSTEM_BIN 指向沙箱不存在的路径（本机 /usr/local/bin 可能
+    // 已有真副本，避免无 APPIMAGE 时回退复制影响后续用例）
+    const fakePkexecDir = h.tempDir('hoshineko-e2e-fakepk-');
+    const fakePkexec = path.join(fakePkexecDir, 'pkexec');
+    fs.writeFileSync(fakePkexec, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(fakePkexec, 0o755);
+    const noSystemBin = path.join(fakePkg, 'no-such-system-bin');
+    const fullModeHome = h.tempDir('hoshineko-e2e-fullmode-home-');
+    const rFull = spawnSync(scriptPath, [], {
+      env: {
+        ...process.env,
+        HOME: fullModeHome,
+        HOSHINEKO_PACKAGING_DIR: fakePkg,
+        HOSHINEKO_SYSTEM_BIN: noSystemBin,
+        PATH: fakePkexecDir + path.delimiter + process.env.PATH,
+      },
+      encoding: 'utf-8',
+    });
+    h.assert.strictEqual(
+      rFull.status,
+      0,
+      `完整模式（假 pkexec、无 APPIMAGE）应成功退出：${rFull.stdout}${rFull.stderr}`,
+    );
+
+    // APPIMAGE 指向不存在的文件且无任何可用副本（应用从已删除副本运行的
+    // 降级态）：应在弹提权之前明确报错（避免输完密码才发现装不了二进制）
+    const noSrcHome = h.tempDir('hoshineko-e2e-nosrc-home-');
+    const rNoSrc = spawnSync(scriptPath, [], {
+      env: {
+        ...process.env,
+        HOME: noSrcHome,
+        HOSHINEKO_PACKAGING_DIR: fakePkg,
+        HOSHINEKO_SYSTEM_BIN: noSystemBin,
+        PATH: fakePkexecDir + path.delimiter + process.env.PATH,
+        APPIMAGE: '/nonexistent/Deleted.AppImage',
+      },
+      encoding: 'utf-8',
+    });
+    h.assert.notStrictEqual(rNoSrc.status, 0, 'APPIMAGE 失效且无副本时应失败');
+    h.assert.ok(
+      (rNoSrc.stdout + rNoSrc.stderr).includes('[error] APPIMAGE 指向的文件不存在'),
+      '失败应给出明确原因（从原始 AppImage 重启后重试）',
+    );
+
+    // APPIMAGE 失效但用户级副本存在：回退到该副本暂存，安装应成功
+    const degradedHome = h.tempDir('hoshineko-e2e-degraded-home-');
+    const degradedBin = path.join(degradedHome, '.local', 'bin', 'HoshinekoFM');
+    fs.mkdirSync(path.dirname(degradedBin), { recursive: true });
+    fs.writeFileSync(degradedBin, 'degraded copy');
+    const rFallback = spawnSync(scriptPath, [], {
+      env: {
+        ...process.env,
+        HOME: degradedHome,
+        HOSHINEKO_PACKAGING_DIR: fakePkg,
+        HOSHINEKO_SYSTEM_BIN: noSystemBin,
+        PATH: fakePkexecDir + path.delimiter + process.env.PATH,
+        APPIMAGE: '/nonexistent/Deleted.AppImage',
+      },
+      encoding: 'utf-8',
+    });
+    h.assert.strictEqual(rFallback.status, 0, `回退到用户级副本应成功：${rFallback.stdout}${rFallback.stderr}`);
+
     // 用户级固定副本 + 桌面入口 Exec 统一（AppImage 场景，用伪 APPIMAGE 文件模拟）
     const fakeApp = path.join(fakePkg, 'fake.AppImage');
     fs.writeFileSync(fakeApp, 'fake appimage content');

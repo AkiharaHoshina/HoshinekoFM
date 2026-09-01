@@ -23,8 +23,9 @@ set -euo pipefail
 PORTALS_DIR="/usr/share/xdg-desktop-portal/portals"
 SERVICES_DIR="/usr/share/dbus-1/services"
 PORTALS_CONF="$HOME/.config/xdg-desktop-portal/portals.conf"
-SYSTEM_BIN="/usr/local/bin/HoshinekoFM"
-USER_BIN="$HOME/.local/bin/HoshinekoFM"
+# 固定安装路径（可经环境变量覆盖：测试沙箱 / 定制安装，与 install.sh 一致）
+SYSTEM_BIN="${HOSHINEKO_SYSTEM_BIN:-/usr/local/bin/HoshinekoFM}"
+USER_BIN="${HOSHINEKO_USER_BIN:-$HOME/.local/bin/HoshinekoFM}"
 DESKTOP_FILE="$HOME/.local/share/applications/HoshinekoFM.desktop"
 
 # AppImage 魔数校验（偏移 8 起为 "AI"）：只移除本安装脚本写入的 AppImage 副本
