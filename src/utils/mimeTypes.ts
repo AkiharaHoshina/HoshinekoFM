@@ -90,6 +90,19 @@ const categoryDescriptions: Record<string, string> = {
   'application': t('mime.cat.other'),
 };
 
+/**
+ * 按 MIME 类型取 i18n 显示名（含类别描述回退）。
+ * 选择器过滤器的缺省 label 生成用（.docx → mime.docx 描述）；
+ * 未知 mime 返回 null（调用方回退 `*.ext` 形态）。
+ */
+export function getMimeDisplayName(mime: string | null | undefined): string | null {
+  if (!mime) return null;
+  if (mimeDescriptionMap[mime]) return mimeDescriptionMap[mime];
+  const cat = mime.split('/')[0];
+  if (categoryDescriptions[cat]) return categoryDescriptions[cat];
+  return null;
+}
+
 export function getFileTypeDescription(file: IFile): string {
   if (file.isDirectory) return t('mime.folder');
 

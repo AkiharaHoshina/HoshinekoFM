@@ -1,0 +1,10 @@
+# xdg-desktop-portal 后端配置（安装到 /usr/share/xdg-desktop-portal/portals/）
+# 安装后，经 xdg-desktop-portal 请求文件选择器的应用（GTK/Qt 等）
+# 会由 Hoshineko 的内置选择器响应。
+#
+# 安装：sudo install -m 644 hoshineko.portal /usr/share/xdg-desktop-portal/portals/
+# 详细说明见 docs/portal-filechooser.md
+[portal]
+DBusName=org.freedesktop.impl.portal.desktop.hoshineko
+Interfaces=org.freedesktop.impl.portal.FileChooser
+UseIn=org.freedesktop.impl.portal.FileChooser

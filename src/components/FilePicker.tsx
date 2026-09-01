@@ -5,6 +5,7 @@ import { Omnibar } from './Omnibar';
 import { SortControls } from './SortControls';
 import { Sidebar, type SidebarPinnedItem } from './Sidebar';
 import { Button } from './Button';
+import { OutlinedSelect, SelectOption } from './md';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import { FileSystemService } from '../services/FileSystemService';
@@ -18,10 +19,9 @@ import { sortFiles } from '../utils/fileSort';
 import { t, useLocale } from '../i18n';
 import type { IFile, AllDevice, GvfsVolume } from '../types/files';
 import type { ThemeConfig } from '../types/theme';
+import type { PickerConfig, PickerFilter } from '../types/picker';
+import { getMimeDisplayName } from '../utils/mimeTypes';
 import './FilePicker.css';
-
-/** 选择模式：file/folder 供内部调用（均支持多选，调用方取所需），files 为多文件语义别名，items 为文件与文件夹混合多选 */
-type PickerMode = 'file' | 'folder' | 'files' | 'items';
 
 /**
  * 文件选择器窗口根组件：DragProvider + ToastContainer + 主题应用 + 界面缩放。
@@ -58,7 +58,7 @@ export const FilePickerRoot: React.FC = () => {
 const FilePicker: React.FC = () => {
   useLocale();
 
-  const [config, setConfig] = useState<PickerMode | null>(null);
+  const [config, setConfig] = useState<PickerConfig | null>(null);
   const [currentPath, setCurrentPath] = useState('');
   const [files, setFiles] = useState<IFile[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -107,21 +107,85 @@ const FilePicker: React.FC = () => {
     };
   }, [themeConfig]);
 
-  /** 当前模式是否允许选中该条目：folder 只选目录，items 文件与目录皆可选，其余模式只选文件 */
-  const isSelectable = useCallback(
-    (file: IFile): boolean => {
-      if (!config) return false;
-      if (config === 'folder') return file.isDirectory;
-      if (config === 'items') return true;
-      return !file.isDirectory;
+  /**
+   * 条目是否命中过滤器：扩展名后缀匹配或 MIME 匹配（支持 `type/*`
+   * 通配），或关系。resolvedMime 仅用于缺省 label 生成，不参与匹配。
+   */
+  const matchesFilter = useCallback((file: IFile, filter: PickerFilter): boolean => {
+    const lower = file.name.toLowerCase();
+    if (filter.extensions.some((ext) => lower.endsWith(ext))) return true;
+    const mime = file.mime;
+    if (mime && filter.mimes) {
+      return filter.mimes.some(
+        (m) => m === mime || (m.endsWith('/*') && mime.startsWith(m.slice(0, -1))),
+      );
+    }
+    return false;
+  }, []);
+
+  /**
+   * 可选性判定（纯函数：mode + 过滤器一处收敛）：
+   * - folder 模式只选目录（过滤器不约束目录）；
+   * - items 模式目录永远可选，文件受过滤器约束；
+   * - file/files 模式只选命中过滤器的文件；
+   * - 无过滤器（activeFilterId = null）时回到纯 mode 判定。
+   */
+  const isSelectableFor = useCallback(
+    (file: IFile, filterId: string | null, cfg: PickerConfig | null): boolean => {
+      if (!cfg) return false;
+      if (cfg.mode === 'folder') return file.isDirectory;
+      if (cfg.mode === 'items') {
+        if (file.isDirectory) return true;
+        if (!filterId) return true;
+        const filter = cfg.filters?.find((f) => f.id === filterId);
+        return filter ? matchesFilter(file, filter) : true;
+      }
+      if (file.isDirectory) return false;
+      if (!filterId) return true;
+      const filter = cfg.filters?.find((f) => f.id === filterId);
+      return filter ? matchesFilter(file, filter) : true;
     },
-    [config],
+    [matchesFilter],
   );
+
+  /** 当前生效的过滤器 id（null = 所有文件） */
+  const [activeFilterId, setActiveFilterId] = useState<string | null>(null);
+
+  /** 当前模式 + 过滤器是否允许选中该条目（列表/框选用） */
+  const isSelectable = useCallback(
+    (file: IFile): boolean => isSelectableFor(file, activeFilterId, config),
+    [isSelectableFor, activeFilterId, config],
+  );
+
+  /** 过滤器显示名：显式 label 优先，其次 mime 描述体系，最后 `*.ext` 形态 */
+  const filterLabel = useCallback((filter: PickerFilter): string => {
+    if (filter.label) return filter.label;
+    const mimeName = getMimeDisplayName(filter.resolvedMime);
+    if (mimeName) return mimeName;
+    return filter.extensions.length > 0 ? `*${filter.extensions[0]}` : filter.id;
+  }, []);
 
   /** 过滤 + 分组 + 排序（与主窗口共享同一份逻辑与偏好键，完全同步） */
   const sortedFiles = useMemo(() => {
     return sortFiles(files, { showHiddenFiles, sortBy, sortOrder, groupingEnabled });
   }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled]);
+
+  /** 过滤器下拉变化：切换生效过滤器并清除不再可选的选中项 */
+  const handleFilterChange = useCallback(
+    (id: string) => {
+      const nextId = id || null;
+      setActiveFilterId(nextId);
+      setSelected((prev) => {
+        const next = new Set<string>();
+        for (const p of prev) {
+          const f = sortedFiles.find((x) => x.path === p);
+          if (f && isSelectableFor(f, nextId, config)) next.add(p);
+        }
+        return next;
+      });
+    },
+    [sortedFiles, isSelectableFor, config],
+  );
 
   /** 进入目录：清空选中与搜索状态；回收站虚拟目录走 listTrash */
   const loadPath = useCallback(async (path: string) => {
@@ -152,7 +216,11 @@ const FilePicker: React.FC = () => {
     const init = async () => {
       const cfg = await window.electron.getPickerConfig();
       if (!cfg) return;
-      setConfig(cfg.mode);
+      setConfig(cfg);
+      // 默认过滤器：声明且存在于 filters 时生效，否则「所有文件」
+      if (cfg.defaultFilterId && cfg.filters?.some((f) => f.id === cfg.defaultFilterId)) {
+        setActiveFilterId(cfg.defaultFilterId);
+      }
       const titleKey =
         cfg.mode === 'folder' ? 'picker.title_folder'
           : cfg.mode === 'files' ? 'picker.title_files'
@@ -160,7 +228,13 @@ const FilePicker: React.FC = () => {
               : 'picker.title_file';
       document.title = t(titleKey);
       const home = await window.electron.getHomePath();
-      void loadPath(home);
+      // 初始目录：声明且为有效目录时优先，否则从家目录开始浏览
+      let start = home;
+      if (typeof cfg.initialPath === 'string' && cfg.initialPath.startsWith('/')) {
+        const st = await window.electron.stat(cfg.initialPath).catch(() => null);
+        if (st && st.isDirectory) start = cfg.initialPath;
+      }
+      void loadPath(start);
     };
     void init();
   }, [loadPath]);
@@ -411,7 +485,23 @@ const FilePicker: React.FC = () => {
         <span className="picker-hint">
           {selected.size > 0 ? t('picker.selected_count', selected.size) : shortPath(currentPath)}
         </span>
-        <div style={{ flex: 1 }} />
+        {/* 文件类型过滤（与设置语言选择同款 OutlinedSelect）：
+            常驻显示——未声明 filters 时仅「所有文件」一项；
+            声明则「所有文件」+ 各类型。位于路径提示右侧，宽度自适应内容 */}
+        <OutlinedSelect
+          className="picker-filter-select"
+          value={activeFilterId ?? ''}
+          onInput={(e) => handleFilterChange((e.target as HTMLSelectElement).value)}
+        >
+          <SelectOption value="">
+            <div slot="headline">{t('picker.all_files')}</div>
+          </SelectOption>
+          {config?.filters?.map((f) => (
+            <SelectOption key={f.id} value={f.id}>
+              <div slot="headline">{filterLabel(f)}</div>
+            </SelectOption>
+          ))}
+        </OutlinedSelect>
         <Button variant="text" onClick={cancel}>{t('picker.cancel')}</Button>
         <Button variant="filled" disabled={selected.size === 0} onClick={confirm}>{t('picker.select')}</Button>
       </footer>

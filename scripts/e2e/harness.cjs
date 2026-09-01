@@ -131,6 +131,13 @@ function registerIpc() {
   require(path.join(DIST_ELECTRON, 'jobs.js')).initJobHandlers();
   require(path.join(DIST_ELECTRON, 'pty.js')).setupPtyHandlers();
 
+  // portal FileChooser 后端（与 main.ts 相同的接线；会话总线不可用时静默跳过）
+  require(path.join(DIST_ELECTRON, 'handlers', 'portalFileChooser.js'))
+    .setupPortalFileChooser((config, parent) =>
+      createTestWindow({ picker: true, pickerConfig: config, parent }),
+    )
+    .catch(() => { /* 后端注册失败不影响其余测试 */ });
+
   const { startWatching, stopWatching } = require(path.join(DIST_ELECTRON, 'fsWatcher.js'));
 
   // ── 以下与 main.ts 顶层直接注册的 handler 一一对应 ──
@@ -382,6 +389,25 @@ async function scrollIntoView(win, selector, index = 0) {
   await sleep(300);
 }
 
+/**
+ * 选择 md-select/md-outlined-select 的选项：调用公开的 select(value)
+ * 并手动派发 input 事件——md-select 的 select() 是静默的（不派发事件），
+ * React 的 onInput 处理器需要 input 事件才会更新状态。
+ */
+async function selectOption(win, selector, value, index = 0) {
+  const r = await js(
+    win,
+    `(() => {
+      const el = document.querySelectorAll(${JSON.stringify(selector)})[${index}];
+      if (!el || typeof el.select !== 'function') return false;
+      el.select(${JSON.stringify(value)});
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    })()`,
+  );
+  if (!r.ok || !r.value) throw new Error(`selectOption failed: ${selector}[${index}] → ${value}`);
+}
+
 /** 点击指定元素（selector 可命中 md-* 宿主，自动换算 zoom） */
 async function clickEl(win, selector, opts = {}) {
   const c = await elementCenter(win, selector, opts.index ?? 0);
@@ -551,6 +577,7 @@ module.exports = {
   hotkey,
   setReactInput,
   scrollIntoView,
+  selectOption,
   waitDialogAnim,
   run,
   finish,

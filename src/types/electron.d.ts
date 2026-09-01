@@ -1,4 +1,5 @@
 import type { IFile, AllDevice, GvfsVolume } from './files';
+import type { PickerConfig } from './picker';
 
 export interface IDrive {
     name: string;
@@ -129,9 +130,15 @@ export interface IElectronAPI {
      * - 'items'：全部可选——文件与文件夹皆可选
      * 四种模式均支持多选（框选），调用方按需取结果。
      */
-    openPicker: (options: { mode: 'file' | 'folder' | 'files' | 'items' }) => Promise<string[] | null>;
-    /** 选择器窗口读取自身配置（mode 声明见 openPicker；普通窗口返回 null） */
-    getPickerConfig: () => Promise<{ mode: 'file' | 'folder' | 'files' | 'items' } | null>;
+    /**
+     * 打开内置文件选择器窗口；返回选中路径数组，取消/关窗返回 null。
+     * 选项（mode 必填，其余可选）：filters 类型过滤器（底部下拉，
+     * 缺省仅「所有文件」）、initialPath 初始目录、defaultFilterId 默认过滤。
+     * 协议详见 docs/picker-api.md 与 src/types/picker.ts。
+     */
+    openPicker: (options: PickerConfig) => Promise<string[] | null>;
+    /** 选择器窗口读取自身配置（完整 PickerConfig；普通窗口返回 null） */
+    getPickerConfig: () => Promise<PickerConfig | null>;
     /** 选择器窗口回传选中结果（null = 取消），主进程随后关闭该窗口 */
     resolvePicker: (paths: string[] | null) => Promise<void>;
     readFile: (path: string) => Promise<string | null>;

@@ -1,0 +1,6 @@
+# D-Bus 服务激活文件（可选，安装到 /usr/share/dbus-1/services/）
+# 应用未运行时，portal 按总线名激活本服务；Exec 以 --portal 参数启动
+# （仅注册后端、不创建主窗口）。Exec 路径按实际安装位置调整。
+[D-BUS Service]
+Name=org.freedesktop.impl.portal.desktop.hoshineko
+Exec=/usr/bin/materials --portal

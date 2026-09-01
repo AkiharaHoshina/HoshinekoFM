@@ -25,6 +25,7 @@ No unit-test framework — e2e tests live in `scripts/e2e/` (Electron main-proce
   - **Dialog 有 250ms 串行化延迟**：内容常驻 DOM，断言对话框必须查 `md-dialog` 的 `open === true`，不是查内容是否存在；操作间 `waitDialogAnim()`。
   - **缩放因子会话级共享**：任一窗口 setZoomFactor 后其他窗口 getZoomFactor 读到同值；同窗口直接 `localStorage.setItem` 不触发 storage 事件（跨窗口同步必须由另一窗口写入）。
   - **picker `resolvePicker` 会立即关窗**：其自身 IPC 响应可能丢失，测试里必须 fire-and-forget（不能 await）。
+  - **md-select 程序化选择**：`select(value)` 是静默的（不派发事件），须补 `dispatchEvent(new Event('input'))` 才触发 React onInput（harness 已封装 `selectOption`）；选项是宿主**轻 DOM** 子节点（非 shadow）。
   - 菜单/按钮文案按中英文双匹配（`/取消|Cancel/`），规避系统语言差异。
   - 对话框内容超出视口时点击前 `scrollIntoView`。
 - harness 有 120s 全局看门狗，任何挂起会强制退出并报 WATCHDOG TIMEOUT。

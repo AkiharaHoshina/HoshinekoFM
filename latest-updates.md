@@ -1,5 +1,35 @@
 # 更新日志
 
+## v0.11.19 — 选择器通信层扩展：类型过滤器、初始目录与并发独立
+
+### 选择器通信层（picker:open 扩展）
+
+- `PickerConfig` 扩展（类型抽至 `src/types/picker.ts`，主进程/渲染进程/docs 三端同源）：
+  - `filters`：文件类型过滤器数组——`{ id, label?, extensions[], mimes?, resolvedMime? }`；主进程白名单校验（≤ 20 项、extensions ≤ 30 且 `.ext` 形态统一小写、mimes ≤ 30 且 `type/type`/`type/*` 形态）；未知字段忽略（向前兼容）、非法字段忽略（mode 非法抛错）
+  - `initialPath`：初始目录（绝对路径，缺省家目录；无效时回退家目录）
+  - `defaultFilterId`：默认过滤器（不在 filters 中时回退「所有文件」）
+- **底部类型下拉**（与设置语言选择同款 `OutlinedSelect`）：「所有文件」常驻 + 每个 filter 一项；**常驻显示**（无声明时仅「所有文件」一项）、位于路径提示右侧；**高度与设置语言选择一致（56px）**；**撑满「路径提示 → 取消/选择按钮」之间的全部剩余空间**（`flex: 1 1 auto`，随窗口大小自动伸缩，下限 170px）
+- **过滤语义**：只约束文件可选中性（扩展名后缀或 MIME 匹配，或关系）；目录永远不受约束、目录导航不受影响；切换过滤器自动清除失效选中
+- **显示名生成**：缺省 label 时——`extensions[0]` 经主进程 EXT_TO_MIME 解析 mime（`resolvedMime`）→ 前端 mime 描述体系取 i18n 名（`.docx` →「Microsoft Office Word 文档」）；解析失败显示 `*.ext`；第三方可显式 label
+- **并发独立**：每次 `picker:open` 创建独立窗口 + 按 `webContents.id` 隔离的待决项——多选择器同时打开互不影响（各自配置/回传/关闭独立），并发语义文档化于 docs/picker-api.md
+- mime 文案扩充 × 12 语言：docx/xlsx/pptx/doc/xls/ppt 改为「Microsoft Office Word 文档」等描述性名称；新增 `picker.all_files`（所有文件）× 12
+
+### e2e
+
+- 新增 13-picker-filters 用例：配置完整回传（filters/defaultFilterId/initialPath/resolvedMime）、底部下拉选项与默认值、过滤器约束可选中性、切换过滤清除失效选中、双选择器并发独立（回传其一不影响另一）、无声明时下拉常驻仅「所有文件」
+- harness 新增 `selectOption` 辅助（md-select 的 `select()` 是静默的，需补派发 input 事件才触发 React onInput）；该坑点已记入 AGENTS.md
+
+### 二期：xdg-desktop-portal FileChooser 后端（外部程序标准入口）
+
+- 新增 `electron/handlers/portalFileChooser.ts`：注册总线名 `org.freedesktop.impl.portal.desktop.hoshineko`（DO_NOT_QUEUE，多实例/无会话总线时静默跳过）并实现 `org.freedesktop.impl.portal.FileChooser`（dbus-next 类式 Interface + configureMembers）
+- **OpenFile** → 翻译成与内部 `picker:open` 完全相同的 PickerConfig（一条实现两条入口）：`directory` → folder、`multiple` → files、`filters a(sa(us))` → 名称作 filter id + glob/MIME 拆分、`current_filter (sa(us))` 按名称匹配 defaultFilterId；服务端须 unwrap `dbus.Variant`（dbus-next 不自动解包）
+- **Request 对象**：在 portal 传入的 handle 路径导出（Close → 关闭选择器窗口 = 取消）；结果经 `Response` 信号（`ua{sv}`）回传 `file://` URI；signals 需在 configureMembers 中声明（否则客户端无法订阅）
+- 限制（v1）：SaveFile/SaveFiles 返回 NotSupported；`--portal` 启动参数仅服务不建主窗口（D-Bus 激活用）
+- packaging：`portals/hoshineko.portal` + `dbus/…service` 安装文件；`docs/portal-filechooser.md`（安装、验证 gdbus 命令、限制说明）
+- e2e 14：以 dbus-next 客户端模拟 portal 全链路（filters/current_filter 翻译、Response 回传 file:// URI、Close 取消路径）；无会话总线时 SKIP
+
+- 版本号升至 `0.11.19`
+
 ## v0.11.18 — 批量重命名菜单/顺序修正、文案调整与 e2e 测试套件固化
 
 ### 批量重命名：多选菜单精简与对话框顺序修正

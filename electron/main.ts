@@ -12,6 +12,7 @@ import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor } from '.
 import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers } from './handlers/theme';
 import { registerPickerHandlers, type PickerConfig } from './handlers/picker';
+import { setupPortalFileChooser } from './handlers/portalFileChooser';
 import { initJobHandlers } from './jobs';
 
 /** 所有打开的窗口（单实例多窗口，共享一个后端） */
@@ -294,6 +295,9 @@ registerPickerHandlers((config, parent) =>
 );
 initJobHandlers();
 
+/** --portal 启动参数：仅注册 portal 后端服务（D-Bus 激活用，不创建主窗口） */
+const PORTAL_ONLY_MODE = process.argv.includes('--portal');
+
 /**
  * 解析单段 Range 请求头（`bytes=a-b` / `bytes=a-` / `bytes=-b`）。
  *
@@ -405,7 +409,15 @@ app.whenReady().then(() => {
     });
   });
 
-  createWindow();
+  // portal FileChooser 后端（与内部选择器共用同一窗口工厂）：
+  // 会话总线不可用/名称被占用时静默跳过
+  void setupPortalFileChooser((config, parent) =>
+    createWindow(process.argv, { picker: true, pickerConfig: config, parent }),
+  ).catch(() => { /* 后端注册失败不影响主功能 */ });
+
+  if (!PORTAL_ONLY_MODE) {
+    createWindow();
+  }
   setupUdisks2Monitor(getWindows);
   setupGvfsMonitor(getWindows);
 });
