@@ -77,6 +77,8 @@ function parseRangeHeader(header, size) {
 const windows = new Set();
 /** 每窗口启动路径（app:get-startup-path，与 main.ts 同步） */
 const startupPathByWindow = new WeakMap();
+/** 每窗口启动定位提示（FileManager1 ShowItems/ShowItemProperties，与 main.ts 同步） */
+const startupSelectByWindow = new WeakMap();
 /** 每窗口选择器配置（picker:get-config，与 main.ts 同步） */
 const pickerConfigByWindow = new WeakMap();
 /** 每窗口目录监听（fs:watch-dir/unwatch-dir，与 main.ts 同步） */
@@ -206,6 +208,16 @@ function registerIpc() {
     return win ? (startupPathByWindow.get(win) ?? null) : null;
   });
 
+  ipcMain.handle('app:get-startup-request', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const select = win ? startupSelectByWindow.get(win) : undefined;
+    return {
+      startPath: win ? (startupPathByWindow.get(win) ?? null) : null,
+      selectFileName: select?.fileName,
+      openProperties: select?.openProperties ?? false,
+    };
+  });
+
   ipcMain.handle('picker:get-config', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     return win ? (pickerConfigByWindow.get(win) ?? null) : null;
@@ -289,7 +301,7 @@ function resolveStartupPath(argv) {
  * argv 最后一个参数为存在的目录/文件时作为启动路径（与 main.ts 一致）；
  * picker=true 时以 `?mode=picker` 加载选择器界面并登记配置。
  */
-async function createTestWindow({ argv = [], picker = false, pickerConfig = null, parent = null, width = 1400, height = 900 } = {}) {
+async function createTestWindow({ argv = [], picker = false, pickerConfig = null, parent = null, width = 1400, height = 900, startupSelect = null } = {}) {
   const startupPath = resolveStartupPath(argv);
   const win = new BrowserWindow({
     show: true,
@@ -314,6 +326,7 @@ async function createTestWindow({ argv = [], picker = false, pickerConfig = null
   win.on('maximize', emitMaximizeState);
   win.on('unmaximize', emitMaximizeState);
   if (startupPath) startupPathByWindow.set(win, startupPath);
+  if (startupSelect) startupSelectByWindow.set(win, startupSelect);
   if (picker) pickerConfigByWindow.set(win, pickerConfig);
   if (picker) {
     await win.loadFile(path.join(DIST, 'index.html'), { query: { mode: 'picker' } });

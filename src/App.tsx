@@ -490,6 +490,73 @@ function AppContent() {
     false,
   );
 
+  /** 默认文件管理器：是否为 inode/directory 的默认处理程序（xdg-mime） */
+  const [isDefaultFileManager, setIsDefaultFileManager] = useState(false);
+  /** 启动定位提示要弹属性对话框的条目路径（FileManager1 ShowItemProperties） */
+  const [startupPropertiesPath, setStartupPropertiesPath] = useState<string | null>(null);
+  const [fmBusy, setFmBusy] = useState(false);
+  /** 设为默认前的原处理程序（恢复系统默认用，持久化） */
+  const [prevDefaultFm, setPrevDefaultFm] = useLocalStorage<string | null>(
+    "settings.prevDefaultFileManager",
+    null,
+  );
+
+  /** 设置对话框打开时刷新默认文件管理器状态（异步回填） */
+  useEffect(() => {
+    if (!settingsDialogOpen) return;
+    let cancelled = false;
+    void window.electron
+      ?.getDirMimeHandler()
+      .then((res) => {
+        if (!cancelled) {
+          setIsDefaultFileManager(res?.success === true && res.handler === "HoshinekoFM.desktop");
+        }
+      })
+      .catch(() => { /* 查询失败保持现状 */ });
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsDialogOpen]);
+
+  /** 设为默认文件管理器：记录原处理程序 → 安装桌面入口 + xdg-mime default */
+  const handleSetDefaultFm = useCallback(async () => {
+    if (fmBusy) return;
+    setFmBusy(true);
+    try {
+      const cur = await window.electron?.getDirMimeHandler();
+      if (cur?.success && cur.handler && cur.handler !== "HoshinekoFM.desktop") {
+        setPrevDefaultFm(cur.handler);
+      }
+      const res = await window.electron?.setDirMimeHandler("HoshinekoFM.desktop");
+      if (res?.success) {
+        setIsDefaultFileManager(true);
+        showToast(t("settings.default_fm_set"), "success");
+      } else {
+        showToast(t("settings.default_fm_failed"), "error");
+      }
+    } finally {
+      setFmBusy(false);
+    }
+  }, [fmBusy, setPrevDefaultFm]);
+
+  /** 恢复系统默认：还原为设置前的处理程序 */
+  const handleRestoreDefaultFm = useCallback(async () => {
+    if (fmBusy || !prevDefaultFm) return;
+    setFmBusy(true);
+    try {
+      const res = await window.electron?.setDirMimeHandler(prevDefaultFm);
+      if (res?.success) {
+        setIsDefaultFileManager(false);
+        setPrevDefaultFm(null);
+        showToast(t("settings.default_fm_restored"), "success");
+      } else {
+        showToast(t("settings.default_fm_failed"), "error");
+      }
+    } finally {
+      setFmBusy(false);
+    }
+  }, [fmBusy, prevDefaultFm, setPrevDefaultFm]);
+
   /**
    * 窗口标题（标题栏 + Electron 窗口标题实时同步）：
    * - 仪表盘 → 「Hoshineko Nya~」（品牌串，不翻译）；
@@ -597,9 +664,15 @@ function AppContent() {
       if (window.electron) {
         initDragIcons();
 
-        const startupPath = await window.electron.getStartupPath();
-        if (startupPath) {
-          handleAddTab(startupPath);
+        // 启动请求（含 FileManager1 ShowItems/ShowItemProperties 的定位提示）
+        const startupReq = await window.electron.getStartupRequest();
+        if (startupReq && startupReq.startPath) {
+          handleSidebarNavigate(startupReq.startPath, startupReq.selectFileName);
+          if (startupReq.selectFileName && startupReq.openProperties) {
+            // 打开属性对话框：定位提示消费后由 ExplorerTab 找到条目并回调
+            const sep = startupReq.startPath.endsWith('/') ? '' : '/';
+            setStartupPropertiesPath(startupReq.startPath + sep + startupReq.selectFileName);
+          }
         } else {
           loadHome();
         }
@@ -1084,6 +1157,12 @@ function AppContent() {
                   refreshSignal={tab.version}
                   scrollToFileName={tab.pendingSelectFile}
                   onScrollToComplete={handleScrollToComplete}
+                  pendingPropertiesPath={
+                    startupPropertiesPath && tab.id === activeTabId
+                      ? startupPropertiesPath
+                      : undefined
+                  }
+                  onPropertiesComplete={() => setStartupPropertiesPath(null)}
                   onMountDevice={handleDeviceMount}
                   marqueeEnabled={marqueeEnabled}
                   pendingDrop={
@@ -1417,6 +1496,11 @@ function AppContent() {
             onToggleShowHomeStorageUsage={() => setShowHomeStorageUsage(!showHomeStorageUsage)}
             filePreviewEnabled={filePreviewEnabled}
             onToggleFilePreview={() => setFilePreviewEnabled(!filePreviewEnabled)}
+            isDefaultFileManager={isDefaultFileManager}
+            fmBusy={fmBusy}
+            canRestoreDefaultFm={prevDefaultFm !== null}
+            onSetDefaultFm={() => void handleSetDefaultFm()}
+            onRestoreDefaultFm={() => void handleRestoreDefaultFm()}
             titleBarMode={titleBarMode}
             onTitleBarChange={setTitleBarMode}
             showFullPathTitle={showFullPathTitle}

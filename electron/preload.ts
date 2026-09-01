@@ -66,6 +66,9 @@ contextBridge.exposeInMainWorld('electron', {
   getDirInfo: (path: string) => ipcRenderer.invoke('fs:get-dir-info', path),
   /** 窗口管理器类型检测（自定义标题栏跟随系统模式） */
   detectWindowManager: () => ipcRenderer.invoke('system:detect-window-manager'),
+  /** 默认文件管理器：查询/设置 inode/directory 的默认处理程序（xdg-mime） */
+  getDirMimeHandler: () => ipcRenderer.invoke('system:get-dir-mime-handler'),
+  setDirMimeHandler: (handler: string) => ipcRenderer.invoke('system:set-dir-mime-handler', handler),
   /** 自定义标题栏窗口控制 */
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggle-maximize'),
@@ -98,6 +101,7 @@ contextBridge.exposeInMainWorld('electron', {
   getStorageUsage: () => ipcRenderer.invoke('system:get-storage-usage'),
   getStorageUsages: (paths: string[]) => ipcRenderer.invoke('system:get-storage-usages', paths),
   getStartupPath: () => ipcRenderer.invoke('app:get-startup-path'),
+  getStartupRequest: () => ipcRenderer.invoke('app:get-startup-request'),
   getVersion: () => ipcRenderer.invoke('app:get-version'),
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   exists: (path: string) => ipcRenderer.invoke('fs:exists', path),

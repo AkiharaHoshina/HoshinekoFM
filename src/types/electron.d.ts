@@ -194,6 +194,11 @@ export interface IElectronAPI {
       source: 'xdg_current_desktop' | 'xdg_session_desktop' | 'fallback';
       name?: string;
     }>;
+    /** 默认文件管理器：查询 inode/directory 的当前默认处理程序（如 'org.gnome.Nautilus.desktop'） */
+    getDirMimeHandler: () => Promise<{ success: boolean; handler: string | null }>;
+    /** 设置 inode/directory 默认处理程序（'*.desktop' 白名单；设为
+     *  HoshinekoFM.desktop 时先安装用户级桌面入口） */
+    setDirMimeHandler: (handler: string) => Promise<{ success: boolean; error?: string }>;
     /** 自定义标题栏窗口控制（frameless 窗口） */
     minimizeWindow: () => Promise<void>;
     toggleMaximizeWindow: () => Promise<boolean>;
@@ -213,6 +218,16 @@ export interface IElectronAPI {
     clipboardClear: () => Promise<void>;
     onClipboardChange: (callback: (data: ClipboardData | null) => void) => () => void;
     getStartupPath: () => Promise<string | null>;
+    /**
+     * 启动请求（路径 + 定位/属性提示）：FileManager1 ShowItems/
+     * ShowItemProperties 经此让窗口打开目录后选中条目（必要时弹属性）。
+     * selectFileName 为 undefined 表示无定位提示。
+     */
+    getStartupRequest: () => Promise<{
+      startPath: string | null;
+      selectFileName?: string;
+      openProperties: boolean;
+    }>;
     /** 应用版本号（package.json 的 version） */
     getVersion: () => Promise<string>;
     /** 用系统默认浏览器打开外部 http/https 链接 */

@@ -1,5 +1,23 @@
 # 更新日志
 
+## v0.11.21 — 默认文件管理器（一期）与 org.freedesktop.FileManager1 接口（二期）
+
+### 默认文件管理器（MIME 关联）
+
+- 设置 → 行为「默认文件管理器」：状态副标题 + 「设为默认」/「恢复为系统默认」（设置前记录原处理程序并持久化，恢复用）
+- 后端 IPC：`system:set-dir-mime-handler`（`*.desktop` 白名单；设为 HoshinekoFM 时先安装用户级桌面入口——Exec 按环境自适应：AppImage 用 APPIMAGE 路径、开发环境 = `<electron> "<app路径>" %U`）、`system:get-dir-mime-handler`（优先解析 mimeapps.list 的 [Default Applications]——实测 `xdg-mime query` 在此环境存在读值怪癖而 GIO 正确）
+- 桌面入口：`MimeType=inode/directory;` + `StartupWMClass=HoshinekoFM` + `%U`；只关联目录、不抢占任何文件类型；启动链路复用既有单实例锁 + 启动路径解析（xdg-open 传目录即开新窗口导航，零新增）
+- e2e 16：设置→关联生效（gio/mimeapps.list/桌面入口断言）→恢复，净效果为零
+
+### org.freedesktop.FileManager1 D-Bus 接口（第三方程序调用）
+
+- 新增 `electron/handlers/fileManager1.ts`：注册标准名 `org.freedesktop.FileManager1`（DO_NOT_QUEUE，被其他文件管理器占用时静默降级）；OpenFolders / ShowFolders（每目录开窗口）、ShowItems（打开目录并定位/选中条目）、ShowItemProperties（打开目录 + 选中 + 属性对话框）；URI 仅接受 file:// 或绝对路径
+- 启动定位提示机制：`app:get-startup-request`（startPath + selectFileName + openProperties），渲染进程 init 经 handleSidebarNavigate 消费；`--filemanager1` 服务模式参数（与 `--portal` 统一为 SERVICE_ONLY_MODE）；D-Bus 激活文件 packaging/dbus/org.freedesktop.FileManager1.service
+- **顺带修复 FileList 滚动定位竞态**（搜索「定位到所在文件夹」同一隐患）：react-window 列表首次渲染的后续提交才挂载，滚动效果在 listEl 为空时已消费了防重复标志导致永不重试——改用 `useListCallbackRef`（稳定 ref 回调，避免内联回调导致 React #185 无限循环）持有列表实例作为效果重试依赖，挂载后才消费目标
+- e2e 17：OpenFolders/ShowItems（选中断言）/ShowItemProperties（属性对话框断言）/非法 URI 忽略；全部 17 套回归通过
+
+- 版本号升至 `0.11.21`
+
 ## v0.11.20 — 自定义 M3 标题栏（frameless + 窗口控制 + 标题规则）
 
 ### 自定义标题栏

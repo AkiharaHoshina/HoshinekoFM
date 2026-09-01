@@ -158,6 +158,34 @@ npx electron scripts/e2e/01-file-list.test.cjs   # run a single suite
 
 A display session is required; on headless CI use `xvfb-run -a npm run e2e`. Known pitfalls (React controlled inputs, double-click semantics, dialog serialization delays, session-shared zoom) are documented in `AGENTS.md` and `scripts/e2e/harness.cjs`.
 
+## System Integration
+
+### Set as the default file manager
+
+Settings → Behavior → "Default file manager" → "Set as default" (or "Restore system default"). This writes a user-level desktop entry (`~/.local/share/applications/HoshinekoFM.desktop`) and associates `inode/directory` via `xdg-mime` — apps that open folders (e.g. `xdg-open ~`, "open containing folder" fallbacks) launch HoshinekoFM. It never takes over file-type associations. Verify:
+
+```bash
+gio mime inode/directory     # → HoshinekoFM.desktop
+xdg-open ~                   # opens HoshinekoFM at that directory
+```
+
+Third-party "show in file manager" calls go through the standard `org.freedesktop.FileManager1` D-Bus interface (OpenFolders / ShowItems / ShowItemProperties). HoshinekoFM registers this name while running; the name is single-owner — if another file manager (e.g. Nautilus) already owns it, it wins and HoshinekoFM degrades silently (quit it with `nautilus -q`). Optional auto-activation:
+
+```bash
+sudo install -m 644 packaging/dbus/org.freedesktop.FileManager1.service /usr/share/dbus-1/services/
+```
+
+### File dialogs via xdg-desktop-portal (external apps)
+
+HoshinekoFM can serve as the `org.freedesktop.impl.portal.FileChooser` backend, so GTK/Qt apps' open dialogs use the built-in picker:
+
+```bash
+sudo install -m 644 packaging/portals/hoshineko.portal /usr/share/xdg-desktop-portal/portals/
+systemctl --user restart xdg-desktop-portal.service
+```
+
+Firefox: in `about:config` set `widget.use-xdg-desktop-portal.file-picker` to `1` (some versions use `widget.use-xdg-desktop-portal`). **Limitation (v1)**: only `OpenFile` is implemented — save dialogs (`SaveFile`) return NotSupported. See docs/portal-filechooser.md for details and a gdbus verification command.
+
 ## License
 
 MIT

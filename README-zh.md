@@ -158,6 +158,34 @@ npx electron scripts/e2e/01-file-list.test.cjs   # 单跑一套
 
 需要图形会话；无头 CI 用 `xvfb-run -a npm run e2e`。已知坑点（React 受控输入、双击语义、对话框串行化延迟、会话级共享缩放）记录在 `AGENTS.md` 与 `scripts/e2e/harness.cjs`。
 
+## 系统集成
+
+### 设为默认文件管理器
+
+设置 → 行为 →「默认文件管理器」→「设为默认」（或「恢复为系统默认」）。此操作写入用户级桌面入口（`~/.local/share/applications/HoshinekoFM.desktop`）并经 `xdg-mime` 关联 `inode/directory`——打开文件夹的应用（如 `xdg-open ~`、「打开所在文件夹」回退链路）会调用 HoshinekoFM；**绝不抢占任何文件类型**的打开方式。验证：
+
+```bash
+gio mime inode/directory     # → HoshinekoFM.desktop
+xdg-open ~                   # 用 HoshinekoFM 打开该目录
+```
+
+第三方程序的「在文件管理器中显示」类调用走标准 `org.freedesktop.FileManager1` D-Bus 接口（OpenFolders / ShowItems / ShowItemProperties）。HoshinekoFM 运行期间注册该名字；该名字为单实例持有——若其他文件管理器（如 Nautilus）已持有则它胜出，本程序静默降级（可用 `nautilus -q` 退出 Nautilus 释放）。可选安装自动激活：
+
+```bash
+sudo install -m 644 packaging/dbus/org.freedesktop.FileManager1.service /usr/share/dbus-1/services/
+```
+
+### 文件对话框经 xdg-desktop-portal（外部程序）
+
+HoshinekoFM 可作为 `org.freedesktop.impl.portal.FileChooser` 后端——GTK/Qt 应用的「打开」对话框由内置选择器响应：
+
+```bash
+sudo install -m 644 packaging/portals/hoshineko.portal /usr/share/xdg-desktop-portal/portals/
+systemctl --user restart xdg-desktop-portal.service
+```
+
+Firefox：`about:config` 将 `widget.use-xdg-desktop-portal.file-picker` 设为 `1`（部分版本为 `widget.use-xdg-desktop-portal`）。**限制（v1）**：仅实现 `OpenFile`——保存对话框（`SaveFile`）返回 NotSupported。详见 docs/portal-filechooser.md（含 gdbus 验证命令）。
+
 ## 协议
 
 MIT

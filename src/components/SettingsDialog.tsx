@@ -31,6 +31,13 @@ interface SettingsDialogProps {
   /** 文件预览面板开关（默认关闭） */
   filePreviewEnabled: boolean;
   onToggleFilePreview: () => void;
+  /** 默认文件管理器状态（xdg-mime inode/directory 关联） */
+  isDefaultFileManager: boolean;
+  fmBusy: boolean;
+  /** 是否有可恢复的原处理程序（设为默认前记录） */
+  canRestoreDefaultFm: boolean;
+  onSetDefaultFm: () => void;
+  onRestoreDefaultFm: () => void;
   /** 标题栏模式（null = 跟随系统，true/false = 手动开/关） */
   titleBarMode: boolean | null;
   onTitleBarChange: (mode: boolean | null) => void;
@@ -66,6 +73,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onToggleShowHomeStorageUsage,
   filePreviewEnabled,
   onToggleFilePreview,
+  isDefaultFileManager,
+  fmBusy,
+  canRestoreDefaultFm,
+  onSetDefaultFm,
+  onRestoreDefaultFm,
   titleBarMode,
   onTitleBarChange,
   showFullPathTitle,
@@ -362,6 +374,34 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               </div>
             </div>
             <Switch selected={filePreviewEnabled} onClick={onToggleFilePreview} />
+          </div>
+
+          {/* 默认文件管理器（xdg-mime inode/directory 关联，写用户级配置） */}
+          <div className="settings-row">
+            <div className="settings-row__start">
+              <Icon name="folder_shared" />
+              <div className="settings-row__label-col">
+                <div className="settings-row__label">
+                  {t("settings.default_file_manager")}
+                </div>
+                <div className="settings-row__sub">
+                  {isDefaultFileManager
+                    ? t("settings.is_default_file_manager")
+                    : t("settings.default_file_manager_desc")}
+                </div>
+              </div>
+            </div>
+            {isDefaultFileManager ? (
+              canRestoreDefaultFm ? (
+                <Button variant="outlined" disabled={fmBusy} onClick={onRestoreDefaultFm}>
+                  {t("settings.restore_default_file_manager")}
+                </Button>
+              ) : null
+            ) : (
+              <Button variant="outlined" disabled={fmBusy} onClick={onSetDefaultFm}>
+                {t("settings.set_default_file_manager")}
+              </Button>
+            )}
           </div>
         </div>
 

@@ -13,6 +13,7 @@ import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers } from './handlers/theme';
 import { registerPickerHandlers, type PickerConfig } from './handlers/picker';
 import { setupPortalFileChooser } from './handlers/portalFileChooser';
+import { setupFileManager1 } from './handlers/fileManager1';
 import { initJobHandlers } from './jobs';
 
 /**
@@ -36,6 +37,9 @@ const startupPathByWindow = new WeakMap<BrowserWindow, string | null>();
 
 /** 选择器窗口的配置（键为窗口实例；普通窗口无条目） */
 const pickerConfigByWindow = new WeakMap<BrowserWindow, PickerConfig>();
+
+/** 每窗口启动定位提示（FileManager1 ShowItems/ShowItemProperties） */
+const startupSelectByWindow = new WeakMap<BrowserWindow, { fileName: string; openProperties?: boolean }>();
 
 /** 每个窗口注册的目录监听器（窗口关闭时统一移除） */
 const watchListenersByWindow = new WeakMap<WebContents, Map<string, (dir: string) => void>>();
@@ -86,7 +90,14 @@ async function resolveStartupPath(argv: string[]): Promise<string | null> {
  */
 async function createWindow(
   startupArgs: string[] = process.argv,
-  options: { picker?: boolean; pickerConfig?: PickerConfig; parent?: BrowserWindow } = {},
+  options: {
+    picker?: boolean;
+    pickerConfig?: PickerConfig;
+    parent?: BrowserWindow;
+    /** 启动定位提示（FileManager1 ShowItems/ShowItemProperties）：
+     *  窗口打开后选中该条目，openProperties 时再弹属性对话框 */
+    startupSelect?: { fileName: string; openProperties?: boolean };
+  } = {},
 ): Promise<BrowserWindow> {
   const isPicker = options.picker === true;
   const win = new BrowserWindow({
@@ -134,6 +145,11 @@ async function createWindow(
 
   if (isPicker && options.pickerConfig) {
     pickerConfigByWindow.set(win, options.pickerConfig);
+  }
+
+  // 启动定位提示（渲染进程挂载时经 app:get-startup-request 读取）
+  if (options.startupSelect) {
+    startupSelectByWindow.set(win, options.startupSelect);
   }
 
   // 窗口专属的启动路径（异步解析，保证渲染进程调用 get-startup-path 时已就绪；
@@ -314,6 +330,19 @@ ipcMain.handle('app:get-startup-path', (event) => {
   return win ? (startupPathByWindow.get(win) ?? null) : null;
 });
 
+// 启动请求（路径 + 定位/属性提示）按发起请求的窗口返回：
+// FileManager1 ShowItems/ShowItemProperties 经此让渲染进程打开目录后
+// 选中条目（必要时弹属性对话框）
+ipcMain.handle('app:get-startup-request', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const select = win ? startupSelectByWindow.get(win) : undefined;
+  return {
+    startPath: win ? (startupPathByWindow.get(win) ?? null) : null,
+    selectFileName: select?.fileName,
+    openProperties: select?.openProperties ?? false,
+  };
+});
+
 // 选择器窗口读取自身配置（普通窗口返回 null）
 ipcMain.handle('picker:get-config', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -331,6 +360,10 @@ initJobHandlers();
 
 /** --portal 启动参数：仅注册 portal 后端服务（D-Bus 激活用，不创建主窗口） */
 const PORTAL_ONLY_MODE = process.argv.includes('--portal');
+/** --filemanager1 启动参数：仅注册 FileManager1 后端服务（同上） */
+const FM1_ONLY_MODE = process.argv.includes('--filemanager1');
+/** 服务模式（portal / filemanager1）：只注册 D-Bus 后端，不创建主窗口 */
+const SERVICE_ONLY_MODE = PORTAL_ONLY_MODE || FM1_ONLY_MODE;
 
 /**
  * 解析单段 Range 请求头（`bytes=a-b` / `bytes=a-` / `bytes=-b`）。
@@ -451,7 +484,17 @@ app.whenReady().then(() => {
     createWindow(process.argv, { picker: true, pickerConfig: config, parent }),
   ).catch(() => { /* 后端注册失败不影响主功能 */ });
 
-  if (!PORTAL_ONLY_MODE) {
+  // FileManager1 后端（第三方程序「在文件管理器中显示」等标准入口）：
+  // 名称被其他文件管理器占用时静默降级
+  void setupFileManager1((targetPath, opts) =>
+    createWindow(['hoshinekofm', targetPath], {
+      startupSelect: opts?.selectFileName
+        ? { fileName: opts.selectFileName, openProperties: opts?.openProperties }
+        : undefined,
+    }),
+  ).catch(() => { /* 后端注册失败不影响主功能 */ });
+
+  if (!SERVICE_ONLY_MODE) {
     createWindow();
   }
   setupUdisks2Monitor(getWindows);

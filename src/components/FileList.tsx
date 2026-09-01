@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, memo } from "react";
 import type { IFile } from "../types/files";
 import "./FileList.css";
 import { AutoSizer } from "react-virtualized-auto-sizer";
-import { List, useListRef } from "react-window";
+import { List, useListRef, useListCallbackRef } from "react-window";
 import { useDrag } from "../contexts/DragContext";
 import {
   type ItemBox,
@@ -99,6 +99,12 @@ const FileListComponent: React.FC<FileListProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const listImperativeRef = useListRef(null);
+  /** 列表实例（state 持有）：挂载就绪信号 + 滚动定位效果的重试依赖。
+   *  setListEl 是稳定 setState，直接作 listRef——稳定身份避免 React
+   *  每次渲染卸载/重挂 ref 回调（内联回调会触发无限循环 React #185）。 */
+  const [listEl, setListEl] = useListCallbackRef();
+  // eslint-disable-next-line react-hooks/refs -- 渲染期间同步命令式 ref（rubber-band 边界滚动经 .current 使用）
+  listImperativeRef.current = listEl ?? null;
   const lastDragOverFolderRef = useRef<IFile | null>(null);
   const itemBoxesRef = useRef<ItemBox[]>([]);
 
@@ -159,13 +165,16 @@ const FileListComponent: React.FC<FileListProps> = ({
 
     const scrollKey = scrollToFileName + "|" + (currentPath || "");
     if (scrollKey === prevScrollTargetRef.current) return;
+
+    // 列表尚未挂载（首次渲染的后续提交才挂 List）：不消费目标，
+    // 等 listEl 就绪（state 变化触发效果重试）后再滚动/选中
+    const listElNow = listImperativeRef.current;
+    if (!listElNow) return; // 列表未挂载：不消费目标，等挂载后重试
+
     prevScrollTargetRef.current = scrollKey;
 
-    const listEl = listImperativeRef.current;
-    if (!listEl) return;
-
     // Compute flattened index using the same logic as the render
-    const containerWidth = listEl.element?.parentElement?.clientWidth ?? 600;
+    const containerWidth = listElNow.element?.parentElement?.clientWidth ?? 600;
     const columns =
       viewMode === "grid"
         ? Math.max(1, Math.floor((containerWidth + 8) / (iconSize + 40)))
@@ -189,7 +198,7 @@ const FileListComponent: React.FC<FileListProps> = ({
     }
 
     if (flattenedIdx !== -1) {
-      listEl.scrollToRow({ index: flattenedIdx, align: "smart" });
+      listElNow.scrollToRow({ index: flattenedIdx, align: "smart" });
     }
 
     const targetFile = files[idx];
@@ -207,6 +216,7 @@ const FileListComponent: React.FC<FileListProps> = ({
     onSelect,
     currentPath,
     onScrollToComplete,
+    listEl,
   ]);  
 
   const handleImageError = useCallback((path: string) => {
@@ -503,7 +513,7 @@ const FileListComponent: React.FC<FileListProps> = ({
 
           return (
             <List
-              listRef={listImperativeRef}
+              listRef={setListEl}
               style={{ height, width, maxHeight: height }}
               rowComponent={Row}
               rowProps={rowPropsData}

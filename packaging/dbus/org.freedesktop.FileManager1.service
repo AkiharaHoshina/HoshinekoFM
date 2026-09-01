@@ -1,0 +1,7 @@
+# D-Bus 服务激活文件（可选，安装到 /usr/share/dbus-1/services/）
+# 第三方程序按 org.freedesktop.FileManager1 调用本程序时，若应用未
+# 运行则经此激活——Exec 以 --filemanager1 参数启动（仅注册后端接口、
+# 不创建主窗口）。Exec 路径按实际安装位置调整。
+[D-BUS Service]
+Name=org.freedesktop.FileManager1
+Exec=/usr/bin/HoshinekoFM --filemanager1

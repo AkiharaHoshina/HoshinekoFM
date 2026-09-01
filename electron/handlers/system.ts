@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, app } from 'electron';
 import path from 'path';
 import { promises as fs, watch as fsWatch } from 'fs';
 import os from 'os';
@@ -843,6 +843,95 @@ function detectWindowManager(): WindowManagerResult {
 export function registerSystemHandlers() {
   /** 窗口管理器类型检测（自定义标题栏跟随系统模式） */
   ipcMain.handle('system:detect-window-manager', () => detectWindowManager());
+
+  /** 用户级桌面入口（「设为默认文件管理器」时安装，xdg-mime 关联才能生效） */
+  const USER_APPS_DIR = path.join(os.homedir(), '.local', 'share', 'applications');
+  const DESKTOP_ENTRY_NAME = 'HoshinekoFM.desktop';
+
+  /** 生成桌面入口内容：Exec 按环境选择——
+   *  AppImage 用 APPIMAGE 路径；开发环境 = `<electron> "<appPath>" %U`
+   *  （只写 electron 二进制路径会启动空白窗口，必须带应用路径参数） */
+  const buildDesktopEntry = () => {
+    const execLine = process.env.APPIMAGE
+      ? `Exec="${process.env.APPIMAGE}" %U`
+      : `Exec="${process.execPath}" "${app.getAppPath()}" %U`;
+    const iconLine = process.env.APPIMAGE
+      ? '' // AppImage 集成通常自带 .desktop 与图标
+      : `Icon=${path.join(app.getAppPath(), 'assets', 'icon.png')}`;
+    return (
+      [
+        '[Desktop Entry]',
+        'Type=Application',
+        'Name=HoshinekoFM',
+        'Comment=Hoshineko File Manager',
+        execLine,
+        iconLine,
+        'Terminal=false',
+        'StartupWMClass=HoshinekoFM',
+        'MimeType=inode/directory;',
+        'Categories=Utility;FileManager;',
+        '',
+      ].filter((line) => line !== '').join('\n') + '\n'
+    );
+  };
+
+  /**
+   * 查询 inode/directory 的当前默认处理程序。
+   * 优先解析用户级 mimeapps.list 的 [Default Applications] 条目
+   * （GIO 实际采用、且 `xdg-mime query default` 在该环境存在
+   * 不更新读值的怪癖）；解析失败时回退 xdg-mime query。
+   */
+  ipcMain.handle('system:get-dir-mime-handler', async () => {
+    const mimeappsPath = path.join(os.homedir(), '.config', 'mimeapps.list');
+    try {
+      const content = await fs.readFile(mimeappsPath, 'utf-8');
+      let inDefaultSection = false;
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('[')) {
+          inDefaultSection = trimmed === '[Default Applications]';
+          continue;
+        }
+        if (!inDefaultSection) continue;
+        const m = trimmed.match(/^inode\/directory=(.+)$/);
+        if (m) {
+          const handler = m[1].trim();
+          if (handler) return { success: true, handler };
+        }
+      }
+    } catch {
+      /* 文件不存在：回退 xdg-mime */
+    }
+    try {
+      const { stdout } = await execAsync('xdg-mime query default inode/directory');
+      const handler = stdout.trim();
+      return { success: true, handler: handler || null };
+    } catch {
+      return { success: false, handler: null };
+    }
+  });
+
+  /**
+   * 设置 inode/directory 的默认处理程序（xdg-mime default，写用户级
+   * mimeapps.list，无需 root）。handler 为 HoshinekoFM.desktop 时先
+   * 确保用户级桌面入口存在（xdg-mime 才能关联成功）。
+   * handler 白名单校验：`*.desktop` 文件名形态。
+   */
+  ipcMain.handle('system:set-dir-mime-handler', async (_, handler: string) => {
+    if (typeof handler !== 'string' || !/^[A-Za-z0-9._-]+\.desktop$/.test(handler)) {
+      return { success: false, error: 'invalid handler' };
+    }
+    try {
+      if (handler === DESKTOP_ENTRY_NAME) {
+        await fs.mkdir(USER_APPS_DIR, { recursive: true });
+        await fs.writeFile(path.join(USER_APPS_DIR, DESKTOP_ENTRY_NAME), buildDesktopEntry(), 'utf-8');
+      }
+      await execAsync(`xdg-mime default "${handler}" inode/directory`);
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: getExecError(e).message };
+    }
+  });
   ipcMain.handle('system:get-apps', async () => {
     if (appsCache) return appsCache;
 

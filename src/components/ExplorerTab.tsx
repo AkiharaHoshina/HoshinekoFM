@@ -120,9 +120,13 @@ interface ExplorerTabProps {
     previewWidth: number;
     /** 修改预览区宽度（拖动分隔条时由 App 写入持久化键） */
     onPreviewWidthChange: (width: number) => void;
+    /** 启动定位提示要弹属性对话框的条目路径（FileManager1 ShowItemProperties） */
+    pendingPropertiesPath?: string;
+    /** 属性对话框已弹出（消费提示） */
+    onPropertiesComplete?: () => void;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, onSortByChange, onSortOrderChange, onGroupingToggle, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, onSortByChange, onSortOrderChange, onGroupingToggle, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -704,7 +708,17 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   /** 预览行容器引用（分隔条拖动时按行宽计算百分比） */
   const previewRowRef = useRef<HTMLDivElement | null>(null);
-  /** 分隔条拖动中：行加 --dragging 类（禁止选中、兄弟节点屏蔽指针） */
+
+  /** 启动定位提示的属性对话框（FileManager1 ShowItemProperties）：
+   *  目标条目出现在列表后弹出属性对话框并消费提示 */
+  useEffect(() => {
+    if (!pendingPropertiesPath || !isActive) return;
+    const target = files.find((f) => f.path === pendingPropertiesPath);
+    if (target) {
+      onPropertiesFile(target);
+      onPropertiesComplete?.();
+    }
+  }, [files, pendingPropertiesPath, isActive, onPropertiesFile, onPropertiesComplete]);  /** 分隔条拖动中：行加 --dragging 类（禁止选中、兄弟节点屏蔽指针） */
   const [previewDragging, setPreviewDragging] = useState(false);
 
   /**
