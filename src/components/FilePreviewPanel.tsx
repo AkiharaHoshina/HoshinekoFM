@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { IFile } from '../types/files';
 import { Icon } from './Icon';
+import { PropertiesGrid } from './PropertiesGrid';
 import { t } from '../i18n';
 import './FilePreviewPanel.css';
 
@@ -145,8 +146,22 @@ interface FilePreviewPanelProps {
   file?: IFile;
   /** 多选状态：显示「多个文件无法预览」占位 */
   multiple?: boolean;
+  /** 目录属性视图：未选中条目时显示该目录的只读属性（面板常驻；
+   *  单选目录时由父级传该目录的路径） */
+  dirPath?: string;
+  /** 目录为回收站条目时的原始位置（属性网格的位置行显示） */
+  dirTrashOriginalPath?: string;
   /** 面板宽度（百分比，由父级分隔条拖动控制） */
   width: number;
+}
+
+/** 目录属性加载状态（未选中条目时面板常驻展示当前目录）：
+ *  ready 时携带由 getDirInfo 构造的 IFile（供共享 PropertiesGrid 渲染）
+ *  与大小计算用的真实路径（trash:// 虚拟路径解析后的回收站目录） */
+interface DirInfoState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  file?: IFile;
+  sizePath?: string;
 }
 
 /** 单页 PDF 画布：按面板宽度自适应缩放渲染（dpr 上限 2 防超大画布） */
@@ -185,12 +200,14 @@ const PdfPage: React.FC<{ doc: PDFDocumentProxy; pageNumber: number; width: numb
 };
 
 /**
- * 文件预览面板（文件浏览区右侧挤压出的区域）：
+ * 文件预览面板（文件浏览区右侧挤压出的区域，开启预览后常驻）：
+ * - 未选中条目：显示当前浏览目录的**只读属性**（位置/大小/修改时间/
+ *   权限位/属主/类型，无修改权限按钮）；
  * - 图片：`<img>` 加载 preview:// 原图（object-fit contain）；
  * - 音频：`<audio controls>`（Chromium 原生解码）；
  * - 视频：`<video controls>` 走 preview:// 的 Range/206 分段（支持 seek）；
  * - PDF：pdfjs-dist 惰性加载（动态 import，独立 chunk），逐页 canvas 渲染
- *   + 滚动到底部追加渲染页（初始 3 页）；
+ *   前 5 页（超出显示全文页数说明）；
  * - 归档：`fs:list-archive`（unzip/tar/bsdtar/7z）列出内容条目，上限 5000；
  * - Markdown：marked 渲染 + DOMPurify 消毒（防 XSS），动态 import；
  * - 文本/代码：`fs:read-preview-text`（512 KiB 上限）取回后 `<pre>` 渲染；
@@ -198,12 +215,15 @@ const PdfPage: React.FC<{ doc: PDFDocumentProxy; pageNumber: number; width: numb
  * 顶部小标题栏显示文件名与大小；媒体元素以 file.path 为 key，
  * 切换选中项时整体重建（无跨文件缓冲复用问题）。
  */
-export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multiple, width }) => {
+export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multiple, dirPath, dirTrashOriginalPath, width }) => {
   const kind = file ? getPreviewKind(file) : null;
+  /** 目录属性视图激活：无选中文件且传入了目录路径 */
+  const dirActive = !file && !multiple && !!dirPath;
   const [textState, setTextState] = useState<TextState>({ status: 'idle' });
   const [mdState, setMdState] = useState<TextState>({ status: 'idle' });
   const [pdfState, setPdfState] = useState<PdfState>({ status: 'idle' });
   const [archiveState, setArchiveState] = useState<ArchiveState>({ status: 'idle' });
+  const [dirState, setDirState] = useState<DirInfoState>({ status: 'idle' });
   const [mediaError, setMediaError] = useState(false);
 
   /** 当前 PDF 文档实例（state 持有供渲染；销毁在加载 effect 的 cleanup 内完成） */
@@ -212,18 +232,20 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
   const [pdfWidth, setPdfWidth] = useState(0);
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // 文件切换时重置全部加载状态：React 官方「渲染期间重置状态」模式
-  // （跟踪上一个 file.path，变化时在渲染中同步 setState，避免 effect
-  // 内 setState 的级联渲染与瞬时陈旧态）；需要异步加载的类型初始即
-  // 进入加载态，随后由对应加载 effect 拉取内容。
+  // 文件切换/目录变化时重置全部加载状态：React 官方「渲染期间重置状态」
+  // 模式（跟踪上一个 file.path 或目录路径，变化时在渲染中同步 setState，
+  // 避免 effect 内 setState 的级联渲染与瞬时陈旧态）；需要异步加载的
+  // 类型初始即进入加载态，随后由对应加载 effect 拉取内容。
+  const previewKey = file?.path ?? (dirActive ? `dir:${dirPath}` : undefined);
   const lastPathRef = useRef<string | undefined>(undefined);
-  if (lastPathRef.current !== file?.path) {
-    lastPathRef.current = file?.path;
+  if (lastPathRef.current !== previewKey) {
+    lastPathRef.current = previewKey;
     setMediaError(false);
     setTextState({ status: kind === 'text' ? 'loading' : 'idle' });
     setMdState({ status: kind === 'markdown' ? 'loading' : 'idle' });
     setPdfState({ status: kind === 'pdf' ? 'loading' : 'idle' });
     setArchiveState({ status: kind === 'archive' ? 'loading' : 'idle' });
+    setDirState({ status: dirActive ? 'loading' : 'idle' });
     setPdfDoc(null);
   }
 
@@ -354,24 +376,82 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随文件与类型变化重载
   }, [file?.path, kind]);
 
-  const headerIcon = multiple
-    ? 'description'
-    : kind === 'image'
-      ? 'image'
-      : kind === 'video'
-        ? 'movie'
-        : kind === 'audio'
-          ? 'music_note'
-          : kind === 'pdf'
-            ? 'picture_as_pdf'
-            : kind === 'archive'
-              ? 'folder_zip'
-              : kind === 'markdown' || kind === 'text'
-                ? 'article'
-                : 'description';
+  /** 目录属性惰性加载（未选中条目时的常驻视图）：
+   *  轻量 IPC 只取 stat + 属主（毫秒级），构造 IFile 交给共享
+   *  PropertiesGrid 渲染——大小由网格内部走 getDirectorySize（与右键
+   *  属性对话框同一条 du 路径，仅大小行「计算中」，其余字段秒回） */
+  useEffect(() => {
+    if (!dirActive || !dirPath) return;
+    let cancelled = false;
+    void window.electron
+      ?.getDirInfo(dirPath)
+      .then((res) => {
+        if (cancelled) return;
+        if (!res || !res.success || !res.path) {
+          setDirState({ status: 'error' });
+          return;
+        }
+        setDirState({
+          status: 'ready',
+          file: {
+            name: dirPath === 'trash://'
+              ? 'trash://'
+              : dirPath === '/'
+                ? '/'
+                : dirPath.split('/').filter(Boolean).pop() || '/',
+            path: dirPath,
+            isDirectory: true,
+            size: 0,
+            mtime: res.mtime ? new Date(res.mtime) : new Date(0),
+            mime: 'inode/directory',
+            mode: res.mode,
+            uid: res.uid,
+            gid: res.gid,
+            userName: res.userName,
+            groupName: res.groupName,
+            trashOriginalPath: dirTrashOriginalPath,
+          },
+          sizePath: res.path,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setDirState({ status: 'error' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dirActive, dirPath, dirTrashOriginalPath]);
 
-  /** 标题副行（大小 + 归档条目数） */
+  /** 目录显示名：路径末段，根目录为 '/'，回收站虚拟目录为 'trash://' */
+  const dirDisplayName = dirPath
+    ? (dirPath === 'trash://'
+      ? 'trash://'
+      : dirPath === '/'
+        ? '/'
+        : dirPath.split('/').filter(Boolean).pop() || '/')
+    : '';
+
+  const headerIcon = dirActive
+    ? 'folder'
+    : multiple
+      ? 'description'
+      : kind === 'image'
+        ? 'image'
+        : kind === 'video'
+          ? 'movie'
+          : kind === 'audio'
+            ? 'music_note'
+            : kind === 'pdf'
+              ? 'picture_as_pdf'
+              : kind === 'archive'
+                ? 'folder_zip'
+                : kind === 'markdown' || kind === 'text'
+                  ? 'article'
+                  : 'description';
+
+  /** 标题副行（大小 + 归档条目数；目录视图显示类型） */
   const headerSub = () => {
+    if (dirActive) return t('properties.directory');
     if (!file || multiple) return null;
     const parts = [formatBytes(file.size)];
     if (kind === 'archive' && archiveState.status === 'ready') {
@@ -393,10 +473,10 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
       <div className="file-preview-header">
         <Icon name={headerIcon} className="file-preview-header-icon" />
         <div className="file-preview-title">
-          <span className="file-preview-name" title={file?.name}>
-            {multiple ? t('preview.multiple') : file?.name}
+          <span className="file-preview-name" title={dirActive ? dirPath : file?.name}>
+            {dirActive ? dirDisplayName : multiple ? t('preview.multiple') : file?.name}
           </span>
-          {file && !multiple && (
+          {(dirActive || (file && !multiple)) && (
             <span className="file-preview-size">{headerSub()}</span>
           )}
         </div>
@@ -404,6 +484,25 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
 
       <div className="file-preview-body">
         {multiple && renderEmpty('block', t('preview.multiple'))}
+
+        {dirActive && dirState.status === 'loading' && (
+          <div className="file-preview-loading">{t('preview.loading')}</div>
+        )}
+        {dirActive && dirState.status === 'error' && (
+          renderEmpty('error', t('preview.load_failed'))
+        )}
+        {/* 目录属性：复用右键属性对话框的共享网格（权限只读，无修改按钮）；
+            key = 真实路径，切换目录时按条目重建（状态自然重置） */}
+        {dirActive && dirState.status === 'ready' && dirState.file && (
+          <div className="file-preview-dirinfo">
+            <PropertiesGrid
+              key={dirState.sizePath ?? dirState.file.path}
+              file={dirState.file}
+              sizePath={dirState.sizePath}
+              canEditPermissions={false}
+            />
+          </div>
+        )}
 
         {!multiple && file && kind === 'image' && (
           mediaError

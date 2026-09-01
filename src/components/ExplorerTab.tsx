@@ -683,20 +683,22 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   /**
    * 预览面板显示状态（由设置开关 + 当前视图 + 选中集推导）：
-   * - 开关关闭 / 仪表盘视图 / 无选中 → 隐藏；
+   * - 开关关闭 / 仪表盘视图 → 隐藏；
+   * - **无选中 → 显示当前浏览目录属性**（面板常驻）；
+   * - **单选目录 → 显示该选中目录的属性**（非当前目录）；
    * - 多选 → 显示「多个文件无法预览」占位；
-   * - 单选文件（非目录）→ 显示该文件的预览；
-   * - 单选目录 / 条目缺失 → 隐藏。
+   * - 单选文件（非目录）→ 显示该文件的预览。
    * 回收站条目（path 为 Trash/files 内真实文件）与搜索结果（真实路径）
-   * 均可正常预览。
+   * 均可正常预览；回收站目录携带 trashOriginalPath 供属性网格显示原位置。
    */
-  const previewState = useMemo<{ kind: 'hidden' } | { kind: 'multiple' } | { kind: 'file'; file: IFile }>(() => {
+  const previewState = useMemo<{ kind: 'hidden' } | { kind: 'directory'; path: string; trashOriginalPath?: string } | { kind: 'multiple' } | { kind: 'file'; file: IFile }>(() => {
     if (!filePreviewEnabled || currentPath === 'app://dashboard') return { kind: 'hidden' };
-    if (selectedFiles.size === 0) return { kind: 'hidden' };
+    if (selectedFiles.size === 0) return { kind: 'directory', path: currentPath };
     if (selectedFiles.size > 1) return { kind: 'multiple' };
     const path = Array.from(selectedFiles)[0];
     const f = files.find((x) => x.path === path);
-    if (!f || f.isDirectory) return { kind: 'hidden' };
+    if (!f) return { kind: 'directory', path: currentPath };
+    if (f.isDirectory) return { kind: 'directory', path: f.path, trashOriginalPath: f.trashOriginalPath };
     return { kind: 'file', file: f };
   }, [filePreviewEnabled, currentPath, selectedFiles, files]);
 
@@ -1511,6 +1513,10 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                   <FilePreviewPanel
                     file={previewState.kind === 'file' ? previewState.file : undefined}
                     multiple={previewState.kind === 'multiple'}
+                    dirPath={previewState.kind === 'directory' ? previewState.path : undefined}
+                    dirTrashOriginalPath={
+                      previewState.kind === 'directory' ? previewState.trashOriginalPath : undefined
+                    }
                     width={previewWidth}
                   />
                 </>

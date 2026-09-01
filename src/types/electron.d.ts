@@ -160,6 +160,23 @@ export interface IElectronAPI {
       code?: 'INVALID_PATH' | 'NOT_FILE' | 'UNSUPPORTED' | 'NO_TOOL' | 'READ_FAILED';
       error?: string;
     }>;
+    /**
+     * 读取目录属性信息（预览面板「未选中条目」时的目录属性视图，
+     * **轻量**：不含 du，大小由前端另走 getDirectorySize）。
+     * trash:// 映射到真实回收站 files 目录，path 返回真实路径；
+     * 错误码：INVALID_PATH / NOT_DIR / READ_FAILED。
+     */
+    getDirInfo: (path: string) => Promise<{
+      success: boolean;
+      path?: string;
+      mtime?: string;
+      mode?: number;
+      uid?: number;
+      gid?: number;
+      userName?: string;
+      groupName?: string;
+      code?: 'INVALID_PATH' | 'NOT_DIR' | 'READ_FAILED';
+    }>;
     startDrag: (paths: string | string[], files?: DragFileMeta[]) => void;
     claimDragFiles: () => Promise<DragClaimResult>;
     consumeDrag: () => Promise<void>;

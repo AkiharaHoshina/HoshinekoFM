@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('electron', {
   readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path),
   readPreviewText: (path: string) => ipcRenderer.invoke('fs:read-preview-text', path),
   listArchive: (path: string) => ipcRenderer.invoke('fs:list-archive', path),
+  getDirInfo: (path: string) => ipcRenderer.invoke('fs:get-dir-info', path),
   startDrag: (paths: string | string[], files?: { path: string; name: string; isDirectory: boolean; trashOriginalPath?: string }[]) => ipcRenderer.send('dnd:start', { paths, files }),
   claimDragFiles: () => ipcRenderer.invoke('dnd:claim-files'),
   consumeDrag: () => ipcRenderer.invoke('dnd:consume'),

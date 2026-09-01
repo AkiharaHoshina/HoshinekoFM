@@ -232,6 +232,16 @@
   font-size: 13px;
 }
 
+/* ── 目录属性（未选中条目时的常驻视图，内含共享 PropertiesGrid）── */
+.file-preview-dirinfo {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  font-size: 13px;
+  overflow: auto;
+}
+
 /* ── 分隔条（拖动调整预览区比例）── */
 .file-preview-divider {
   flex-shrink: 0;

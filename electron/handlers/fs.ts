@@ -1065,6 +1065,46 @@ export function registerFsHandlers() {
   });
 
   /**
+   * 读取目录的属性信息（文件预览面板「未选中条目」时的目录属性视图用）。
+   *
+   * **轻量**：只做 stat + 属主富化（passwd/group 解析 + getent 回退），
+   * 不含 `du -sb`——目录大小由前端复用 `system:get-directory-size`
+   * （与右键属性对话框同一条路径，仅大小行异步「计算中」，其余字段
+   * 秒回，避免整个面板陪跑最慢的大小计算）。
+   *
+   * `trash://` 虚拟路径映射到真实回收站 files 目录，并把解析后的
+   * 真实路径随 `path` 返回（前端用它对真实目录算大小）。
+   *
+   * @returns success + 各字段 + path（真实路径）；失败时携带
+   *          INVALID_PATH / NOT_DIR / READ_FAILED
+   */
+  ipcMain.handle('fs:get-dir-info', async (_, dirPath: string) => {
+    if (typeof dirPath !== 'string' || !dirPath.startsWith('/')) {
+      return { success: false, code: 'INVALID_PATH' };
+    }
+    const realPath = dirPath === 'trash://'
+      ? path.join(getTrashRoot(), 'files')
+      : dirPath;
+    try {
+      const stats = await fs.stat(realPath);
+      if (!stats.isDirectory()) return { success: false, code: 'NOT_DIR' };
+      const [{ uidMap }, gidMap] = await Promise.all([getPasswdMaps(), getGroupGidMap()]);
+      return {
+        success: true,
+        path: realPath,
+        mtime: stats.mtime.toISOString(),
+        mode: stats.mode,
+        uid: stats.uid,
+        gid: stats.gid,
+        userName: uidMap.get(stats.uid),
+        groupName: gidMap.get(stats.gid),
+      };
+    } catch {
+      return { success: false, code: 'READ_FAILED' };
+    }
+  });
+
+  /**
    * 列出归档文件的内容条目（文件预览面板的归档视图用）。
    *
    * 工具选择（扩展名优先，mime 兜底）：

@@ -1,0 +1,46 @@
+/* ── 属性网格（右键属性对话框与预览面板目录属性视图共用）── */
+
+.properties-grid {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 12px;
+  font-size: 14px;
+  align-items: baseline;
+}
+
+.properties-grid-label {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.properties-grid-value {
+  min-width: 0;
+  word-break: break-all;
+  user-select: text;
+  color: var(--md-sys-color-on-surface);
+}
+
+/* 大小行：数字 + 原始字节数说明 */
+.properties-grid-size {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.properties-grid-bytes {
+  color: var(--md-sys-color-on-surface-variant);
+  margin-left: 4px;
+  font-size: 12px;
+}
+
+.properties-grid-calculating {
+  font-style: italic;
+  color: var(--md-sys-color-primary);
+}
+
+/* 权限行：只读展示或编辑态（权限位 + 修改按钮 / 输入框 + 应用 + 取消） */
+.properties-grid-perm-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
