@@ -308,6 +308,9 @@ const enUS = {
   'picker.title_items': 'Select Items',
   'picker.select': 'Select',
   'picker.cancel': 'Cancel',
+  'picker.title_save': 'Save File',
+  'picker.file_name': 'File name',
+  'picker.confirm': 'OK',
   'picker.selected_count': (n: number) => `${n} selected`,
   'picker.all_files': 'All files',
   // ── 自定义标题栏 ──

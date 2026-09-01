@@ -336,6 +336,9 @@ const ukUA = {
   'picker.title_items': 'Вибрати елементи',
   'picker.select': 'Вибрати',
   'picker.cancel': 'Скасувати',
+  'picker.title_save': 'Зберегти файл',
+  'picker.file_name': 'Назва файлу',
+  'picker.confirm': 'Гаразд',
   'picker.selected_count': (n: number) => `Вибрано: ${n}`,
   'picker.all_files': 'Усі файли',
   // ── 自定义标题栏 ──

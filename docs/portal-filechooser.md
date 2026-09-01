@@ -15,11 +15,24 @@ Hoshineko 的内置文件选择器可作为 **xdg-desktop-portal 的 FileChooser
 | `current_filter`（`(sa(us))`） | 按名称与 filters 匹配 → `defaultFilterId` |
 | `handle_token` | 请求对象路径（按 portal 传入的 handle 路径导出 Request） |
 
+**SaveFile（保存对话框，v0.11.24 起）**：
+
+| portal 选项 | 映射 |
+| --- | --- |
+| `current_name`（`s`） | 默认文件名（预填文件名输入框） |
+| `current_file`（`ay`） | 编辑已有文件：字节数组 UTF-8 解码为默认文件名，优先级高于 `current_name` |
+| `current_folder`（`ay`） | 初始目录（字节数组 UTF-8 解码；非目录时回退家目录） |
+| `accept_label`（`s`） | 确定按钮文案（缺省 = i18n「确定」） |
+
+保存模式界面：显示全部文件与目录，底部「文件类型」下拉换成等宽的文件名输入框；点文件 = 填名、双击文件 = 填名并确定、目录双击进入；确定返回 `file://<当前目录>/<文件名>`。
+
 结果按 portal 约定回传 `file://` URI（`uris`）+ `choices`。
 
 ## 限制（v1）
 
-- 仅实现 `OpenFile`；`SaveFile` / `SaveFiles` 返回 NotSupported 错误（保存对话框仍需其他后端）。
+- `SaveFiles`（多文件保存）返回 NotSupported 错误（`SaveFile` 单文件保存已支持）。
+- 保存模式**只返回 URI、不创建文件**（文件由调用方写入，Firefox/Electron/GTK 调用方均自行写入）；**不弹覆盖确认**（与 GTK 保存对话框行为差异，待实机反馈后补）。
+- 保存模式不应用 `filters`（文件名输入框取代类型下拉，需手输完整文件名）。
 - 应用运行时注册总线名并响应；应用未运行时可选安装 D-Bus 服务激活文件（见下）。
 
 ## 安装
@@ -95,5 +108,7 @@ Hoshineko 的内置文件选择器可作为 **xdg-desktop-portal 的 FileChooser
 
 ## 注意
 
+- **升级 AppImage 后必须重跑「安装 Portal 集成」**：D-Bus 服务激活文件指向 `/usr/local/bin/HoshinekoFM`（安装时从当前 AppImage 复制的副本）。应用**未运行时**外部应用的对话框由该副本响应——不更新的话会带着旧版本功能（例如旧版保存对话框返回 NotSupported）。
+- **服务模式常驻**：`--portal`/`--filemanager1` 激活的进程在窗口全部关闭后保持存活（与 gtk/gnome 的 portal 后端同为常驻服务），避免每次请求冷启动与「注册后即退出」的激活竞态；不弹主窗口。
 - 多实例：后端以 DO_NOT_QUEUE 注册总线名，已有一个实例持有时后续实例静默跳过（不会抢名）。
 - 无会话总线（无桌面环境）时自动跳过，不影响应用正常使用。

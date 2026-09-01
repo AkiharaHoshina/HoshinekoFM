@@ -504,7 +504,13 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   killAllPty();
   stopAllWatching();
-  if (process.platform !== 'darwin') {
+  // 服务模式（--portal / --filemanager1）：启动时不创建主窗口——
+  // 若在此立即退出，D-Bus 激活的后端会在注册后瞬间失联，外部应用的
+  // 请求（尤其冷激活的首次请求）随机失败（前端收到的错误为
+  // UnknownMethod）。服务模式保持常驻：选择器/保存器窗口关闭后
+  // 进程留存（与 gtk/gnome 的 portal 后端同为常驻服务），
+  // 由下一次激活复用或会话结束回收。
+  if (process.platform !== 'darwin' && !SERVICE_ONLY_MODE) {
     app.quit();
   }
 });

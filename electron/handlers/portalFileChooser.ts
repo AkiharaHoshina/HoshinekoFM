@@ -17,8 +17,10 @@ import { openPickerWindow, type PickerConfig, type PickerFilter } from './picker
  * /usr/share/xdg-desktop-portal/portals/。应用运行时注册总线名；
  * 应用未运行时可经 D-Bus 服务文件激活（`--portal` 参数只服务不建主窗口）。
  *
- * 限制（v1）：仅实现 OpenFile（directory/multiple/filters/current_filter
- * 选项）；SaveFile/SaveFiles 返回 NotSupported 错误。
+ * 限制（v1）：OpenFile 支持 directory/multiple/filters/current_filter；
+ * SaveFile 支持 current_name/current_file/current_folder/accept_label
+ * （保存模式只返回 URI，不创建文件、不弹覆盖确认——见
+ * docs/portal-filechooser.md）；SaveFiles 返回 NotSupported 错误。
  */
 
 /** 总线名（与 packaging/portals/hoshineko.portal 的 DBusName 一致） */
@@ -148,6 +150,54 @@ function mapPortalOptions(options: Record<string, unknown>): PickerConfig {
   return config;
 }
 
+/** 文件名清洗：取 basename、剔除控制字符（C0 与 DEL）、限长 255（防路径逃逸） */
+function sanitizeFileName(name: string): string {
+  const base = name.split('/').pop() ?? '';
+  const clean = Array.from(base)
+    .filter((ch) => {
+      const c = ch.codePointAt(0) ?? 0;
+      return c > 31 && c !== 127;
+    })
+    .join('')
+    .trim();
+  if (clean === '.' || clean === '..') return '';
+  return clean.slice(0, 255);
+}
+
+/** portal 的 'ay'（字节数组）选项值 → UTF-8 字符串 */
+function decodeByteArray(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  const buf = v instanceof Buffer ? v : Buffer.from(String(v));
+  return buf.toString('utf-8');
+}
+
+/** portal SaveFile 选项（a{sv}）→ PickerConfig（保存模式）。
+ *  current_name（默认文件名）/ current_file（编辑已有文件，优先级更高，
+ *  ay 字节数组）/ current_folder（初始目录，ay 字节数组）/
+ *  accept_label（确定按钮文案）。 */
+function mapSaveOptions(options: Record<string, unknown>): PickerConfig {
+  const unwrap = (v: unknown): unknown => (v instanceof dbus.Variant ? v.value : v);
+  const config: PickerConfig = { mode: 'save' };
+  const currentName = unwrap(options.current_name);
+  if (typeof currentName === 'string' && currentName) {
+    const name = sanitizeFileName(currentName);
+    if (name) config.defaultFileName = name;
+  }
+  const currentFile = decodeByteArray(unwrap(options.current_file));
+  if (currentFile) {
+    const name = sanitizeFileName(currentFile);
+    if (name) config.defaultFileName = name;
+  }
+  const currentFolder = decodeByteArray(unwrap(options.current_folder));
+  if (currentFolder) config.initialPath = currentFolder;
+  const acceptLabel = unwrap(options.accept_label);
+  if (typeof acceptLabel === 'string' && acceptLabel) {
+    config.acceptLabel = acceptLabel.slice(0, 64);
+  }
+  return config;
+}
+
 /** 结束请求的结果：0 = 成功（含 uris），1 = 用户取消 */
 type OpenResult = [number, Record<string, dbus.Variant>];
 
@@ -215,8 +265,15 @@ export async function setupPortalFileChooser(
       return this.pick(mapPortalOptions(options ?? {}));
     }
 
-    async SaveFile() {
-      throw new dbus.DBusError('org.freedesktop.DBus.Error.NotSupported', 'Save dialogs are not supported by this backend');
+    /** 保存对话框：选项 → 保存模式配置，确认时把「目录 + 文件名」经
+     *  picker 回传成绝对路径后转 file:// URI 返回（仅返回 URI，不创建
+     *  文件——文件由调用方写入，见 mapSaveOptions 注释）。 */
+    async SaveFile(handle: string, appId: string, parentWindow: string, title: string, options: Record<string, unknown>) {
+      void handle;
+      void appId;
+      void parentWindow;
+      void title;
+      return this.pick(mapSaveOptions(options ?? {}));
     }
 
     async SaveFiles() {

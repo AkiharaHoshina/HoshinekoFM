@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow } from 'electron';
+import path from 'path';
 import { EXT_TO_MIME } from '../mimeMap';
 
 /**
@@ -7,7 +8,9 @@ import { EXT_TO_MIME } from '../mimeMap';
  * - `folder`：仅文件夹可选
  * - `files`：仅文件可选（多选语义别名，与 file 行为一致）
  * - `items`：全部可选——文件与文件夹皆可选
- * 四种模式均支持多选（框选），调用方按需取结果。
+ * - `save`：保存模式——显示全部文件与目录，底部为文件名输入框 +
+ *   确定/取消，确定返回「当前目录 + 文件名」的完整路径
+ * 四种选择模式均支持多选（框选），调用方按需取结果。
  */
 export interface PickerFilter {
   /** 过滤器标识（defaultFilterId 引用；同一请求内须唯一） */
@@ -30,18 +33,23 @@ export interface PickerFilter {
  * 文档同源，修改时须同步。
  */
 export interface PickerConfig {
-  /** 选择模式（可选条目类型声明） */
-  mode: 'file' | 'folder' | 'files' | 'items';
-  /** 类型过滤器；缺失/空数组 = 仅「所有文件」 */
+  /** 选择模式（可选条目类型声明；'save' 为保存模式） */
+  mode: 'file' | 'folder' | 'files' | 'items' | 'save';
+  /** 类型过滤器；缺失/空数组 = 仅「所有文件」（保存模式忽略） */
   filters?: PickerFilter[];
   /** 初始目录（绝对路径；缺省从家目录开始浏览） */
   initialPath?: string;
   /** 默认选中的过滤器 id（缺省 = 「所有文件」） */
   defaultFilterId?: string;
+  /** 保存模式默认文件名（portal current_name / current_file；纯文件名，
+   *  不含路径分隔符，见 sanitizeOptions 校验） */
+  defaultFileName?: string;
+  /** 保存模式确定按钮文案覆盖（portal accept_label；缺省用 i18n 确定） */
+  acceptLabel?: string;
 }
 
 /** 合法的选择模式白名单（防止任意值进入配置） */
-const VALID_MODES = new Set<string>(['file', 'folder', 'files', 'items']);
+const VALID_MODES = new Set<string>(['file', 'folder', 'files', 'items', 'save']);
 
 /** 单个请求的过滤器/扩展名数量上限（防滥用） */
 const MAX_FILTERS = 20;
@@ -112,6 +120,22 @@ function sanitizeOptions(options: unknown): PickerConfig {
   }
   if (typeof raw.defaultFilterId === 'string' && raw.defaultFilterId) {
     config.defaultFilterId = raw.defaultFilterId;
+  }
+
+  // 保存模式：默认文件名（basename 形态，防路径逃逸）与确定按钮文案
+  if (typeof raw.defaultFileName === 'string' && raw.defaultFileName) {
+    // 剔除控制字符（C0 与 DEL）后取 basename 限长——防路径逃逸
+    const name = Array.from(path.basename(raw.defaultFileName))
+      .filter((ch) => {
+        const c = ch.codePointAt(0) ?? 0;
+        return c > 31 && c !== 127;
+      })
+      .join('')
+      .slice(0, 255);
+    if (name && name !== '.' && name !== '..') config.defaultFileName = name;
+  }
+  if (typeof raw.acceptLabel === 'string' && raw.acceptLabel) {
+    config.acceptLabel = raw.acceptLabel.slice(0, 64);
   }
 
   if (Array.isArray(raw.filters)) {

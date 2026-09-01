@@ -297,6 +297,9 @@ const zhCN = {
   'picker.title_items': '选择项目',
   'picker.select': '选择',
   'picker.cancel': '取消',
+  'picker.title_save': '保存文件',
+  'picker.file_name': '文件名',
+  'picker.confirm': '确定',
   'picker.selected_count': (n: number) => `已选择 ${n} 项`,
   'picker.all_files': '所有文件',
   // ── 自定义标题栏 ──

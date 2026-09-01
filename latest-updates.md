@@ -1,5 +1,52 @@
 # 更新日志
 
+## v0.11.25 — portal SaveFile 保存对话框与服务模式激活修复
+
+### 保存对话框（portal SaveFile）
+
+- **可行性分析**：可行性报告第十七节（复用 openPickerWindow/picker:resolve 管线、SaveFile 签名已预声明、决策点 A/B——不创建文件/不做覆盖确认，仅返回 URI）
+- **后端**：`SaveFile` 实现——`current_name`→默认文件名、`current_file`（ay 字节数组，优先级更高）→编辑已有文件、`current_folder`（ay）→初始目录、`accept_label`→确定按钮文案；文件名清洗（basename + 剔控制字符 + 限长 255，防路径逃逸）；`SaveFiles` 保持 NotSupported
+- **保存模式 UI**（FilePicker `mode: 'save'`）：显示全部文件与目录（不套过滤器）；底部「文件类型」下拉换成等宽的 `md-outlined-text-field` 文件名输入框（预填 current_name）；按钮「取消/确定」（accept_label 可覆盖，空名禁用）；点文件填名、双击文件填名并确定、目录双击进入、输入框回车确定；结果 = 当前目录 + 文件名（根目录不重复斜杠）
+- **保存器细节**：侧边栏 Places 隐藏回收站（`Sidebar.hideTrash`，仅保存模式；选择模式保留——回收站不可作保存目标）
+- i18n 新增 3 键 × 12（`picker.title_save`/`picker.file_name`/`picker.confirm`）；e2e 14 扩展 SaveFile 全链路（选项翻译、预填断言、改名确定返回 `file://<dir>/x.txt`、取消 [1,{}]、回收站可见性双向断言）；harness `setReactInput` 补 `composed: true`（md-* 内部 input 事件穿透 shadow root）；e2e 13 旧断言同步「过滤只显示匹配文件」现行语义
+- docs/portal-filechooser.md：SaveFile 选项表、限制更新（不创建文件、无覆盖确认、忽略 filters、SaveFiles 不支持）
+
+### 服务模式 D-Bus 激活修复（Firefox「另存为」首次点不开）
+
+- **根因**（journal + dbus-monitor 抓包定位）：`--portal` 服务模式启动时无窗口，`window-all-closed` 立即触发 `app.quit()`——被激活的后端注册总线名后瞬间自杀，前端调用收到 `UnknownMethod`（journal：`Backend call failed: Method 'SaveFile' does not exist`）。Firefox 每次「另存为」都触发一次激活，进程起了又死，只有恰好赶上存活窗口的点击才成功——**表现为要点好几次**
+- **修复**：服务模式（`SERVICE_ONLY_MODE`）不再因窗口全关退出——与 gtk/gnome 的 portal 后端同为常驻服务（冷激活一次后请求直接命中常驻进程，窗口关闭后留存，会话结束回收）
+- **配套**：升级 AppImage 后须重跑「安装 Portal 集成」更新 `/usr/local/bin/HoshinekoFM`（激活执行体；文档已注明——旧副本带着旧功能，曾导致保存对话框 NotSupported）
+- 验证：新 AppImage `--portal` 启动 40s+ 存活、introspection 含 OpenFile/SaveFile/SaveFiles、前端 SaveFile 无 `Backend call failed`、安装版激活后常驻
+
+- 版本号升至 `0.11.25`
+
+## v0.11.24 补 — 系统集成完善（卸载、统一安装路径、安装前确认）
+
+### 卸载与状态切换
+
+- 设置「系统集成」行显示安装状态；已安装时按钮变「卸载 Portal 集成」（此前重复安装会误报安装失败）
+- 新脚本 `scripts/system-integration/uninstall.sh`（install.sh 逆操作，幂等）：root 级移除 portal 配置 + D-Bus 激活文件（FileManager1.service 仅当内容属于本应用）；用户级移除 portals.conf preferred 行（无剩余内容删文件、保留其他 portal 项）、AppImage 魔数校验后移除固定副本、桌面入口 Exec 恢复为当前 AppImage 路径
+- 状态检测 `portalsConf` 改为内容检测（含 preferred=hoshineko 才算已配置）
+
+### 打包版提权链路修复（三连坑，均为实测定位）
+
+- **spawn 不能执行 asar 内文件**（ENOTDIR 立即失败、不弹提权窗口）：`asarUnpack` 解包 `packaging` 与 `scripts/system-integration`，打包版路径改指向 `resources/app.asar.unpacked`
+- **AppImage FUSE 挂载点 root 不可见**（提权验证成功但执行失败）：spawn 前把脚本与 packaging 复制到真实文件系统临时目录（/tmp，root 可读），结束后清理
+- **`fs.cp` 的 `mode: 0o755` 在 Node 22 抛「mode out of range」**（复制失败即报错、不弹窗）：去掉 mode 选项（cp 默认保留源执行位）；复制失败早退路径也清理临时目录；清理完成后才返回 IPC
+- e2e 18 扩展：IPC 全链路（沙箱 HOME 安装→portals.conf→卸载→无临时目录残留）、固定副本/桌面 Exec 统一与恢复、AppImage 魔数保护
+
+### 统一安装路径
+
+- install.sh root 级把当前 AppImage 安装到 **`/usr/local/bin/HoshinekoFM`**（D-Bus 激活的实际执行体；AppImage 经 FUSE 挂载 root 读不到，先以用户身份暂存 /tmp 再经 pkexec 透传复制）；D-Bus 激活文件安装时把 Exec 改写为 `/usr/local/bin/HoshinekoFM`（模板保留 `/usr/bin` 供发行版覆写）
+- 用户级固定副本 `~/.local/bin/HoshinekoFM`（防原始 AppImage 被删）；已有桌面入口 Exec 统一到固定路径（系统级优先）；`buildDesktopEntry` 优先固定路径（/usr/local/bin → ~/.local/bin → APPIMAGE → dev）
+- 卸载侧：AppImage 魔数校验后移除两处副本（不误删发行版 ELF）
+
+### 安装前确认
+
+- 点「安装 Portal 集成」**始终**弹确认框（需 pkexec 授权）；点击时实时查询默认文件管理器状态，文案自适应：未设默认 → 提醒先完成「设为默认文件管理器」；已设默认 → 说明安装内容（portal 配置、D-Bus 激活文件、/usr/local/bin/HoshinekoFM）
+- 确认框叠层遮罩：md-dialog 自带 .scrim 是普通 z-index 元素，被下层 modal 的 **top layer** 压住（实测下层对话框表面不被压暗、两层同色面板融为一体）——Dialog 新增 `backdrop` 选项（ConfirmDialog 启用），注入原生 `dialog::backdrop`（渲染在 top layer 内、两层之间，32% 黑与单层遮罩一致）
+- e2e 19：沙箱 HOME 两种文案断言、取消不执行安装、::backdrop 注入断言；i18n 新增 3 键 × 12
+
 ## v0.11.24 — portal FileChooser 新协议（xdg-desktop-portal ≥ 1.19）与过滤显示
 
 ### 根因与修复（journal + 全量抓包定位）

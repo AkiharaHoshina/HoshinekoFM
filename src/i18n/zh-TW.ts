@@ -297,6 +297,9 @@ const zhTW = {
   'picker.title_items': '選擇項目',
   'picker.select': '選擇',
   'picker.cancel': '取消',
+  'picker.title_save': '儲存檔案',
+  'picker.file_name': '檔案名稱',
+  'picker.confirm': '確定',
   'picker.selected_count': (n: number) => `已選取 ${n} 項`,
   'picker.all_files': '所有檔案',
   // ── 自定义标题栏 ──

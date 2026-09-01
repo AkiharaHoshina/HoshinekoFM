@@ -32,14 +32,21 @@ export interface PickerFilter {
 
 /** 选择器窗口配置（picker:get-config 的返回值，普通窗口为 null） */
 export interface PickerConfig {
-  /** 选择模式（可选条目类型声明） */
-  mode: 'file' | 'folder' | 'files' | 'items';
-  /** 类型过滤器；缺失/空数组 = 仅「所有文件」 */
+  /**
+   * 选择模式（可选条目类型声明）。`save` 为保存模式：显示全部文件与
+   * 目录，底部过滤器控件换成文件名输入框，确定返回「当前目录 + 文件名」。
+   */
+  mode: 'file' | 'folder' | 'files' | 'items' | 'save';
+  /** 类型过滤器；缺失/空数组 = 仅「所有文件」（保存模式忽略） */
   filters?: PickerFilter[];
   /** 初始目录（绝对路径；缺省从家目录开始浏览） */
   initialPath?: string;
   /** 默认选中的过滤器 id（缺省 = 「所有文件」；id 不在 filters 中时回退所有文件） */
   defaultFilterId?: string;
+  /** 保存模式默认文件名（portal current_name / current_file；纯文件名，无路径分隔符） */
+  defaultFileName?: string;
+  /** 保存模式确定按钮文案覆盖（portal accept_label；缺省用 i18n「确定」） */
+  acceptLabel?: string;
 }
 
 /** picker:open 的选项（渲染进程入口） */

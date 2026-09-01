@@ -5,7 +5,7 @@ import { Omnibar } from './Omnibar';
 import { SortControls } from './SortControls';
 import { Sidebar, type SidebarPinnedItem } from './Sidebar';
 import { Button } from './Button';
-import { OutlinedSelect, SelectOption } from './md';
+import { OutlinedSelect, SelectOption, OutlinedTextField } from './md';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import { FileSystemService } from '../services/FileSystemService';
@@ -65,6 +65,8 @@ const FilePicker: React.FC = () => {
   const [files, setFiles] = useState<IFile[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
+  /** 保存模式：文件名输入框（初值 = 保存请求方声明的默认文件名） */
+  const [fileName, setFileName] = useState('');
   /** 选择器窗口标题（标题栏 + document.title 同步） */
   const [pickerTitle, setPickerTitle] = useState('');
   /** 标题栏可见性（与主窗口同键/同逻辑） */
@@ -189,8 +191,10 @@ const FilePicker: React.FC = () => {
   /**
    * 展示列表：选中具体过滤类型时**只显示**该类型的文件与全部目录
    * （可选性约束之外再收缩可见性；「所有文件」时显示全部）。
+   * 保存模式显示全部（无过滤器——控件已被文件名输入框取代）。
    */
   const displayFiles = useMemo(() => {
+    if (config?.mode === 'save') return sortedFiles;
     if (!config || !activeFilterId) return sortedFiles;
     const filter = config.filters?.find((f) => f.id === activeFilterId);
     if (!filter) return sortedFiles;
@@ -248,11 +252,14 @@ const FilePicker: React.FC = () => {
       if (cfg.defaultFilterId && cfg.filters?.some((f) => f.id === cfg.defaultFilterId)) {
         setActiveFilterId(cfg.defaultFilterId);
       }
+      // 保存模式：默认文件名（保存请求方声明）
+      if (cfg.mode === 'save') setFileName(cfg.defaultFileName ?? '');
       const titleKey =
         cfg.mode === 'folder' ? 'picker.title_folder'
           : cfg.mode === 'files' ? 'picker.title_files'
             : cfg.mode === 'items' ? 'picker.title_items'
-              : 'picker.title_file';
+              : cfg.mode === 'save' ? 'picker.title_save'
+                : 'picker.title_file';
       const titleText = t(titleKey);
       setPickerTitle(titleText);
       document.title = titleText;
@@ -286,9 +293,21 @@ const FilePicker: React.FC = () => {
     }
   }, [currentPath, loadPath]);
 
-  /** 单选/ctrl 多选/shift 范围选择（各模式均支持多选；folder 模式只选目录，file/files 只选文件，items 两者皆可选） */
+  /** 目录 + 文件名拼接（根目录边界：dir 为 '/' 时不重复斜杠） */
+  const joinPath = useCallback(
+    (dir: string, name: string) => (dir.endsWith('/') ? dir + name : `${dir}/${name}`),
+    [],
+  );
+
+  /** 单选/ctrl 多选/shift 范围选择（各模式均支持多选；folder 模式只选目录，
+   *  file/files 只选文件，items 两者皆可选）。
+   *  保存模式无选择语义：点击文件 = 把文件名填入输入框。 */
   const handleSelect = useCallback(
     (file: IFile, toggle: boolean, range: boolean) => {
+      if (config?.mode === 'save') {
+        if (!file.isDirectory) setFileName(file.name);
+        return;
+      }
       if (!isSelectable(file)) return;
       if (range && lastSelectedPath) {
         const start = displayFiles.findIndex((f) => f.path === lastSelectedPath);
@@ -318,35 +337,55 @@ const FilePicker: React.FC = () => {
       });
       setLastSelectedPath(file.path);
     },
-    [isSelectable, lastSelectedPath, displayFiles],
+    [isSelectable, lastSelectedPath, displayFiles, config],
   );
 
-  /** 橡皮筋框选：过滤掉不可选类型，其余全部选中（folder 模式此前强制单选，现与其余模式一致支持多选） */
+  /** 橡皮筋框选：过滤掉不可选类型，其余全部选中（folder 模式此前强制单选，现与其余模式一致支持多选）。
+   *  保存模式无框选语义：直接忽略。 */
   const handleSetSelected = useCallback(
     (paths: Set<string>) => {
+      if (config?.mode === 'save') return;
       const valid = displayFiles.filter((f) => paths.has(f.path) && isSelectable(f));
       setSelected(new Set(valid.map((f) => f.path)));
     },
-    [displayFiles, isSelectable],
+    [displayFiles, isSelectable, config],
   );
 
-  /** 回传选中路径并关窗（窗口由主进程关闭） */
+  /** 回传选中路径并关窗（窗口由主进程关闭）。
+   *  保存模式：回传「当前目录 + 文件名」（文件名为空时不可确定）。 */
   const confirm = useCallback(() => {
-    if (selected.size === 0 || !config) return;
+    if (!config) return;
+    if (config.mode === 'save') {
+      const name = fileName.trim();
+      if (!name) return;
+      void window.electron.resolvePicker([joinPath(currentPath, name)]);
+      return;
+    }
+    if (selected.size === 0) return;
     const paths = displayFiles
       .filter((f) => selected.has(f.path) && isSelectable(f))
       .map((f) => f.path);
     if (paths.length === 0) return;
     void window.electron.resolvePicker(paths);
-  }, [selected, displayFiles, isSelectable, config]);
+  }, [config, fileName, currentPath, joinPath, selected, displayFiles, isSelectable]);
 
   const cancel = useCallback(() => {
     void window.electron.resolvePicker(null);
   }, []);
 
-  /** 双击/回车：目录进入；可选中的文件 = 选中并立即确定 */
+  /** 双击/回车：目录进入；可选中的文件 = 选中并立即确定。
+   *  保存模式：目录进入；文件 = 填名并立即确定（对齐 GTK 保存对话框）。 */
   const handleNavigate = useCallback(
     (file: IFile) => {
+      if (config?.mode === 'save') {
+        if (file.isDirectory) {
+          void loadPath(file.path);
+          return;
+        }
+        setFileName(file.name);
+        void window.electron.resolvePicker([joinPath(currentPath, file.name)]);
+        return;
+      }
       if (file.isDirectory) {
         void loadPath(file.path);
         return;
@@ -358,20 +397,52 @@ const FilePicker: React.FC = () => {
         void window.electron.resolvePicker(paths);
       }
     },
-    [isSelectable, loadPath],
+    [config, isSelectable, loadPath, currentPath, joinPath],
   );
 
-  /** Enter 确认 / Esc 取消（Omnibar 编辑输入框内不拦截） */
+  /** Enter 确认 / Esc 取消（Omnibar 编辑输入框内不拦截）；
+   *  保存模式：Enter = 确定（文件名非空时；输入框内的 Enter 由
+   *  输入框自身的 onKeyDown 处理） */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
-      if (e.key === 'Enter' && selected.size > 0) confirm();
+      if (e.key === 'Enter') {
+        if (config?.mode === 'save') {
+          if (fileName.trim()) confirm();
+        } else if (selected.size > 0) {
+          confirm();
+        }
+      }
       if (e.key === 'Escape') cancel();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [confirm, cancel, selected.size]);
+  }, [confirm, cancel, selected.size, config, fileName]);
+
+  /** 文件名输入变化：剔除路径分隔符与控制字符（防路径注入），限长 255 */
+  const handleFileNameChange = useCallback((e: Event) => {
+    const raw = (e.target as HTMLInputElement).value;
+    const v = Array.from(raw)
+      .filter((ch) => {
+        const c = ch.codePointAt(0) ?? 0;
+        return ch !== '/' && c > 31 && c !== 127;
+      })
+      .join('')
+      .slice(0, 255);
+    setFileName(v);
+  }, []);
+
+  /** 文件名输入框内回车 = 确定 */
+  const handleFileNameKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        confirm();
+      }
+    },
+    [confirm],
+  );
 
   /** 设备右键菜单项（与主界面一致：挂载/卸载/弹出） */
   const deviceMenuItems: ContextMenuItem[] = deviceMenu
@@ -439,6 +510,9 @@ const FilePicker: React.FC = () => {
     })()
     : [];
 
+  /** 保存模式（portal SaveFile）：底部过滤器控件换成文件名输入框 */
+  const isSave = config?.mode === 'save';
+
   if (!config) {
     return <div className="picker-shell" />;
   }
@@ -451,6 +525,7 @@ const FilePicker: React.FC = () => {
       <div className="picker-body">
         <Sidebar
           variant="picker"
+          hideTrash={isSave}
           currentPath={currentPath}
           onNavigate={(p) => { void loadPath(p); }}
           onDeviceMount={handleDeviceMount}
@@ -515,27 +590,48 @@ const FilePicker: React.FC = () => {
 
       <footer className="picker-footer">
         <span className="picker-hint">
-          {selected.size > 0 ? t('picker.selected_count', selected.size) : shortPath(currentPath)}
+          {isSave
+            ? (fileName.trim() ? joinPath(currentPath, fileName.trim()) : shortPath(currentPath))
+            : selected.size > 0
+              ? t('picker.selected_count', selected.size)
+              : shortPath(currentPath)}
         </span>
         {/* 文件类型过滤（与设置语言选择同款 OutlinedSelect）：
             常驻显示——未声明 filters 时仅「所有文件」一项；
-            声明则「所有文件」+ 各类型。位于路径提示右侧，宽度自适应内容 */}
-        <OutlinedSelect
-          className="picker-filter-select"
-          value={activeFilterId ?? ''}
-          onInput={(e) => handleFilterChange((e.target as HTMLSelectElement).value)}
-        >
-          <SelectOption value="">
-            <div slot="headline">{t('picker.all_files')}</div>
-          </SelectOption>
-          {config?.filters?.map((f) => (
-            <SelectOption key={f.id} value={f.id}>
-              <div slot="headline">{filterLabel(f)}</div>
+            声明则「所有文件」+ 各类型。位于路径提示右侧，宽度自适应内容。
+            保存模式：换成同样大小的文件名输入框（portal 保存语义）。 */}
+        {isSave ? (
+          <OutlinedTextField
+            className="picker-filter-select"
+            label={t('picker.file_name')}
+            value={fileName}
+            onInput={handleFileNameChange}
+            onKeyDown={handleFileNameKeyDown}
+          />
+        ) : (
+          <OutlinedSelect
+            className="picker-filter-select"
+            value={activeFilterId ?? ''}
+            onInput={(e) => handleFilterChange((e.target as HTMLSelectElement).value)}
+          >
+            <SelectOption value="">
+              <div slot="headline">{t('picker.all_files')}</div>
             </SelectOption>
-          ))}
-        </OutlinedSelect>
+            {config?.filters?.map((f) => (
+              <SelectOption key={f.id} value={f.id}>
+                <div slot="headline">{filterLabel(f)}</div>
+              </SelectOption>
+            ))}
+          </OutlinedSelect>
+        )}
         <Button variant="text" onClick={cancel}>{t('picker.cancel')}</Button>
-        <Button variant="filled" disabled={selected.size === 0} onClick={confirm}>{t('picker.select')}</Button>
+        <Button
+          variant="filled"
+          disabled={isSave ? fileName.trim().length === 0 : selected.size === 0}
+          onClick={confirm}
+        >
+          {isSave ? (config.acceptLabel || t('picker.confirm')) : t('picker.select')}
+        </Button>
       </footer>
 
       {deviceMenu && (

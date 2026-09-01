@@ -61,6 +61,8 @@ interface SidebarProps {
    * 默认 'default' 行为不变。
    */
   variant?: 'default' | 'picker';
+  /** 隐藏 Places 中的回收站条目（保存模式选择器用：回收站不可作保存目标） */
+  hideTrash?: boolean;
 }
 
 /** 侧边栏拖放目标标识前缀与常量 */
@@ -103,6 +105,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onPinPath,
   onUnpinPath,
   variant = 'default',
+  hideTrash = false,
 }) => {
   const isPicker = variant === 'picker';
   const [places, setPlaces] = useState<
@@ -569,27 +572,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
             </button>
           )}
-          {places.map((place) => {
+          {places
+            .filter((place) => !(hideTrash && place.name === "Trash"))
+            .map((place) => {
             // 该 Place 已被用户固定时，高亮让位给固定条目（避免两处同时高亮）
-            const pinnedSamePath = pinnedDirs.some((p) => p.path === place.path);
-            return (
-              <button
-                key={place.path}
-                className={`sidebar-item ${!pinnedSamePath && currentPath === place.path ? "active" : ""} ${dragOverTarget === `${TARGET_PREFIX_PLACE}${place.path}` ? "drag-over" : ""}`}
-                data-sidebar-target={`${TARGET_PREFIX_PLACE}${place.path}`}
-                onClick={() => onNavigate(place.path)}
-              >
-                <Icon
-                  name={getPlaceIcon(place.name)}
-                  className="sidebar-icon"
-                  filled={!pinnedSamePath && currentPath.startsWith(place.path)}
-                />
-                <span className="sidebar-label">
-                  <MarqueeText enabled={marqueeEnabled}>{getPlaceLabel(place.name)}</MarqueeText>
-                </span>
-              </button>
-            );
-          })}
+              const pinnedSamePath = pinnedDirs.some((p) => p.path === place.path);
+              return (
+                <button
+                  key={place.path}
+                  className={`sidebar-item ${!pinnedSamePath && currentPath === place.path ? "active" : ""} ${dragOverTarget === `${TARGET_PREFIX_PLACE}${place.path}` ? "drag-over" : ""}`}
+                  data-sidebar-target={`${TARGET_PREFIX_PLACE}${place.path}`}
+                  onClick={() => onNavigate(place.path)}
+                >
+                  <Icon
+                    name={getPlaceIcon(place.name)}
+                    className="sidebar-icon"
+                    filled={!pinnedSamePath && currentPath.startsWith(place.path)}
+                  />
+                  <span className="sidebar-label">
+                    <MarqueeText enabled={marqueeEnabled}>{getPlaceLabel(place.name)}</MarqueeText>
+                  </span>
+                </button>
+              );
+            })}
         </div>
       </div>
 

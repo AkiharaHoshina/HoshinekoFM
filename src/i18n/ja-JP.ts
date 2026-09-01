@@ -297,6 +297,9 @@ const jaJP = {
   'picker.title_items': '項目を選択',
   'picker.select': '選択',
   'picker.cancel': 'キャンセル',
+  'picker.title_save': 'ファイルを保存',
+  'picker.file_name': 'ファイル名',
+  'picker.confirm': '決定',
   'picker.selected_count': (n: number) => `${n} 件選択`,
   'picker.all_files': 'すべてのファイル',
   // ── 自定义标题栏 ──

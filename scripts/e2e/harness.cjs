@@ -490,7 +490,9 @@ async function setReactInput(win, selector, value, index = 0) {
       const input = el.shadowRoot ? (el.shadowRoot.querySelector('input') || el) : (el.tagName === 'INPUT' ? el : (el.querySelector('input') || el));
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
       setter.call(input, ${JSON.stringify(value)});
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+      // composed: true——md-* 文本域的内部 input 在 shadow root 内，
+      // 事件必须可跨 shadow 边界冒泡才能到达宿主上的 React onInput 监听
+      input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
       return true;
     })()`,
     true,

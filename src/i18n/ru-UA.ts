@@ -339,6 +339,9 @@ const ruUA = {
   'picker.title_items': 'Выбрать элементы',
   'picker.select': 'Выбрать',
   'picker.cancel': 'Отмена',
+  'picker.title_save': 'Сохранить файл',
+  'picker.file_name': 'Имя файла',
+  'picker.confirm': 'ОК',
   'picker.selected_count': (n: number) => `Выбрано: ${n}`,
   'picker.all_files': 'Все файлы',
   // ── 自定义标题栏 ──

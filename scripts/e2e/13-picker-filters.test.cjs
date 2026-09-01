@@ -1,7 +1,7 @@
 /**
  * e2e 13：选择器文件类型过滤器（底部下拉 + 可选性约束）与多选择器并发独立。
  * - filters 声明 → 底部 OutlinedSelect（所有文件常驻 + 各类型）；
- * - 过滤约束可选中条目（目录不受约束）；切换过滤器清除失效选中；
+ * - 过滤只显示匹配文件 + 全部目录；切换过滤器清空失效选中；
  * - 同时打开两个选择器：各自配置独立、回传互不影响。
  */
 const h = require('./harness.cjs');
@@ -49,7 +49,7 @@ const path = require('path');
     h.assert.strictEqual(cfg.value.initialPath, dir);
     h.assert.strictEqual(cfg.value.filters[0].resolvedMime, docxMime, '.docx 应解析出 docx mime 供缺省 label 生成');
 
-    // 初始目录生效：列表含 fixture 三个文件
+    // 初始目录生效：docx 过滤下列表只显示匹配文件 + 全部目录
     await h.waitFor(picker, `!!document.querySelector('.file-list-item[data-path="${dir}/b.docx"]')`);
 
     // 底部下拉：3 个选项（所有文件 + 2 类型），默认选中 docx。
@@ -69,19 +69,16 @@ const path = require('path');
     h.assert.deepStrictEqual(selState.value.options, ['', 'docx', 'img']);
     h.assert.ok(selState.value.orderOk, '过滤下拉应位于路径提示右侧');
 
-    // docx 过滤生效：a.txt 不可选、b.docx 可选
-    await h.clickEl(picker, `.file-list-item[data-path="${dir}/a.txt"]`);
-    await h.sleep(300);
-    const aSel = await h.js(picker, `document.querySelector('.file-list-item[data-path="${dir}/a.txt"]').className.includes('selected')`);
-    h.assert.strictEqual(aSel.value, false, 'docx 过滤下 a.txt 不应可选');
+    // docx 过滤生效：a.txt 不显示（过滤只显示匹配文件 + 全部目录）、b.docx 可选
+    await h.waitFor(picker, `document.querySelectorAll('.file-list-item[data-path="${dir}/a.txt"]').length === 0`);
     await h.clickEl(picker, `.file-list-item[data-path="${dir}/b.docx"]`);
     await h.waitFor(picker, `document.querySelector('.file-list-item[data-path="${dir}/b.docx"]').className.includes('selected')`);
 
-    // 切换到 img 过滤：b.docx 失效选中被清除，c.png 可选。
+    // 切换到 img 过滤：b.docx 不显示（失效选中随隐藏被清除），c.png 可选。
     // md-select 的 select() 是静默的，harness.selectOption 会补派发 input 事件
     await h.selectOption(picker, '.picker-filter-select', 'img');
     await h.waitFor(picker, `document.querySelector('.picker-filter-select').value === 'img'`);
-    await h.waitFor(picker, `!document.querySelector('.file-list-item[data-path="${dir}/b.docx"]').className.includes('selected')`);
+    await h.waitFor(picker, `document.querySelectorAll('.file-list-item[data-path="${dir}/b.docx"]').length === 0`);
     await h.clickEl(picker, `.file-list-item[data-path="${dir}/c.png"]`);
     await h.waitFor(picker, `document.querySelector('.file-list-item[data-path="${dir}/c.png"]').className.includes('selected')`);
 

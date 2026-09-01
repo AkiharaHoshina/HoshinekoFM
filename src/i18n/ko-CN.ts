@@ -307,6 +307,9 @@ const koCN = {
   'picker.title_items': '항목 선택',
   'picker.select': '선택',
   'picker.cancel': '취소',
+  'picker.title_save': '파일 저장',
+  'picker.file_name': '파일 이름',
+  'picker.confirm': '확인',
   'picker.selected_count': (n: number) => `${n}개 선택됨`,
   'picker.all_files': '모든 파일',
   // ── 自定义标题栏 ──
