@@ -57,7 +57,7 @@ No unit-test framework — e2e tests live in `scripts/e2e/` (Electron main-proce
 - **File operations use Linux system commands**: `du -sb`, `find`, `unzip`, `tar`, `lsblk`, `df`, `xdg-mime`, `grep`. Not portable to macOS/Windows.
 - **UDISKS2 device monitoring**: `setupUdisks2Monitor` in `electron/handlers/system.ts` listens for device add/remove via D-Bus; only works on Linux.
 - **Dynamic theming**: reads `~/.config/matugen/theme.css` at startup via `theme:get-css` IPC.
-- **Product name**: "HoshinekoFM" (`productName` in `package.json`), not the npm package name `material-3-file-manager`.
+- **Product name**: "HoshinekoFM" (`productName` in `package.json`); the npm package `name` is `hoshineko-fm`, overridden at runtime via `app.setName('HoshinekoFM')` (userData old path is written back first, see `electron/main.ts`).
 - **CSS only**: no CSS-in-JS or CSS modules — plain `.css` files in same directory as component, imported in component file.
 - **Monorepo workspace**: `pnpm-workspace.yaml` exists but only for `allowBuilds` hints (no actual packages). Both `package-lock.json` and `pnpm-lock.yaml` are checked in.
 

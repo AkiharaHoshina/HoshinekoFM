@@ -31,11 +31,13 @@ interface SettingsDialogProps {
   /** 文件预览面板开关（默认关闭） */
   filePreviewEnabled: boolean;
   onToggleFilePreview: () => void;
+  /** 目录大小计算开关（默认开启；关闭后不再 du 遍历目录，减轻磁盘压力） */
+  calculateDirSize: boolean;
+  onToggleCalculateDirSize: () => void;
   /** 默认文件管理器状态（xdg-mime inode/directory 关联） */
   isDefaultFileManager: boolean;
   fmBusy: boolean;
-  /** 是否有可恢复的原处理程序（设为默认前记录） */
-  canRestoreDefaultFm: boolean;
+  /** 设为默认（有记录时恢复原处理程序，无记录时清除关联） */
   onSetDefaultFm: () => void;
   onRestoreDefaultFm: () => void;
   /** 系统集成安装状态（portal 配置 / D-Bus 激活文件 / portals.conf
@@ -84,9 +86,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onToggleShowHomeStorageUsage,
   filePreviewEnabled,
   onToggleFilePreview,
+  calculateDirSize,
+  onToggleCalculateDirSize,
   isDefaultFileManager,
   fmBusy,
-  canRestoreDefaultFm,
   onSetDefaultFm,
   onRestoreDefaultFm,
   integrationStatus,
@@ -403,6 +406,21 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             <Switch selected={filePreviewEnabled} onClick={onToggleFilePreview} />
           </div>
 
+          <div className="settings-row" onClick={onToggleCalculateDirSize}>
+            <div className="settings-row__start">
+              <Icon name="calculate" />
+              <div className="settings-row__label-col">
+                <div className="settings-row__label">
+                  {t("settings.calculate_dir_size")}
+                </div>
+                <div className="settings-row__sub settings-row__sub--wrap">
+                  {t("settings.calculate_dir_size_desc")}
+                </div>
+              </div>
+            </div>
+            <Switch selected={calculateDirSize} onClick={onToggleCalculateDirSize} />
+          </div>
+
           {/* 默认文件管理器（xdg-mime inode/directory 关联，写用户级配置） */}
           <div className="settings-row">
             <div className="settings-row__start">
@@ -418,12 +436,13 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 </div>
               </div>
             </div>
+            {/* 已是默认时「恢复为系统默认」常驻：有记录还原原处理程序，
+                无记录（系统集成安装直接写 xdg-mime 关联）清除关联回落系统默认，
+                避免按钮消失导致无法取消 */}
             {isDefaultFileManager ? (
-              canRestoreDefaultFm ? (
-                <Button variant="outlined" disabled={fmBusy} onClick={onRestoreDefaultFm}>
-                  {t("settings.restore_default_file_manager")}
-                </Button>
-              ) : null
+              <Button variant="outlined" disabled={fmBusy} onClick={onRestoreDefaultFm}>
+                {t("settings.restore_default_file_manager")}
+              </Button>
             ) : (
               <Button variant="outlined" disabled={fmBusy} onClick={onSetDefaultFm}>
                 {t("settings.set_default_file_manager")}

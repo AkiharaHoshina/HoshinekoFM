@@ -121,6 +121,8 @@ const zhAC = {
   'properties.mode_hint': '3 位八进制，如 755',
   'properties.type': '类型:',
   'properties.directory': '目录',
+  'properties.size_unavailable': '大小无法获取',
+  'properties.size_disabled': '已禁用',
 
   // ── 打开方式弹窗 ──
   'open_with.title': '打开方式',
@@ -147,6 +149,8 @@ const zhAC = {
   'settings.marquee_text': '滚动文本',
   'settings.show_home_storage': '显示主页存储占用',
   'settings.file_preview': '文件预览',
+  'settings.calculate_dir_size': '计算目录大小',
+  'settings.calculate_dir_size_desc': '关闭后不再遍历目录计算大小，减轻磁盘压力',
   'settings.default_file_manager': '默认文件管理器',
   'settings.default_file_manager_desc': '用 HoshinekoFM 打开文件夹',
   'settings.is_default_file_manager': 'HoshinekoFM 已是默认文件管理器',

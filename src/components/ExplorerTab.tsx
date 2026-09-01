@@ -45,6 +45,7 @@ import {
   type ConflictEntry,
   type ConflictResult,
 } from '../utils/fileConflict';
+import { computeArrowTarget, type ListItem } from './FileList/utils';
 
 interface ExplorerTabProps {
     tabId: string;
@@ -680,6 +681,11 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   const [suppressClickHint, setSuppressClickHint] = useState(false);
   const mouseDownRef = useRef(false);
 
+  /** FileList 渲染期回传的布局（columns/items 与渲染同源）：方向键导航计算用 */
+  const fileListLayoutRef = useRef<{ columns: number; items: ListItem[] } | null>(null);
+  /** 方向键导航滚动目标（FileList 据此 scrollToRow，超出视野时滚过去） */
+  const [keyboardScrollPath, setKeyboardScrollPath] = useState<string | null>(null);
+
   // ── 文件预览面板 ──
   /** 预览区宽度钳制范围（百分比） */
   const PREVIEW_MIN_PCT = 20;
@@ -892,6 +898,20 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (document.querySelector('md-dialog[open], .context-menu, [role="dialog"]')) return;
 
+      // 方向键：选择相邻文件（列表=显示序上下左右；网格=二维移动），
+      // 阻止默认滚动行为；超出视野时经 scrollToPath 滚动过去。
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const layout = fileListLayoutRef.current;
+        if (!layout || sortedFiles.length === 0) return;
+        e.preventDefault();
+        const target = computeArrowTarget(layout.items, lastSelectedPath, e.key, viewMode);
+        if (target) {
+          handleSelect(target, false, e.shiftKey);
+          setKeyboardScrollPath(target.path);
+        }
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
         e.preventDefault();
         const allPaths = new Set(sortedFiles.map(f => f.path));
@@ -961,7 +981,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, sortedFiles, selectedFiles, currentPath, loadPath, clipboard, onConfirmDialog]);
+  }, [isActive, sortedFiles, selectedFiles, lastSelectedPath, currentPath, loadPath, clipboard, onConfirmDialog, viewMode, handleSelect]);
 
   const handleBackgroundContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -1173,7 +1193,31 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   const handleDeselectAll = useCallback(() => {
     setSelectedFiles(new Set());
+    // 清空锚点：方向键导航与 Shift 范围选择都从 lastSelectedPath 起步，
+    // 取消选中后必须同步清除，否则会以旧锚点为基准跳到意料之外的位置
+    setLastSelectedPath(null);
   }, []);
+
+  /**
+   * 橡皮筋框选回传（FileList → useRubberBandSelection）：
+   * - replace（无修饰键覆盖框选）：锚点设为框选集在显示序中的首个文件，
+   *   与单击选中保持一致的语义（框选不走 handleSelect，锚点必须在此补上）；
+   * - union/intersection/difference（Ctrl/Shift 组合）：保留现有锚点不变，
+   *   后续方向键/Shift 范围选择仍以最近一次单击的位置为基准。
+   */
+  const handleBoxSelect = useCallback(
+    (
+      paths: Set<string>,
+      mode?: "replace" | "union" | "intersection" | "difference",
+    ) => {
+      setSelectedFiles(paths);
+      if (mode === "replace") {
+        const anchor = sortedFiles.find((f) => paths.has(f.path)) ?? null;
+        setLastSelectedPath(anchor ? anchor.path : null);
+      }
+    },
+    [sortedFiles],
+  );
 
   const handleDropOnFolderCallback = useCallback(
     (draggedFiles: IFile[], targetPath: string, operation: "move" | "copy") =>
@@ -1507,7 +1551,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                   onContextMenu={handleFileContextMenu}
                   onBackgroundContextMenu={handleBackgroundContextMenu}
                   onDeselectAll={handleDeselectAll}
-                  onSetSelected={setSelectedFiles}
+                  onSetSelected={handleBoxSelect}
                   onSelectionModeChange={handleSelectionModeChange}
                   onHoverFile={handleHoverFile}
                   onDropOnFolder={handleDropOnFolderCallback}
@@ -1519,6 +1563,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                   scrollToFileName={scrollToFileName}
                   onScrollToComplete={onScrollToComplete}
                   marqueeEnabled={marqueeEnabled}
+                  scrollToPath={keyboardScrollPath}
+                  layoutRef={fileListLayoutRef}
                 />
               </div>
 

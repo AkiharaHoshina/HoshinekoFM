@@ -1073,6 +1073,68 @@ export function registerSystemHandlers() {
       return { success: false, error: getExecError(e).message };
     }
   });
+
+  /**
+   * 清除 inode/directory 对本应用的默认关联（「恢复为系统默认」无
+   * 记录时的兜底路径——如系统集成安装脚本直接写 xdg-mime 关联、未
+   * 经过设置按钮记录原处理程序）。从用户级 mimeapps.list 两处
+   * （XDG 配置目录与本地数据目录）移除 [Default Applications] 的
+   * HoshinekoFM.desktop 行与 [Added Associations] 中的对应项，
+   * 清除后默认回落系统级配置。文件不存在视为已清除。
+   *
+   * @returns success 恒为 true；changed 表示是否实际改动过文件
+   */
+  ipcMain.handle('system:clear-dir-mime-handler', async () => {
+    const files = [
+      path.join(os.homedir(), '.config', 'mimeapps.list'),
+      path.join(USER_APPS_DIR, 'mimeapps.list'),
+    ];
+    let changed = false;
+    for (const file of files) {
+      let content = '';
+      try {
+        content = await fs.readFile(file, 'utf-8');
+      } catch {
+        continue;
+      }
+      let fileChanged = false;
+      let section = '';
+      const out: string[] = [];
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('[')) {
+          section = trimmed;
+          out.push(line);
+          continue;
+        }
+        if (section === '[Default Applications]' && /^inode\/directory\s*=\s*HoshinekoFM\.desktop\s*$/.test(trimmed)) {
+          fileChanged = true;
+          continue;
+        }
+        if (section === '[Added Associations]') {
+          const m = trimmed.match(/^inode\/directory\s*=\s*(.+)$/);
+          if (m) {
+            const apps = m[1]
+              .split(';')
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0 && s !== DESKTOP_ENTRY_NAME);
+            if (apps.length !== m[1].split(';').filter((s) => s.trim()).length) {
+              fileChanged = true;
+            }
+            if (apps.length === 0) continue;
+            out.push(`inode/directory=${apps.join(';')};`);
+            continue;
+          }
+        }
+        out.push(line);
+      }
+      if (fileChanged) {
+        await fs.writeFile(file, out.join('\n'), 'utf-8');
+        changed = true;
+      }
+    }
+    return { success: true, changed };
+  });
   ipcMain.handle('system:get-apps', async () => {
     if (appsCache) return appsCache;
 
@@ -1540,6 +1602,13 @@ export function registerSystemHandlers() {
     return text + m[2];
   }
 
+  /**
+   * 文件搜索（find -iname）：目录树中部分子目录无访问权限时 find 仍
+   * 输出可访问部分的匹配结果、仅以退出码 1 与 stderr 报告权限问题——
+   * 必须用 spawn 手动收集 stdout，不能在非零退出码时整体丢弃
+   * （否则「/tmp 搜 proc」这类场景会因个别 systemd 私有目录而零结果）。
+   * stderr（权限提示）静默忽略，符合常规文件管理器行为。
+   */
   ipcMain.handle('system:search', async (_, directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string }) => {
     try {
       const args = [directory];
@@ -1553,7 +1622,14 @@ export function registerSystemHandlers() {
         if (doubled) args.push('-size', `-${doubled}`);
       }
 
-      const { stdout } = await execFileAsync('find', args, { maxBuffer: 1024 * 1024 * 10 });
+      const stdout = await new Promise<string>((resolve, reject) => {
+        const child = spawn('find', args);
+        let out = '';
+        child.stdout.on('data', (d) => (out += String(d)));
+        child.stderr.on('data', () => { /* 权限不足等提示忽略 */ });
+        child.on('error', reject);
+        child.on('close', () => resolve(out));
+      });
 
       const lines = stdout.split('\n').filter(Boolean);
       const results: { name: string; path: string; isDirectory: boolean; size: number; mtime: Date }[] = [];

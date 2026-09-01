@@ -249,6 +249,82 @@ export function flattenItems(
   return items;
 }
 
+/**
+ * 在扁平化布局（含分组头/网格行）中定位包含指定路径的条目下标。
+ *
+ * @returns 条目下标；-1 表示未找到
+ */
+export function findItemIndexOfPath(items: ListItem[], path: string): number {
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.kind === "file" && item.file.path === path) return i;
+    if (item.kind === "grid-row" && item.files.some((f) => f.path === path)) return i;
+  }
+  return -1;
+}
+
+/** 取条目内含的文件列表（header 返回空） */
+function filesInItem(item: ListItem): IFile[] {
+  if (item.kind === "file") return [item.file];
+  if (item.kind === "grid-row") return item.files;
+  return [];
+}
+
+/**
+ * 方向键导航：计算目标文件（返回 null 表示不移动——如网格行首再按左）。
+ * 布局基于扁平化条目（与渲染同源，含分组头）：
+ * - 列表视图：上下左右均沿显示序移动（跳过分组头）；
+ * - 网格视图：左右同行移动、上下跨行（列位钳制到目标行长度），
+ *   行首/行尾按左/右不环绕。
+ * - 无锚点（当前无选中）：Down/Right 取首个文件，Up/Left 取末个文件。
+ *
+ * @param items - 扁平化布局（flattenItems 产物）
+ * @param anchorPath - 当前锚点文件路径（lastSelectedPath；无选中为 null）
+ */
+export function computeArrowTarget(
+  items: ListItem[],
+  anchorPath: string | null,
+  key: "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight",
+  viewMode: "grid" | "list",
+): IFile | null {
+  const anchorIdx = anchorPath ? findItemIndexOfPath(items, anchorPath) : -1;
+
+  if (viewMode === "list") {
+    const step = key === "ArrowUp" || key === "ArrowLeft" ? -1 : 1;
+    let i = anchorIdx;
+    if (i === -1) i = step > 0 ? -1 : items.length;
+    for (i += step; i >= 0 && i < items.length; i += step) {
+      const file = filesInItem(items[i])[0];
+      if (file) return file;
+    }
+    return null;
+  }
+
+  // 网格：无锚点/锚点落在分组头上 → 取首个或末个文件
+  if (anchorIdx === -1 || items[anchorIdx].kind === "header") {
+    const rows = items.filter((it) => it.kind !== "header");
+    if (rows.length === 0) return null;
+    const back = key === "ArrowUp" || key === "ArrowLeft";
+    const rowFiles = filesInItem(back ? rows[rows.length - 1] : rows[0]);
+    return back ? rowFiles[rowFiles.length - 1] : rowFiles[0];
+  }
+
+  const rowFiles = filesInItem(items[anchorIdx]);
+  const col = Math.max(0, rowFiles.findIndex((f) => f.path === anchorPath));
+
+  if (key === "ArrowLeft") return col > 0 ? rowFiles[col - 1] : null;
+  if (key === "ArrowRight") return col < rowFiles.length - 1 ? rowFiles[col + 1] : null;
+
+  const step = key === "ArrowUp" ? -1 : 1;
+  for (let i = anchorIdx + step; i >= 0 && i < items.length; i += step) {
+    if (items[i].kind === "header") continue;
+    const fs = filesInItem(items[i]);
+    if (fs.length === 0) continue;
+    return fs[Math.min(Math.max(col, 0), fs.length - 1)];
+  }
+  return null;
+}
+
 export function listSpacing(iconSize: number) {
   const gap = Math.max(4, Math.round(iconSize * 0.3125));
   const paddingV = Math.max(2, Math.round(iconSize * 0.125));

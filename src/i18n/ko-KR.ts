@@ -122,6 +122,8 @@ const koKR = {
   'properties.mode_hint': '8진수 3자리 (예: 755)',
   'properties.type': '유형:',
   'properties.directory': '디렉터리',
+  'properties.size_unavailable': '크기를 가져올 수 없음',
+  'properties.size_disabled': '사용 안 함',
 
   // ── 다른 앱으로 열기 팝업 ──
   'open_with.title': '다른 앱으로 열기',
@@ -147,6 +149,8 @@ const koKR = {
   'settings.marquee_text': '스크롤 텍스트',
   'settings.show_home_storage': '홈 스토리지 사용량 표시',
   'settings.file_preview': '파일 미리보기',
+  'settings.calculate_dir_size': '디렉터리 크기 계산',
+  'settings.calculate_dir_size_desc': '끄면 크기 계산을 위한 디렉터리 탐색을 건너뛰어 디스크 부하를 줄입니다',
   'settings.default_file_manager': '기본 파일 관리자',
   'settings.default_file_manager_desc': 'HoshinekoFM으로 폴더 열기',
   'settings.is_default_file_manager': 'HoshinekoFM이 기본 파일 관리자입니다',

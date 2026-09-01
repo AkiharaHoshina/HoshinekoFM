@@ -26,7 +26,12 @@ export function useRubberBandSelection(
   listImperativeRef: React.RefObject<any>,
   itemBoxesRef: React.MutableRefObject<ItemBox[]>,
   selectedFiles: Set<string>,
-  onSetSelected: ((paths: Set<string>) => void) | undefined,
+  /** 框选结果回传：第二参数为本次框选的组合模式（replace/union/intersection/difference），
+   *  供调用方在 replace（覆盖）时同步「锚点」（lastSelectedPath）——锚点决定方向键导航
+   *  与 Shift 范围选择的起点，框选不走单击路径必须在此补上。 */
+  onSetSelected:
+    | ((paths: Set<string>, mode?: "replace" | "union" | "intersection" | "difference") => void)
+    | undefined,
   onSelectionModeChange:
     | ((mode: "replace" | "union" | "intersection" | "difference" | null) => void)
     | undefined,
@@ -175,14 +180,14 @@ export function useRubberBandSelection(
           if (boxPaths.size > 0) {
             const ns = new Set(prevSet);
             for (const p of boxPaths) ns.delete(p);
-            onSetSelected?.(ns);
+            onSetSelected?.(ns, "difference");
             didSelectRef.current = true;
           }
         } else if (ctrlHeld) {
           if (boxPaths.size > 0) {
             const ns = new Set(prevSet);
             for (const p of boxPaths) ns.add(p);
-            onSetSelected?.(ns);
+            onSetSelected?.(ns, "union");
             didSelectRef.current = true;
           }
         } else if (shiftHeld) {
@@ -191,12 +196,12 @@ export function useRubberBandSelection(
             if (boxPaths.has(p)) ns.add(p);
           }
           if (ns.size > 0 || prevSet.size > 0) {
-            onSetSelected?.(ns);
+            onSetSelected?.(ns, "intersection");
             didSelectRef.current = true;
           }
         } else {
           if (boxPaths.size > 0) {
-            onSetSelected?.(boxPaths);
+            onSetSelected?.(boxPaths, "replace");
             didSelectRef.current = true;
           }
         }

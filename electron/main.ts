@@ -18,7 +18,7 @@ import { initJobHandlers } from './jobs';
 
 /**
  * 运行时应用名：任务栏/DMS 等把窗口显示为「应用名 · 窗口标题」——
- * package.json 的 name（material-3-file-manager）会以前缀出现，
+ * package.json 的 name（npm 包名 hoshineko-fm）作为前缀不够友好，
  * 改为品牌名 HoshinekoFM。注意 setName 会连带改变 userData 默认
  * 路径，必须先读取旧路径再写回，保证既有数据（剪贴板/设置）不迁移；
  * 必须在 ready 之前、任何 userData 读取之前执行。

@@ -269,18 +269,31 @@ export async function trashFiles(
  * 目录用 `du -sb`（getDirectorySize），文件用 fs:stat。
  * 任一路径计算失败时返回 null——不阻塞删除，只是不显示大小。
  *
+ * 受设置项 `settings.calculateDirSize` 控制：关闭时直接返回 null
+ * （不发起 du 遍历，减轻磁盘压力）。
+ *
  * @param paths - 待统计的绝对路径
- * @returns 总字节数；无法统计时为 null
+ * @returns 总字节数；无法统计（或设置已关闭）时为 null
  */
 export async function computeDeleteTotalSize(paths: string[]): Promise<number | null> {
+  // 目录大小计算开关：关闭时不遍历目录
+  try {
+    const stored = localStorage.getItem('settings.calculateDirSize');
+    if (stored !== null && JSON.parse(stored) === false) return null;
+  } catch {
+    // 读取失败按开启处理
+  }
+
   try {
     let total = 0;
     for (const p of paths) {
       const stat = await window.electron.stat(p);
       if (!stat) return null;
       if (stat.isDirectory) {
-        const dirSize = await window.electron.getDirectorySize(p);
-        total += dirSize;
+        const res = await window.electron.getDirectorySize(p);
+        // 超时/被杀/失败：不阻塞删除，只放弃大小显示
+        if (!res || !res.success) return null;
+        total += res.size;
       } else {
         total += stat.size;
       }

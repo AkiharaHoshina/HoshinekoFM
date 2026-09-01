@@ -163,6 +163,8 @@ const ruUA = {
   'properties.mode_hint': '3 восьмеричные цифры, напр. 755',
   'properties.type': 'Тип:',
   'properties.directory': 'Каталог',
+  'properties.size_unavailable': 'Размер недоступен',
+  'properties.size_disabled': 'Отключено',
 
   // ── 打开方式弹窗 ──
   'open_with.title': 'Открыть с помощью...',
@@ -188,6 +190,8 @@ const ruUA = {
   'settings.marquee_text': 'Бегущая строка',
   'settings.show_home_storage': 'Показывать занятость домашнего хранилища',
   'settings.file_preview': 'Предпросмотр файлов',
+  'settings.calculate_dir_size': 'Вычислять размер папок',
+  'settings.calculate_dir_size_desc': 'Отключите, чтобы не обходить папки для подсчёта размера и снизить нагрузку на диск',
   'settings.default_file_manager': 'Файловый менеджер по умолчанию',
   'settings.default_file_manager_desc': 'Открывать папки в HoshinekoFM',
   'settings.is_default_file_manager': 'HoshinekoFM — файловый менеджер по умолчанию',

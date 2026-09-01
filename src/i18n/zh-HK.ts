@@ -121,6 +121,8 @@ const zhHK = {
   'properties.mode_hint': '3 位八進制，如 755',
   'properties.type': '類型:',
   'properties.directory': '資料夾',
+  'properties.size_unavailable': '大小無法取得',
+  'properties.size_disabled': '已停用',
 
   // ── 開啟方式彈窗 ──
   'open_with.title': '選擇開啟方式',
@@ -146,6 +148,8 @@ const zhHK = {
   'settings.marquee_text': '滾動文字',
   'settings.show_home_storage': '顯示主頁儲存佔用',
   'settings.file_preview': '檔案預覽',
+  'settings.calculate_dir_size': '計算目錄大小',
+  'settings.calculate_dir_size_desc': '關閉後不再遍歷目錄計算大小，減輕磁碟壓力',
   'settings.default_file_manager': '預設檔案管理器',
   'settings.default_file_manager_desc': '用 HoshinekoFM 開啟資料夾',
   'settings.is_default_file_manager': 'HoshinekoFM 已是預設檔案管理器',

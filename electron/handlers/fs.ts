@@ -15,6 +15,17 @@ const PREVIEW_TEXT_MAX_BYTES = 512 * 1024;
 /** 归档内容列表条目数上限：超过则截断并标记 truncated */
 const ARCHIVE_LIST_MAX_ENTRIES = 5000;
 
+/** 目录大小计算（du -sb）超时：超过即杀掉并返回 TIMEOUT */
+const DU_TIMEOUT_MS = 10_000;
+
+/** 当前活跃的 du 子进程（全局同一时刻只允许一个） */
+let activeDu: ChildProcess | null = null;
+
+/** system:get-directory-size 的返回结构 */
+type DirSizeResult =
+  | { success: true; size: number }
+  | { success: false; code: 'TIMEOUT' | 'KILLED' | 'FAILED' };
+
 /** zip 系 mime（unzip -Z1 可列） */
 const ZIP_MIMES = new Set(['application/zip', 'application/x-zip-compressed', 'application/java-archive']);
 /** tar/压缩流系 mime（tar -tf 可列） */
@@ -1207,22 +1218,80 @@ export function registerFsHandlers() {
     }
   });
 
-  // Compute directory size in bytes using du -sb. Returns 0 on failure.
+  // Compute directory size in bytes using du -sb.
+  // Returns { success: true, size } on success;
+  // { success: false, code } on failure ('TIMEOUT' | 'KILLED' | 'FAILED').
+  //
+  // 并发策略：同一时刻只允许一个 du——新请求到达（目录已切换）时杀掉
+  // 仍在跑的旧 du，旧请求以 KILLED 失败返回；单次超过 10 秒也杀掉并
+  // 以 TIMEOUT 返回。避免反复进出大目录（如家目录/根目录）时 du 堆积
+  // 占用 CPU 与磁盘 IO。
+  // 测试缝隙（环境变量，缺省完全无影响）：
+  // - HOSHINEKO_DU_TIMEOUT_MS：覆盖超时阈值（e2e 用短超时确定性测
+  //   TIMEOUT 路径，也可手动调低验证 10s 杀进程行为）；
+  // - HOSHINEKO_DU_STALL_MS：du 命令前先 sleep——快速磁盘上真实 du
+  //   几十毫秒就完成，无法确定性制造「仍在运行」状态来测超时/切换
+  //   杀死路径（e2e 22 使用）。sleep 后 exec du（sh 被 SIGKILL 时若已
+  //   exec 则杀到的是 du 本身，未 exec 则 du 不会启动，均无孤儿进程）。
   ipcMain.handle('system:get-directory-size', async (_, dirPath: string) => {
-    try {
-      const { stdout } = await execAsync(`du -sb "${dirPath}"`);
-      const match = stdout.match(/^(\d+)/);
-      if (match) {
-        return parseInt(match[1], 10);
+    // 目录切换：先杀掉上一个仍在跑的 du（旧结果已无意义）
+    if (activeDu) {
+      try {
+        activeDu.kill('SIGKILL');
+      } catch {
+        // 子进程已退出
       }
-      return 0;
-    } catch (error) {
-      const err = error as { stdout?: string };
-      if (err.stdout) {
-        const match = err.stdout.match(/^(\d+)/);
-        if (match) return parseInt(match[1], 10);
-      }
-      return 0;
+      activeDu = null;
     }
+
+    const timeoutMs = Number(process.env.HOSHINEKO_DU_TIMEOUT_MS) || DU_TIMEOUT_MS;
+    const stallMs = Number(process.env.HOSHINEKO_DU_STALL_MS) || 0;
+
+    const result = await new Promise<DirSizeResult>((resolve) => {
+      const child = stallMs > 0
+        ? spawn('sh', ['-c', `sleep ${stallMs / 1000}; exec du -sb "$1"`, 'sh', dirPath], { stdio: ['ignore', 'pipe', 'ignore'] })
+        : spawn('du', ['-sb', dirPath], { stdio: ['ignore', 'pipe', 'ignore'] });
+      activeDu = child;
+
+      let out = '';
+      let settled = false;
+      /** 防重入的落定函数：只在首次调用时生效并解除 activeDu 引用 */
+      const finish = (r: DirSizeResult) => {
+        if (settled) return;
+        settled = true;
+        if (activeDu === child) activeDu = null;
+        resolve(r);
+      };
+
+      // 超时 10s（可经环境变量覆盖）：杀掉 du，返回 TIMEOUT
+      const timer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // 子进程已退出
+        }
+        finish({ success: false, code: 'TIMEOUT' });
+      }, timeoutMs);
+
+      child.stdout?.on('data', (d: Buffer) => {
+        out += d.toString('utf8');
+      });
+      child.on('error', () => {
+        clearTimeout(timer);
+        finish({ success: false, code: 'FAILED' });
+      });
+      child.on('close', (code, signal) => {
+        clearTimeout(timer);
+        if (signal !== null || code !== 0) {
+          // 被信号杀掉（本 handler 的超时/切换，或外部）或 du 自身失败
+          finish({ success: false, code: signal === 'SIGKILL' ? 'KILLED' : 'FAILED' });
+          return;
+        }
+        const match = out.match(/^(\d+)/);
+        finish({ success: true, size: match ? parseInt(match[1], 10) : 0 });
+      });
+    });
+
+    return result;
   });
 }

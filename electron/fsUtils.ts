@@ -404,7 +404,7 @@ export async function detectMimeBatch(filePaths: string[]): Promise<Map<string, 
 
 // ── Thumbnail generation & caching ────────────────────────────────
 
-const THUMB_CACHE_DIR = path.join(os.homedir(), '.cache', 'material3', 'thumbnails');
+const THUMB_CACHE_DIR = path.join(os.homedir(), '.cache', 'hoshineko-fm', 'thumbnails');
 
 function ensureThumbCacheDir(): void {
   if (!existsSync(THUMB_CACHE_DIR)) {
@@ -472,7 +472,7 @@ export async function getThumbnail(filePath: string, maxSize: number, cropToSqua
   }
 }
 
-const DRAG_ICON_DIR = path.join(os.homedir(), '.cache', 'material3', 'drag-icons');
+const DRAG_ICON_DIR = path.join(os.homedir(), '.cache', 'hoshineko-fm', 'drag-icons');
 
 /** Path for a cached Material Symbols drag icon by icon name */
 export function getCachedDragIconPath(iconName: string): string {
@@ -683,7 +683,7 @@ async function getGenericFileIcon(mime: string): Promise<string> {
   }
 
   const { nativeImage } = await import('electron');
-  const outPath = path.join(os.tmpdir(), `material3-generic-${Date.now()}.png`);
+  const outPath = path.join(os.tmpdir(), `hoshineko-fm-generic-${Date.now()}.png`);
   try {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96">
       <rect width="96" height="96" fill="${color}"/>
@@ -707,7 +707,7 @@ let _fallbackIconPath: string | null = null;
 
 function getFallbackIcon(): string {
   if (_fallbackIconPath && existsSync(_fallbackIconPath)) return _fallbackIconPath;
-  _fallbackIconPath = path.join(os.tmpdir(), 'material3-fallback-icon.png');
+  _fallbackIconPath = path.join(os.tmpdir(), 'hoshineko-fm-fallback-icon.png');
   writeFileSync(_fallbackIconPath, PNG_1x1);
   return _fallbackIconPath;
 }

@@ -475,6 +475,13 @@ function AppContent() {
     false,
   );
 
+  /** 目录大小计算开关（默认开启，设置 → 行为）。关闭后属性网格与
+   *  删除确认不再发起 du 遍历（频繁遍历大目录对磁盘不好） */
+  const [calculateDirSize, setCalculateDirSize] = useLocalStorage<boolean>(
+    "settings.calculateDirSize",
+    true,
+  );
+
   /** 标题栏可见性 + 模式 + 窗口管理器检测（状态由 useTitleBar 独占持有，
    *  同窗口多实例同键不同步——设置变更须经其 setter 立即生效） */
   const {
@@ -622,16 +629,27 @@ function AppContent() {
     }
   }, [fmBusy, setPrevDefaultFm]);
 
-  /** 恢复系统默认：还原为设置前的处理程序 */
+  /** 恢复系统默认：有记录（设为默认前记录）还原原处理程序；无记录
+   *  （如系统集成安装脚本直接写 xdg-mime 关联）清除本应用关联回落
+   *  系统默认。完成后重新查询生效处理程序刷新状态。 */
   const handleRestoreDefaultFm = useCallback(async () => {
-    if (fmBusy || !prevDefaultFm) return;
+    if (fmBusy) return;
     setFmBusy(true);
     try {
-      const res = await window.electron?.setDirMimeHandler(prevDefaultFm);
+      const res = prevDefaultFm
+        ? await window.electron?.setDirMimeHandler(prevDefaultFm)
+        : await window.electron?.clearDirMimeHandler();
       if (res?.success) {
-        setIsDefaultFileManager(false);
         setPrevDefaultFm(null);
-        showToast(t("settings.default_fm_restored"), "success");
+        const cur = await window.electron?.getDirMimeHandler();
+        setIsDefaultFileManager(cur?.success === true && cur.handler === "HoshinekoFM.desktop");
+        if (cur?.success === true && cur.handler === "HoshinekoFM.desktop") {
+          // 用户级关联已移除但生效处理程序仍为本应用（存在其他来源覆盖）：
+          // 保持已默认状态，按钮仍在，用户可再次尝试
+          showToast(t("settings.default_fm_failed"), "error");
+        } else {
+          showToast(t("settings.default_fm_restored"), "success");
+        }
       } else {
         showToast(t("settings.default_fm_failed"), "error");
       }
@@ -1579,9 +1597,10 @@ function AppContent() {
             onToggleShowHomeStorageUsage={() => setShowHomeStorageUsage(!showHomeStorageUsage)}
             filePreviewEnabled={filePreviewEnabled}
             onToggleFilePreview={() => setFilePreviewEnabled(!filePreviewEnabled)}
+            calculateDirSize={calculateDirSize}
+            onToggleCalculateDirSize={() => setCalculateDirSize(!calculateDirSize)}
             isDefaultFileManager={isDefaultFileManager}
             fmBusy={fmBusy}
-            canRestoreDefaultFm={prevDefaultFm !== null}
             onSetDefaultFm={() => void handleSetDefaultFm()}
             onRestoreDefaultFm={() => void handleRestoreDefaultFm()}
             integrationStatus={integrationStatus}

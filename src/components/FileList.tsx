@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, memo } from "react";
+import type { MutableRefObject } from "react";
 import type { IFile } from "../types/files";
 import "./FileList.css";
 import { AutoSizer } from "react-virtualized-auto-sizer";
@@ -6,8 +7,10 @@ import { List, useListRef, useListCallbackRef } from "react-window";
 import { useDrag } from "../contexts/DragContext";
 import {
   type ItemBox,
+  type ListItem,
   DOUBLE_CLICK_THRESHOLD,
   flattenItems,
+  findItemIndexOfPath,
   LIST_ROW_HEIGHT,
   GRID_ROW_HEIGHT,
   HEADER_HEIGHT,
@@ -32,7 +35,10 @@ interface FileListProps {
     targetPath: string,
     operation: "move" | "copy",
   ) => void;
-  onSetSelected?: (paths: Set<string>) => void;
+  onSetSelected?: (
+    paths: Set<string>,
+    mode?: "replace" | "union" | "intersection" | "difference",
+  ) => void;
   onSelectionModeChange?: (
     mode: "replace" | "union" | "intersection" | "difference" | null,
   ) => void;
@@ -56,6 +62,16 @@ interface FileListProps {
    * 开启后 dragstart 被拦截，条目上的按下+拖动交还给框选。
    */
   disableNativeDrag?: boolean;
+  /**
+   * 方向键导航滚动目标（ExplorerTab 在方向键选择后设置）：滚动到该
+   * 路径所在行（align smart，已在视野内则不滚动）。
+   */
+  scrollToPath?: string | null;
+  /**
+   * 渲染布局回传 ref（方向键导航计算用）：FileList 渲染时写入
+   * 与渲染完全同源的 columns/items（含分组头与网格行分组）。
+   */
+  layoutRef?: MutableRefObject<{ columns: number; items: ListItem[] } | null>;
 }
 
 // --- Main component ---
@@ -83,6 +99,8 @@ const FileListComponent: React.FC<FileListProps> = ({
   marqueeEnabled,
   allowBoxFromItems = false,
   disableNativeDrag = false,
+  scrollToPath = null,
+  layoutRef,
 }) => {
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -107,6 +125,9 @@ const FileListComponent: React.FC<FileListProps> = ({
   listImperativeRef.current = listEl ?? null;
   const lastDragOverFolderRef = useRef<IFile | null>(null);
   const itemBoxesRef = useRef<ItemBox[]>([]);
+  /** 渲染期布局快照（columns/items 与渲染同源）：方向键导航滚动效果用，
+   *  避免效果内重算 columns 与渲染出现偏差 */
+  const renderLayoutRef = useRef<{ columns: number; items: ListItem[] } | null>(null);
 
   const {
     isSelectingRef,
@@ -218,6 +239,22 @@ const FileListComponent: React.FC<FileListProps> = ({
     onScrollToComplete,
     listEl,
   ]);  
+
+  // 方向键导航滚动：scrollToPath 变化时滚动到该条目所在行。
+  // 列表未挂载时不消费目标（等 listEl 就绪后效果重试再滚）。
+  const prevKeyboardScrollPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!scrollToPath || scrollToPath === prevKeyboardScrollPathRef.current) return;
+    const listElNow = listImperativeRef.current;
+    const layout = renderLayoutRef.current;
+    if (!listElNow || !layout) return;
+    prevKeyboardScrollPathRef.current = scrollToPath;
+    const idx = findItemIndexOfPath(layout.items, scrollToPath);
+    if (idx !== -1) {
+      listElNow.scrollToRow({ index: idx, align: "smart" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- listImperativeRef 为稳定 ref 对象
+  }, [scrollToPath, listEl]);
 
   const handleImageError = useCallback((path: string) => {
     setFailedImages((prev) => {
@@ -475,6 +512,10 @@ const FileListComponent: React.FC<FileListProps> = ({
               : 0;
 
           const items = flattenItems(files, groupingEnabled, viewMode, columns);
+
+          // 渲染期布局快照：供方向键导航滚动与父组件导航计算（与渲染同源）
+          renderLayoutRef.current = { columns, items };
+          if (layoutRef) layoutRef.current = { columns, items };
 
           itemBoxesRef.current = computeItemBoxes(
             items,

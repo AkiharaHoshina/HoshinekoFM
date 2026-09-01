@@ -132,6 +132,8 @@ const enUS = {
   'properties.mode_hint': '3 octal digits, e.g. 755',
   'properties.type': 'Type:',
   'properties.directory': 'Directory',             //不知所谓
+  'properties.size_unavailable': 'Size unavailable',
+  'properties.size_disabled': 'Disabled',
 
   // ── 打开方式弹窗 ──
   'open_with.title': 'Open with...',
@@ -157,6 +159,8 @@ const enUS = {
   'settings.marquee_text': 'Marquee text',
   'settings.show_home_storage': 'Show home storage usage',
   'settings.file_preview': 'File preview',
+  'settings.calculate_dir_size': 'Calculate directory sizes',
+  'settings.calculate_dir_size_desc': 'Turn off to skip directory traversal for size calculation and reduce disk load',
   'settings.default_file_manager': 'Default file manager',
   'settings.default_file_manager_desc': 'Open folders with HoshinekoFM',
   'settings.is_default_file_manager': 'HoshinekoFM is the default file manager',

@@ -3,6 +3,7 @@ import type { IFile } from '../types/files';
 import { Button } from './Button';
 import { OutlinedTextField } from './md';
 import { changePermissions } from '../utils/fileOperations';
+import { useLocalStorage } from '../hooks/useLocalStorage';
 import { t } from '../i18n';
 import './PropertiesGrid.css';
 
@@ -65,11 +66,22 @@ function formatSize(bytes: number) {
  * 状态（权限显示/编辑、大小计算）全部随条目初始化——调用方用
  * React `key`（条目路径/真实大小路径）控制按条目重建，切换条目时
  * 无需 effect 内重置。
+ *
+ * 目录大小计算受设置项 `settings.calculateDirSize` 控制（默认开）：
+ * 关闭后不发 du 请求，大小行显示「已禁用」；du 被后端杀掉/超时
+ * （目录切换或超过 10s）时显示「无法获取」。
  */
 export const PropertiesGrid: React.FC<PropertiesGridProps> = ({ file, canEditPermissions = true, onPermissionsChanged, sizePath }) => {
+  /** 目录大小计算开关（设置 → 行为；跨窗口经 storage 同步） */
+  const [calculateDirSize] = useLocalStorage<boolean>('settings.calculateDirSize', true);
   const sizeTarget = file.isDirectory ? (sizePath ?? file.path) : file.path;
   const [calculatedSize, setCalculatedSize] = useState<number | null>(file.isDirectory ? null : file.size);
-  const [isCalculating, setIsCalculating] = useState(file.isDirectory);
+  /** 异步计算状态：计算中 / 完成 / 无法获取（被杀或超时）。
+   *  设置关闭（disabled）不由异步结果驱动——渲染时按 calculateDirSize 推导，
+   *  避免 effect 内同步 setState */
+  const [sizeState, setSizeState] = useState<'calculating' | 'done' | 'unavailable'>(
+    file.isDirectory ? 'calculating' : 'done',
+  );
   /** 当前显示的权限位（初始自条目，chmod 成功后本地更新） */
   const [displayMode, setDisplayMode] = useState<number | undefined>(file?.mode);
   /** 权限编辑状态：false = 只读显示，true = 八进制输入 + 应用/取消 */
@@ -77,28 +89,37 @@ export const PropertiesGrid: React.FC<PropertiesGridProps> = ({ file, canEditPer
   const [permValue, setPermValue] = useState('');
   const [permBusy, setPermBusy] = useState(false);
 
-  /** 目录大小惰性计算：与右键属性对话框同一条 getDirectorySize 路径 */
+  /** 目录大小惰性计算：与右键属性对话框同一条 getDirectorySize 路径。
+   *  设置关闭时不发请求；卸载/切换条目由调用方 key 重建保证，本处只防
+   *  异步回填到已卸载实例。 */
   useEffect(() => {
-    if (!file.isDirectory) return;
+    if (!file.isDirectory || !calculateDirSize) return;
     let cancelled = false;
     void window.electron
       ?.getDirectorySize(sizeTarget)
-      .then((size) => {
-        if (!cancelled) {
-          setCalculatedSize(size);
-          setIsCalculating(false);
+      .then((res) => {
+        if (cancelled) return;
+        if (res && res.success) {
+          setCalculatedSize(res.size);
+          setSizeState('done');
+        } else {
+          setCalculatedSize(null);
+          setSizeState('unavailable');
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setCalculatedSize(0);
-          setIsCalculating(false);
+          setCalculatedSize(null);
+          setSizeState('unavailable');
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [file.isDirectory, sizeTarget]);
+  }, [file.isDirectory, sizeTarget, calculateDirSize]);
+
+  /** 渲染用大小显示状态：设置关闭时恒显示「已禁用」 */
+  const displaySizeState = file.isDirectory && !calculateDirSize ? 'disabled' : sizeState;
 
   /** 可编辑权限：开关允许 + 有权限位且不是块设备（回收站条目无 mode，自动隐藏） */
   const canEdit = canEditPermissions && file?.mode !== undefined && file?.mime !== 'inode/blockdevice';
@@ -129,8 +150,12 @@ export const PropertiesGrid: React.FC<PropertiesGridProps> = ({ file, canEditPer
 
       <div className="properties-grid-label">{t('properties.size')}</div>
       <div className="properties-grid-value properties-grid-size">
-        {isCalculating ? (
+        {displaySizeState === 'calculating' ? (
           <span className="properties-grid-calculating">{t('properties.calculating')}</span>
+        ) : displaySizeState === 'disabled' ? (
+          <span className="properties-grid-calculating">{t('properties.size_disabled')}</span>
+        ) : displaySizeState === 'unavailable' ? (
+          <span className="properties-grid-calculating">{t('properties.size_unavailable')}</span>
         ) : (
           <span>
             {calculatedSize !== null ? formatSize(calculatedSize) : '-'}

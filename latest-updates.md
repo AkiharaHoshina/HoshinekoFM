@@ -1,5 +1,50 @@
 # 更新日志
 
+## v0.11.26 — 项目重命名彻底收尾（material-3 遗留清理）
+
+- **npm 包名**：package.json `name` 由 `material-3-file-manager` 改为 **`hoshineko-fm`**（v0.11.20 仅 `app.setName` 修正运行时前缀，包名一直是旧名，DMS 前缀已不出现但包身份未改）；`appId` 由 `com.material3.filemanager` 改为 `com.hoshineko.fm`
+- **PKGBUILD 删除**：旧上游（bhimio1/material-3-file-explorer）AUR 打包脚本，指向旧仓库与 Materials AppImage 名，已废弃
+- **electron/main.ts**：setName 注释不再提旧包名——name 现为 hoshineko-fm，setName 目的改为「npm 包名 → 品牌名 HoshinekoFM」（userData 旧路径写回逻辑不变）
+- **缓存/临时目录**：`~/.cache/material3/*` → `~/.cache/hoshineko-fm/*`（缩略图/拖拽图标，旧缓存废弃后自然重建）；tmp 下 generic/fallback 图标文件名同理
+- **文档**：AGENTS.md 产品名说明、可行性报告第十四节（撤销「不修改 name」决策点，补彻底改名实施记录）同步更新
+- package-lock.json 经 npm i 刷新同步 name/version
+
+### 迭代修复（搜索：部分目录无访问权限导致零结果）
+- **根因**：`system:search` 用 `execFileAsync('find', …)`——目录树中个别子目录无访问权限（如 /tmp 下 systemd 私有目录）时 find 仍输出可访问部分的匹配结果、但以退出码 1 结束，execFile 非零退出码整体抛错 → 已拿到的结果被丢弃返回空数组
+- **修复**：改用 `spawn` 手动收集 stdout（stderr 权限提示静默忽略、退出码不判失败），可访问部分的结果正常返回；新增 e2e 20：含 000 权限子目录的目录树，UI 搜索与 IPC 均返回可访问匹配项、权限目录内条目不出现
+
+### 迭代修复（已是默认且无恢复记录时「恢复」按钮消失）
+
+- **根因**：系统集成安装脚本直接写 `xdg-mime default HoshinekoFM.desktop inode/directory`，不经过设置按钮 → `prevDefaultFileManager`（localStorage）无记录；设置行渲染 `isDefault && !canRestore` 时返回 null——按钮整体消失；卸载系统集成同样不动 xdg-mime 关联，用户无法取消
+- **修复**：已是默认时「恢复为系统默认」按钮常驻——有记录还原原处理程序；无记录走新增 IPC `system:clear-dir-mime-handler`（用户级 mimeapps.list 两处（XDG 配置/本地数据）移除 [Default Applications] 的 HoshinekoFM.desktop 行与 [Added Associations] 对应项，回落系统级默认）；恢复后重新查询生效处理程序刷新状态（仍为本应用时保持已默认态并提示失败，避免误报成功）
+- e2e 16 增补：无记录状态按钮可见性与文案、清除关联生效、mimeapps.list 关联行移除（结束时还原原文件，净效果为零）
+
+### 方向键选择导航（文件浏览区上下左右 = 选择而非滚动）
+
+- **需求**：文件浏览页方向键改为移动选择——列表视图沿显示序（Up/Left 上一个、Down/Right 下一个，跳过分组头）；网格视图二维移动（左右同行、上下跨行且列位钳制到目标行长度，行首行尾不环绕）；目标超出视野时列表自动滚动过去
+- **实现**：布局计算与渲染完全同源——FileList 渲染期把 `columns/items`（`flattenItems` 产物，含分组头与网格行分组）写回 `layoutRef` 供 ExplorerTab 全局快捷键 handler 计算目标（`computeArrowTarget`，`FileList/utils.ts`）；选择经既有 `handleSelect`（Shift+方向键 = 范围选择）；滚动经新增 `scrollToPath` prop——FileList 用渲染期布局快照 `scrollToRow(align smart)`，不在视野内才滚
+- **关键坑**（e2e 排查实录）：`sendInputEvent` 的 keyCode 用 `'ArrowDown'` 会得到空 `e.key`（keyCode=0）——必须用 Electron 加速键风格 `'Down'/'Up'/'Left'/'Right'`；因此 e2e 统一用短形式发送
+- e2e 21：网格二维移动（跨分组头、同列换行、行首行尾不环绕）+ 200 条目一路 Down/Right 到底并断言滚动到位（react-window 只渲染可见行，选中元素存在即证明已滚入视野）；e2e 21b：列表视图显示序移动
+
+### 迭代修复（框选/取消选中后方向键锚点丢失）
+
+- **根因**：橡皮筋框选经 `onSetSelected` 直写 `setSelectedFiles`，点击空白取消选中（`handleDeselectAll`）也只清选中——两条路径都不更新 `lastSelectedPath`（方向键导航与 Shift 范围选择的锚点），框选后按方向键会以旧锚点/首项为基准折叠多选，行为与预期不符
+- **修复**：`useRubberBandSelection` 的 `onSetSelected` 回调增传组合模式（replace/union/intersection/difference）；ExplorerTab 新增 `handleBoxSelect`——replace（覆盖框选）把锚点设为框选集在显示序中的首个文件（与单击选中语义一致），union/intersection/difference 保留原锚点；`handleDeselectAll` 清空锚点
+- e2e 21c：框选 30 条 → Down 以首项为锚点折叠为单选并移到下一行同列（期望值取 DOM 与渲染同源）；空白点击取消选中 → Down 回到首项
+
+### 迭代修复（目录大小计算 du 进程堆积）
+
+- **根因**：`system:get-directory-size` 用 `execAsync('du -sb …')` 无超时无取消——打开预览/属性时对大目录（家目录/根目录）发起 du，切换目录后旧 du 不被杀，反复进出会堆积多个 du 长时间占用 CPU 与磁盘 IO
+- **修复**（electron/handlers/fs.ts）：
+  - 全局同一时刻只允许一个 du——新请求到达（目录已切换）杀掉旧 du，旧请求以 `{success:false, code:'KILLED'}` 返回
+  - 单次超过 10s 杀掉并以 `TIMEOUT` 返回；IPC 返回结构由裸数字改为 `{success, size|code}`（前端两处调用方同步更新）
+  - 测试缝隙（环境变量，缺省无影响）：`HOSHINEKO_DU_TIMEOUT_MS` 覆盖超时阈值、`HOSHINEKO_DU_STALL_MS` 在 du 前 sleep（快速磁盘无法确定性制造「仍在运行」状态，e2e 22 用）
+- **前端**：PropertiesGrid 大小行新增「无法获取」（被杀/超时/失败）与「已禁用」两个状态；`computeDeleteTotalSize`（删除确认总大小）失败时返回 null 不阻塞删除
+- **设置开关**：新增「计算目录大小」（`settings.calculateDirSize`，默认开，设置 → 行为）——关闭后属性网格与删除确认都不再发起 du 遍历（频繁遍历大目录对磁盘不好）
+- e2e 22：成功/切换杀死/超时/失败四条 IPC 路径 + 设置关闭（不发起 du）+ 超时后「无法获取」展示；e2e 16/16b 定位设置行改为按文案匹配（新增开关会改变行下标）
+
+- 版本号升至 `0.11.26`
+
 ## v0.11.25 — portal SaveFile 保存对话框与服务模式激活修复
 
 ### 保存对话框（portal SaveFile）
@@ -129,7 +174,7 @@
 - **标题栏设置确定时生效**：开关与「显示完整路径」改为设置对话框内本地预览（pending），点「完成」/关闭（退出 = 确定）时才应用——与语言、界面缩放一致；修复此前「更改即生效」（根因：App 与 useTitleBar 各持同键 useLocalStorage 实例不同步，状态改由 hook 独占持有）
 - **v 菜单对齐与图标等大**：`ContextMenuItem` 新增 `iconSize`，v 菜单三项字号与右侧按钮一致（18/22/22）；前导图标槽定宽 22px 居中（`span[slot="start"]`），不同字号下文字（headline）左对齐
 - **仪表盘滚动条贴边**：移除 `.dashboard-container` 的 `margin-right: 18px`（历史「滚动条间距」导致滚动条偏离边缘）——现在紧贴窗口右缘，预览面板开启时即预览区左缘
-- **应用名全面修正为 HoshinekoFM**：`productName`（构建产物 AppImage/可执行名/.desktop 命名）、`app.setDesktopName('HoshinekoFM.desktop')`（Wayland app_id，此前指向 materials.desktop 导致 DMS 显示 materials）、`index.html` 初始标题、packaging D-Bus 服务 Exec 路径、AGENTS/进度/可行性报告文档——DMS 任务栏前缀不再出现 material-3-file-manager 或 materials
+- **应用名全面修正为 HoshinekoFM**：`productName`（构建产物 AppImage/可执行名/.desktop 命名）、`app.setDesktopName('HoshinekoFM.desktop')`（Wayland app_id，此前指向 materials.desktop 导致 DMS 显示 materials）、`index.html` 初始标题、packaging D-Bus 服务 Exec 路径、AGENTS/进度/可行性报告文档——DMS 任务栏前缀不再出现 material-3-file-manager 或 materials（npm 包名/appId/缓存目录等遗留项于 v0.11.26 收尾）
 
 ### e2e
 

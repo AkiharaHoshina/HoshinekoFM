@@ -121,6 +121,8 @@ const jaJP = {
   'properties.mode_hint': '8 進数 3 桁（例: 755）',
   'properties.type': '種類:',
   'properties.directory': 'フォルダー',
+  'properties.size_unavailable': 'サイズを取得できません',
+  'properties.size_disabled': '無効',
 
   // ── 打开方式弹窗 ──
   'open_with.title': 'プログラムから開く',
@@ -146,6 +148,8 @@ const jaJP = {
   'settings.marquee_text': 'スクロールテキスト',
   'settings.show_home_storage': 'ホームのストレージ使用量を表示',
   'settings.file_preview': 'ファイルプレビュー',
+  'settings.calculate_dir_size': 'ディレクトリサイズを計算',
+  'settings.calculate_dir_size_desc': 'オフにするとサイズ計算のディレクトリ走査をスキップし、ディスク負荷を軽減します',
   'settings.default_file_manager': '既定のファイルマネージャー',
   'settings.default_file_manager_desc': 'HoshinekoFM でフォルダーを開く',
   'settings.is_default_file_manager': 'HoshinekoFM は既定のファイルマネージャーです',

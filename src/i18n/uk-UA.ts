@@ -160,6 +160,8 @@ const ukUA = {
   'properties.mode_hint': '3 вісімкові цифри, напр. 755',
   'properties.type': 'Тип:',
   'properties.directory': 'Каталог',
+  'properties.size_unavailable': 'Розмір недоступний',
+  'properties.size_disabled': 'Вимкнено',
 
   // ── 打开方式弹窗 ──
   'open_with.title': 'Відкрити за допомогою...',
@@ -185,6 +187,8 @@ const ukUA = {
   'settings.marquee_text': 'Біжучий текст',
   'settings.show_home_storage': 'Показувати заповнення домашнього сховища',
   'settings.file_preview': 'Попередній перегляд файлів',
+  'settings.calculate_dir_size': 'Обчислювати розмір папок',
+  'settings.calculate_dir_size_desc': 'Вимкніть, щоб не обходити папки для обчислення розміру та знизити навантаження на диск',
   'settings.default_file_manager': 'Файловий менеджер за замовчуванням',
   'settings.default_file_manager_desc': 'Відкривати папки в HoshinekoFM',
   'settings.is_default_file_manager': 'HoshinekoFM — файловий менеджер за замовчуванням',

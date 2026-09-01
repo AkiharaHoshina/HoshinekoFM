@@ -199,6 +199,9 @@ export interface IElectronAPI {
     /** 设置 inode/directory 默认处理程序（'*.desktop' 白名单；设为
      *  HoshinekoFM.desktop 时先安装用户级桌面入口） */
     setDirMimeHandler: (handler: string) => Promise<{ success: boolean; error?: string }>;
+    /** 清除本应用 inode/directory 默认关联（无恢复记录时的兜底）：
+     *  从用户级 mimeapps.list 移除关联行，回落系统级默认 */
+    clearDirMimeHandler: () => Promise<{ success: boolean; changed?: boolean; error?: string }>;
     /**
      * 一键安装系统集成（幂等脚本）：root 级经 pkexec（portal 配置 +
      * D-Bus 激活文件），用户级写 portals.conf preferred 项 + 重启 portal
@@ -266,7 +269,16 @@ export interface IElectronAPI {
     /** 用系统默认浏览器打开外部 http/https 链接 */
     openExternal: (url: string) => Promise<boolean>;
     search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string }) => Promise<IFile[]>;
-    getDirectorySize: (path: string) => Promise<number>;
+    /**
+     * 计算目录总大小（后端 `du -sb`）。
+     * 并发策略：同一时刻只允许一个 du——新请求到达（目录切换）会杀掉旧
+     * du（旧请求以 KILLED 返回）；单次超过 10s 杀掉并返回 TIMEOUT。
+     * 失败返回 `{ success: false, code }`，调用方显示「无法获取」。
+     */
+    getDirectorySize: (path: string) => Promise<
+      | { success: true; size: number }
+      | { success: false; code: 'TIMEOUT' | 'KILLED' | 'FAILED' }
+    >;
     setIcon: (iconType: string) => Promise<void>;
     /**
      * 界面缩放：设置本窗口的整页缩放（zoom factor，范围 0.5–2.0）。
