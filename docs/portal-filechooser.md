@@ -61,6 +61,23 @@ Hoshineko 的内置文件选择器可作为 **xdg-desktop-portal 的 FileChooser
        'current_filter': <('docx', [(0, '*.docx')])>}"
    ```
 
+## 卸载
+
+1. **一键卸载（推荐）**：设置 → 行为 →「系统集成」→「卸载 Portal 集成」（已安装时按钮自动变为卸载；经 pkexec 授权移除 root 级文件）；或直接运行 `scripts/system-integration/uninstall.sh`。
+
+2. **手动（等价）**：
+
+   ```bash
+   sudo rm -f /usr/share/xdg-desktop-portal/portals/hoshineko.portal
+   sudo rm -f /usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.hoshineko.service
+   # FileManager1 为通用总线名，确认内容属于本应用后再删：
+   # sudo rm -f /usr/share/dbus-1/services/org.freedesktop.FileManager1.service
+   # 移除 portals.conf 中的 preferred=hoshineko 行（无剩余内容时删除整个文件）
+   systemctl --user restart xdg-desktop-portal.service
+   ```
+
+   > `xdg-mime inode/directory` 的默认处理程序关联不受卸载影响（「设为默认文件管理器」是独立设置，可单独恢复）。
+
 ## 注意
 
 - 多实例：后端以 DO_NOT_QUEUE 注册总线名，已有一个实例持有时后续实例静默跳过（不会抢名）。

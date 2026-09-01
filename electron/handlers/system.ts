@@ -913,7 +913,8 @@ export function registerSystemHandlers() {
 
   /**
    * 系统集成状态检测：portal 配置、两个 D-Bus 激活文件与 portals.conf
-   * 是否存在（设置内显示安装状态）。
+   * 是否存在（设置内显示安装状态）。portalsConf 为内容检测：文件里
+   * 是否包含 preferred=hoshineko 项（仅存在文件不算已配置）。
    */
   ipcMain.handle('system:get-system-integration-status', async () => {
     const exists = async (p: string) => {
@@ -925,13 +926,96 @@ export function registerSystemHandlers() {
       }
     };
     const home = os.homedir();
+    let portalsConf = false;
+    try {
+      const content = await fs.readFile(
+        path.join(home, '.config', 'xdg-desktop-portal', 'portals.conf'),
+        'utf-8',
+      );
+      portalsConf = content.includes('org.freedesktop.impl.portal.FileChooser=hoshineko');
+    } catch {
+      portalsConf = false;
+    }
     return {
       portalConfig: await exists('/usr/share/xdg-desktop-portal/portals/hoshineko.portal'),
       fileManager1Service: await exists('/usr/share/dbus-1/services/org.freedesktop.FileManager1.service'),
       portalService: await exists('/usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.hoshineko.service'),
-      portalsConf: await exists(path.join(home, '.config', 'xdg-desktop-portal', 'portals.conf')),
+      portalsConf,
     };
   });
+
+  /**
+   * 运行系统集成脚本（install.sh / uninstall.sh）并收集输出。
+   * 打包版脚本与 packaging 配置经 asarUnpack 解包到
+   * `resources/app.asar.unpacked`（spawn 不能执行 asar 内文件，
+   * 且 bash 需要真实文件系统里的 packaging 目录）。
+   *
+   * AppImage 经 FUSE 挂载运行时，挂载点对 root 不可见：pkexec 以
+   * root 重入执行脚本会 EACCES。因此先把脚本与 packaging 复制到
+   * 真实文件系统的临时目录（/tmp，root 可访问），脚本执行结束后清理。
+   *
+   * @param scriptName - scripts/system-integration 下的脚本文件名
+   * @param args - 传给脚本的参数（[] = 完整执行含 pkexec 重入）
+   */
+  const runIntegrationScript = async (
+    scriptName: string,
+    args: string[],
+  ): Promise<{ success: boolean; code?: string; output: string; error: string }> => {
+    // 开发分支用编译产物 __dirname 锚定仓库根（dist-electron/handlers →
+    // 仓库根）：e2e harness 里 app.getAppPath() 是 scripts/e2e，不能直接用。
+    const baseDir = app.isPackaged
+      ? path.join(process.resourcesPath, 'app.asar.unpacked')
+      : path.join(__dirname, '..', '..');
+    const srcScript = path.join(baseDir, 'scripts', 'system-integration', scriptName);
+    const srcPackaging = path.join(baseDir, 'packaging');
+    try {
+      await fs.access(srcScript);
+    } catch {
+      return { success: false, code: 'NO_SCRIPT', output: '', error: `${scriptName} 不存在` };
+    }
+    const runDir = await fs
+      .mkdtemp(path.join(os.tmpdir(), 'hoshineko-integration-'))
+      .catch(() => null);
+    if (runDir === null) {
+      return { success: false, code: 'NO_SCRIPT', output: '', error: '创建临时目录失败' };
+    }
+    try {
+      // 源脚本自带执行位，fs.cp 默认保留源文件 mode（勿传 mode 选项：
+      // Node 22 对 fs.cp 的 mode 校验会拒绝 0o755 这类完整权限值）
+      await fs.cp(srcScript, path.join(runDir, scriptName));
+      await fs.cp(srcPackaging, path.join(runDir, 'packaging'), { recursive: true });
+    } catch (e) {
+      void fs.rm(runDir, { recursive: true, force: true }).catch(() => { /* 清理失败忽略 */ });
+      return {
+        success: false,
+        code: 'NO_SCRIPT',
+        output: '',
+        error: `复制 ${scriptName} 到临时目录失败：${getExecError(e).message}`,
+      };
+    }
+    const scriptPath = path.join(runDir, scriptName);
+    const packagingDir = path.join(runDir, 'packaging');
+    /** 清理临时目录（脚本执行结束后调用，IPC 返回前保证完成） */
+    const cleanup = () =>
+      fs.rm(runDir, { recursive: true, force: true }).catch(() => { /* 清理失败忽略 */ });
+    return new Promise((resolve) => {
+      const child = spawn(scriptPath, args, {
+        env: { ...process.env, HOSHINEKO_PACKAGING_DIR: packagingDir },
+      });
+      let output = '';
+      let error = '';
+      child.stdout.on('data', (d) => (output += String(d)));
+      child.stderr.on('data', (d) => (error += String(d)));
+      child.on('error', (e) => {
+        void cleanup().finally(() => resolve({ success: false, output, error: e.message }));
+      });
+      child.on('close', (code) => {
+        void cleanup().finally(() =>
+          resolve({ success: code === 0, code: code === 0 ? undefined : 'SCRIPT_FAILED', output, error }),
+        );
+      });
+    });
+  };
 
   /**
    * 一键安装系统集成（幂等脚本）：
@@ -941,31 +1025,18 @@ export function registerSystemHandlers() {
    * @param userOnly - 仅执行用户级部分（无 polkit 环境降级 / 测试用）
    */
   ipcMain.handle('system:install-system-integration', async (_event, userOnly: unknown) => {
-    const scriptPath = app.isPackaged
-      ? path.join(process.resourcesPath, 'scripts', 'system-integration', 'install.sh')
-      : path.join(app.getAppPath(), 'scripts', 'system-integration', 'install.sh');
-    const packagingDir = app.isPackaged
-      ? path.join(process.resourcesPath, 'packaging')
-      : path.join(app.getAppPath(), 'packaging');
-    try {
-      await fs.access(scriptPath);
-    } catch {
-      return { success: false, code: 'NO_SCRIPT', output: '', error: 'install.sh 不存在' };
-    }
-    const args = userOnly === true ? ['--user-only'] : [];
-    return await new Promise<{ success: boolean; code?: string; output: string; error: string }>((resolve) => {
-      const child = spawn(scriptPath, args, {
-        env: { ...process.env, HOSHINEKO_PACKAGING_DIR: packagingDir },
-      });
-      let output = '';
-      let error = '';
-      child.stdout.on('data', (d) => (output += String(d)));
-      child.stderr.on('data', (d) => (error += String(d)));
-      child.on('error', (e) => resolve({ success: false, output, error: e.message }));
-      child.on('close', (code) => {
-        resolve({ success: code === 0, code: code === 0 ? undefined : 'SCRIPT_FAILED', output, error });
-      });
-    });
+    return runIntegrationScript('install.sh', userOnly === true ? ['--user-only'] : []);
+  });
+
+  /**
+   * 一键卸载系统集成（幂等脚本，install.sh 的逆操作）：
+   * - root 级：移除 portal 配置 + D-Bus 激活文件 → 经 pkexec 授权；
+   * - 用户级：移除 portals.conf preferred 项、portal 服务重启。
+   *
+   * @param userOnly - 仅执行用户级部分（无 polkit 环境降级 / 测试用）
+   */
+  ipcMain.handle('system:uninstall-system-integration', async (_event, userOnly: unknown) => {
+    return runIntegrationScript('uninstall.sh', userOnly === true ? ['--user-only'] : []);
   });
   /**
    * 设置 inode/directory 的默认处理程序（xdg-mime default，写用户级

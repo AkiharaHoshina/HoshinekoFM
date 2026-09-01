@@ -161,6 +161,9 @@ const koKP = {
   'settings.install_integration': 'Portal 통합 설치',
   'settings.integration_installed': '시스템 통합 설치 완료',
   'settings.integration_failed': '시스템 통합 설치 실패',
+  'settings.uninstall_integration': 'Portal 통합 제거',
+  'settings.integration_uninstalled': '시스템 통합 제거됨',
+  'settings.integration_uninstall_failed': '시스템 통합 제거 실패',
   'settings.about': '정보',
   'settings.version': '버전',
 

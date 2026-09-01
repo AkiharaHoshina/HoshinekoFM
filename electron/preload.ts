@@ -71,6 +71,8 @@ contextBridge.exposeInMainWorld('electron', {
   setDirMimeHandler: (handler: string) => ipcRenderer.invoke('system:set-dir-mime-handler', handler),
   /** 系统集成一键安装（portal 配置 + D-Bus 激活文件，经 pkexec 授权） */
   installSystemIntegration: (userOnly?: boolean) => ipcRenderer.invoke('system:install-system-integration', userOnly ?? false),
+  /** 系统集成一键卸载（install.sh 的逆操作，经 pkexec 授权移除 root 级文件） */
+  uninstallSystemIntegration: (userOnly?: boolean) => ipcRenderer.invoke('system:uninstall-system-integration', userOnly ?? false),
   getSystemIntegrationStatus: () => ipcRenderer.invoke('system:get-system-integration-status'),
   /** 自定义标题栏窗口控制 */
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),

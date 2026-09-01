@@ -160,6 +160,9 @@ const zhCN = {
   'settings.install_integration': '安装 Portal 集成',
   'settings.integration_installed': '系统集成安装完成',
   'settings.integration_failed': '系统集成安装失败',
+  'settings.uninstall_integration': '卸载 Portal 集成',
+  'settings.integration_uninstalled': '系统集成已卸载',
+  'settings.integration_uninstall_failed': '系统集成卸载失败',
   'settings.about': '关于',
   'settings.version': '版本',
 

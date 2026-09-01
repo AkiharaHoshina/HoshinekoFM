@@ -1,6 +1,9 @@
 .settings-content {
   padding: 0 8px;
-  min-width: 320px;
+  /* md-dialog 上限 560px - 48px（slot 左右各 24px 内边距）= 512px：
+   * 保证长描述（如系统集成说明）换行完整显示，且安装/未安装状态
+   * 对话框宽度保持一致（不随状态切换忽宽忽窄）。 */
+  min-width: 512px;
 }
 
 .settings-section {
@@ -57,6 +60,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 长描述副标题（系统集成描述等）：换行完整显示，不做省略 */
+.settings-row__sub--wrap {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  max-width: none;
 }
 
 .settings-view-mode {

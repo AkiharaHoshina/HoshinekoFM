@@ -160,6 +160,9 @@ const jaJP = {
   'settings.install_integration': 'Portal 統合をインストール',
   'settings.integration_installed': 'システム統合のインストールが完了しました',
   'settings.integration_failed': 'システム統合のインストールに失敗しました',
+  'settings.uninstall_integration': 'Portal 統合をアンインストール',
+  'settings.integration_uninstalled': 'システム統合をアンインストールしました',
+  'settings.integration_uninstall_failed': 'システム統合のアンインストールに失敗しました',
   'settings.about': 'アプリについて',
   'settings.version': 'バージョン',
 

@@ -160,6 +160,9 @@ const zhHK = {
   'settings.install_integration': '安裝 Portal 整合',
   'settings.integration_installed': '系統整合安裝完成',
   'settings.integration_failed': '系統整合安裝失敗',
+  'settings.uninstall_integration': '移除 Portal 整合',
+  'settings.integration_uninstalled': '系統整合已移除',
+  'settings.integration_uninstall_failed': '系統整合移除失敗',
   'settings.about': '關於',
   'settings.version': '版本',
 

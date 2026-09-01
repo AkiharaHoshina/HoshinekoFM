@@ -171,6 +171,9 @@ const enUS = {
   'settings.install_integration': 'Install portal integration',
   'settings.integration_installed': 'System integration installed',
   'settings.integration_failed': 'System integration installation failed',
+  'settings.uninstall_integration': 'Uninstall portal integration',
+  'settings.integration_uninstalled': 'System integration uninstalled',
+  'settings.integration_uninstall_failed': 'Failed to uninstall system integration',
   'settings.about': 'About',
   'settings.version': 'Version',
 

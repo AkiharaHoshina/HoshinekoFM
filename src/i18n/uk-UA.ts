@@ -199,6 +199,9 @@ const ukUA = {
   'settings.install_integration': 'Встановити інтеграцію portal',
   'settings.integration_installed': 'Системну інтеграцію встановлено',
   'settings.integration_failed': 'Не вдалося встановити системну інтеграцію',
+  'settings.uninstall_integration': 'Видалити інтеграцію portal',
+  'settings.integration_uninstalled': 'Системну інтеграцію видалено',
+  'settings.integration_uninstall_failed': 'Не вдалося видалити системну інтеграцію',
   'settings.about': 'Про застосунок',
   'settings.version': 'Версія',
 

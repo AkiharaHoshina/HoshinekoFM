@@ -38,7 +38,8 @@ interface SettingsDialogProps {
   canRestoreDefaultFm: boolean;
   onSetDefaultFm: () => void;
   onRestoreDefaultFm: () => void;
-  /** 系统集成安装状态（portal 配置 / D-Bus 激活文件 / portals.conf） */
+  /** 系统集成安装状态（portal 配置 / D-Bus 激活文件 / portals.conf
+   *  preferred 项；portalsConf 为内容检测，全部就绪时显示卸载按钮） */
   integrationStatus: {
     portalConfig: boolean;
     fileManager1Service: boolean;
@@ -47,6 +48,7 @@ interface SettingsDialogProps {
   } | null;
   integrationBusy: boolean;
   onInstallIntegration: () => void;
+  onUninstallIntegration: () => void;
   /** 标题栏模式（null = 跟随系统，true/false = 手动开/关） */
   titleBarMode: boolean | null;
   onTitleBarChange: (mode: boolean | null) => void;
@@ -90,6 +92,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   integrationStatus,
   integrationBusy,
   onInstallIntegration,
+  onUninstallIntegration,
   titleBarMode,
   onTitleBarChange,
   showFullPathTitle,
@@ -99,6 +102,18 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   themeSeedColor,
 }) => {
   const langOptions = getLanguageOptions();
+
+  /**
+   * 系统集成是否已完整安装（portal 配置 + 两个 D-Bus 激活文件 +
+   * portals.conf preferred 项）。全部就绪时按钮显示卸载，否则显示安装。
+   */
+  const isIntegrationInstalled = Boolean(
+    integrationStatus &&
+      integrationStatus.portalConfig &&
+      integrationStatus.fileManager1Service &&
+      integrationStatus.portalService &&
+      integrationStatus.portalsConf,
+  );
 
   /**
    * 应用版本号（来自主进程 app.getVersion()）。
@@ -416,8 +431,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             )}
           </div>
 
-          {/* 系统集成一键安装：portal 配置 + D-Bus 激活文件（需授权）；
-              说明本设置做不到的部分（Firefox 手动开关） */}
+          {/* 系统集成一键安装/卸载：portal 配置 + D-Bus 激活文件（需授权）；
+              已安装时按钮变为卸载，避免重复安装的误导性失败提示 */}
           <div className="settings-row">
             <div className="settings-row__start">
               <Icon name="widgets" />
@@ -425,20 +440,22 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 <div className="settings-row__label">
                   {t("settings.system_integration")}
                 </div>
-                <div className="settings-row__sub">
-                  {integrationStatus &&
-                    integrationStatus.portalConfig &&
-                    integrationStatus.fileManager1Service &&
-                    integrationStatus.portalService &&
-                    integrationStatus.portalsConf
+                <div className="settings-row__sub settings-row__sub--wrap">
+                  {isIntegrationInstalled
                     ? t("settings.system_integration_done")
                     : t("settings.system_integration_desc")}
                 </div>
               </div>
             </div>
-            <Button variant="outlined" disabled={integrationBusy} onClick={onInstallIntegration}>
-              {t("settings.install_integration")}
-            </Button>
+            {isIntegrationInstalled ? (
+              <Button variant="outlined" disabled={integrationBusy} onClick={onUninstallIntegration}>
+                {t("settings.uninstall_integration")}
+              </Button>
+            ) : (
+              <Button variant="outlined" disabled={integrationBusy} onClick={onInstallIntegration}>
+                {t("settings.install_integration")}
+              </Button>
+            )}
           </div>
         </div>
 

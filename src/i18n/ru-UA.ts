@@ -202,6 +202,9 @@ const ruUA = {
   'settings.install_integration': 'Установить интеграцию portal',
   'settings.integration_installed': 'Системная интеграция установлена',
   'settings.integration_failed': 'Не удалось установить системную интеграцию',
+  'settings.uninstall_integration': 'Удалить интеграцию portal',
+  'settings.integration_uninstalled': 'Системная интеграция удалена',
+  'settings.integration_uninstall_failed': 'Не удалось удалить системную интеграцию',
   'settings.about': 'О приложении',
   'settings.version': 'Версия',
 

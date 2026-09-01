@@ -160,6 +160,9 @@ const zhTW = {
   'settings.install_integration': '安裝 Portal 整合',
   'settings.integration_installed': '系統整合安裝完成',
   'settings.integration_failed': '系統整合安裝失敗',
+  'settings.uninstall_integration': '解除安裝 Portal 整合',
+  'settings.integration_uninstalled': '系統整合已解除安裝',
+  'settings.integration_uninstall_failed': '系統整合解除安裝失敗',
   'settings.about': '關於',
   'settings.version': '版本',
 

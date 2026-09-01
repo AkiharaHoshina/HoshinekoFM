@@ -66,6 +66,10 @@
       "packaging/**/*",
       "scripts/system-integration/**/*"
     ],
+    "asarUnpack": [
+      "packaging/**/*",
+      "scripts/system-integration/**/*"
+    ],
     "electronDownload": {
       "mirror": "https://npmmirror.com/mirrors/electron/"
     },

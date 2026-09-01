@@ -501,7 +501,8 @@ function AppContent() {
     null,
   );
 
-  /** 系统集成安装状态（portal 配置 / D-Bus 激活文件 / portals.conf） */
+  /** 系统集成安装状态（portal 配置 / D-Bus 激活文件 / portals.conf
+   *  preferred 项；portalsConf 为内容检测） */
   const [integrationStatus, setIntegrationStatus] = useState<{
     portalConfig: boolean;
     fileManager1Service: boolean;
@@ -554,6 +555,24 @@ function AppContent() {
         if (status) setIntegrationStatus(status);
       } else {
         showToast(t("settings.integration_failed"), "error");
+      }
+    } finally {
+      setIntegrationBusy(false);
+    }
+  }, [integrationBusy]);
+
+  /** 一键卸载系统集成（移除 portal 配置 + D-Bus 激活文件，经 pkexec 授权） */
+  const handleUninstallIntegration = useCallback(async () => {
+    if (integrationBusy) return;
+    setIntegrationBusy(true);
+    try {
+      const res = await window.electron?.uninstallSystemIntegration();
+      if (res?.success) {
+        showToast(t("settings.integration_uninstalled"), "success");
+        const status = await window.electron?.getSystemIntegrationStatus();
+        if (status) setIntegrationStatus(status);
+      } else {
+        showToast(t("settings.integration_uninstall_failed"), "error");
       }
     } finally {
       setIntegrationBusy(false);
@@ -1546,6 +1565,7 @@ function AppContent() {
             integrationStatus={integrationStatus}
             integrationBusy={integrationBusy}
             onInstallIntegration={() => void handleInstallIntegration()}
+            onUninstallIntegration={() => void handleUninstallIntegration()}
             titleBarMode={titleBarMode}
             onTitleBarChange={setTitleBarMode}
             showFullPathTitle={showFullPathTitle}
