@@ -25,34 +25,62 @@ import { openPickerWindow, type PickerConfig, type PickerFilter } from './picker
 export const PORTAL_BUS_NAME = 'org.freedesktop.impl.portal.desktop.hoshineko';
 const FILE_CHOOSER_PATH = '/org/freedesktop/portal/desktop';
 const FILE_CHOOSER_IFACE = 'org.freedesktop.impl.portal.FileChooser';
-const REQUEST_IFACE = 'org.freedesktop.impl.portal.Request';
 
 const { Interface } = dbus.interface;
 
-/** 每个待决 portal 请求（handle 对象路径 → 状态） */
-interface PortalRequest {
-  /** 请求对象接口实例（unexport 用） */
-  iface: InstanceType<typeof Interface>;
-  /** 选择器窗口（Request.Close 时关闭） */
-  win: BrowserWindow | null;
-  /** 结果已发送标志（防重复 Response） */
-  done: boolean;
-}
-const portalRequests = new Map<string, PortalRequest>();
-
-let requestCounter = 0;
 
 /** 路径 → file:// URI（portal 约定：结果必须为 file:// URI） */
 function pathToUri(p: string): string {
   return 'file://' + p.split('/').map((seg, i) => (i === 0 ? '' : encodeURIComponent(seg))).join('/');
 }
 
+/** 文件名 → 大小写不敏感正则（portal 的 glob 过滤器匹配用） */
+const globRegexCache = new Map<string, RegExp | null>();
+
+/**
+ * 把 portal 的 glob（`*.ext` / `*.[jJ][pP][gG]` 等，`*` 前缀约定）转成
+ * 后缀匹配的正则源（大小写不敏感）：`*` → `.*`、`?` → `.`、
+ * `[...]` 字符类原样保留、其余正则特殊字符转义。
+ * 前缀 `*` 表示「任意前缀」——正则**只锚定结尾**（如 `*.[jJ][pP][gG]`
+ * → `\.[jJ][pP][gG]$`），不能锚定开头。
+ * 纯 `*`（匹配全部）返回 null——等价于「所有文件」，跳过。
+ */
+function globToRegexSource(glob: string): string | null {
+  const body = glob.replace(/^\*/, '');
+  if (!body) return null;
+  let re = '';
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch === '*') re += '.*';
+    else if (ch === '?') re += '.';
+    else if (ch === '[') {
+      const end = body.indexOf(']', i);
+      if (end === -1) re += '\\[';
+      else {
+        re += body.slice(i, end + 1);
+        i = end;
+      }
+    } else if (/[.^$+{}()|\\]/.test(ch)) re += '\\' + ch;
+    else re += ch;
+  }
+  return `${re}$`;
+}
+
+/** 编译（带缓存）glob 为大小写不敏感正则；纯 `*` 返回 null */
+function globToRegex(glob: string): RegExp | null {
+  if (!globRegexCache.has(glob)) {
+    const source = globToRegexSource(glob);
+    globRegexCache.set(glob, source ? new RegExp(source, 'i') : null);
+  }
+  return globRegexCache.get(glob) ?? null;
+}
+
 /**
  * 把 portal 的 filters 选项（a(sa(us))：每项为 (名称, (类型, 模式) 对数组)）
- * 翻译成 PickerFilter[]。类型 0 = glob（`*.docx`）、类型 1 = MIME
- * （`image/png` 或 `image/*`）。**过滤器 id 使用 portal 侧的名称**，
- * 供 current_filter 按名匹配；显示名由前端描述体系按 extensions[0]
- * 生成（portal 过滤器不携带显示标签）。
+ * 翻译成 PickerFilter[]。类型 0 = glob（含字符类如 `*.[jJ][pP][gG]`，转
+ * 大小写不敏感正则）、类型 1 = MIME（`image/png` 或 `image/*`）。
+ * 过滤器 id 与显示名都取 portal 侧名称（Firefox 发送本地化名称，
+ * 直接作 label）；纯 `*` 的「匹配全部」过滤被跳过（等价所有文件）。
  */
 function mapPortalFilters(raw: unknown): PickerFilter[] | undefined {
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
@@ -62,7 +90,7 @@ function mapPortalFilters(raw: unknown): PickerFilter[] | undefined {
     const name = item[0];
     const pairs = item[1];
     if (!Array.isArray(pairs)) continue;
-    const extensions: string[] = [];
+    const patterns: string[] = [];
     const mimes: string[] = [];
     for (const pair of pairs) {
       if (!Array.isArray(pair) || pair.length < 2) continue;
@@ -70,18 +98,24 @@ function mapPortalFilters(raw: unknown): PickerFilter[] | undefined {
       const pattern = pair[1];
       if (typeof pattern !== 'string') continue;
       if (kind === 0) {
-        const glob = pattern.replace(/^\*/, '').toLowerCase();
-        if (glob.startsWith('.') && /^\.[A-Za-z0-9_+-]+$/.test(glob)) extensions.push(glob);
+        const re = globToRegex(pattern);
+        if (re) patterns.push(re.source);
       } else if (kind === 1 && /^[A-Za-z0-9.+-]+\/(\*|[A-Za-z0-9.+-]+)$/.test(pattern)) {
         mimes.push(pattern);
       }
     }
-    if (extensions.length > 0 || mimes.length > 0) {
-      const id = typeof name === 'string' && name && !filters.some((f) => f.id === name)
-        ? name
-        : `f${filters.length}`;
-      filters.push({ id, extensions, ...(mimes.length > 0 ? { mimes } : {}) });
-    }
+    if (patterns.length === 0 && mimes.length === 0) continue;
+    const label = typeof name === 'string' && name ? name : undefined;
+    const id = label && !filters.some((f) => f.id === label)
+      ? label
+      : `f${filters.length}`;
+    filters.push({
+      id,
+      ...(label ? { label } : {}),
+      extensions: [],
+      ...(patterns.length > 0 ? { patterns } : {}),
+      ...(mimes.length > 0 ? { mimes } : {}),
+    });
   }
   return filters.length > 0 ? filters : undefined;
 }
@@ -114,29 +148,13 @@ function mapPortalOptions(options: Record<string, unknown>): PickerConfig {
   return config;
 }
 
-/** 发送 Request 的 Response 信号（ua{sv}） */
-function sendResponse(bus: dbus.MessageBus, handlePath: string, code: number, results: Record<string, dbus.Variant>) {
-  const message = dbus.Message.newSignal(handlePath, REQUEST_IFACE, 'Response', 'ua{sv}');
-  message.body = [code, results];
-  bus.send(message);
-}
-
-/** 结束一个 portal 请求（unexport 请求对象、发 Response、清理状态） */
-function finishRequest(bus: dbus.MessageBus, handlePath: string, code: number, results: Record<string, dbus.Variant>) {
-  const req = portalRequests.get(handlePath);
-  if (!req || req.done) return;
-  req.done = true;
-  portalRequests.delete(handlePath);
-  try {
-    bus.unexport(handlePath, req.iface);
-  } catch {
-    /* 已注销：忽略 */
-  }
-  sendResponse(bus, handlePath, code, results);
-}
+/** 结束请求的结果：0 = 成功（含 uris），1 = 用户取消 */
+type OpenResult = [number, Record<string, dbus.Variant>];
 
 /**
- * 注册 portal FileChooser 后端。
+ * 注册 portal FileChooser 后端（**xdg-desktop-portal ≥ 1.19 新协议**：
+ * OpenFile 直接返回 `(u, a{sv})`——响应码 + 结果字典，无 Request 对象
+ * 往返、无 Response 信号）。
  * 会话总线不可用、总线名被占用（多实例）时静默跳过并返回 false。
  *
  * @param opts.busName - 总线名覆盖（e2e 测试用独立名称避免与运行中的
@@ -165,81 +183,36 @@ export async function setupPortalFileChooser(
     return false;
   }
 
-  /** org.freedesktop.impl.portal.Request 实现（Close → 关闭选择器窗口 = 取消） */
-  class PortalRequestInterface extends Interface {
-    private readonly onClose: () => void;
-
-    constructor(handlePath: string, onClose: () => void) {
-      super(REQUEST_IFACE);
-      this.onClose = onClose;
-      // 供日志/调试用
-      void handlePath;
-    }
-
-    async Close() {
-      this.onClose();
-    }
-
-    /** Response 信号（ua{sv}）：仅用于接口元数据声明（Introspect/订阅匹配），
-     *  实际经 Message.newSignal + bus.send 发射 */
-    Response(code: number, results: Record<string, unknown>) {
-      void code;
-      void results;
-    }
-  }
-  PortalRequestInterface.configureMembers({
-    methods: { Close: { inSignature: '', outSignature: '' } },
-    signals: { Response: { signature: 'ua{sv}' } },
-  });
-
-  /** org.freedesktop.impl.portal.FileChooser 实现 */
+  /** org.freedesktop.impl.portal.FileChooser 实现（新协议：直接返回结果） */
   class FileChooserBackend extends Interface {
-    private readonly busRef: dbus.MessageBus;
     private readonly createPickerRef: typeof createPicker;
 
-    constructor(busRef: dbus.MessageBus, createPickerRef: typeof createPicker) {
+    constructor(createPickerRef: typeof createPicker) {
       super(FILE_CHOOSER_IFACE);
-      this.busRef = busRef;
       this.createPickerRef = createPickerRef;
     }
 
-    async OpenFile(handle: string, appId: string, parentWindow: string, title: string, options: Record<string, unknown>) {
-      if (typeof handle !== 'string' || !handle.startsWith('/')) {
-        throw new dbus.DBusError('org.freedesktop.DBus.Error.InvalidArgs', 'Invalid handle path');
+    /** 打开选择器并等待结果；取消/关窗 → [1, {}] */
+    private async pick(config: PickerConfig): Promise<OpenResult> {
+      const result = await openPickerWindow(config, undefined, this.createPickerRef);
+      if (result === null) {
+        return [1, {}];
       }
-      const config = mapPortalOptions(options ?? {});
-      const uniquePath = `${handle}/${++requestCounter}`;
+      return [
+        0,
+        {
+          uris: new dbus.Variant('as', result.map(pathToUri)),
+          choices: new dbus.Variant('a(ss)', []),
+        },
+      ];
+    }
 
-      let reqWin: BrowserWindow | null = null;
-      const iface = new PortalRequestInterface(uniquePath, () => {
-        if (reqWin && !reqWin.isDestroyed()) reqWin.close();
-        // 关窗 → picker 的 closed 事件 → resolve(null) → Response(1,{})
-      });
-      bus.export(uniquePath, iface);
-      portalRequests.set(uniquePath, { iface, win: null, done: false });
-
-      void (async () => {
-        const result = await openPickerWindow(
-          config,
-          undefined,
-          this.createPickerRef,
-          (win) => {
-            reqWin = win;
-            const rec = portalRequests.get(uniquePath);
-            if (rec) rec.win = win;
-          },
-        );
-        if (result === null) {
-          finishRequest(this.busRef, uniquePath, 1, {});
-        } else {
-          finishRequest(this.busRef, uniquePath, 0, {
-            uris: new dbus.Variant('as', result.map(pathToUri)),
-            choices: new dbus.Variant('a(ss)', []),
-          });
-        }
-      })();
-
-      return uniquePath;
+    async OpenFile(handle: string, appId: string, parentWindow: string, title: string, options: Record<string, unknown>) {
+      void handle;
+      void appId;
+      void parentWindow;
+      void title;
+      return this.pick(mapPortalOptions(options ?? {}));
     }
 
     async SaveFile() {
@@ -252,14 +225,13 @@ export async function setupPortalFileChooser(
   }
   FileChooserBackend.configureMembers({
     methods: {
-      OpenFile: { inSignature: 'osssa{sv}', outSignature: 'o' },
-      SaveFile: { inSignature: 'osssa{sv}', outSignature: 'o' },
-      SaveFiles: { inSignature: 'osssa{sv}', outSignature: 'o' },
+      OpenFile: { inSignature: 'osssa{sv}', outSignature: 'ua{sv}' },
+      SaveFile: { inSignature: 'osssa{sv}', outSignature: 'ua{sv}' },
+      SaveFiles: { inSignature: 'osssa{sv}', outSignature: 'ua{sv}' },
     },
   });
 
-  const backend = new FileChooserBackend(bus, createPicker);
-  bus.export(FILE_CHOOSER_PATH, backend);
+  bus.export(FILE_CHOOSER_PATH, new FileChooserBackend(createPicker));
 
   console.log(`Portal FileChooser backend registered as ${busName}`);
   return true;

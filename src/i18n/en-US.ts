@@ -165,6 +165,12 @@ const enUS = {
   'settings.default_fm_set': 'HoshinekoFM is now the default file manager',
   'settings.default_fm_restored': 'System default restored',
   'settings.default_fm_failed': 'Failed to change the default file manager',
+  'settings.system_integration': 'System integration',
+  'settings.system_integration_desc': 'Installs the portal config and D-Bus activation files (authorization required). Firefox still needs its about:config portal switch set manually.',
+  'settings.system_integration_done': 'Portal integration installed',
+  'settings.install_integration': 'Install portal integration',
+  'settings.integration_installed': 'System integration installed',
+  'settings.integration_failed': 'System integration installation failed',
   'settings.about': 'About',
   'settings.version': 'Version',
 

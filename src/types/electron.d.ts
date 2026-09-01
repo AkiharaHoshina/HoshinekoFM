@@ -199,6 +199,25 @@ export interface IElectronAPI {
     /** 设置 inode/directory 默认处理程序（'*.desktop' 白名单；设为
      *  HoshinekoFM.desktop 时先安装用户级桌面入口） */
     setDirMimeHandler: (handler: string) => Promise<{ success: boolean; error?: string }>;
+    /**
+     * 一键安装系统集成（幂等脚本）：root 级经 pkexec（portal 配置 +
+     * D-Bus 激活文件），用户级写 portals.conf preferred 项 + 重启 portal
+     * 服务。userOnly=true 仅执行用户级（无 polkit 环境降级）。
+     * 错误码：NO_SCRIPT / SCRIPT_FAILED。
+     */
+    installSystemIntegration: (userOnly?: boolean) => Promise<{
+      success: boolean;
+      code?: 'NO_SCRIPT' | 'SCRIPT_FAILED';
+      output: string;
+      error: string;
+    }>;
+    /** 系统集成安装状态（各文件存在性） */
+    getSystemIntegrationStatus: () => Promise<{
+      portalConfig: boolean;
+      fileManager1Service: boolean;
+      portalService: boolean;
+      portalsConf: boolean;
+    }>;
     /** 自定义标题栏窗口控制（frameless 窗口） */
     minimizeWindow: () => Promise<void>;
     toggleMaximizeWindow: () => Promise<boolean>;

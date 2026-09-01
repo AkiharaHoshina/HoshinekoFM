@@ -154,6 +154,12 @@ const jaJP = {
   'settings.default_fm_set': 'HoshinekoFM を既定のファイルマネージャーに設定しました',
   'settings.default_fm_restored': 'システム既定に戻しました',
   'settings.default_fm_failed': '既定のファイルマネージャーの変更に失敗しました',
+  'settings.system_integration': 'システム統合',
+  'settings.system_integration_desc': 'portal 設定と D-Bus アクティベーションファイルをインストールします（要認証）。Firefox は about:config の portal スイッチを手動で有効にする必要があります。',
+  'settings.system_integration_done': 'Portal 統合はインストール済み',
+  'settings.install_integration': 'Portal 統合をインストール',
+  'settings.integration_installed': 'システム統合のインストールが完了しました',
+  'settings.integration_failed': 'システム統合のインストールに失敗しました',
   'settings.about': 'アプリについて',
   'settings.version': 'バージョン',
 

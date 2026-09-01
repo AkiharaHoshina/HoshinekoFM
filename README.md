@@ -149,7 +149,7 @@ Please switch to "Releases" page
 
 ## Testing
 
-End-to-end tests live in `scripts/e2e/` (12 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
+End-to-end tests live in `scripts/e2e/` (18 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
 
 ```bash
 npm run e2e                # builds first, then runs every scripts/e2e/*.test.cjs
@@ -177,14 +177,20 @@ sudo install -m 644 packaging/dbus/org.freedesktop.FileManager1.service /usr/sha
 
 ### File dialogs via xdg-desktop-portal (external apps)
 
-HoshinekoFM can serve as the `org.freedesktop.impl.portal.FileChooser` backend, so GTK/Qt apps' open dialogs use the built-in picker:
+HoshinekoFM can serve as the `org.freedesktop.impl.portal.FileChooser` backend, so GTK/Qt apps' open dialogs use the built-in picker. The easiest way is the one-click installer in Settings → Behavior → "System integration" → "Install portal integration" (asks for authorization via pkexec). It installs the portal config, both D-Bus activation files, writes the preferred-backend entry (`portals.conf`) and restarts the portal service. Alternatively, do it manually:
 
 ```bash
 sudo install -m 644 packaging/portals/hoshineko.portal /usr/share/xdg-desktop-portal/portals/
+sudo install -m 644 packaging/dbus/org.freedesktop.impl.portal.desktop.hoshineko.service /usr/share/dbus-1/services/
+sudo install -m 644 packaging/dbus/org.freedesktop.FileManager1.service /usr/share/dbus-1/services/
+mkdir -p ~/.config/xdg-desktop-portal
+printf '[preferred]\norg.freedesktop.impl.portal.FileChooser=hoshineko\n' >> ~/.config/xdg-desktop-portal/portals.conf
 systemctl --user restart xdg-desktop-portal.service
 ```
 
-Firefox: in `about:config` set `widget.use-xdg-desktop-portal.file-picker` to `1` (some versions use `widget.use-xdg-desktop-portal`). **Limitation (v1)**: only `OpenFile` is implemented — save dialogs (`SaveFile`) return NotSupported. See docs/portal-filechooser.md for details and a gdbus verification command.
+(Or run `scripts/system-integration/install.sh` from the repository — same effect, root parts via pkexec.)
+
+Firefox: in `about:config` set `widget.use-xdg-desktop-portal.file-picker` to `1` (some versions use `widget.use-xdg-desktop-portal`) — this cannot be automated from the settings. **Limitation (v1)**: only `OpenFile` is implemented — save dialogs (`SaveFile`) return NotSupported. See docs/portal-filechooser.md for details and a gdbus verification command.
 
 ## License
 

@@ -69,6 +69,9 @@ contextBridge.exposeInMainWorld('electron', {
   /** 默认文件管理器：查询/设置 inode/directory 的默认处理程序（xdg-mime） */
   getDirMimeHandler: () => ipcRenderer.invoke('system:get-dir-mime-handler'),
   setDirMimeHandler: (handler: string) => ipcRenderer.invoke('system:set-dir-mime-handler', handler),
+  /** 系统集成一键安装（portal 配置 + D-Bus 激活文件，经 pkexec 授权） */
+  installSystemIntegration: (userOnly?: boolean) => ipcRenderer.invoke('system:install-system-integration', userOnly ?? false),
+  getSystemIntegrationStatus: () => ipcRenderer.invoke('system:get-system-integration-status'),
   /** 自定义标题栏窗口控制 */
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggle-maximize'),

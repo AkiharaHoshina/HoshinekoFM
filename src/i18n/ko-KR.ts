@@ -155,6 +155,12 @@ const koKR = {
   'settings.default_fm_set': 'HoshinekoFM을 기본 파일 관리자로 설정했습니다',
   'settings.default_fm_restored': '시스템 기본값으로 복원했습니다',
   'settings.default_fm_failed': '기본 파일 관리자 변경에 실패했습니다',
+  'settings.system_integration': '시스템 통합',
+  'settings.system_integration_desc': 'portal 설정과 D-Bus 활성화 파일을 설치합니다（권한 필요）. Firefox는 about:config의 portal 스위치를 수동으로 켜야 합니다.',
+  'settings.system_integration_done': 'Portal 통합 설치됨',
+  'settings.install_integration': 'Portal 통합 설치',
+  'settings.integration_installed': '시스템 통합 설치 완료',
+  'settings.integration_failed': '시스템 통합 설치 실패',
   'settings.about': '정보',
   'settings.version': '버전',
 

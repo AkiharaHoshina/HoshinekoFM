@@ -18,6 +18,8 @@ export interface PickerFilter {
   extensions: string[];
   /** MIME 类型列表（支持 `type/*` 通配；与 extensions 或关系） */
   mimes?: string[];
+  /** 文件名正则源列表（portal 后端 glob 过滤器转来，大小写不敏感） */
+  patterns?: string[];
   /** 主进程解析出的首扩展名 MIME（仅用于缺省 label 生成，不做匹配依据） */
   resolvedMime?: string;
 }

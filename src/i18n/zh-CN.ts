@@ -154,6 +154,12 @@ const zhCN = {
   'settings.default_fm_set': 'HoshinekoFM 已设为默认文件管理器',
   'settings.default_fm_restored': '已恢复为系统默认',
   'settings.default_fm_failed': '修改默认文件管理器失败',
+  'settings.system_integration': '系统集成',
+  'settings.system_integration_desc': '安装 portal 配置与 D-Bus 激活文件（需要授权）；Firefox 仍需手动开启 about:config 的 portal 开关。',
+  'settings.system_integration_done': 'Portal 集成已安装',
+  'settings.install_integration': '安装 Portal 集成',
+  'settings.integration_installed': '系统集成安装完成',
+  'settings.integration_failed': '系统集成安装失败',
   'settings.about': '关于',
   'settings.version': '版本',
 

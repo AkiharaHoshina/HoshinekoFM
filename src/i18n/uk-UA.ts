@@ -193,6 +193,12 @@ const ukUA = {
   'settings.default_fm_set': 'HoshinekoFM тепер файловий менеджер за замовчуванням',
   'settings.default_fm_restored': 'Системне значення відновлено',
   'settings.default_fm_failed': 'Не вдалося змінити файловий менеджер за замовчуванням',
+  'settings.system_integration': 'Системна інтеграція',
+  'settings.system_integration_desc': 'Встановлює конфігурацію portal та файли активації D-Bus (потрібна авторизація). Firefox додатково потребує ручного ввімкнення перемикача portal у about:config.',
+  'settings.system_integration_done': 'Інтеграцію portal встановлено',
+  'settings.install_integration': 'Встановити інтеграцію portal',
+  'settings.integration_installed': 'Системну інтеграцію встановлено',
+  'settings.integration_failed': 'Не вдалося встановити системну інтеграцію',
   'settings.about': 'Про застосунок',
   'settings.version': 'Версія',
 

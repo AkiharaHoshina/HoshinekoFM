@@ -24,21 +24,32 @@ Hoshineko 的内置文件选择器可作为 **xdg-desktop-portal 的 FileChooser
 
 ## 安装
 
-1. **portal 配置**（必需，root）：
+1. **一键安装（推荐）**：设置 → 行为 →「系统集成」→「安装 Portal 集成」（经 pkexec 授权）——自动完成下述全部步骤并重启 portal 服务；或直接运行 `scripts/system-integration/install.sh`。
+
+2. **手动（等价）**：
+
+   1. **portal 配置**（必需，root）：
 
    ```bash
    sudo install -m 644 packaging/portals/hoshineko.portal /usr/share/xdg-desktop-portal/portals/
    systemctl --user restart xdg-desktop-portal.service
    ```
 
-2. **D-Bus 服务激活**（可选，应用未运行时自动拉起）：
+   2. **D-Bus 服务激活**（可选，应用未运行时自动拉起）：
 
    ```bash
    # Exec 路径按实际安装位置修改
    sudo install -m 644 packaging/dbus/org.freedesktop.impl.portal.desktop.hoshineko.service /usr/share/dbus-1/services/
    ```
 
-3. 验证（应用运行中）：
+   3. **preferred 项**（确保本后端压过 gtk.portal）：
+
+   ```bash
+   mkdir -p ~/.config/xdg-desktop-portal
+   printf '[preferred]\norg.freedesktop.impl.portal.FileChooser=hoshineko\n' >> ~/.config/xdg-desktop-portal/portals.conf
+   ```
+
+4. 验证（应用运行中）：
 
    ```bash
    gdbus call --session --dest org.freedesktop.impl.portal.desktop.hoshineko \

@@ -149,7 +149,7 @@ scheme-monochrome：单色/黑白灰调。
 
 ## 测试
 
-端到端测试位于 `scripts/e2e/`（12 套用例，无测试框架——Electron 自身驱动真实构建，`sendInputEvent` 模拟输入、`executeJavaScript` 断言）：
+端到端测试位于 `scripts/e2e/`（18 套用例，无测试框架——Electron 自身驱动真实构建，`sendInputEvent` 模拟输入、`executeJavaScript` 断言）：
 
 ```bash
 npm run e2e                # 先构建，再依次运行 scripts/e2e/*.test.cjs
@@ -177,14 +177,20 @@ sudo install -m 644 packaging/dbus/org.freedesktop.FileManager1.service /usr/sha
 
 ### 文件对话框经 xdg-desktop-portal（外部程序）
 
-HoshinekoFM 可作为 `org.freedesktop.impl.portal.FileChooser` 后端——GTK/Qt 应用的「打开」对话框由内置选择器响应：
+HoshinekoFM 可作为 `org.freedesktop.impl.portal.FileChooser` 后端——GTK/Qt 应用的「打开」对话框由内置选择器响应。最简方式：设置 → 行为 →「系统集成」→「安装 Portal 集成」一键完成（经 pkexec 授权），自动安装 portal 配置、两个 D-Bus 激活文件、写入 preferred 项（portals.conf）并重启 portal 服务。也可手动执行：
 
 ```bash
 sudo install -m 644 packaging/portals/hoshineko.portal /usr/share/xdg-desktop-portal/portals/
+sudo install -m 644 packaging/dbus/org.freedesktop.impl.portal.desktop.hoshineko.service /usr/share/dbus-1/services/
+sudo install -m 644 packaging/dbus/org.freedesktop.FileManager1.service /usr/share/dbus-1/services/
+mkdir -p ~/.config/xdg-desktop-portal
+printf '[preferred]\norg.freedesktop.impl.portal.FileChooser=hoshineko\n' >> ~/.config/xdg-desktop-portal/portals.conf
 systemctl --user restart xdg-desktop-portal.service
 ```
 
-Firefox：`about:config` 将 `widget.use-xdg-desktop-portal.file-picker` 设为 `1`（部分版本为 `widget.use-xdg-desktop-portal`）。**限制（v1）**：仅实现 `OpenFile`——保存对话框（`SaveFile`）返回 NotSupported。详见 docs/portal-filechooser.md（含 gdbus 验证命令）。
+（或直接运行仓库里的 `scripts/system-integration/install.sh`，效果相同，root 部分经 pkexec。）
+
+Firefox：`about:config` 将 `widget.use-xdg-desktop-portal.file-picker` 设为 `1`（部分版本为 `widget.use-xdg-desktop-portal`）——此步无法从设置自动完成。**限制（v1）**：仅实现 `OpenFile`——保存对话框（`SaveFile`）返回 NotSupported。详见 docs/portal-filechooser.md（含 gdbus 验证命令）。
 
 ## 协议
 

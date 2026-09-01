@@ -912,6 +912,62 @@ export function registerSystemHandlers() {
   });
 
   /**
+   * 系统集成状态检测：portal 配置、两个 D-Bus 激活文件与 portals.conf
+   * 是否存在（设置内显示安装状态）。
+   */
+  ipcMain.handle('system:get-system-integration-status', async () => {
+    const exists = async (p: string) => {
+      try {
+        await fs.access(p);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const home = os.homedir();
+    return {
+      portalConfig: await exists('/usr/share/xdg-desktop-portal/portals/hoshineko.portal'),
+      fileManager1Service: await exists('/usr/share/dbus-1/services/org.freedesktop.FileManager1.service'),
+      portalService: await exists('/usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.hoshineko.service'),
+      portalsConf: await exists(path.join(home, '.config', 'xdg-desktop-portal', 'portals.conf')),
+    };
+  });
+
+  /**
+   * 一键安装系统集成（幂等脚本）：
+   * - root 级：portal 配置 + D-Bus 激活文件 → 经 pkexec 授权；
+   * - 用户级：portals.conf preferred 项、xdg-mime 关联、portal 服务重启。
+   *
+   * @param userOnly - 仅执行用户级部分（无 polkit 环境降级 / 测试用）
+   */
+  ipcMain.handle('system:install-system-integration', async (_event, userOnly: unknown) => {
+    const scriptPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'scripts', 'system-integration', 'install.sh')
+      : path.join(app.getAppPath(), 'scripts', 'system-integration', 'install.sh');
+    const packagingDir = app.isPackaged
+      ? path.join(process.resourcesPath, 'packaging')
+      : path.join(app.getAppPath(), 'packaging');
+    try {
+      await fs.access(scriptPath);
+    } catch {
+      return { success: false, code: 'NO_SCRIPT', output: '', error: 'install.sh 不存在' };
+    }
+    const args = userOnly === true ? ['--user-only'] : [];
+    return await new Promise<{ success: boolean; code?: string; output: string; error: string }>((resolve) => {
+      const child = spawn(scriptPath, args, {
+        env: { ...process.env, HOSHINEKO_PACKAGING_DIR: packagingDir },
+      });
+      let output = '';
+      let error = '';
+      child.stdout.on('data', (d) => (output += String(d)));
+      child.stderr.on('data', (d) => (error += String(d)));
+      child.on('error', (e) => resolve({ success: false, output, error: e.message }));
+      child.on('close', (code) => {
+        resolve({ success: code === 0, code: code === 0 ? undefined : 'SCRIPT_FAILED', output, error });
+      });
+    });
+  });
+  /**
    * 设置 inode/directory 的默认处理程序（xdg-mime default，写用户级
    * mimeapps.list，无需 root）。handler 为 HoshinekoFM.desktop 时先
    * 确保用户级桌面入口存在（xdg-mime 才能关联成功）。

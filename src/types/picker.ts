@@ -20,6 +20,12 @@ export interface PickerFilter {
   extensions: string[];
   /** MIME 类型列表（如 ['image/*']，支持 `type/*` 通配；与 extensions 或关系） */
   mimes?: string[];
+  /**
+   * 文件名正则源列表（锚定整文件名、大小写不敏感匹配）。
+   * portal 后端的 glob 过滤器（含字符类如 `*.[jJ][pP][gG]`）转成
+   * 正则放在这里；与 extensions/mimes 或关系。内部 IPC 不使用。
+   */
+  patterns?: string[];
   /** 主进程解析出的首扩展名 MIME（仅用于缺省 label 生成，不做匹配依据） */
   resolvedMime?: string;
 }

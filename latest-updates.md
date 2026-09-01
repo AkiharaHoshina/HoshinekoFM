@@ -1,5 +1,40 @@
 # 更新日志
 
+## v0.11.24 — portal FileChooser 新协议（xdg-desktop-portal ≥ 1.19）与过滤显示
+
+### 根因与修复（journal + 全量抓包定位）
+
+- **OpenFile 返回类型错误**：本机 xdg-desktop-portal 1.22 为新协议——impl 的 OpenFile 直接返回 `(u, a{sv})`（响应码 + 结果字典，无 Request 对象往返、无 Response 信号）。旧实现返回 `(o)` 请求路径 → 前端报「返回类型 (o)，但预期的是 (ua{sv})」→ 对应用发 Response 码 2（错误）→ 网站收不到文件。修复：OpenFile 等待选择器结果后直接返回 `[0, { uris, choices }]` 或取消 `[1, {}]`；移除 Request 对象导出与 Response 信号
+- **过滤显示语义**：选中具体过滤类型时文件列表**只显示**匹配该类型的文件 + 全部目录（「所有文件」显示全部）——新增 `displayFiles` 派生列表驱动 FileList/范围选择/回传过滤
+- e2e 14 重写为新协议 + Firefox 真实过滤形态（字符类 glob、匹配全部跳过、名称作 id/label、取消路径），含过滤不可见断言
+
+- 版本号升至 `0.11.24`
+
+## v0.11.23 — portal FileChooser 兼容真实 Firefox 请求（过滤器与请求路径修复）
+
+### 根因与修复（经 dbus-monitor 抓包定位）
+
+- **过滤器只有「所有文件」**：Firefox 的过滤器是带字符类的 glob（`*.[jJ][pP][gG]`）与匹配全部的 `*`——旧实现把 glob 去前缀后直接转扩展名，字符类被校验正则拒绝、`*` 被丢弃 → 过滤器全空。修复：glob 转成**后缀匹配**的大小写不敏感正则（`*.[jJ][pP][gG]` → `\.[jJ][pP][gG]$`，仅锚定结尾）；纯 `*`（匹配全部）跳过；**名称直接作过滤器 id 与显示名**（Firefox 发送本地化名称）；`PickerFilter` 新增 `patterns` 字段，FilePicker 匹配支持
+- **选择后 Firefox 不认可**：portal 前端在它传入的 **handle 路径本身**监听 `impl.Request` 的 Response（抓包 AddMatch 证实）——旧实现把请求对象导出在 `handle/1` 子路径并在那里发信号，前端永远收不到 → 请求悬置。修复：请求对象导出与 Response 发送均使用 portal 传入的 handle 路径原值
+- e2e 14 重写为 Firefox 真实请求形态回归：字符类 glob 过滤器映射 + 大小写不敏感可选性断言（大写 .JPG 可选、.txt 不可选）、匹配全部过滤跳过、handle 路径原值断言
+
+- 版本号升至 `0.11.23`
+
+## v0.11.22 — 系统集成一键安装（设置说明 + 脚本）
+
+### 系统集成
+
+- 设置 → 行为新增「系统集成」行：副标题说明覆盖范围与**做不到的部分**（Firefox 需手动 `about:config` 开启 portal 开关，无法自动化）与安装状态；「安装 Portal 集成」按钮经 pkexec 授权一键完成
+- 新脚本 `scripts/system-integration/install.sh`（幂等，`--root`/`--user-only` 分支）：
+  - root 级：安装 `hoshineko.portal` + 两个 D-Bus 激活文件到 `/usr/share`（pkexec 重入自身）；
+  - 用户级：写 `portals.conf` `[preferred] org.freedesktop.impl.portal.FileChooser=hoshineko`（压过 gtk.portal）、xdg-mime 关联、`systemctl --user restart xdg-desktop-portal`；
+  - 无 pkexec 环境降级：跳过 root 级并告警
+- 后端 IPC：`system:get-system-integration-status`（四份文件存在性）与 `system:install-system-integration`（spawn 脚本，打包/开发路径自适应，`NO_SCRIPT`/`SCRIPT_FAILED` 结构化错误）
+- 打包：`build.files` 加入 `packaging/**/*` 与 `scripts/system-integration/**/*`
+- i18n 新增 6 键 × 12；e2e 18（状态/脚本沙箱运行/幂等断言）；README 双语与 docs/portal-filechooser.md 更新
+
+- 版本号升至 `0.11.22`
+
 ## v0.11.21 — 默认文件管理器（一期）与 org.freedesktop.FileManager1 接口（二期）
 
 ### 默认文件管理器（MIME 关联）

@@ -154,6 +154,12 @@ const zhTW = {
   'settings.default_fm_set': 'HoshinekoFM 已設為預設檔案管理員',
   'settings.default_fm_restored': '已還原為系統預設',
   'settings.default_fm_failed': '修改預設檔案管理員失敗',
+  'settings.system_integration': '系統整合',
+  'settings.system_integration_desc': '安裝 portal 設定與 D-Bus 啟動檔案（需要授權）；Firefox 仍需手動開啟 about:config 的 portal 開關。',
+  'settings.system_integration_done': 'Portal 整合已安裝',
+  'settings.install_integration': '安裝 Portal 整合',
+  'settings.integration_installed': '系統整合安裝完成',
+  'settings.integration_failed': '系統整合安裝失敗',
   'settings.about': '關於',
   'settings.version': '版本',
 

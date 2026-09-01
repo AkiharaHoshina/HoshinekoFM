@@ -501,6 +501,15 @@ function AppContent() {
     null,
   );
 
+  /** 系统集成安装状态（portal 配置 / D-Bus 激活文件 / portals.conf） */
+  const [integrationStatus, setIntegrationStatus] = useState<{
+    portalConfig: boolean;
+    fileManager1Service: boolean;
+    portalService: boolean;
+    portalsConf: boolean;
+  } | null>(null);
+  const [integrationBusy, setIntegrationBusy] = useState(false);
+
   /** 设置对话框打开时刷新默认文件管理器状态（异步回填） */
   useEffect(() => {
     if (!settingsDialogOpen) return;
@@ -517,6 +526,39 @@ function AppContent() {
       cancelled = true;
     };
   }, [settingsDialogOpen]);
+
+  /** 设置对话框打开时刷新系统集成安装状态（异步回填） */
+  useEffect(() => {
+    if (!settingsDialogOpen) return;
+    let cancelled = false;
+    void window.electron
+      ?.getSystemIntegrationStatus()
+      .then((res) => {
+        if (!cancelled && res) setIntegrationStatus(res);
+      })
+      .catch(() => { /* 查询失败保持现状 */ });
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsDialogOpen]);
+
+  /** 一键安装系统集成（portal 配置 + D-Bus 激活文件，经 pkexec 授权） */
+  const handleInstallIntegration = useCallback(async () => {
+    if (integrationBusy) return;
+    setIntegrationBusy(true);
+    try {
+      const res = await window.electron?.installSystemIntegration();
+      if (res?.success) {
+        showToast(t("settings.integration_installed"), "success");
+        const status = await window.electron?.getSystemIntegrationStatus();
+        if (status) setIntegrationStatus(status);
+      } else {
+        showToast(t("settings.integration_failed"), "error");
+      }
+    } finally {
+      setIntegrationBusy(false);
+    }
+  }, [integrationBusy]);
 
   /** 设为默认文件管理器：记录原处理程序 → 安装桌面入口 + xdg-mime default */
   const handleSetDefaultFm = useCallback(async () => {
@@ -1501,6 +1543,9 @@ function AppContent() {
             canRestoreDefaultFm={prevDefaultFm !== null}
             onSetDefaultFm={() => void handleSetDefaultFm()}
             onRestoreDefaultFm={() => void handleRestoreDefaultFm()}
+            integrationStatus={integrationStatus}
+            integrationBusy={integrationBusy}
+            onInstallIntegration={() => void handleInstallIntegration()}
             titleBarMode={titleBarMode}
             onTitleBarChange={setTitleBarMode}
             showFullPathTitle={showFullPathTitle}

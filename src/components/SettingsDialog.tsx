@@ -38,6 +38,15 @@ interface SettingsDialogProps {
   canRestoreDefaultFm: boolean;
   onSetDefaultFm: () => void;
   onRestoreDefaultFm: () => void;
+  /** 系统集成安装状态（portal 配置 / D-Bus 激活文件 / portals.conf） */
+  integrationStatus: {
+    portalConfig: boolean;
+    fileManager1Service: boolean;
+    portalService: boolean;
+    portalsConf: boolean;
+  } | null;
+  integrationBusy: boolean;
+  onInstallIntegration: () => void;
   /** 标题栏模式（null = 跟随系统，true/false = 手动开/关） */
   titleBarMode: boolean | null;
   onTitleBarChange: (mode: boolean | null) => void;
@@ -78,6 +87,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   canRestoreDefaultFm,
   onSetDefaultFm,
   onRestoreDefaultFm,
+  integrationStatus,
+  integrationBusy,
+  onInstallIntegration,
   titleBarMode,
   onTitleBarChange,
   showFullPathTitle,
@@ -402,6 +414,31 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 {t("settings.set_default_file_manager")}
               </Button>
             )}
+          </div>
+
+          {/* 系统集成一键安装：portal 配置 + D-Bus 激活文件（需授权）；
+              说明本设置做不到的部分（Firefox 手动开关） */}
+          <div className="settings-row">
+            <div className="settings-row__start">
+              <Icon name="widgets" />
+              <div className="settings-row__label-col">
+                <div className="settings-row__label">
+                  {t("settings.system_integration")}
+                </div>
+                <div className="settings-row__sub">
+                  {integrationStatus &&
+                    integrationStatus.portalConfig &&
+                    integrationStatus.fileManager1Service &&
+                    integrationStatus.portalService &&
+                    integrationStatus.portalsConf
+                    ? t("settings.system_integration_done")
+                    : t("settings.system_integration_desc")}
+                </div>
+              </div>
+            </div>
+            <Button variant="outlined" disabled={integrationBusy} onClick={onInstallIntegration}>
+              {t("settings.install_integration")}
+            </Button>
           </div>
         </div>
 

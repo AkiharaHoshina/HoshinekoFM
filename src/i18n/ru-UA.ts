@@ -196,6 +196,12 @@ const ruUA = {
   'settings.default_fm_set': 'HoshinekoFM теперь файловый менеджер по умолчанию',
   'settings.default_fm_restored': 'Системное значение восстановлено',
   'settings.default_fm_failed': 'Не удалось изменить файловый менеджер по умолчанию',
+  'settings.system_integration': 'Системная интеграция',
+  'settings.system_integration_desc': 'Устанавливает конфигурацию portal и файлы активации D-Bus (требуется авторизация). Firefox дополнительно требует ручного включения переключателя portal в about:config.',
+  'settings.system_integration_done': 'Интеграция portal установлена',
+  'settings.install_integration': 'Установить интеграцию portal',
+  'settings.integration_installed': 'Системная интеграция установлена',
+  'settings.integration_failed': 'Не удалось установить системную интеграцию',
   'settings.about': 'О приложении',
   'settings.version': 'Версия',
 

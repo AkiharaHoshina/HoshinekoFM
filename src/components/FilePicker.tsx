@@ -114,10 +114,20 @@ const FilePicker: React.FC = () => {
   }, [themeConfig]);
 
   /**
-   * 条目是否命中过滤器：扩展名后缀匹配或 MIME 匹配（支持 `type/*`
-   * 通配），或关系。resolvedMime 仅用于缺省 label 生成，不参与匹配。
+   * 条目是否命中过滤器：文件名正则（portal glob 转来，大小写不敏感）、
+   * 扩展名后缀匹配或 MIME 匹配（支持 `type/*` 通配），或关系。
+   * resolvedMime 仅用于缺省 label 生成，不参与匹配。
    */
   const matchesFilter = useCallback((file: IFile, filter: PickerFilter): boolean => {
+    if (filter.patterns && filter.patterns.length > 0) {
+      for (const source of filter.patterns) {
+        try {
+          if (new RegExp(source, 'i').test(file.name)) return true;
+        } catch {
+          /* 非法正则源：跳过 */
+        }
+      }
+    }
     const lower = file.name.toLowerCase();
     if (filter.extensions.some((ext) => lower.endsWith(ext))) return true;
     const mime = file.mime;
@@ -175,6 +185,17 @@ const FilePicker: React.FC = () => {
   const sortedFiles = useMemo(() => {
     return sortFiles(files, { showHiddenFiles, sortBy, sortOrder, groupingEnabled });
   }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled]);
+
+  /**
+   * 展示列表：选中具体过滤类型时**只显示**该类型的文件与全部目录
+   * （可选性约束之外再收缩可见性；「所有文件」时显示全部）。
+   */
+  const displayFiles = useMemo(() => {
+    if (!config || !activeFilterId) return sortedFiles;
+    const filter = config.filters?.find((f) => f.id === activeFilterId);
+    if (!filter) return sortedFiles;
+    return sortedFiles.filter((f) => f.isDirectory || matchesFilter(f, filter));
+  }, [sortedFiles, config, activeFilterId, matchesFilter]);
 
   /** 过滤器下拉变化：切换生效过滤器并清除不再可选的选中项 */
   const handleFilterChange = useCallback(
@@ -270,14 +291,14 @@ const FilePicker: React.FC = () => {
     (file: IFile, toggle: boolean, range: boolean) => {
       if (!isSelectable(file)) return;
       if (range && lastSelectedPath) {
-        const start = sortedFiles.findIndex((f) => f.path === lastSelectedPath);
-        const end = sortedFiles.findIndex((f) => f.path === file.path);
+        const start = displayFiles.findIndex((f) => f.path === lastSelectedPath);
+        const end = displayFiles.findIndex((f) => f.path === file.path);
         if (start !== -1 && end !== -1) {
           const next = new Set<string>();
           const lo = Math.min(start, end);
           const hi = Math.max(start, end);
           for (let i = lo; i <= hi; i++) {
-            if (isSelectable(sortedFiles[i])) next.add(sortedFiles[i].path);
+            if (isSelectable(displayFiles[i])) next.add(displayFiles[i].path);
           }
           setSelected(next);
           setLastSelectedPath(file.path);
@@ -297,27 +318,27 @@ const FilePicker: React.FC = () => {
       });
       setLastSelectedPath(file.path);
     },
-    [isSelectable, lastSelectedPath, sortedFiles],
+    [isSelectable, lastSelectedPath, displayFiles],
   );
 
   /** 橡皮筋框选：过滤掉不可选类型，其余全部选中（folder 模式此前强制单选，现与其余模式一致支持多选） */
   const handleSetSelected = useCallback(
     (paths: Set<string>) => {
-      const valid = sortedFiles.filter((f) => paths.has(f.path) && isSelectable(f));
+      const valid = displayFiles.filter((f) => paths.has(f.path) && isSelectable(f));
       setSelected(new Set(valid.map((f) => f.path)));
     },
-    [sortedFiles, isSelectable],
+    [displayFiles, isSelectable],
   );
 
   /** 回传选中路径并关窗（窗口由主进程关闭） */
   const confirm = useCallback(() => {
     if (selected.size === 0 || !config) return;
-    const paths = sortedFiles
+    const paths = displayFiles
       .filter((f) => selected.has(f.path) && isSelectable(f))
       .map((f) => f.path);
     if (paths.length === 0) return;
     void window.electron.resolvePicker(paths);
-  }, [selected, sortedFiles, isSelectable, config]);
+  }, [selected, displayFiles, isSelectable, config]);
 
   const cancel = useCallback(() => {
     void window.electron.resolvePicker(null);
@@ -473,7 +494,7 @@ const FilePicker: React.FC = () => {
           </div>
           <div className="picker-filelist">
             <FileList
-              files={sortedFiles}
+              files={displayFiles}
               selectedFiles={selected}
               onSelect={handleSelect}
               onNavigate={handleNavigate}
