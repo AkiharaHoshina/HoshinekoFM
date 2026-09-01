@@ -5,6 +5,7 @@ import { StatusBar } from './StatusBar';
 import { FileList } from './FileList';
 import { IconButton } from './IconButton';
 import { Icon } from './Icon';
+import { OutlinedSelect, SelectOption, OutlinedTextField } from './md';
 import { FileSystemService } from '../services/FileSystemService';
 import type { IFile } from '../types/files';
 import type { DragClaimResult } from '../types/electron.d';
@@ -54,6 +55,11 @@ interface ExplorerTabProps {
     onOpenWithFile: (file: IFile) => void;
     onPropertiesFile: (file: IFile) => void;
     onOpenTerminalAt: (path: string) => void;
+    /**
+     * 「定位到所在文件夹」：导航到 file 所在目录并选中该条目。
+     * path = 条目绝对路径，name = 条目名（用于滚动定位 + 选中）。
+     */
+    onRevealFile: (path: string, name: string) => void;
     onCreateDialog: (type: 'file' | 'folder', defaultName: string, existingNames: string[]) => Promise<string | null>;
     onConflictDialog: (conflicts: ConflictEntry[], destDir: string, existingNames: string[], sourcePath?: string, operation?: "move" | "copy") => Promise<ConflictResult>;
     /** M3 确认对话框（替代 window.confirm 系统对话框） */
@@ -103,11 +109,13 @@ interface ExplorerTabProps {
     onDashboardPinItem: (name: string, path: string, isDir: boolean) => void;
     /** 按索引移除仪表盘固定项（Dashboard 悬停关闭按钮使用） */
     onDashboardRemovePin: (index: number) => void;
+    /** 仪表盘固定项拖拽排序（把 from 位置的条目移到 to 位置） */
+    onDashboardReorderPin: (fromIndex: number, toIndex: number) => void;
     /** 是否显示主页（/home）子区域的存储占用（设置项，默认关闭） */
     showHomeStorageUsage: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, onSortByChange, onSortOrderChange, onGroupingToggle, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, showHomeStorageUsage }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, onSortByChange, onSortOrderChange, onGroupingToggle, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -153,10 +161,20 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   const [searchActive, setSearchActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  /** 搜索高级过滤（type/minSize/maxSize，与后端 system:search 参数一一对应） */
+  const [searchOptions, setSearchOptions] = useState<{ type?: 'f' | 'd'; minSize?: string; maxSize?: string }>({});
+  // 最新值引用：搜索过滤控件/右键菜单的稳定回调里读取，避免闭包陈旧
+  const searchQueryRef = useRef('');
+  const searchOptionsRef = useRef<{ type?: 'f' | 'd'; minSize?: string; maxSize?: string }>({});
+  // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取
+  searchQueryRef.current = searchQuery;
+  // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取
+  searchOptionsRef.current = searchOptions;
 
-  const handleSearch = async (query: string) => {
+  const handleSearch = useCallback(async (query: string, options: { type?: 'f' | 'd'; minSize?: string; maxSize?: string } = {}) => {
     setSearchActive(true);
     setSearchQuery(query);
+    setSearchOptions(options);
     let toastId: ReturnType<typeof showProgressToast> | null = null;
     const timer = setTimeout(() => {
       toastId = showProgressToast(t('toast.searching'));
@@ -179,7 +197,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         return;
       }
       if (window.electron && window.electron.search) {
-        const results = await window.electron.search(currentPath, query);
+        const results = await window.electron.search(currentPath, query, options);
         setFiles(results);
       }
       clearToast();
@@ -188,7 +206,21 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       console.error(e);
       showToast(t('error.search_failed', (e as Error)?.message || String(e) || t('error.unknown')), 'error');
     }
-  };
+  }, [currentPath]);
+
+  /**
+   * 修改大小过滤文本（仅更新状态，不立即重搜——避免每敲一个字符就跑一次 find）。
+   * 提交时机：输入框 Enter。类型下拉则选择即重搜。
+   */
+  const updateSizeOption = useCallback((key: 'minSize' | 'maxSize', raw: string) => {
+    const v = raw.trim();
+    setSearchOptions((prev) => ({ ...prev, [key]: v === '' ? undefined : v }));
+  }, []);
+
+  /** 提交大小过滤并重搜（输入框 Enter 触发，读取最新选项） */
+  const commitSearchOptions = useCallback(() => {
+    void handleSearch(searchQueryRef.current, searchOptionsRef.current);
+  }, [handleSearch]);
 
   const loadPath = useCallback(async (path: string, showDelayedToast = false) => {
     setSearchActive(false); // Reset search
@@ -979,8 +1011,75 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     const selected = currentSelection.has(file.path)
       ? filesForFileListRef.current.filter((f) => currentSelection.has(f.path))
       : [file];
+
+    // 搜索模式：结果散落在多个子目录，App 的常规文件菜单（解压/固定到侧边栏等
+    // 依赖同目录语义）不适用——改用本地菜单：打开 / 定位到所在文件夹 / 复制 /
+    // 剪切 / 删除 / 属性。删除后重跑搜索刷新结果列表。
+    // 回收站内的搜索是按名称过滤（虚拟目录），条目仍是回收站条目——
+    // 必须走 App 的回收站菜单（还原/永久删除），不做拦截。
+    if (searchActive && currentPath !== 'trash://') {
+      const items: ContextMenuItem[] = [
+        {
+          label: t('context_menu.open'),
+          icon: 'open_in_new',
+          action: () => {
+            if (file.isDirectory) {
+              loadPath(file.path, true);
+            } else {
+              openFile(file.path);
+            }
+          },
+        },
+        {
+          label: t('search.locate'),
+          icon: 'folder_open',
+          action: () => {
+            onRevealFile(file.path, file.name);
+          },
+        },
+        { label: '', divider: true, action: () => {} },
+        {
+          label: t('context_menu.copy'),
+          icon: 'content_copy',
+          action: () => {
+            copy(selected);
+            copyToClipboard(selected.length);
+          },
+        },
+        {
+          label: t('context_menu.cut'),
+          icon: 'content_cut',
+          action: () => {
+            cut(selected);
+            cutToClipboard(selected.length);
+          },
+        },
+        {
+          label: t('context_menu.delete'),
+          icon: 'delete',
+          action: () => {
+            void trashFiles(selected.map((f) => f.path), () => {
+              // 删除后带当前过滤选项重跑搜索，刷新结果列表
+              void handleSearch(searchQueryRef.current, searchOptionsRef.current);
+            });
+          },
+        },
+        { label: '', divider: true, action: () => {} },
+        {
+          label: t('context_menu.properties'),
+          icon: 'info',
+          action: () => {
+            onPropertiesFile(file);
+          },
+        },
+      ];
+      onContextMenu(e, null);
+      onBgMenuItems(items);
+      return;
+    }
+
     onContextMenu(e, file, selected);
-  }, [onContextMenu]);
+  }, [onContextMenu, searchActive, currentPath, onRevealFile, onBgMenuItems, onPropertiesFile, copy, cut, loadPath, handleSearch]);
 
   const handleDeselectAll = useCallback(() => {
     setSelectedFiles(new Set());
@@ -1083,6 +1182,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
             pinnedItems={dashboardPinned}
             onPinItem={onDashboardPinItem}
             onRemovePin={onDashboardRemovePin}
+            onReorderPin={onDashboardReorderPin}
             marqueeEnabled={marqueeEnabled}
             showHomeStorageUsage={showHomeStorageUsage}
           />
@@ -1090,12 +1190,53 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
           {searchActive && (
-            <div style={{ padding: '8px 24px', background: 'var(--md-sys-color-surface-container)', color: 'var(--md-sys-color-on-surface-variant)', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Icon name="search" />
-              <span>{t('search.results', files.length, searchQuery)}</span>
-              <IconButton onClick={() => loadPath(currentPath, true)} variant="standard" title={t('search.clear')}>
-                <Icon name="close" />
-              </IconButton>
+            <div style={{ padding: '8px 24px', background: 'var(--md-sys-color-surface-container)', color: 'var(--md-sys-color-on-surface-variant)', fontSize: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Icon name="search" />
+                <span>{t('search.results', files.length, searchQuery)}</span>
+                <IconButton onClick={() => loadPath(currentPath, true)} variant="standard" title={t('search.clear')}>
+                  <Icon name="close" />
+                </IconButton>
+              </div>
+              {/* 高级过滤：回收站内是名称过滤（虚拟目录），无 system:search，隐藏过滤行 */}
+              {currentPath !== 'trash://' && (
+                <div className="search-filter-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                  <OutlinedSelect
+                    className="search-filter-type"
+                    value={searchOptions.type ?? ''}
+                    onInput={(e) => {
+                      const v = (e.target as HTMLSelectElement).value;
+                      // 类型选择即重搜
+                      void handleSearch(searchQueryRef.current, {
+                        ...searchOptionsRef.current,
+                        type: v === '' ? undefined : (v as 'f' | 'd'),
+                      });
+                    }}
+                  >
+                    <SelectOption value=""><div slot="headline">{t('search.type_all')}</div></SelectOption>
+                    <SelectOption value="f"><div slot="headline">{t('search.type_file')}</div></SelectOption>
+                    <SelectOption value="d"><div slot="headline">{t('search.type_folder')}</div></SelectOption>
+                  </OutlinedSelect>
+                  <OutlinedTextField
+                    label={t('search.min_size')}
+                    value={searchOptions.minSize ?? ''}
+                    onInput={(e) => updateSizeOption('minSize', (e.target as HTMLInputElement).value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitSearchOptions();
+                    }}
+                    style={{ width: '120px' }}
+                  />
+                  <OutlinedTextField
+                    label={t('search.max_size')}
+                    value={searchOptions.maxSize ?? ''}
+                    onInput={(e) => updateSizeOption('maxSize', (e.target as HTMLInputElement).value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitSearchOptions();
+                    }}
+                    style={{ width: '120px' }}
+                  />
+                </div>
+              )}
             </div>
           )}
           <div

@@ -10,6 +10,7 @@ import { ClipboardProvider, useClipboard } from "./contexts/ClipboardContext";
 import { DragProvider } from "./contexts/DragContext";
 import type { SortBy, SortOrder } from "./utils/fileSort";
 import { ThemeService } from "./services/ThemeService";
+import { FileSystemService } from "./services/FileSystemService";
 import { NavigationRail } from "./components/NavigationRail";
 import { Sidebar, type SidebarPinnedItem } from "./components/Sidebar";
 import type { PinnedItem } from "./components/Dashboard";
@@ -28,6 +29,7 @@ import { ExplorerTab } from "./components/ExplorerTab";
 import { OpenWithDialog } from "./components/OpenWithDialog";
 import { PropertiesDialog } from "./components/PropertiesDialog";
 import { useLocalStorage } from "./hooks/useLocalStorage";
+import { useUiZoom } from "./hooks/useUiZoom";
 import type { ThemeConfig } from "./types/theme";
 import {
   trashFiles,
@@ -36,12 +38,16 @@ import {
   removeTrashItems,
   pasteFiles,
   extractFile,
+  compressFiles,
+  executeBatchRename,
   openFile,
   buildPermanentDeleteMessage,
   openInDefaultTerminal,
   runInDefaultTerminal,
 } from "./utils/fileOperations";
 import { NameInputDialog } from "./components/NameInputDialog";
+import { CompressDialog, type CompressFormat } from "./components/CompressDialog";
+import { BatchRenameDialog } from "./components/BatchRenameDialog";
 import { ConflictDialog } from "./components/ConflictDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { DragActionDialog } from "./components/DragActionDialog";
@@ -176,6 +182,71 @@ function AppContent() {
 
   const [openWithFile, setOpenWithFile] = useState<IFile | null>(null);
 
+  /**
+   * 压缩对话框状态：右键菜单「压缩...」时打开。
+   * paths = 待压缩条目（同目录），destDir = 归档输出目录（= 条目父目录），
+   * defaultBaseName = 初始归档名（不含后缀，单条目取条目名、多条目取目录名）。
+   */
+  const [compressDialog, setCompressDialog] = useState<{
+    paths: string[];
+    destDir: string;
+    defaultBaseName: string;
+    existingNames: string[];
+  } | null>(null);
+
+  /**
+   * 打开压缩对话框：单条目以条目名（去后缀）为默认名，
+   * 多条目以当前目录名（根目录时为 Archive）为默认名。
+   * 已存在文件名异步补齐（冲突校验用），期间先以空集打开。
+   */
+  const openCompressDialog = useCallback((files: IFile[]) => {
+    const destDir = files.length > 0
+      ? files[0].path.substring(0, files[0].path.lastIndexOf("/")) || "/"
+      : currentPath;
+    const defaultBaseName = files.length === 1
+      ? splitNameExt(files[0].name, files[0].isDirectory).base
+      : (destDir.split("/").filter(Boolean).pop() || "Archive");
+    setCompressDialog({
+      paths: files.map((f) => f.path),
+      destDir,
+      defaultBaseName,
+      existingNames: [],
+    });
+    void FileSystemService.listDir(destDir)
+      .then(({ data }) => {
+        setCompressDialog((prev) =>
+          prev && prev.destDir === destDir
+            ? { ...prev, existingNames: data.map((f) => f.name) }
+            : prev,
+        );
+      })
+      .catch(() => { /* 目标目录不可读时无冲突校验，后端仍有 EXISTS 兜底 */ });
+  }, [currentPath]);
+
+  /**
+   * 压缩确认：校验归档名可用后走批量压缩（zip / tar.gz），完成后刷新当前目录。
+   */
+  const handleCompressConfirm = useCallback((name: string, format: CompressFormat) => {
+    if (!compressDialog) return;
+    const destPath = compressDialog.destDir === "/"
+      ? "/" + name
+      : compressDialog.destDir + "/" + name;
+    setCompressDialog(null);
+    void compressFiles(compressDialog.paths, destPath, format, refreshActiveTab);
+  }, [compressDialog, refreshActiveTab]);
+
+  /**
+   * 批量重命名的待处理条目（右键菜单「批量重命名...」，选中 ≥ 2 项时可用）。
+   * null = 对话框关闭。
+   */
+  const [batchRenameFiles, setBatchRenameFiles] = useState<IFile[] | null>(null);
+
+  /** 批量重命名确认：执行计划中的重命名并刷新当前目录 */
+  const handleBatchRenameConfirm = useCallback((plans: { src: string; dest: string }[]) => {
+    setBatchRenameFiles(null);
+    void executeBatchRename(plans, refreshActiveTab);
+  }, [refreshActiveTab]);
+
   /** 拖到标签页的内部拖放请求，由目标标签页的 ExplorerTab 消费 */
   const [pendingTabDrop, setPendingTabDrop] = useState<{
     tabId: string;
@@ -307,6 +378,23 @@ function AppContent() {
     [setDashboardPinned],
   );
 
+  /**
+   * 仪表盘固定项拖拽排序：把 from 位置的条目移动到 to 位置
+   * （Dashboard 固定项卡的 HTML5 DnD，仅排序，不经过文件拖拽系统）。
+   */
+  const reorderDashboardPin = useCallback(
+    (from: number, to: number) => {
+      setDashboardPinned((prev) => {
+        if (from === to || from < 0 || to < 0 || from >= prev.length || to >= prev.length) return prev;
+        const next = [...prev];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        return next;
+      });
+    },
+    [setDashboardPinned],
+  );
+
   const { clipboard, copy, cut, clear: clearClipboard } = useClipboard();
 
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
@@ -367,6 +455,12 @@ function AppContent() {
     true,
   );
 
+  /**
+   * 界面缩放（整页缩放，百分比）。持久化于 settings.uiScale，
+   * 变更时经 IPC 应用本窗口 zoom factor，跨窗口 storage 同步。
+   */
+  const [uiScale, setUiScale] = useUiZoom();
+
   /** 是否显示主页（/home）子区域的存储占用（默认关闭 = 仅导航） */
   const [showHomeStorageUsage, setShowHomeStorageUsage] = useLocalStorage<boolean>(
     "settings.showHomeStorageUsage",
@@ -381,6 +475,24 @@ function AppContent() {
     "settings.theme",
     null,
   );
+
+  /**
+   * 明暗模式（持久化于 settings.darkMode，跨窗口同步）：
+   * null = 跟随系统（默认，后端检测链 DMS/Niri/GNOME/KDE，fallback 暗色）；
+   * true = 强制暗色；false = 强制亮色。
+   * 变更时经 IPC 设置 nativeTheme.themeSource——主进程全局状态，
+   * 所有窗口（含文件选择器）立即同步，现有主题 CSS 无需改动。
+   */
+  const [darkMode, setDarkMode] = useLocalStorage<boolean | null>(
+    "settings.darkMode",
+    null,
+  );
+
+  useEffect(() => {
+    void window.electron?.setThemeSource(
+      darkMode === null ? "system" : darkMode ? "dark" : "light",
+    );
+  }, [darkMode]);
   /** 主题颜色二级对话框开关 */
   const [themeColorOpen, setThemeColorOpen] = useState(false);
 
@@ -649,6 +761,15 @@ function AppContent() {
             extractFile(item.path, refreshActiveTab);
           },
         },
+        ...(item.mime !== "inode/blockdevice"
+          ? [{
+            label: t("context_menu.compress"),
+            icon: "archive",
+            action: () => {
+              openCompressDialog(selectedFiles);
+            },
+          }]
+          : []),
         {
           label: t("context_menu.rename"),
           icon: "edit",
@@ -657,6 +778,16 @@ function AppContent() {
             closeContextMenu();
           },
         },
+        ...(selectedFiles.length >= 2
+          ? [{
+            label: t("context_menu.batch_rename"),
+            icon: "drive_file_rename_outline",
+            action: () => {
+              setBatchRenameFiles(selectedFiles);
+              closeContextMenu();
+            },
+          }]
+          : []),
       ];
 
       const specialItems: ContextMenuItem[] = [];
@@ -871,6 +1002,10 @@ function AppContent() {
                 onOpenWithFile={handleOpenWithFile}
                 onPropertiesFile={handlePropertiesFile}
                 onOpenTerminalAt={openTerminalAt}
+                onRevealFile={(path, name) => {
+                  const parent = path.substring(0, path.lastIndexOf("/")) || "/";
+                  handleSidebarNavigate(parent, name);
+                }}
                 onCreateDialog={handleCreateDialog}
                 onConflictDialog={handleConflictDialog}
                 onConfirmDialog={confirm}
@@ -904,6 +1039,7 @@ function AppContent() {
                 dashboardPinned={dashboardPinned}
                 onDashboardPinItem={pinDashboardItem}
                 onDashboardRemovePin={removeDashboardPinAt}
+                onDashboardReorderPin={reorderDashboardPin}
                 showHomeStorageUsage={showHomeStorageUsage}
               />
             </div>
@@ -1073,6 +1209,26 @@ function AppContent() {
           />
         )}
 
+        {compressDialog && (
+          <CompressDialog
+            paths={compressDialog.paths}
+            destDir={compressDialog.destDir}
+            defaultBaseName={compressDialog.defaultBaseName}
+            existingNames={compressDialog.existingNames}
+            onConfirm={handleCompressConfirm}
+            onCancel={() => setCompressDialog(null)}
+          />
+        )}
+
+        {batchRenameFiles && (
+          <BatchRenameDialog
+            files={batchRenameFiles}
+            marqueeEnabled={marqueeEnabled}
+            onConfirm={handleBatchRenameConfirm}
+            onCancel={() => setBatchRenameFiles(null)}
+          />
+        )}
+
         {singleConflict &&
           (() => {
             const c = singleConflict;
@@ -1136,6 +1292,7 @@ function AppContent() {
           open={propertiesDialogOpen}
           onClose={() => setPropertiesDialogOpen(false)}
           file={propertiesFile}
+          onPermissionsChanged={refreshActiveTab}
         />
 
         <ConfirmDialog
@@ -1182,6 +1339,8 @@ function AppContent() {
           onToggleHiddenFiles={() => setShowHiddenFiles(!showHiddenFiles)}
           iconSize={iconSize}
           onIconSizeChange={setIconSize}
+          uiScale={uiScale}
+          onUiScaleChange={setUiScale}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           filledIcons={filledIcons}
@@ -1201,6 +1360,8 @@ function AppContent() {
           current={themeConfig}
           onSave={(cfg) => setThemeConfig(cfg)}
           onClose={() => setThemeColorOpen(false)}
+          darkMode={darkMode}
+          onDarkModeChange={setDarkMode}
         />
       </main>
     </div>

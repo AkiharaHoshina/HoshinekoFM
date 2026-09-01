@@ -18,6 +18,28 @@ const SCROLLBAR_CSS = `
 .scroller::-webkit-scrollbar-thumb:hover {
   background: var(--md-sys-color-outline);
 }
+
+/* 对话框 content slot 里的滚动容器（如批量重命名预览、冲突列表）：
+ * 文档级 ::-webkit-scrollbar 规则不匹配 slotted 内容的滚动条伪元素
+ * （实测透明），必须在对话框 shadow root 内用 ::slotted 显式声明，
+ * 才能让嵌套滚动条与对话框主滚动条统一为 M3 样式。 */
+::slotted(*)::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::slotted(*)::-webkit-scrollbar-track {
+  background: transparent;
+}
+::slotted(*)::-webkit-scrollbar-thumb {
+  background: var(--md-sys-color-outline-variant);
+  border-radius: 4px;
+}
+::slotted(*)::-webkit-scrollbar-thumb:hover {
+  background: var(--md-sys-color-outline);
+}
+::slotted(*)::-webkit-scrollbar-corner {
+  background: transparent;
+}
 `;
 
 function injectScrollbarStyle(root: ShadowRoot) {
@@ -54,6 +76,19 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
   const [visible, setVisible] = useState(false);
   const wasOpenRef = useRef(false);
 
+  /**
+   * 打开周期计数，用作 md-dialog 的 key：**每次打开都挂载全新元素**。
+   *
+   * md-dialog 的 open/close 是异步状态机（open setter → show()/close()，
+   * 关闭动画结束后才真正收尾），快速「关闭→再打开」时会与上一关闭
+   * 周期竞态：重开的 open=true 赋值可能在收尾前被内部 close() 反写回
+   * false，对话框间歇性打不开（隐藏窗口/后台节流下关闭动画可拖到数
+   * 百毫秒，竞态必现）。重挂载让新元素以干净状态重新走 show()，
+   * 从根上消除竞态；代价是关闭时无退出动画（直接移除），换取
+   * 开关可靠性——关闭动画可接受损失。
+   */
+  const [cycle, setCycle] = useState(0);
+
   useEffect(() => {
     if (!open) {
       setVisible(false); // eslint-disable-line react-hooks/set-state-in-effect -- open 关闭时同步隐藏
@@ -64,8 +99,10 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
       return;
     }
     wasOpenRef.current = true;
-    const delay = Math.max(0, lastDialogClosedAt + DIALOG_GAP_MS - Date.now());
+    // 强制最小延迟：不与上一个对话框的关闭动画同帧出现
+    const delay = Math.max(DIALOG_GAP_MS, lastDialogClosedAt + DIALOG_GAP_MS - Date.now());
     const timer = setTimeout(() => {
+      setCycle((c) => c + 1);
       setVisible(true);
     }, delay);
     return () => {
@@ -86,8 +123,9 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
 
   return (
     <MdDialog
+      key={cycle}
       ref={dialogRef}
-      open={open && visible}
+      open={visible}
       onCancel={onClose}
       onClose={onClose}
       onOpened={handleOpened}

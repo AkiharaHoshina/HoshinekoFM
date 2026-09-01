@@ -64,6 +64,18 @@ export interface IElectronAPI {
     getThemeCss: () => Promise<string | null>;
     /** DMS 系统主题信息（scheme / contrast / dark+light 全套角色） */
     readDmsTheme: () => Promise<{ available: boolean; scheme?: string; contrast?: number; colors?: { dark: Record<string, string>; light: Record<string, string> } }>;
+    /**
+     * 检测系统明暗偏好：DMS(门户) → GNOME → KDE → fallback 暗色。
+     * 返回生效模式与检测来源（供「跟随系统（GNOME）」副标题显示）。
+     * niri 不负责明暗主题，不参与检测链。
+     */
+    detectColorScheme: () => Promise<{ mode: 'dark' | 'light'; source: 'dms' | 'gnome' | 'kde' | 'fallback' }>;
+    /**
+     * 设置应用级明暗来源（Electron nativeTheme.themeSource，全局立即生效）：
+     * 'dark'/'light' 强制模式（prefers-color-scheme 随之变化，现有主题
+     * CSS 无需改动即切换）；'system' 恢复跟随操作系统。
+     */
+    setThemeSource: (source: 'dark' | 'light' | 'system') => Promise<void>;
     /** 探测当前壁纸图片路径，失败返回 null */
     findWallpaper: () => Promise<string | null>;
     /** 用 matugen 从壁纸图片生成 M3 颜色方案 CSS；matugen 缺失时 fallback=true 且只返回种子色 */
@@ -88,11 +100,21 @@ export interface IElectronAPI {
     getTrashDir: () => Promise<string>;
     copyFile: (source: string, dest: string) => Promise<boolean>;
     moveFile: (source: string, dest: string) => Promise<boolean>;
+    /**
+     * 修改文件/目录权限。mode 为 3 位八进制字符串（如 '755'）。
+     * 失败返回结构化错误码：INVALID_PATH / INVALID_MODE。
+     */
+    chmodFile: (path: string, mode: string) => Promise<{ success: boolean; code?: string; error?: string }>;
     trashFile: (path: string) => Promise<boolean>;
     renameFile: (oldPath: string, newPath: string) => Promise<boolean>;
     createDirectory: (path: string) => Promise<boolean>;
     openPath: (path: string) => Promise<string>;
     extractFile: (path: string) => Promise<boolean>;
+    /**
+     * 压缩一组同目录条目为归档（zip 走 `zip -r`，tar.gz 走 `tar -czf`）。
+     * 失败时返回结构化错误码：NO_TOOL（zip 未安装）/ INVALID_ARGS。
+     */
+    compress: (params: { paths: string[]; destPath: string; format: 'zip' | 'tar.gz' }) => Promise<{ success: boolean; code?: string; error?: string }>;
     getApps: () => Promise<{ name: string; icon: string; exec: string; desktopFile: string; }[]>;
     openWith: (exec: string, path: string, desktopFile?: string) => Promise<true | string>;
     openFileDialog: () => Promise<string | null>;
@@ -132,6 +154,12 @@ export interface IElectronAPI {
     search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string }) => Promise<IFile[]>;
     getDirectorySize: (path: string) => Promise<number>;
     setIcon: (iconType: string) => Promise<void>;
+    /**
+     * 界面缩放：设置本窗口的整页缩放（zoom factor，范围 0.5–2.0）。
+     * 对应设置「界面缩放」滑条（50%–200%）；各窗口经 storage 事件
+     * 同步后自行调用；初始缩放在 main.tsx 于首帧绘制前应用。
+     */
+    setUiZoom: (factor: number) => Promise<void>;
     exists: (path: string) => Promise<boolean>;
     existsBatch: (paths: string[]) => Promise<Record<string, boolean>>;
     getStorageUsage: () => Promise<{ total: number; used: number; free: number } | null>;

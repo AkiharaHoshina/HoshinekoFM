@@ -13,6 +13,10 @@ interface SettingsDialogProps {
   onToggleHiddenFiles: () => void;
   iconSize: number;
   onIconSizeChange: (size: number) => void;
+  /** 界面缩放（整页缩放百分比，50–200） */
+  uiScale: number;
+  /** 修改界面缩放（App 写入持久化键，跨窗口同步） */
+  onUiScaleChange: (scale: number) => void;
   viewMode: "grid" | "list";
   onViewModeChange: (mode: "grid" | "list") => void;
   filledIcons: boolean;
@@ -37,6 +41,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onToggleHiddenFiles,
   iconSize,
   onIconSizeChange,
+  uiScale,
+  onUiScaleChange,
   viewMode,
   onViewModeChange,
   filledIcons,
@@ -82,10 +88,26 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   }, [open]);
 
   /**
-   * 应用语言并关闭：确定与关闭走同一路径（退出设置等于确定）。
+   * 界面缩放的应用时机：与语言一致——拖动滑条时只更新本地预览
+   * （pendingUiScale），点击「完成」或关闭对话框（退出 = 确定）时才
+   * 调用 onUiScaleChange 真正应用并同步到所有窗口。整页缩放实时生效
+   * 会让用户在拖拽过程中反复重排整个界面（含正在操作它的对话框），
+   * 体验很差，故改为确定后一次性生效。
+   */
+  const [pendingUiScale, setPendingUiScale] = useState<number>(uiScale);
+
+  // 每次打开对话框时把预览重置为当前已应用的界面缩放
+  useEffect(() => {
+    if (open) setPendingUiScale(uiScale); // eslint-disable-line react-hooks/set-state-in-effect -- 打开时同步预览初值
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 open 变化时同步
+  }, [open]);
+
+  /**
+   * 应用语言 + 界面缩放并关闭：确定与关闭走同一路径（退出设置等于确定）。
    */
   const handleApply = () => {
     if (pendingLocale !== locale) onLocaleChange(pendingLocale);
+    if (pendingUiScale !== uiScale) onUiScaleChange(pendingUiScale);
     onClose();
   };
 
@@ -174,6 +196,23 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               step={8}
               value={iconSize}
               onInput={(e) => onIconSizeChange(Number((e.target as HTMLInputElement).value))}
+              style={{ width: "100%" }}
+            />
+          </div>
+
+          {/* 界面缩放：整页缩放（50%–200%），与图标大小滑条同款样式；
+              拖拽仅改预览，点「完成」/关闭对话框才应用 */}
+          <div className="settings-icon-size">
+            <div className="settings-icon-size__header">
+              <span>{t("settings.ui_scale")}</span>
+              <span className="settings-icon-size__value">{pendingUiScale}%</span>
+            </div>
+            <Slider
+              min={50}
+              max={200}
+              step={5}
+              value={pendingUiScale}
+              onInput={(e) => setPendingUiScale(Number((e.target as HTMLInputElement).value))}
               style={{ width: "100%" }}
             />
           </div>

@@ -3,6 +3,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('electron', {
   getThemeCss: () => ipcRenderer.invoke('theme:get-css'),
   readDmsTheme: () => ipcRenderer.invoke('theme:read-dms'),
+  /** 检测系统明暗偏好（跟随系统默认值） */
+  detectColorScheme: () => ipcRenderer.invoke('theme:detect-color-scheme'),
+  /** 设置应用级明暗来源（dark/light/system），全局立即生效 */
+  setThemeSource: (source: 'dark' | 'light' | 'system') => ipcRenderer.invoke('theme:set-source', source),
   findWallpaper: () => ipcRenderer.invoke('theme:find-wallpaper'),
   genWallpaperTheme: (imagePath: string, type: string, contrast: number) => ipcRenderer.invoke('theme:gen-wallpaper', imagePath, type, contrast),
   // 主题实时预览：预览变化 → 主进程广播到所有窗口
@@ -30,11 +34,15 @@ contextBridge.exposeInMainWorld('electron', {
   getTrashDir: () => ipcRenderer.invoke('fs:get-trash-dir'),
   copyFile: (source: string, dest: string) => ipcRenderer.invoke('fs:copy', source, dest),
   moveFile: (source: string, dest: string) => ipcRenderer.invoke('fs:move', source, dest),
+  /** 修改文件/目录权限（3 位八进制模式，如 '755'） */
+  chmodFile: (path: string, mode: string) => ipcRenderer.invoke('fs:chmod', path, mode),
   trashFile: (path: string) => ipcRenderer.invoke('fs:trash', path),
   renameFile: (oldPath: string, newPath: string) => ipcRenderer.invoke('fs:rename', oldPath, newPath),
   createDirectory: (path: string) => ipcRenderer.invoke('fs:mkdir', path),
   openPath: (path: string) => ipcRenderer.invoke('fs:open', path),
   extractFile: (path: string) => ipcRenderer.invoke('fs:extract', path),
+  /** 压缩为 zip / tar.gz（同目录条目 → 归档文件） */
+  compress: (params: { paths: string[]; destPath: string; format: 'zip' | 'tar.gz' }) => ipcRenderer.invoke('fs:compress', params),
   getApps: () => ipcRenderer.invoke('system:get-apps'),
   openWith: (exec: string, path: string, desktopFile?: string) => ipcRenderer.invoke('system:open-with', exec, path, desktopFile),
   openFileDialog: () => ipcRenderer.invoke('dialog:open-file'),
@@ -80,6 +88,8 @@ contextBridge.exposeInMainWorld('electron', {
   exists: (path: string) => ipcRenderer.invoke('fs:exists', path),
   existsBatch: (paths: string[]) => ipcRenderer.invoke('fs:exists-batch', paths),
   setIcon: (iconPath: string) => ipcRenderer.invoke('window:set-icon', iconPath),
+  /** 界面缩放：设置本窗口 zoom factor（0.5–2.0），跨窗口同步由 storage 事件驱动各窗口自行调用 */
+  setUiZoom: (factor: number) => ipcRenderer.invoke('window:set-zoom', factor),
   search: (dir: string, query: string, options?: { type?: 'f' | 'd'; minSize?: string; maxSize?: string }) => ipcRenderer.invoke('system:search', dir, query, options),
   getDirectorySize: (path: string) => ipcRenderer.invoke('system:get-directory-size', path),
   getDrives: () => ipcRenderer.invoke('system:get-drives'),

@@ -11,6 +11,7 @@ import { FileSystemService } from '../services/FileSystemService';
 import { ThemeService } from '../services/ThemeService';
 import { useDeviceActions } from '../hooks/useDeviceActions';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useUiZoom } from '../hooks/useUiZoom';
 import { DragProvider } from '../contexts/DragContext';
 import { showToast, shortPath } from '../utils/toast';
 import { sortFiles } from '../utils/fileSort';
@@ -23,25 +24,30 @@ import './FilePicker.css';
 type PickerMode = 'file' | 'folder' | 'files' | 'items';
 
 /**
- * 文件选择器窗口根组件：DragProvider + ToastContainer + 主题应用。
+ * 文件选择器窗口根组件：DragProvider + ToastContainer + 主题应用 + 界面缩放。
  * 由 main.tsx 在 ?mode=picker 时挂载（普通窗口挂载 App 主界面）。
+ * 界面缩放与主窗口同键订阅：设置变更后经 storage 事件到达，
+ * 选择器窗口立即应用相同缩放（preload 已应用首帧缩放）。
  */
-export const FilePickerRoot: React.FC = () => (
-  <DragProvider>
-    <FilePicker />
-    <ToastContainer
-      position="bottom-right"
-      autoClose={5000}
-      hideProgressBar={false}
-      newestOnTop={false}
-      closeOnClick
-      pauseOnHover
-      theme="dark"
-      limit={5}
-      style={{ zIndex: 2000 }}
-    />
-  </DragProvider>
-);
+export const FilePickerRoot: React.FC = () => {
+  useUiZoom();
+  return (
+    <DragProvider>
+      <FilePicker />
+      <ToastContainer
+        position="bottom-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        pauseOnHover
+        theme="dark"
+        limit={5}
+        style={{ zIndex: 2000 }}
+      />
+    </DragProvider>
+  );
+};
 
 /**
  * 内置文件选择器（独立窗口）：

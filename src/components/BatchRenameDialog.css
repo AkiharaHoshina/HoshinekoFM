@@ -1,0 +1,144 @@
+.batch-rename-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 460px;
+}
+
+.batch-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.batch-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--md-sys-color-on-surface);
+}
+
+.batch-params {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 逐个重命名列表：顶部留出浮动标签（重命名）的出头空间，
+ * 行间距足够容纳下一行浮起的标签，避免标签被裁/压住上一行 */
+.batch-individual-list {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: 14px;
+  padding-right: 4px;
+}
+
+.batch-individual-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 原文件名区：固定约占行宽三分之一，超长时滚动/截断 */
+.batch-individual-name {
+  flex: 0 0 33%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.batch-individual-old {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.batch-individual-name-marquee {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 输入框：占剩余约三分之二 */
+.batch-individual-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.batch-number-row {
+  display: flex;
+  gap: 12px;
+}
+
+.batch-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.batch-preview-count {
+  font-size: 12px;
+}
+
+.batch-preview-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 预览/逐个列表的滚动条 M3 化（对话框内 slotted 内容，
+ * 由 Dialog 注入的 ::slotted 规则统一样式，这里无需重复） */
+
+.batch-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.batch-preview-item--conflict {
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}
+
+.batch-preview-old {
+  color: var(--md-sys-color-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 38%;
+}
+
+.batch-preview-new {
+  color: var(--md-sys-color-on-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 38%;
+}
+
+.batch-preview-item--conflict .batch-preview-new {
+  color: var(--md-sys-color-on-error-container);
+}
+
+.batch-preview-conflict {
+  margin-left: auto;
+  font-size: 12px;
+  white-space: nowrap;
+}

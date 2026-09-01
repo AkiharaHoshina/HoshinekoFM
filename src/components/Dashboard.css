@@ -169,6 +169,13 @@
     background-color: var(--md-sys-color-surface-container-high);
 }
 
+/* 拖拽排序：悬停目标卡以主色描边提示插入位置 */
+.pinned-item--drag-over {
+    outline: 2px dashed var(--md-sys-color-primary);
+    outline-offset: -2px;
+    background-color: var(--md-sys-color-surface-container-high);
+}
+
 .pinned-icon {
     width: 48px;
     height: 48px;

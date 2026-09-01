@@ -83,6 +83,28 @@ body {
   padding: 0;
 }
 
+/* ── 滚动条统一 M3 化 ──
+ * 1) 文档级规则覆盖全部 light-DOM 滚动容器（侧边栏另有 4px 细款）；
+ * 2) 对话框 content slot 里的滚动容器由 Dialog 注入的 ::slotted 规则覆盖；
+ * 3) 原生滚动条（shadow DOM 内，如 md-select 下拉菜单）无法用 CSS 着色——
+ *    靠 color-scheme 让 Chromium 按当前明暗主题渲染原生滚动条，
+ *    并全局继承 scrollbar-width: thin 收窄；webkit 规则优先级高于
+ *    scrollbar-width，已样式化的容器不受影响。
+ */
+:root {
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+  }
+}
+
+html {
+  scrollbar-width: thin;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
@@ -100,6 +122,10 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--md-sys-color-outline);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .app-shell {

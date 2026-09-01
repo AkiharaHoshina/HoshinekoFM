@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import type { MdSwitch as MdSwitchElement } from '@material/web/switch/switch.js';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
 import { Icon } from './Icon';
+import { Switch } from './md';
 import { ColorPickerDialog } from './ColorPickerDialog';
 import { ThemeService } from '../services/ThemeService';
 import { seedToCss } from '../services/themeEngine';
@@ -18,6 +20,10 @@ interface ThemeColorDialogProps {
   onSave: (config: ThemeConfig | null) => void;
   /** 关闭对话框（取消或确定后） */
   onClose: () => void;
+  /** 已保存的明暗模式（null = 跟随系统） */
+  darkMode: boolean | null;
+  /** 「应用」/「确定」保存明暗模式（App 侧持久化 + 全局生效） */
+  onDarkModeChange: (value: boolean | null) => void;
 }
 
 /**
@@ -28,30 +34,81 @@ interface ThemeColorDialogProps {
  * - 底部按钮：取消（回滚快照）/ 应用（保存不关闭）/ 确定（保存并关闭）。
  * 选择即全局即时预览；取消时恢复打开对话框前的 CSS 快照。
  */
-export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, current, onSave, onClose }) => {
+export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, current, onSave, onClose, darkMode, onDarkModeChange }) => {
   const [draft, setDraft] = useState<ThemeConfig | null>(current);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [wallpaperBusy, setWallpaperBusy] = useState(false);
   const [dmsInfo, setDmsInfo] = useState<{ available: boolean; scheme?: string; contrast?: number }>({ available: false });
+  /** 系统明暗偏好检测结果（「跟随系统」的副标题来源） */
+  const [detectedScheme, setDetectedScheme] = useState<{ mode: 'dark' | 'light'; source: 'dms' | 'gnome' | 'kde' | 'fallback' } | null>(null);
+  /**
+   * 明暗模式草稿：开关只改本地预览，**不立即生效**——
+   * 「应用」/「确定」时才经 onDarkModeChange 持久化并由 App 全局
+   * 应用（nativeTheme.themeSource，所有窗口即时同步）。
+   */
+  const [pendingDarkMode, setPendingDarkMode] = useState<boolean | null>(darkMode);
   const snapshotRef = useRef<string | null>(null);
   /** 「确定」主动关闭标志：md-dialog 的 close 事件二次触发时跳过取消回滚 */
   const confirmedRef = useRef(false);
   /** 最近一次有效草稿：壁纸取色整体失败时回滚到它，防止「确定」保存无种子的坏配置 */
   const draftRef = useRef<ThemeConfig | null>(current);
 
-  // 打开时：记录快照（取消回滚用）、加载 DMS 可用性、初始化草稿
+  // 打开时：记录快照（取消回滚用）、加载 DMS 可用性、明暗检测、初始化草稿
   useEffect(() => {
     if (!open) return;
     confirmedRef.current = false;
     snapshotRef.current = ThemeService.getCurrentCss();
     setDraft(current); // eslint-disable-line react-hooks/set-state-in-effect -- 打开时同步初值
+    setPendingDarkMode(darkMode);
+    setDetectedScheme(null);
     if (window.electron?.readDmsTheme) {
       void window.electron.readDmsTheme().then((info) => {
         setDmsInfo({ available: info.available, scheme: info.scheme, contrast: info.contrast });
       });
     }
+    if (window.electron?.detectColorScheme) {
+      void window.electron.detectColorScheme().then(setDetectedScheme).catch(() => setDetectedScheme(null));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在打开时同步
   }, [open]);
+
+  /** 开关显示值：草稿为 null 时显示检测到的系统偏好 */
+  const effectiveDark = pendingDarkMode === null
+    ? detectedScheme?.mode === 'dark'
+    : pendingDarkMode;
+
+  /**
+   * 切换明暗：仅更新草稿（切换后不立刻生效，确定时生效）。
+   *
+   * 语义（用户明确约定）：
+   * - 跟随系统模式下点开关：同时「退出跟随」+「切换草稿」——
+   *   新值 = 检测系统偏好的反（检测不可用时视为暗）；
+   * - 手动模式下点开关：普通手动切换（取反）；
+   * - 手动模式下点「跟随系统」：进入跟随模式，开关回到检测值。
+   *
+   * 实现要点：md-switch 内部有独立的 checkbox 状态机（原生切换 →
+   * handleInput 回写 selected），与 React 受控赋值存在时序竞争，是
+   * 「跟随模式点两次才生效」的根源。这里把 md-switch 纯展示化
+   * （pointer-events: none + 内部 input 移出 Tab 序），交互全部由
+   * 外层容器接管——草稿只经函数式更新计算，彻底无竞争。
+   */
+  const handleDarkSwitchToggle = () => {
+    setPendingDarkMode((prev) =>
+      prev === null ? !(detectedScheme?.mode === 'dark') : !prev,
+    );
+  };
+
+  /** 移除 md-switch 内部 input 的键盘可达性（交互由外层容器接管） */
+  const darkSwitchRef = useRef<MdSwitchElement | null>(null);
+  useEffect(() => {
+    const input = darkSwitchRef.current?.shadowRoot?.querySelector('input') as HTMLInputElement | null | undefined;
+    if (input && input.tabIndex !== -1) input.tabIndex = -1;
+  });
+
+  /** 「跟随系统」复位：清空显式选择（草稿层面，确定才保存） */
+  const resetDarkMode = () => {
+    setPendingDarkMode(null);
+  };
 
   /** 选择预设色盘：生成 CSS 并全局即时预览（含跨窗口广播） */
   const selectPreset = useCallback((seed: string, presetId: string) => {
@@ -152,6 +209,18 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
     else showToast(t('theme.matugen_not_found'), 'error');
   }, []);
 
+  /**
+   * 系统主题（DMS）：后端读取 DMS 配置与生成的颜色方案（dms-colors.json），
+   * ThemeService 的 system 分支注入整套 dark/light M3 角色——直接继承桌面
+   * 环境配色。不可用（未安装 DMS / 文件缺失）时卡保持禁用并提示。
+   */
+  const selectSystemTheme = useCallback(() => {
+    if (!dmsInfo.available) return;
+    const cfg: ThemeConfig = { kind: 'system' };
+    setDraft(cfg);
+    void ThemeService.applyTheme(cfg).then(() => ThemeService.broadcastPreview());
+  }, [dmsInfo.available]);
+
   /** 调色盘确定：以所选颜色为种子生成自定义主题（含跨窗口广播） */
   const handlePickerClose = useCallback((color: string | null) => {
     setPickerOpen(false);
@@ -177,16 +246,18 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
     onClose();
   };
 
-  /** 应用：保存配置（生效并持久化），对话框保持打开 */
+  /** 应用：保存配置与明暗草稿（生效并持久化），对话框保持打开 */
   const handleApply = () => {
     onSave(draft);
+    if (pendingDarkMode !== darkMode) onDarkModeChange(pendingDarkMode);
     snapshotRef.current = ThemeService.getCurrentCss();
   };
 
-  /** 确定：保存配置并关闭（close 事件的二次触发不视为取消） */
+  /** 确定：保存配置与明暗草稿并关闭（close 事件的二次触发不视为取消） */
   const handleConfirm = () => {
     confirmedRef.current = true;
     onSave(draft);
+    if (pendingDarkMode !== darkMode) onDarkModeChange(pendingDarkMode);
     onClose();
   };
 
@@ -234,6 +305,45 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
             </div>
           </div>
 
+          {/* 黑暗主题开关：默认跟随系统；切换只改草稿，确定/应用才生效。
+              复位按钮常驻在开关左侧（跟随模式下禁用置灰），开关位置
+              在任何模式下都不变，反复切换/复位不会落点漂移。 */}
+          <div className="theme-dark-row">
+            <div className="theme-dark-text">
+              <span className="theme-dark-title">{t('theme.dark_mode')}</span>
+              {/* 副标题占位常驻：显式模式下为空，行高不变 */}
+              <span className="theme-dark-sub">
+                {pendingDarkMode === null && detectedScheme
+                  ? `${t('theme.follow_system')}（${t(`theme.source_${detectedScheme.source}`)}）`
+                  : ''}
+              </span>
+            </div>
+            <Button
+              variant="text"
+              className="theme-dark-reset"
+              disabled={pendingDarkMode === null}
+              onClick={resetDarkMode}
+              title={t('theme.follow_system')}
+            >
+              {t('theme.follow_system')}
+            </Button>
+            <div
+              className="theme-dark-switch-area"
+              role="switch"
+              aria-checked={effectiveDark}
+              tabIndex={0}
+              onClick={handleDarkSwitchToggle}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  handleDarkSwitchToggle();
+                }
+              }}
+            >
+              <Switch ref={darkSwitchRef} selected={effectiveDark} />
+            </div>
+          </div>
+
           {/* 预设色盘 */}
           <div className="theme-color-section">
             <div className="theme-color-section-header">{t('theme.presets')}</div>
@@ -255,16 +365,19 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
           <div className="theme-color-section">
             <div className="theme-color-section-header">{t('theme.special')}</div>
             <div className="theme-color-specials">
-              {/* 系统主题：尚未支持，写死为不可选（保留结构，日后实现 DMS 对接） */}
+              {/* 系统主题（DMS）：读取桌面环境配色；未安装 DMS 时禁用并提示 */}
               <button
                 type="button"
-                className="theme-color-special"
-                disabled
-                title={t('theme.system_unsupported')}
+                className={`theme-color-special${selectedKind === 'system' ? ' theme-color-special--selected' : ''}`}
+                disabled={!dmsInfo.available}
+                title={dmsInfo.available ? t('theme.system_desc') : t('theme.system_unavailable')}
+                onClick={selectSystemTheme}
               >
                 <Icon name="palette" className="theme-color-special-icon" />
                 <span className="theme-color-special-title">{t('theme.system')}</span>
-                <span className="theme-color-special-desc">{t('theme.system_unsupported')}</span>
+                <span className="theme-color-special-desc">
+                  {dmsInfo.available ? t('theme.system_desc') : t('theme.system_unavailable')}
+                </span>
               </button>
               {/* 壁纸取色 */}
               <button

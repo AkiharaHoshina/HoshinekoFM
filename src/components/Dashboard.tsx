@@ -21,6 +21,8 @@ interface DashboardProps {
     onPinItem: (name: string, path: string, isDir: boolean) => void;
     /** 按索引移除固定项（悬停关闭按钮） */
     onRemovePin: (index: number) => void;
+    /** 拖拽排序固定项：把 fromIndex 的条目移动到 toIndex（App 侧写入持久化存储） */
+    onReorderPin: (fromIndex: number, toIndex: number) => void;
     /**
      * 滚动文本开关：开启时「最近访问」与「固定项」的超长名称
      * 单行滚动显示；关闭时最近访问为单行省略号、固定项最多 3 行截断。
@@ -131,7 +133,7 @@ const t = (text: string): string => {
   return (ti as any)(key ?? text);
 };
 
-export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pinnedItems, onPinItem, onRemovePin, marqueeEnabled, showHomeStorageUsage }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pinnedItems, onPinItem, onRemovePin, onReorderPin, marqueeEnabled, showHomeStorageUsage }) => {
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
@@ -269,6 +271,49 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
     onRemovePin(index);
   };
 
+  /**
+   * 固定项拖拽排序（HTML5 DnD，仅固定项卡片之间）。
+   *
+   * 源索引放在 dataTransfer（text/plain）里：全局 nativeDragTracker 在
+   * 任意真实 drop 的捕获阶段会补发合成 dragend（Wayland 兜底机制），
+   * 若用 ref 保存源索引会被该合成事件先行清空——dataTransfer.getData
+   * 在 drop 时仍可读，不受影响。
+   * 拖拽只影响排序，不经过文件拖拽系统（startDrag/claim 均不涉及）。
+   */
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handlePinDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+  };
+
+  const handlePinDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    // dragover 高频事件：同值早退，仅在目标变化时更新高亮状态
+    if (dragOverIndex !== index) setDragOverIndex(index);
+  };
+
+  const handlePinDragLeave = (e: React.DragEvent) => {
+    const el = e.currentTarget as HTMLElement;
+    if (e.relatedTarget && el.contains(e.relatedTarget as Node)) return;
+    setDragOverIndex(null);
+  };
+
+  const handlePinDrop = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const fromRaw = e.dataTransfer.getData('text/plain');
+    setDragOverIndex(null);
+    const from = Number(fromRaw);
+    if (!fromRaw || !Number.isFinite(from) || from === index) return;
+    onReorderPin(from, index);
+  };
+
+  const handlePinDragEnd = () => {
+    setDragOverIndex(null);
+  };
+
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -357,7 +402,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
             {pinnedItems.map((item, idx) => (
               <div
                 key={idx}
-                className="pinned-item"
+                className={`pinned-item${dragOverIndex === idx ? ' pinned-item--drag-over' : ''}`}
+                draggable
+                onDragStart={(e) => handlePinDragStart(e, idx)}
+                onDragOver={(e) => handlePinDragOver(e, idx)}
+                onDragLeave={handlePinDragLeave}
+                onDrop={(e) => handlePinDrop(e, idx)}
+                onDragEnd={handlePinDragEnd}
                 onClick={() => item.isDir === false ? onOpenFile?.(item.path) : onNavigate(item.path)}
               >
                 <div className="pinned-icon">

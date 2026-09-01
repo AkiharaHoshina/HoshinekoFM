@@ -145,12 +145,21 @@ const FileListComponent: React.FC<FileListProps> = ({
       return;
     }
 
+    // 目标条目尚未出现在当前目录列表中时不标记已处理——等 files
+    // 更新后重试；找到后再用 scrollKey 防重复滚动/选中。
+    // 必须校验条目是 currentPath 的直接子项：搜索结果列表（currentPath
+    // 仍是搜索根目录）里可能出现同名条目，若此时就消费掉滚动目标，
+    // 「定位到所在文件夹」导航完成后不会再次滚动/选中。
+    const idx = files.findIndex((f) => {
+      if (f.name !== scrollToFileName) return false;
+      const parent = f.path.substring(0, f.path.lastIndexOf('/'));
+      return (parent || '/') === (currentPath || '');
+    });
+    if (idx === -1) return;
+
     const scrollKey = scrollToFileName + "|" + (currentPath || "");
     if (scrollKey === prevScrollTargetRef.current) return;
     prevScrollTargetRef.current = scrollKey;
-
-    const idx = files.findIndex((f) => f.name === scrollToFileName);
-    if (idx === -1) return;
 
     const listEl = listImperativeRef.current;
     if (!listEl) return;

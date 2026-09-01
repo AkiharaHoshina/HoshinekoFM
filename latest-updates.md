@@ -1,5 +1,70 @@
 # 更新日志
 
+## v0.11.16 — 搜索定位与高级过滤、批量重命名、压缩、权限编辑与主题明暗
+
+### 搜索：结果定位与高级过滤
+
+- 「定位到所在文件夹」：搜索模式下右键菜单改为本地菜单（打开 / 定位到所在文件夹 / 复制 / 剪切 / 删除 / 属性，删除后带当前过滤重跑搜索刷新结果）——定位跳转到条目父目录并滚动定位 + 选中目标条目；搜索结果与目录同名条目的竞态已处理（按名称匹配时校验父路径与当前目录一致）
+- 搜索高级过滤：类型（文件/文件夹）、最小/最大大小，与后端 `system:search` 参数一一对应；maxSize 处理 `find -size` 向上取整陷阱（数值翻倍——取整后 `-size -2M` 恰等价于「≤ 1M」），大小字符串解析失败时跳过该过滤而非生成错误参数
+- 过滤控件挂在 Omnibar 搜索结果下方（类型下拉 + 两个大小输入框），实时带过滤重跑搜索
+
+### 批量重命名
+
+- 右键菜单新增「批量重命名...」（选中 ≥ 2 项时可用）→ `BatchRenameDialog`
+- 四种模式：查找替换 / 添加前缀 / 添加后缀 / 序号重命名（基础名 + 起始序号 + 位数）
+- 实时预览：每条旧名 → 新名映射列表，逐条冲突检测（与现有条目重名 / 名称无效），确认时校验通过才执行
+- `executeBatchRename` 逐条重命名（与单条重命名同一错误提示链路），完成后刷新当前目录
+
+### 压缩归档
+
+- 右键菜单新增「压缩...」（除块设备外）→ `CompressDialog`：归档名 + 格式选择（zip / tar.gz）；默认名单条目取条目名（去后缀）、多条目取当前目录名（根目录为 Archive）；已存在文件名异步补齐做前端冲突校验
+- 后端 `fs:compress`：`zip -r` / `tar -czf` 以 argv 数组 spawn（路径含空格/引号安全），cwd 为归档所在目录、条目以 basename 传入（归档内不含源路径层级）；源路径必须绝对路径；**归档已存在返回 EXISTS 绝不覆盖**（zip/tar 默认会覆盖）；zip 缺失返回 `NO_TOOL` 结构化提示由前端翻译
+- 完成后刷新当前目录
+
+### 属性对话框：权限编辑（chmod）
+
+- 新增「修改权限」入口：3 位八进制输入 + 实时校验（示例提示 755），应用成功后更新权限显示并刷新目录
+- 后端 `fs:chmod`：只接受绝对路径与 3 位八进制（`/^[0-7]{3}$/`）——拒绝符号模式与 4 位特殊位（setuid/setgid/sticky），从源头杜绝意外设置特权位；返回结构化结果（`INVALID_PATH` / `INVALID_MODE` / chmod 系统错误）由前端翻译
+
+### 主题：系统主题（DMS）与黑暗主题开关
+
+- 系统主题卡启用：此前写死「尚未支持」，现在后端读 DMS 配置与生成的颜色方案（`dms-colors.json`），`ThemeService` 的 `system` 分支注入整套 dark/light M3 角色——直接继承桌面环境配色；未安装 DMS / 文件缺失时卡保持禁用并提示
+- 黑暗主题开关（主题颜色对话框内）：跟随系统（默认）/ 强制暗色 / 强制亮色
+  - 跟随系统检测链：DMS（`settings.json` 存在时经门户后端 gsettings color-scheme）→ GNOME（gsettings）→ KDE（kreadconfig6/5 读 kdeglobals ColorScheme）→ fallback 暗色；niri 不负责明暗主题（其 preferred-color-scheme 仅告知合成器偏好），不参与检测
+  - 经 `nativeTheme.themeSource`（`theme:set-source` IPC）全局即时同步所有窗口（含文件选择器），现有全部主题 CSS（暗 `:root` + 亮 `@media`）无需改动即正确切换
+  - 草稿机制：开关只改本地预览不立即生效，「应用/确定」时经 `onDarkModeChange` 持久化（`settings.darkMode`）并由 App 全局应用；取消回滚快照
+- md-switch 纯展示化（`pointer-events: none` + 内部 input 移出 Tab 序，交互由外层容器接管）：规避 md-switch 内部 checkbox 状态机与 React 受控赋值的时序竞争（「跟随模式点两次才生效」的根因）
+
+### 界面缩放
+
+- 设置 → 外观新增「界面缩放」滑条（50%–200%）：整页缩放（含文件图标），与语言同款「拖动只更新本地预览，确定/关闭设置（退出 = 确定）时一次性应用」
+- `useUiZoom` hook：持久化 `settings.uiScale`（百分比），变更经 `window:set-zoom` IPC 应用本窗口 zoom factor，跨窗口 storage 事件同步（选择器窗口挂同一 hook 同步跟随）；主进程 handler 幂等（同值不重设）
+- 初始缩放在 `main.tsx` 首帧绘制前应用（preload 阶段应用会破坏 react-window/AutoSizer 初始测量），挂载后由 hook 校正
+
+### 拖拽到地址栏
+
+- 地址栏背景成为拖放落点：拖到 Omnibar = 复制/移动到当前目录（新抽 `utils/addressBarDrop.ts` 的 `createAddressBarDropHandler`，复用完整落点管线：冲突处理 + 批量任务 + 回收站语义 + Wayland 兜底）
+
+### 自定义终端（程序外配置）
+
+- 读取 `~/.config/HoshinekoFM/terminal.conf`（`command = <终端>` 或裸命令，`#` 注释）覆盖默认终端——优先级高于 `$TERMINAL` / xdg-terminal-exec 等全部检测链（bugs.md 遗留项「在自定义终端中打开」的落地方式）
+- 参数风格按命令 basename 查 `TERMINAL_SPECS`，未知终端回退通用 `-e`；文件缺失/解析失败/命令不存在时回退系统检测链
+
+### 仪表盘固定项拖拽排序
+
+- 固定项卡支持 HTML5 DnD 排序（`effectAllowed='move'`，仅排序不经过文件拖拽系统），拖拽经过项显示虚线高亮（`pinned-item--drag-over`），排序结果持久化 `dashboard.pinned`
+
+### 对话框修复与样式
+
+- 「关闭→快速重开」竞态修复：md-dialog 的 open/close 是异步状态机，快速重开时 open=true 赋值可能在收尾前被内部 close() 反写回 false（隐藏窗口/后台节流下关闭动画拖到数百毫秒时竞态必现），对话框间歇性打不开——打开周期计数 `cycle` 作为 md-dialog 的 key，**每次打开挂载全新元素**以干净状态重走 show()；代价是关闭无退出动画（可接受损失）
+- 串行化最小延迟收紧：`Math.max(DIALOG_GAP_MS, ...)` 强制不与上一对话框关闭动画同帧出现
+- 对话框 content slot 嵌套滚动容器（批量重命名预览、冲突列表等）滚动条 M3 化：文档级 `::-webkit-scrollbar` 不匹配 slotted 内容伪元素，改在 shadow root 内 `::slotted(*)` 显式声明
+
+### 其他
+
+- i18n 新增约 50 个键 × 12 语言（批量重命名、压缩、权限编辑、界面缩放、搜索过滤、结果定位等）
+- 版本号升至 `0.11.16`
+
 ## v0.11.15 — 内置终端目录切换重构、功能栏与主题原子色修复
 
 ### 内置终端：取消自动切换 + 右键切换目录

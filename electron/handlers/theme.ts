@@ -1,4 +1,4 @@
-import { ipcMain, nativeImage } from 'electron';
+import { ipcMain, nativeImage, nativeTheme } from 'electron';
 import path from 'path';
 import os from 'os';
 import { promises as fs } from 'fs';
@@ -50,6 +50,65 @@ export interface DmsThemeResult {
   contrast?: number;
   /** 全套 M3 角色色值（dark/light，hex 字符串） */
   colors?: { dark: Record<string, string>; light: Record<string, string> };
+}
+
+/** 系统明暗偏好检测结果 */
+export interface ColorSchemeResult {
+  /** 有效模式：dark / light（无「未知」——检测不到时 fallback 暗色） */
+  mode: 'dark' | 'light';
+  /** 检测来源（供 UI 显示「跟随系统（GNOME）」等副标题） */
+  source: 'dms' | 'gnome' | 'kde' | 'fallback';
+}
+
+/**
+ * 检测系统明暗偏好（「黑暗主题」开关的「跟随系统」默认值）。
+ * 按优先级依次尝试：
+ * 1. **DMS**：settings.json 存在时（`syncModeWithPortal=true` 与门户同步），
+ *    读 XDG 外观门户后端（gsettings color-scheme）作为 DMS 当前模式；
+ * 2. **GNOME**：`gsettings org.gnome.desktop.interface color-scheme`；
+ * 3. **KDE Plasma**：`kreadconfig6`/`kreadconfig` 读 kdeglobals 的 ColorScheme；
+ * 4. **Fallback**：dark（按需求：检测不到时回退默认暗色）。
+ *
+ * 注意：niri 不负责明暗主题（其 preferred-color-scheme 仅告知客户端
+ * 合成器偏好，实际明暗由门户/桌面环境决定），故不参与检测链。
+ */
+async function detectColorScheme(): Promise<ColorSchemeResult> {
+  // 1) DMS（经门户）
+  try {
+    await fs.access(DMS_SETTINGS_PATH);
+    try {
+      const { stdout } = await execFileAsync(
+        'gsettings', ['get', 'org.gnome.desktop.interface', 'color-scheme'], { timeout: 3000 },
+      );
+      const v = stdout.trim();
+      if (v.includes('prefer-dark')) return { mode: 'dark', source: 'dms' };
+      if (v.includes('prefer-light') || v.includes('default')) return { mode: 'light', source: 'dms' };
+    } catch { /* 门户后端不可用，继续下一级 */ }
+  } catch { /* 无 DMS，继续 */ }
+
+  // 2) GNOME
+  try {
+    const { stdout } = await execFileAsync(
+      'gsettings', ['get', 'org.gnome.desktop.interface', 'color-scheme'], { timeout: 3000 },
+    );
+    const v = stdout.trim();
+    if (v.includes('prefer-dark')) return { mode: 'dark', source: 'gnome' };
+    if (v.includes('prefer-light') || v.includes('default')) return { mode: 'light', source: 'gnome' };
+  } catch { /* gsettings 不可用，继续 */ }
+
+  // 3) KDE Plasma
+  for (const tool of ['kreadconfig6', 'kreadconfig']) {
+    try {
+      const { stdout } = await execFileAsync(
+        tool, ['--file', 'kdeglobals', '--group', 'General', '--key', 'ColorScheme'], { timeout: 3000 },
+      );
+      const v = stdout.trim();
+      if (v) return { mode: /dark/i.test(v) ? 'dark' : 'light', source: 'kde' };
+    } catch { /* 尝试 kreadconfig（Plasma 5） */ }
+  }
+
+  // 4) Fallback：默认暗色
+  return { mode: 'dark', source: 'fallback' };
 }
 
 /** 壁纸取色生成结果 */
@@ -398,6 +457,24 @@ async function genWallpaperTheme(imagePath: string, type: string, contrast: numb
 export function registerThemeHandlers() {
   /** 读取 DMS 系统主题信息（scheme / contrast / 全套角色） */
   ipcMain.handle('theme:read-dms', () => readDmsTheme());
+
+  /** 检测系统明暗偏好（黑暗主题开关的「跟随系统」值） */
+  ipcMain.handle('theme:detect-color-scheme', () => detectColorScheme());
+
+  /**
+   * 设置应用级明暗来源（Electron nativeTheme）。
+   * - 'dark' / 'light'：强制全应用（所有窗口、文件选择器）该模式，
+   *   渲染进程的 prefers-color-scheme 立即随之变化，现有全部主题
+   *   CSS（暗 :root + 亮 @media）无需改动即正确切换；
+   * - 'system'：恢复跟随操作系统。
+   * nativeTheme 为全局状态：任窗口调用即对所有窗口即时生效，
+   * 无需逐窗口广播。
+   */
+  ipcMain.handle('theme:set-source', (_event, source: string) => {
+    if (source === 'dark' || source === 'light' || source === 'system') {
+      nativeTheme.themeSource = source;
+    }
+  });
 
   /** 探测当前壁纸图片路径（失败返回 null） */
   ipcMain.handle('theme:find-wallpaper', () => findWallpaper());

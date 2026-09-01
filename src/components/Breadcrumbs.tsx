@@ -7,9 +7,7 @@ import { ContextMenu } from "./ContextMenu";
 import type { ContextMenuItem } from "./ContextMenu";
 import { useDrag } from "../contexts/DragContext";
 import type { IFile } from "../types/files";
-import type { DragClaimResult } from "../types/electron.d";
-import { extractDropPaths, samePathSet } from "../utils/dragDrop";
-import { shouldSuppressDrop } from "../utils/nativeDragTracker";
+import { createAddressBarDropHandler } from "../utils/addressBarDrop";
 import { t } from "../i18n";
 
 type HomeMap = Record<string, { username: string; uid: number }>;
@@ -165,6 +163,15 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     useState<BreadcrumbCtxMenuState | null>(null);
   const { getDragState, endDrag } = useDrag();
 
+  /**
+   * 共享落点管线（内部/跨窗口/外部三段式，见 addressBarDrop）。
+   * 与地址栏背景（Omnibar）共用同一实现，保证落点语义一致。
+   */
+  const dropHandler = useMemo(
+    () => createAddressBarDropHandler({ getDragState, endDrag, onDropFiles, onDropExternalFiles }),
+    [getDragState, endDrag, onDropFiles, onDropExternalFiles],
+  );
+
   useEffect(() => {
     window.electron
       .getHomeMap()
@@ -239,10 +246,8 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   }, [currentPath, parts]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = e.shiftKey ? "copy" : "move";
-  }, []);
+    dropHandler.handleDragOver(e);
+  }, [dropHandler]);
 
   const handleDragEnter = useCallback(
     (e: React.DragEvent, targetPath: string) => {
@@ -262,65 +267,12 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   }, []);
 
   const handleDrop = useCallback(
-    async (e: React.DragEvent, targetPath: string) => {
-      e.preventDefault();
-      e.stopPropagation();
+    (e: React.DragEvent, targetPath: string) => {
+      // 清空落点高亮后走共享落点管线（内部/跨窗口/外部三段式）
       setDragOverPath(null);
-
-      // 幻影 drop-back（本窗口刚发起过拖拽，真实 drop 落在其他窗口）：
-      // 直接忽略，防止同一次拖放被重复处理
-      if (shouldSuppressDrop()) return;
-
-      // 1) 同窗口内部拖拽（dragState 存活）
-      const dragState = getDragState();
-      if (dragState && dragState.files.length > 0) {
-        if (dragState.sourcePath === targetPath) {
-          return;
-        }
-        const operation: "move" | "copy" = e.shiftKey ? "copy" : "move";
-        onDropFiles(targetPath, dragState.files, operation);
-        endDrag();
-        return;
-      }
-
-      // 2) 跨窗口 / 外部应用：主进程登记仲裁（同一次跨窗口拖放只授予一个窗口）
-      const externalPaths = extractDropPaths(e.dataTransfer);
-      let claim: DragClaimResult;
-      try {
-        claim = await window.electron.claimDragFiles();
-      } catch {
-        claim = { status: 'none' };
-      }
-      if (claim.status === 'consumed') {
-        // 幻影 drop-back（同一次拖放已被另一窗口处理）：静默退出
-        return;
-      }
-      if (claim.status === 'granted') {
-        const metas = claim.files;
-        if (externalPaths.length > 0 && !samePathSet(metas.map((m) => m.path), externalPaths)) {
-          // 外部应用拖入（登记陈旧）：按外部复制处理
-          onDropExternalFiles(targetPath, externalPaths);
-          return;
-        }
-        const entries: IFile[] = metas.map((m) => ({
-          name: m.name,
-          path: m.path,
-          isDirectory: m.isDirectory,
-          size: 0,
-          mtime: new Date(),
-          mime: null,
-          trashOriginalPath: m.trashOriginalPath,
-        }));
-        onDropFiles(targetPath, entries, 'move');
-        return;
-      }
-
-      // 3) 外部应用拖入：复制
-      if (externalPaths.length > 0) {
-        onDropExternalFiles(targetPath, externalPaths);
-      }
+      void dropHandler.handleDrop(e, targetPath);
     },
-    [getDragState, onDropFiles, onDropExternalFiles, endDrag],
+    [dropHandler],
   );
 
   const handleBreadcrumbContextMenu = useCallback(

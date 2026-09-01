@@ -2,7 +2,7 @@ import { ipcMain, app, shell } from 'electron';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { promisify } from 'util';
-import { exec, spawn } from 'child_process';
+import { exec, spawn, type ChildProcess } from 'child_process';
 import { detectMimeBatch } from '../fsUtils';
 import { getMountMap, resolveAccessibleParent, getExecError } from '../shared';
 
@@ -763,6 +763,31 @@ export function registerFsHandlers() {
     return true;
   });
 
+  /**
+   * 修改文件/目录权限（chmod）。
+   *
+   * - 只接受绝对路径与 3 位八进制模式（rwxrwxrwx，如 '755'）——
+   *   不接受符号模式与 4 位特殊位（setuid/setgid/sticky），
+   *   从输入源头杜绝意外设置特权位。
+   * - 返回结构化结果：success / code（INVALID_PATH、INVALID_MODE）
+   *   / error（chmod 系统错误消息），由前端翻译提示。
+   */
+  ipcMain.handle('fs:chmod', async (_, filePath: string, modeStr: string) => {
+    if (typeof filePath !== 'string' || !filePath.startsWith('/')) {
+      return { success: false, code: 'INVALID_PATH' };
+    }
+    if (typeof modeStr !== 'string' || !/^[0-7]{3}$/.test(modeStr)) {
+      return { success: false, code: 'INVALID_MODE' };
+    }
+    try {
+      await fs.chmod(filePath, parseInt(modeStr, 8));
+      return { success: true };
+    } catch (e) {
+      console.error('chmod failed', e);
+      return { success: false, error: (e as NodeJS.ErrnoException).message };
+    }
+  });
+
   // Move a single file/directory to the system trash.
   ipcMain.handle('fs:trash', async (_, filePath: string) => {
     await shell.trashItem(filePath);
@@ -832,6 +857,71 @@ export function registerFsHandlers() {
     } catch (e) {
       console.error('Extract failed', e);
       return false;
+    }
+  });
+
+  /**
+   * 把一组文件/目录压缩为 zip 或 tar.gz 归档。
+   *
+   * - zip 走系统 `zip -r`，tar.gz 走 `tar -czf`；两者都以 argv 数组
+   *   spawn（路径含空格/引号安全），cwd 设为归档所在目录、条目用
+   *   basename 传入——归档内不包含源路径的目录层级。
+   * - 源路径必须为绝对路径（防止相对路径逃逸）；条目名取自 basename，
+   *   因此源条目必须位于同一目录（由前端保证，归档语义如此）。
+   * - 压缩工具缺失（zip 不是所有发行版预装）时返回结构化错误码
+   *   `NO_TOOL`，由前端翻译提示安装。
+   *
+   * @param paths - 待压缩的绝对路径数组（同目录下的文件/目录）
+   * @param destPath - 归档文件完整路径（含 .zip / .tar.gz 后缀）
+   * @param format - 归档格式：'zip' | 'tar.gz'
+   * @returns success 表示压缩完成；失败时携带错误码与消息
+   */
+  ipcMain.handle('fs:compress', async (_, params: { paths: string[]; destPath: string; format: 'zip' | 'tar.gz' }) => {
+    const { paths: sourcePaths, destPath, format } = params || ({} as { paths?: string[]; destPath?: string; format?: string });
+    if (
+      !Array.isArray(sourcePaths) || sourcePaths.length === 0 ||
+      typeof destPath !== 'string' || !destPath ||
+      (format !== 'zip' && format !== 'tar.gz')
+    ) {
+      return { success: false, code: 'INVALID_ARGS', error: 'invalid arguments' };
+    }
+    // 只允许绝对路径，防相对路径解析到工作目录之外
+    if (!destPath.startsWith('/') || sourcePaths.some((p) => typeof p !== 'string' || !p.startsWith('/'))) {
+      return { success: false, code: 'INVALID_ARGS', error: 'paths must be absolute' };
+    }
+    try {
+      // 归档文件已存在时直接失败，绝不静默覆盖（zip/tar 默认都会覆盖）
+      const destExists = await fs.access(destPath).then(() => true).catch(() => false);
+      if (destExists) {
+        return { success: false, code: 'EXISTS', error: destPath };
+      }
+      const destDir = path.dirname(destPath);
+      const names = sourcePaths.map((p) => path.basename(p));
+
+      await new Promise<void>((resolve, reject) => {
+        let child: ChildProcess;
+        if (format === 'zip') {
+          child = spawn('zip', ['-r', destPath, ...names], { cwd: destDir });
+        } else {
+          child = spawn('tar', ['-czf', destPath, ...names], { cwd: destDir });
+        }
+        let stderr = '';
+        child.stderr?.on('data', (d: Buffer) => { stderr += String(d); });
+        child.on('error', (err: Error) => reject(err));
+        child.on('close', (code: number | null) => {
+          if (code === 0) resolve();
+          else reject(new Error(stderr.trim() || `compress exited with code ${code}`));
+        });
+      });
+      return { success: true };
+    } catch (e) {
+      const err = e as NodeJS.ErrnoException;
+      console.error('Compress failed', e);
+      if (err.code === 'ENOENT') {
+        // zip 未安装（tar 为 coreutils，基本必有）
+        return { success: false, code: 'NO_TOOL', error: format === 'zip' ? 'zip' : 'tar' };
+      }
+      return { success: false, error: err.message };
     }
   });
 

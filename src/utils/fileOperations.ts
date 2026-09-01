@@ -144,6 +144,71 @@ export async function renameFile(
   }
 }
 
+/**
+ * 修改文件/目录权限（3 位八进制模式，如 '755'）。
+ * 后端已做路径/模式校验；成功时回调新 mode 数值（供属性对话框
+ * 刷新显示），失败按错误码弹 toast。
+ *
+ * @param filePath - 绝对路径
+ * @param modeStr - 3 位八进制字符串（rwxrwxrwx）
+ * @param onSuccess - 成功后回调（参数为新的 mode 数值）
+ */
+export async function changePermissions(
+  filePath: string,
+  modeStr: string,
+  onSuccess?: (mode: number) => void,
+): Promise<void> {
+  try {
+    const result = await window.electron.chmodFile(filePath, modeStr);
+    if (result.success) {
+      showToast(t('toast.permissions_changed'), 'success');
+      onSuccess?.(parseInt(modeStr, 8));
+    } else if (result.code === 'INVALID_MODE') {
+      showToast(t('error.chmod_invalid_mode'), 'error');
+    } else {
+      showToast(t('error.chmod_failed', result.error || t('error.unknown')), 'error');
+    }
+  } catch (e) {
+    showToast(t('error.chmod_failed', (e as Error)?.message || t('error.unknown')), 'error');
+  }
+}
+
+/**
+ * 执行批量重命名（对话框已校验过名称冲突）。
+ *
+ * 逐条 rename，收集失败数，最后给出汇总 toast（部分失败会追加
+ * 失败条数提示）。rename 通常很快，不走任务管线；目标与源同目录，
+ * 不涉及跨设备。
+ *
+ * @param plans - { src 旧绝对路径, dest 新绝对路径 } 列表
+ * @param onSuccess - 至少一项成功后的回调（通常用于刷新文件列表）
+ */
+export async function executeBatchRename(
+  plans: { src: string; dest: string }[],
+  onSuccess?: () => void,
+): Promise<void> {
+  if (plans.length === 0) return;
+  let ok = 0;
+  let fail = 0;
+  for (const p of plans) {
+    try {
+      await window.electron.renameFile(p.src, p.dest);
+      ok++;
+    } catch {
+      fail++;
+    }
+  }
+  if (ok > 0) onSuccess?.();
+  if (fail === 0) {
+    showToast(t('toast.batch_renamed', ok), 'success');
+  } else if (ok > 0) {
+    showToast(t('toast.batch_renamed', ok), 'warning');
+    showToast(t('toast.failed_items', fail), 'error');
+  } else {
+    showToast(t('toast.failed_items', fail), 'error');
+  }
+}
+
 export async function trashFile(
   filePath: string,
   onSuccess?: () => void,
@@ -335,6 +400,51 @@ export async function extractFile(
     }
   } catch (e) {
     showToast(formatFileOpError(t('operation.extract_op'), fileName(filePath), e), 'error');
+  }
+}
+
+/**
+ * 压缩一组同目录条目为 zip / tar.gz 归档。
+ *
+ * 压缩走主进程 spawn 系统命令，期间显示不确定进度 toast；
+ * 完成后刷新当前目录（onSuccess），失败按错误码提示：
+ * - `NO_TOOL`：zip 未安装（tar 为 coreutils，基本必有）
+ * - 其余：压缩失败 + 原始错误消息
+ *
+ * @param paths - 待压缩的绝对路径数组（同一目录下）
+ * @param destPath - 归档文件完整路径（含 .zip / .tar.gz 后缀）
+ * @param format - 归档格式：'zip' | 'tar.gz'
+ * @param onSuccess - 压缩成功后回调（通常用于刷新文件列表）
+ */
+export async function compressFiles(
+  paths: string[],
+  destPath: string,
+  format: 'zip' | 'tar.gz',
+  onSuccess?: () => void,
+): Promise<void> {
+  const toastId = showProgressToast(t('toast.compressing', fileName(destPath)));
+  try {
+    const result = await window.electron.compress({ paths, destPath, format });
+    if (result.success) {
+      finishToast(toastId, t('toast.compressed', fileName(destPath)), 'success');
+      onSuccess?.();
+    } else if (result.code === 'EXISTS') {
+      finishToast(toastId, t('error.name_exists', fileName(destPath)), 'error');
+    } else if (result.code === 'NO_TOOL') {
+      finishToast(toastId, t('error.compress_no_tool'), 'error');
+    } else {
+      finishToast(
+        toastId,
+        t('error.compress_failed', result.error || t('error.unknown')),
+        'error',
+      );
+    }
+  } catch (e) {
+    finishToast(
+      toastId,
+      t('error.compress_failed', (e as Error)?.message || t('error.unknown')),
+      'error',
+    );
   }
 }
 

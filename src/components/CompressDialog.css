@@ -1,0 +1,49 @@
+.compress-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 320px;
+}
+
+.compress-format-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.compress-format-label {
+  font-size: 14px;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-right: 4px;
+}
+
+.compress-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--md-sys-color-on-surface);
+}
+
+.compress-dest-info {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.compress-dest-label {
+  color: var(--md-sys-color-on-surface-variant);
+  white-space: nowrap;
+}
+
+.compress-dest-path {
+  color: var(--md-sys-color-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}

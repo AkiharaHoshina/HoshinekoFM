@@ -105,6 +105,46 @@ interface DetectedTerminal {
 /** 默认终端检测缓存（Promise 级缓存；未找到时不缓存，下次重试） */
 let terminalDetection: Promise<DetectedTerminal | null> | null = null;
 
+/**
+ * 自定义终端配置文件路径：`~/.config/HoshinekoFM/terminal.conf`。
+ *
+ * 格式（简单键值或裸命令均可）：
+ * ```
+ * # 注释
+ * command = foot
+ * ```
+ * 或直接写一行命令：`foot`。`command` 值/裸行取第一个空白分隔的词
+ * 作为终端命令（与 $TERMINAL 处理一致），支持绝对路径。
+ *
+ * 配置文件存在时**优先于** $TERMINAL / xdg-terminal-exec 等全部
+ * 系统检测链（bugs.md 遗留项「在自定义终端中打开」的实现方式——
+ * 读取程序外配置文件指定终端）。参数风格按命令 basename 查
+ * {@link TERMINAL_SPECS}，未知终端回退通用 `-e` 风格。
+ *
+ * 文件缺失/解析失败/命令不存在时返回 null（继续走系统检测链）。
+ */
+const CUSTOM_TERMINAL_CONFIG = path.join(os.homedir(), '.config/HoshinekoFM/terminal.conf');
+
+/** 读取自定义终端配置（返回终端命令或 null） */
+async function readCustomTerminal(): Promise<string | null> {
+  let content: string;
+  try {
+    content = await fs.readFile(CUSTOM_TERMINAL_CONFIG, 'utf-8');
+  } catch {
+    return null;
+  }
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    // command = <cmd> 或裸命令行
+    const eq = line.indexOf('=');
+    const value = (eq >= 0 ? line.slice(eq + 1) : line).trim();
+    const cmd = value.split(/\s+/)[0];
+    if (cmd) return cmd;
+  }
+  return null;
+}
+
 /** 检查命令是否存在于 PATH（which 实现） */
 async function commandExists(cmd: string): Promise<boolean> {
   try {
@@ -117,6 +157,7 @@ async function commandExists(cmd: string): Promise<boolean> {
 
 /**
  * 检测系统默认终端模拟器，按优先级依次尝试：
+ * 0. 自定义终端配置 `~/.config/HoshinekoFM/terminal.conf`（用户显式覆盖）
  * 1. `$TERMINAL` 环境变量（用户显式指定）
  * 2. `xdg-terminal-exec`（freedesktop 新标准，可整包委托）
  * 3. `gsettings`（GNOME / Cinnamon / MATE / Budgie 的默认终端配置）
@@ -128,6 +169,12 @@ async function commandExists(cmd: string): Promise<boolean> {
  * 命中即返回对应命令与参数规格；全部失败返回 null。
  */
 async function detectDefaultTerminal(): Promise<DetectedTerminal | null> {
+  // 0) 自定义终端配置（程序外配置文件，优先级最高）
+  const customTerminal = await readCustomTerminal();
+  if (customTerminal && (await commandExists(customTerminal))) {
+    return { command: customTerminal, delegate: false, spec: TERMINAL_SPECS[path.basename(customTerminal)] ?? null };
+  }
+
   // 1) $TERMINAL 环境变量
   const envTerminal = process.env.TERMINAL;
   if (envTerminal) {
@@ -1191,13 +1238,40 @@ export function registerSystemHandlers() {
     }
   });
 
+  /**
+   * 把 find 的 -size 数值字符串翻倍（保留单位），用于 maxSize 过滤。
+   *
+   * find 的 -size 比较会把文件大小**向上取整**到目标单位：10 字节的
+   * 文件在 MiB 单位下取整为 1M。因此 `-size -1M` 会把所有 ≤ 1MiB 的
+   * 文件全部排除（它们取整后都等于 1M）——语义完全错误。取整后
+   * `-size -2M` 恰好等价于「大小 ≤ 1M」，故把数值翻倍即可得到正确
+   * 语义。单位不限（b/k/M/G/T 及默认 512 字节块），解析失败返回 null
+   * （跳过该过滤，不生成错误的参数）。
+   *
+   * @param size - find 风格的大小字符串，如 '1M'、'500k'、'10'
+   */
+  function doubleSizeValue(size: string): string | null {
+    const m = /^(\d+(?:\.\d+)?)([bckwMGTP]?)$/.exec(size.trim());
+    if (!m) return null;
+    const num = parseFloat(m[1]) * 2;
+    const text = Number.isInteger(num)
+      ? String(num)
+      : num.toFixed(2).replace(/\.?0+$/, '');
+    return text + m[2];
+  }
+
   ipcMain.handle('system:search', async (_, directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string }) => {
     try {
       const args = [directory];
       if (options?.type) args.push('-type', options.type);
       if (query) args.push('-iname', `*${query}*`);
+      // 最小大小：+N 语义为「严格大于 N」（find 取整后），与用户直觉一致
       if (options?.minSize) args.push('-size', `+${options.minSize}`);
-      if (options?.maxSize) args.push('-size', `-${options.maxSize}`);
+      // 最大大小：见 doubleSizeValue——直接 -N 会因 find 取整排除所有 ≤N 的文件
+      if (options?.maxSize) {
+        const doubled = doubleSizeValue(options.maxSize);
+        if (doubled) args.push('-size', `-${doubled}`);
+      }
 
       const { stdout } = await execFileAsync('find', args, { maxBuffer: 1024 * 1024 * 10 });
 

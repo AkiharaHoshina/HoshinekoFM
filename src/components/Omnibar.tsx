@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Breadcrumbs } from "./Breadcrumbs";
 import { Icon } from "./Icon";
 import { IconButton } from "./IconButton";
 import { ContextMenu } from "./ContextMenu";
 import type { ContextMenuItem } from "./ContextMenu";
 import type { IFile } from "../types/files";
+import { useDrag } from "../contexts/DragContext";
+import { createAddressBarDropHandler } from "../utils/addressBarDrop";
 import { t } from "../i18n";
 import "./Omnibar.css";
 
@@ -31,6 +33,25 @@ export const Omnibar: React.FC<OmnibarProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState(currentPath);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { getDragState, endDrag } = useDrag();
+
+  /**
+   * 地址栏背景落点（非胶囊区域）：拖到地址栏 = 复制/移动到**当前目录**，
+   * 与面包屑胶囊（各自的目录）共用同一三段式落点管线（addressBarDrop）。
+   * 同窗口同目录拖放静默忽略；跨窗口/外部拖入走移动/复制管线。
+   */
+  const addressBarDrop = useMemo(
+    () => createAddressBarDropHandler({ getDragState, endDrag, onDropFiles, onDropExternalFiles }),
+    [getDragState, endDrag, onDropFiles, onDropExternalFiles],
+  );
+
+  const handleAddressBarDragOver = useCallback((e: React.DragEvent) => {
+    addressBarDrop.handleDragOver(e);
+  }, [addressBarDrop]);
+
+  const handleAddressBarDrop = useCallback((e: React.DragEvent) => {
+    void addressBarDrop.handleDrop(e, currentPath);
+  }, [addressBarDrop, currentPath]);
 
   /** 当前路径中是否存在软链接目录段 */
   const [hasPathSymlinks, setHasPathSymlinks] = useState(false);
@@ -152,7 +173,11 @@ export const Omnibar: React.FC<OmnibarProps> = ({
           />
         </div>
       ) : (
-        <div className="omnibar-breadcrumbs">
+        <div
+          className="omnibar-breadcrumbs"
+          onDragOver={handleAddressBarDragOver}
+          onDrop={handleAddressBarDrop}
+        >
           <Breadcrumbs
             currentPath={currentPath}
             onNavigate={onNavigate}

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
 import { Icon } from './Icon';
+import { OutlinedTextField } from './md';
+import { changePermissions } from '../utils/fileOperations';
 import type { IFile } from '../types/files';
 import { t as ti } from '../i18n';
 
@@ -9,6 +11,8 @@ interface PropertiesDialogProps {
     file: IFile | null;
     open: boolean;
     onClose: () => void;
+    /** 权限修改成功后的回调（通常刷新当前目录，让列表/属性拿新 mode） */
+    onPermissionsChanged?: () => void;
 }
 
 const labelToKey: Record<string, string> = {
@@ -33,9 +37,45 @@ const tProp = (text: string) => {
   return key ? (ti as any)(key) : text;
 };
 
-export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, onClose }) => {
+export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, onClose, onPermissionsChanged }) => {
   const [calculatedSize, setCalculatedSize] = useState<number | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
+  /** 当前显示的权限位（初始自列表条目，chmod 成功后本地更新） */
+  const [displayMode, setDisplayMode] = useState<number | undefined>(file?.mode);
+  /** 权限编辑状态：false = 只读显示，true = 八进制输入 + 应用/取消 */
+  const [editingPerm, setEditingPerm] = useState(false);
+  const [permValue, setPermValue] = useState('');
+  const [permBusy, setPermBusy] = useState(false);
+
+  // 切换文件/打开时重置权限显示与编辑状态
+  useEffect(() => {
+    if (!open) return;
+    setDisplayMode(file?.mode); // eslint-disable-line react-hooks/set-state-in-effect -- 打开时同步初值
+    setEditingPerm(false);
+    setPermValue('');
+  }, [open, file]);
+
+  /** 可编辑权限：有权限位且不是块设备（回收站条目无 mode，自动隐藏） */
+  const canEditPermissions = file?.mode !== undefined && file?.mime !== 'inode/blockdevice';
+
+  /** 进入编辑：输入框初值为当前八进制权限（如 755） */
+  const startEditPerm = () => {
+    if (displayMode === undefined) return;
+    setPermValue((displayMode & 0o777).toString(8).padStart(3, '0'));
+    setEditingPerm(true);
+  };
+
+  /** 应用权限：本地校验后经后端 chmod，成功更新显示并退出编辑 */
+  const applyPerm = async () => {
+    if (!file || permBusy || !/^[0-7]{3}$/.test(permValue)) return;
+    setPermBusy(true);
+    await changePermissions(file.path, permValue, (mode) => {
+      setDisplayMode(mode);
+      setEditingPerm(false);
+      onPermissionsChanged?.();
+    });
+    setPermBusy(false);
+  };
 
   useEffect(() => {
     if (open && file) {
@@ -120,7 +160,38 @@ export const PropertiesDialog: React.FC<PropertiesDialogProps> = ({ file, open, 
           <div>{new Date(file.mtime).toLocaleString()}</div>
 
           <div style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>{tProp('Permissions:')}</div>
-          <div>{formatMode(file.mode, file.isDirectory)}</div>
+          {canEditPermissions ? (
+            editingPerm ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <OutlinedTextField
+                  label={tProp('Permissions:')}
+                  value={permValue}
+                  onInput={(e) => setPermValue((e.target as HTMLInputElement).value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void applyPerm();
+                  }}
+                  error={!/^[0-7]{3}$/.test(permValue)}
+                  errorText={!/^[0-7]{3}$/.test(permValue) ? ti('properties.mode_hint') : ''}
+                  style={{ width: '120px' }}
+                />
+                <Button onClick={() => void applyPerm()} disabled={!/^[0-7]{3}$/.test(permValue) || permBusy}>
+                  {ti('properties.apply')}
+                </Button>
+                <Button variant="text" onClick={() => setEditingPerm(false)}>
+                  {ti('dialog.button.cancel')}
+                </Button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div>{formatMode(displayMode, file.isDirectory)}</div>
+                <Button variant="outlined" onClick={startEditPerm}>
+                  {ti('properties.edit_permissions')}
+                </Button>
+              </div>
+            )
+          ) : (
+            <div>{formatMode(displayMode, file.isDirectory)}</div>
+          )}
 
           <div style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>{tProp('Owner:')}</div>
           <div>{formatOwner(file)}</div>

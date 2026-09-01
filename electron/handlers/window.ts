@@ -174,6 +174,27 @@ ipcMain.handle('clipboard:clear', () => {
 
 /** 窗口级处理器：窗口图标等设置会应用到所有窗口（多窗口共享一个后端） */
 export function registerWindowHandlers(getWindows: () => BrowserWindow[]) {
+  /**
+   * 界面缩放（整页缩放，Electron zoom factor）。
+   *
+   * 由请求窗口的渲染进程发起，只作用于该窗口自己的 webContents——
+   * 多窗口同步靠渲染端的 storage 事件（每个窗口各自重设自己的缩放）。
+   * preload 在页面加载前用 webFrame 同步应用初始缩放，避免首帧闪烁；
+   * 此 handler 用于设置变更后的实时应用。
+   *
+   * 缩放范围限制在 0.5–2.0（对应设置条 50%–200%），
+   * 超出范围的值直接拒绝，防止异常状态。
+   */
+  ipcMain.handle('window:set-zoom', (_event, factor: number) => {
+    if (typeof factor !== 'number' || !Number.isFinite(factor) || factor < 0.5 || factor > 2) {
+      return;
+    }
+    // 幂等：当前已是目标缩放时跳过。重复调用 setZoomFactor（即使同值）
+    // 会触发一次多余的 zoom 变更，破坏 react-window/AutoSizer 的初始测量
+    if (Math.abs(_event.sender.getZoomFactor() - factor) < 1e-6) return;
+    _event.sender.setZoomFactor(factor);
+  });
+
   ipcMain.handle('dialog:open-file', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
