@@ -290,6 +290,14 @@ const enUS = {
   'picker.cancel': 'Cancel',
   'picker.selected_count': (n: number) => `${n} selected`,
   'picker.all_files': 'All files',
+  // ── 自定义标题栏 ──
+  'settings.title_bar': 'Title bar',
+  'settings.show_full_path_title': 'Show full path in title bar',
+  'window.minimize': 'Minimize',
+  'window.maximize': 'Maximize',
+  'window.restore': 'Restore',
+  'window.quit': 'Quit',
+  'window.title_bar_menu': 'Window menu',
   'dashboard.unpin_tooltip': 'Unpin',
 
   // ── 选择模式 ──

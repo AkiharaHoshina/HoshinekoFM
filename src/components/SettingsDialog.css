@@ -42,6 +42,14 @@
   text-overflow: ellipsis;
 }
 
+/* 标题栏等带副标题的标签列（跟随系统来源等） */
+.settings-row__label-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .settings-row__sub {
   font-size: 12px;
   color: var(--md-sys-color-on-surface-variant);

@@ -184,6 +184,23 @@ export interface IElectronAPI {
       groupName?: string;
       code?: 'INVALID_PATH' | 'NOT_DIR' | 'READ_FAILED';
     }>;
+    /**
+     * 窗口管理器类型检测（自定义标题栏「跟随系统」模式）。
+     * kind: tiling（平铺 WM：niri/hyprland/i3 等）→ 隐藏标题栏；
+     * stacking（常规 DE）→ 显示；检测不到 fallback stacking。
+     */
+    detectWindowManager: () => Promise<{
+      kind: 'tiling' | 'stacking';
+      source: 'xdg_current_desktop' | 'xdg_session_desktop' | 'fallback';
+      name?: string;
+    }>;
+    /** 自定义标题栏窗口控制（frameless 窗口） */
+    minimizeWindow: () => Promise<void>;
+    toggleMaximizeWindow: () => Promise<boolean>;
+    closeWindow: () => Promise<void>;
+    isWindowMaximized: () => Promise<boolean>;
+    /** 订阅最大化状态变化（标题栏 最大化/还原 图标切换） */
+    onWindowMaximizeChange: (callback: (maximized: boolean) => void) => () => void;
     startDrag: (paths: string | string[], files?: DragFileMeta[]) => void;
     claimDragFiles: () => Promise<DragClaimResult>;
     consumeDrag: () => Promise<void>;

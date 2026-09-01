@@ -64,6 +64,18 @@ contextBridge.exposeInMainWorld('electron', {
   readPreviewText: (path: string) => ipcRenderer.invoke('fs:read-preview-text', path),
   listArchive: (path: string) => ipcRenderer.invoke('fs:list-archive', path),
   getDirInfo: (path: string) => ipcRenderer.invoke('fs:get-dir-info', path),
+  /** 窗口管理器类型检测（自定义标题栏跟随系统模式） */
+  detectWindowManager: () => ipcRenderer.invoke('system:detect-window-manager'),
+  /** 自定义标题栏窗口控制 */
+  minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
+  toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggle-maximize'),
+  closeWindow: () => ipcRenderer.invoke('window:close'),
+  isWindowMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+  onWindowMaximizeChange: (callback: (maximized: boolean) => void) => {
+    const handler = (_event: unknown, maximized: boolean) => callback(maximized);
+    ipcRenderer.on('window:maximized-changed', handler);
+    return () => ipcRenderer.removeListener('window:maximized-changed', handler);
+  },
   startDrag: (paths: string | string[], files?: { path: string; name: string; isDirectory: boolean; trashOriginalPath?: string }[]) => ipcRenderer.send('dnd:start', { paths, files }),
   claimDragFiles: () => ipcRenderer.invoke('dnd:claim-files'),
   consumeDrag: () => ipcRenderer.invoke('dnd:consume'),

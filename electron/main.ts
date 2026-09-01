@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol, net, ipcMain, shell, type WebContents } from 'electron';
+import { app, BrowserWindow, Menu, protocol, net, ipcMain, shell, type WebContents } from 'electron';
 import path from 'path';
 import url from 'url';
 import os from 'os';
@@ -14,6 +14,19 @@ import { registerThemeHandlers } from './handlers/theme';
 import { registerPickerHandlers, type PickerConfig } from './handlers/picker';
 import { setupPortalFileChooser } from './handlers/portalFileChooser';
 import { initJobHandlers } from './jobs';
+
+/**
+ * 运行时应用名：任务栏/DMS 等把窗口显示为「应用名 · 窗口标题」——
+ * package.json 的 name（material-3-file-manager）会以前缀出现，
+ * 改为品牌名 HoshinekoFM。注意 setName 会连带改变 userData 默认
+ * 路径，必须先读取旧路径再写回，保证既有数据（剪贴板/设置）不迁移；
+ * 必须在 ready 之前、任何 userData 读取之前执行。
+ */
+const LEGACY_USER_DATA_DIR = app.getPath('userData');
+app.setName('HoshinekoFM');
+app.setPath('userData', LEGACY_USER_DATA_DIR);
+// Wayland app_id 与打包产物 .desktop 对齐（productName = HoshinekoFM）
+app.setDesktopName('HoshinekoFM.desktop');
 
 /** 所有打开的窗口（单实例多窗口，共享一个后端） */
 const windows = new Set<BrowserWindow>();
@@ -84,6 +97,9 @@ async function createWindow(
     show: false,
     // 首帧渲染前的底色，避免白屏闪烁；ready-to-show 后才会真正显示窗口
     backgroundColor: '#1b1b1f',
+    // frameless：彻底隐藏原生标题栏，由前端 M3 自定义标题栏接管
+    // （拖动经 -webkit-app-region: drag，窗口控制经 window:* IPC）
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -97,6 +113,24 @@ async function createWindow(
 
   const wc = win.webContents;
   windows.add(win);
+
+  // F12 开发人员工具：应用菜单已移除（屏蔽 Alt 顶栏），Chromium 的
+  // 菜单快捷键随之失效——在此手动补回 F12 开关 devtools
+  wc.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12') {
+      wc.toggleDevTools();
+      event.preventDefault();
+    }
+  });
+
+  // 最大化状态推送：自定义标题栏的 最大化/还原 按钮图标随状态切换
+  const emitMaximizeState = () => {
+    if (!win.isDestroyed()) {
+      wc.send('window:maximized-changed', win.isMaximized());
+    }
+  };
+  win.on('maximize', emitMaximizeState);
+  win.on('unmaximize', emitMaximizeState);
 
   if (isPicker && options.pickerConfig) {
     pickerConfigByWindow.set(win, options.pickerConfig);
@@ -332,6 +366,8 @@ function parseRangeHeader(header: string | null, size: number): { start: number;
 }
 
 app.whenReady().then(() => {
+  // 移除应用菜单：屏蔽 Alt 唤出顶栏（frameless 窗口 + 自定义标题栏）
+  Menu.setApplicationMenu(null);
   protocol.handle('media', async (request) => {
     const filePath = request.url.slice('media://'.length);
     const decodedPath = decodeURIComponent(filePath);

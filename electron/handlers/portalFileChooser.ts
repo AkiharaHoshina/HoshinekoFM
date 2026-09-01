@@ -138,10 +138,15 @@ function finishRequest(bus: dbus.MessageBus, handlePath: string, code: number, r
 /**
  * 注册 portal FileChooser 后端。
  * 会话总线不可用、总线名被占用（多实例）时静默跳过并返回 false。
+ *
+ * @param opts.busName - 总线名覆盖（e2e 测试用独立名称避免与运行中的
+ *   应用实例抢名；缺省用标准名 PORTAL_BUS_NAME）
  */
 export async function setupPortalFileChooser(
   createPicker: (config: PickerConfig, parent: BrowserWindow | undefined) => Promise<BrowserWindow>,
+  opts?: { busName?: string },
 ): Promise<boolean> {
+  const busName = opts?.busName ?? PORTAL_BUS_NAME;
   let bus: dbus.MessageBus;
   try {
     bus = dbus.sessionBus();
@@ -150,7 +155,7 @@ export async function setupPortalFileChooser(
   }
   try {
     // RequestNameReply.PrimaryOwner = 1（dbus-next 未导出该枚举，按 D-Bus 规范常量比对）
-    const reply = await bus.requestName(PORTAL_BUS_NAME, dbus.NameFlag.DO_NOT_QUEUE);
+    const reply = await bus.requestName(busName, dbus.NameFlag.DO_NOT_QUEUE);
     if (reply !== 1) {
       bus.disconnect();
       return false;
@@ -256,6 +261,6 @@ export async function setupPortalFileChooser(
   const backend = new FileChooserBackend(bus, createPicker);
   bus.export(FILE_CHOOSER_PATH, backend);
 
-  console.log(`Portal FileChooser backend registered as ${PORTAL_BUS_NAME}`);
+  console.log(`Portal FileChooser backend registered as ${busName}`);
   return true;
 }

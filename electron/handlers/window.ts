@@ -267,6 +267,32 @@ export function registerWindowHandlers(getWindows: () => BrowserWindow[]) {
     });
   });
 
+  /**
+   * 自定义标题栏的窗口控制（frameless 窗口）：
+   * - minimize / toggle-maximize / close 作用于发起请求的窗口；
+   * - is-maximized 查询当前最大化状态（标题栏按钮图标随状态切换，
+   *   状态变化经 maximize/unmaximize 事件由 main.ts 广播）。
+   */
+  ipcMain.handle('window:minimize', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize();
+  });
+
+  ipcMain.handle('window:toggle-maximize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return false;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+    return win.isMaximized();
+  });
+
+  ipcMain.handle('window:close', (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.close();
+  });
+
+  ipcMain.handle('window:is-maximized', (event) => {
+    return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
+  });
+
   ipcMain.handle('window:set-icon', async (_, iconType: 'light' | 'dark' | string) => {
     const apply = (iconPath: string) => {
       for (const win of getWindows()) {

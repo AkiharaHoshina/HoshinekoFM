@@ -3,4 +3,4 @@
 # （仅注册后端、不创建主窗口）。Exec 路径按实际安装位置调整。
 [D-BUS Service]
 Name=org.freedesktop.impl.portal.desktop.hoshineko
-Exec=/usr/bin/materials --portal
+Exec=/usr/bin/HoshinekoFM --portal

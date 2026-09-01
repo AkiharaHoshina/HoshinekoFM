@@ -1,7 +1,7 @@
 {
   "name": "material-3-file-manager",
   "private": true,
-  "version": "0.11.19",
+  "version": "0.11.20",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -56,7 +56,7 @@
   },
   "build": {
     "appId": "com.material3.filemanager",
-    "productName": "Materials",
+    "productName": "HoshinekoFM",
     "directories": {
       "output": "release"
     },

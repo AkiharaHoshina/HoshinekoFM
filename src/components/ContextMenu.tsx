@@ -6,6 +6,8 @@ import { Icon } from './Icon';
 export interface ContextMenuItem {
     label: string;
     icon?: string;
+    /** 图标字号（px；缺省继承 .context-menu-icon 样式，用于与具体按钮等大） */
+    iconSize?: number;
     action: () => void;
     shortcut?: string;
     divider?: boolean;
@@ -180,7 +182,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
             >
               {item.icon && (
                 <span slot="start">
-                  <Icon name={item.icon} className="context-menu-icon" />
+                  <Icon
+                    name={item.icon}
+                    className="context-menu-icon"
+                    style={item.iconSize ? { fontSize: `${item.iconSize}px` } : undefined}
+                  />
                 </span>
               )}
               <span slot="headline">{item.label}</span>

@@ -131,10 +131,12 @@ function registerIpc() {
   require(path.join(DIST_ELECTRON, 'jobs.js')).initJobHandlers();
   require(path.join(DIST_ELECTRON, 'pty.js')).setupPtyHandlers();
 
-  // portal FileChooser 后端（与 main.ts 相同的接线；会话总线不可用时静默跳过）
+  // portal FileChooser 后端（与 main.ts 相同的接线；会话总线不可用时静默跳过）。
+  // 使用独立的 e2e 总线名：运行中的应用实例持有标准名时，测试互不抢名
   require(path.join(DIST_ELECTRON, 'handlers', 'portalFileChooser.js'))
-    .setupPortalFileChooser((config, parent) =>
-      createTestWindow({ picker: true, pickerConfig: config, parent }),
+    .setupPortalFileChooser(
+      (config, parent) => createTestWindow({ picker: true, pickerConfig: config, parent }),
+      { busName: 'org.freedesktop.impl.portal.desktop.hoshineko.e2e' },
     )
     .catch(() => { /* 后端注册失败不影响其余测试 */ });
 
@@ -304,6 +306,13 @@ async function createTestWindow({ argv = [], picker = false, pickerConfig = null
   });
   windows.add(win);
   win.on('closed', () => windows.delete(win));
+  // 最大化状态推送（与 main.ts createWindow 同步）：
+  // 自定义标题栏的 最大化/还原 按钮图标随状态切换
+  const emitMaximizeState = () => {
+    if (!win.isDestroyed()) win.webContents.send('window:maximized-changed', win.isMaximized());
+  };
+  win.on('maximize', emitMaximizeState);
+  win.on('unmaximize', emitMaximizeState);
   if (startupPath) startupPathByWindow.set(win, startupPath);
   if (picker) pickerConfigByWindow.set(win, pickerConfig);
   if (picker) {

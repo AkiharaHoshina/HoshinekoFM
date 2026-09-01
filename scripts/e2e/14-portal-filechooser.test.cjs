@@ -8,7 +8,7 @@
 const h = require('./harness.cjs');
 const path = require('path');
 
-const BUS_NAME = 'org.freedesktop.impl.portal.desktop.hoshineko';
+const BUS_NAME = 'org.freedesktop.impl.portal.desktop.hoshineko.e2e';
 const FC_PATH = '/org/freedesktop/portal/desktop';
 const FC_IFACE = 'org.freedesktop.impl.portal.FileChooser';
 

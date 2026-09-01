@@ -289,6 +289,14 @@ const koCN = {
   'picker.cancel': '취소',
   'picker.selected_count': (n: number) => `${n}개 선택됨`,
   'picker.all_files': '모든 파일',
+  // ── 自定义标题栏 ──
+  'settings.title_bar': '제목 표시줄',
+  'settings.show_full_path_title': '제목 표시줄에 전체 경로 표시',
+  'window.minimize': '최소화',
+  'window.maximize': '최대화',
+  'window.restore': '복원',
+  'window.quit': '종료',
+  'window.title_bar_menu': '창 메뉴',
   'dashboard.unpin_tooltip': '고정 해제',
 
   // ── 선택 모드 ──

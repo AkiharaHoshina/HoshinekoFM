@@ -279,6 +279,14 @@ const jaJP = {
   'picker.cancel': 'キャンセル',
   'picker.selected_count': (n: number) => `${n} 件選択`,
   'picker.all_files': 'すべてのファイル',
+  // ── 自定义标题栏 ──
+  'settings.title_bar': 'タイトルバー',
+  'settings.show_full_path_title': 'タイトルバーにフルパスを表示',
+  'window.minimize': '最小化',
+  'window.maximize': '最大化',
+  'window.restore': '元に戻す',
+  'window.quit': '終了',
+  'window.title_bar_menu': 'ウィンドウメニュー',
   'dashboard.unpin_tooltip': 'ピン留めを外す',
 
   // ── 选择模式 ──

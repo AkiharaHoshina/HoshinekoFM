@@ -26,6 +26,8 @@ No unit-test framework — e2e tests live in `scripts/e2e/` (Electron main-proce
   - **缩放因子会话级共享**：任一窗口 setZoomFactor 后其他窗口 getZoomFactor 读到同值；同窗口直接 `localStorage.setItem` 不触发 storage 事件（跨窗口同步必须由另一窗口写入）。
   - **picker `resolvePicker` 会立即关窗**：其自身 IPC 响应可能丢失，测试里必须 fire-and-forget（不能 await）。
   - **md-select 程序化选择**：`select(value)` 是静默的（不派发事件），须补 `dispatchEvent(new Event('input'))` 才触发 React onInput（harness 已封装 `selectOption`）；选项是宿主**轻 DOM** 子节点（非 shadow）。
+  - **标题栏标题断言**：跑马灯（MarqueeText）会把文本复制多份渲染，textContent 不可靠——读 `.title-bar-title .marquee-container` 的 title 属性；重载后启动路径异步解析（初始为默认仪表盘标签），须 waitFor 目标标题。
+  - **portal 后端总线名**：e2e 用独立名 `…hoshineko.e2e`（`setupPortalFileChooser` 的 busName 覆盖），避免与运行中的应用实例抢标准名。
   - 菜单/按钮文案按中英文双匹配（`/取消|Cancel/`），规避系统语言差异。
   - 对话框内容超出视口时点击前 `scrollIntoView`。
 - harness 有 120s 全局看门狗，任何挂起会强制退出并报 WATCHDOG TIMEOUT。
@@ -55,7 +57,7 @@ No unit-test framework — e2e tests live in `scripts/e2e/` (Electron main-proce
 - **File operations use Linux system commands**: `du -sb`, `find`, `unzip`, `tar`, `lsblk`, `df`, `xdg-mime`, `grep`. Not portable to macOS/Windows.
 - **UDISKS2 device monitoring**: `setupUdisks2Monitor` in `electron/handlers/system.ts` listens for device add/remove via D-Bus; only works on Linux.
 - **Dynamic theming**: reads `~/.config/matugen/theme.css` at startup via `theme:get-css` IPC.
-- **Product name**: "Materials" (`productName` in `package.json`), not the npm package name `material-3-file-manager`.
+- **Product name**: "HoshinekoFM" (`productName` in `package.json`), not the npm package name `material-3-file-manager`.
 - **CSS only**: no CSS-in-JS or CSS modules — plain `.css` files in same directory as component, imported in component file.
 - **Monorepo workspace**: `pnpm-workspace.yaml` exists but only for `allowBuilds` hints (no actual packages). Both `package-lock.json` and `pnpm-lock.yaml` are checked in.
 

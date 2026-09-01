@@ -281,6 +281,14 @@ const zhAC = {
   'picker.cancel': '取消',
   'picker.selected_count': (n: number) => `已选择 ${n} 项`,
   'picker.all_files': '所有文件',
+  // ── 自定义标题栏 ──
+  'settings.title_bar': '标题栏',
+  'settings.show_full_path_title': '标题栏显示完整路径',
+  'window.minimize': '最小化',
+  'window.maximize': '最大化',
+  'window.restore': '还原',
+  'window.quit': '退出',
+  'window.title_bar_menu': '窗口菜单',
   'dashboard.unpin_tooltip': '取消固定',
 
   // ── 选择模式 ──

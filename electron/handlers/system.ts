@@ -792,7 +792,57 @@ async function mountGvfsRobust(deviceId: string, nameHint?: string): Promise<Gvf
   return result;
 }
 
+/** 平铺 WM 名称白名单（跟随系统时自定义标题栏隐藏） */
+const TILING_WMS = new Set([
+  'niri', 'hyprland', 'sway', 'i3', 'qtile', 'awesome', 'dwm', 'bspwm',
+  'xmonad', 'river', 'spectrwm', 'herbstluftwm', 'leftwm', 'dusk',
+]);
+
+/** 常规（堆叠式）桌面环境白名单（标题栏显示） */
+const STACKING_DESKTOPS = new Set([
+  'gnome', 'kde', 'plasma', 'xfce', 'cinnamon', 'mate', 'budgie', 'lxde',
+  'lxqt', 'pantheon', 'deepin', 'unity', 'openbox', 'fluxbox', 'labwc',
+  'wayfire', 'weston', 'enlightenment', 'gnome-classic', 'unity:unity7',
+]);
+
+/** 窗口管理器检测结果 */
+export interface WindowManagerResult {
+  /** 窗口管理类型：tiling = 平铺（隐藏自定义标题栏），stacking = 常规桌面 */
+  kind: 'tiling' | 'stacking';
+  /** 检测来源：XDG_CURRENT_DESKTOP / XDG_SESSION_DESKTOP / fallback */
+  source: 'xdg_current_desktop' | 'xdg_session_desktop' | 'fallback';
+  /** 检测到的桌面环境名称（未归一，供 UI 显示） */
+  name?: string;
+}
+
+/**
+ * 检测窗口管理器类型（自定义标题栏「跟随系统」模式的依据）。
+ * 探测链：XDG_CURRENT_DESKTOP → XDG_SESSION_DESKTOP（取值可为冒号
+ * 分隔的列表，逐项归一后查白名单）；平铺命中优先于常规命中；
+ * 全部未命中时 fallback 常规桌面（标题栏显示）。
+ */
+function detectWindowManager(): WindowManagerResult {
+  for (const [source, value] of [
+    ['xdg_current_desktop', process.env.XDG_CURRENT_DESKTOP],
+    ['xdg_session_desktop', process.env.XDG_SESSION_DESKTOP],
+  ] as const) {
+    if (!value) continue;
+    const names = value.split(':').map((s) => s.trim()).filter(Boolean);
+    for (const rawName of names) {
+      const name = rawName.replace(/^x-/, '').toLowerCase();
+      if (TILING_WMS.has(name)) return { kind: 'tiling', source, name: rawName };
+    }
+    for (const rawName of names) {
+      const name = rawName.replace(/^x-/, '').toLowerCase();
+      if (STACKING_DESKTOPS.has(name)) return { kind: 'stacking', source, name: rawName };
+    }
+  }
+  return { kind: 'stacking', source: 'fallback' };
+}
+
 export function registerSystemHandlers() {
+  /** 窗口管理器类型检测（自定义标题栏跟随系统模式） */
+  ipcMain.handle('system:detect-window-manager', () => detectWindowManager());
   ipcMain.handle('system:get-apps', async () => {
     if (appsCache) return appsCache;
 

@@ -1,8 +1,8 @@
 .dashboard-container {
     padding: 32px;
     height: 100%;
-    margin-right: 18px;
-    /* Scrollbar spacing */
+    /* 无右外边距：滚动条紧贴容器右缘——无预览时即窗口右缘，
+       预览面板开启时即预览区左缘 */
     overflow-y: auto;
     box-sizing: border-box;
 }

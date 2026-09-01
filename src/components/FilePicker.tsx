@@ -13,7 +13,9 @@ import { ThemeService } from '../services/ThemeService';
 import { useDeviceActions } from '../hooks/useDeviceActions';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useUiZoom } from '../hooks/useUiZoom';
+import { useTitleBar } from '../hooks/useTitleBar';
 import { DragProvider } from '../contexts/DragContext';
+import { TitleBar } from './TitleBar';
 import { showToast, shortPath } from '../utils/toast';
 import { sortFiles } from '../utils/fileSort';
 import { t, useLocale } from '../i18n';
@@ -63,6 +65,10 @@ const FilePicker: React.FC = () => {
   const [files, setFiles] = useState<IFile[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
+  /** 选择器窗口标题（标题栏 + document.title 同步） */
+  const [pickerTitle, setPickerTitle] = useState('');
+  /** 标题栏可见性（与主窗口同键/同逻辑） */
+  const { visible: titleBarVisible } = useTitleBar();
 
   /** 设备 / GVfs 右键菜单（本地状态，菜单项与 App 一致） */
   const [deviceMenu, setDeviceMenu] = useState<{ x: number; y: number; device: AllDevice } | null>(null);
@@ -226,7 +232,9 @@ const FilePicker: React.FC = () => {
           : cfg.mode === 'files' ? 'picker.title_files'
             : cfg.mode === 'items' ? 'picker.title_items'
               : 'picker.title_file';
-      document.title = t(titleKey);
+      const titleText = t(titleKey);
+      setPickerTitle(titleText);
+      document.title = titleText;
       const home = await window.electron.getHomePath();
       // 初始目录：声明且为有效目录时优先，否则从家目录开始浏览
       let start = home;
@@ -416,6 +424,9 @@ const FilePicker: React.FC = () => {
 
   return (
     <div className="picker-shell">
+      {titleBarVisible && (
+        <TitleBar title={pickerTitle} marqueeEnabled={marqueeEnabled} />
+      )}
       <div className="picker-body">
         <Sidebar
           variant="picker"

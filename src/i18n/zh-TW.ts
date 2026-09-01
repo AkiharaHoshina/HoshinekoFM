@@ -279,6 +279,14 @@ const zhTW = {
   'picker.cancel': '取消',
   'picker.selected_count': (n: number) => `已選取 ${n} 項`,
   'picker.all_files': '所有檔案',
+  // ── 自定义标题栏 ──
+  'settings.title_bar': '標題列',
+  'settings.show_full_path_title': '標題列顯示完整路徑',
+  'window.minimize': '最小化',
+  'window.maximize': '最大化',
+  'window.restore': '還原',
+  'window.quit': '結束',
+  'window.title_bar_menu': '視窗選單',
   'dashboard.unpin_tooltip': '取消釘選',
 
   // ── 選擇模式 ──

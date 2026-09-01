@@ -321,6 +321,14 @@ const ruUA = {
   'picker.cancel': 'Отмена',
   'picker.selected_count': (n: number) => `Выбрано: ${n}`,
   'picker.all_files': 'Все файлы',
+  // ── 自定义标题栏 ──
+  'settings.title_bar': 'Строка заголовка',
+  'settings.show_full_path_title': 'Показывать полный путь в заголовке',
+  'window.minimize': 'Свернуть',
+  'window.maximize': 'Развернуть',
+  'window.restore': 'Восстановить',
+  'window.quit': 'Выход',
+  'window.title_bar_menu': 'Меню окна',
   'dashboard.unpin_tooltip': 'Открепить',
 
   // ── 选择模式 ──

@@ -31,6 +31,14 @@ interface SettingsDialogProps {
   /** 文件预览面板开关（默认关闭） */
   filePreviewEnabled: boolean;
   onToggleFilePreview: () => void;
+  /** 标题栏模式（null = 跟随系统，true/false = 手动开/关） */
+  titleBarMode: boolean | null;
+  onTitleBarChange: (mode: boolean | null) => void;
+  /** 标题栏显示完整路径（关闭时目录只显示目录名；确定时生效） */
+  showFullPathTitle: boolean;
+  onShowFullPathTitleChange: (value: boolean) => void;
+  /** 窗口管理器检测结果（跟随系统副标题显示来源） */
+  detectedWm: { kind: 'tiling' | 'stacking'; source: string; name?: string } | null;
   /** 打开主题颜色二级对话框 */
   onThemeColor: () => void;
   /** 当前主题种子色（入口行的色点展示，可为空） */
@@ -58,6 +66,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onToggleShowHomeStorageUsage,
   filePreviewEnabled,
   onToggleFilePreview,
+  titleBarMode,
+  onTitleBarChange,
+  showFullPathTitle,
+  onShowFullPathTitleChange,
+  detectedWm,
   onThemeColor,
   themeSeedColor,
 }) => {
@@ -108,11 +121,31 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   }, [open]);
 
   /**
+   * 标题栏与完整路径的应用时机：与语言一致——开关只更新本地预览，
+   * 点「完成」或关闭对话框（退出 = 确定）时才真正应用并同步到所有
+   * 窗口，避免标题栏在用户犹豫时反复出现/消失。
+   */
+  const [pendingTitleBar, setPendingTitleBar] = useState<boolean | null>(titleBarMode);
+  const [pendingFullPath, setPendingFullPath] = useState<boolean>(showFullPathTitle);
+
+  // 每次打开对话框时把预览重置为当前已应用的值
+  useEffect(() => {
+    if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 打开时同步预览初值
+      setPendingTitleBar(titleBarMode);
+      setPendingFullPath(showFullPathTitle);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 open 变化时同步
+  }, [open]);
+
+  /**
    * 应用语言 + 界面缩放并关闭：确定与关闭走同一路径（退出设置等于确定）。
    */
   const handleApply = () => {
     if (pendingLocale !== locale) onLocaleChange(pendingLocale);
     if (pendingUiScale !== uiScale) onUiScaleChange(pendingUiScale);
+    if (pendingTitleBar !== titleBarMode) onTitleBarChange(pendingTitleBar);
+    if (pendingFullPath !== showFullPathTitle) onShowFullPathTitleChange(pendingFullPath);
     onClose();
   };
 
@@ -244,6 +277,52 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               className="settings-theme-dot"
               style={themeSeedColor ? { backgroundColor: themeSeedColor } : undefined}
             />
+          </div>
+
+          {/* 标题栏（与明暗主题开关同构：跟随系统 / 开 / 关；
+              确定/关闭设置时才生效——开关只改本地预览） */}
+          <div className="settings-row">
+            <div className="settings-row__start">
+              <Icon name="web_asset" />
+              <div className="settings-row__label-col">
+                <div className="settings-row__label">
+                  {t("settings.title_bar")}
+                </div>
+                {pendingTitleBar === null && detectedWm && (
+                  <div className="settings-row__sub">
+                    {t("theme.follow_system")}（{detectedWm.name || t(`theme.source_${detectedWm.source}`)}）
+                  </div>
+                )}
+              </div>
+            </div>
+            <Button
+              variant="text"
+              disabled={pendingTitleBar === null}
+              onClick={() => setPendingTitleBar(null)}
+            >
+              {t("theme.follow_system")}
+            </Button>
+            <Switch
+              selected={pendingTitleBar === null
+                ? (detectedWm ? detectedWm.kind !== "tiling" : true)
+                : pendingTitleBar}
+              onClick={() => {
+                const effective = pendingTitleBar === null
+                  ? (detectedWm ? detectedWm.kind !== "tiling" : true)
+                  : pendingTitleBar;
+                setPendingTitleBar(!effective);
+              }}
+            />
+          </div>
+
+          <div className="settings-row">
+            <div className="settings-row__start">
+              <Icon name="subdirectory_arrow_right" />
+              <div className="settings-row__label">
+                {t("settings.show_full_path_title")}
+              </div>
+            </div>
+            <Switch selected={pendingFullPath} onClick={() => setPendingFullPath(!pendingFullPath)} />
           </div>
         </div>
 

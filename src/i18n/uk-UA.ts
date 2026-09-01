@@ -318,6 +318,14 @@ const ukUA = {
   'picker.cancel': 'Скасувати',
   'picker.selected_count': (n: number) => `Вибрано: ${n}`,
   'picker.all_files': 'Усі файли',
+  // ── 自定义标题栏 ──
+  'settings.title_bar': 'Рядок заголовка',
+  'settings.show_full_path_title': 'Показувати повний шлях у заголовку',
+  'window.minimize': 'Згорнути',
+  'window.maximize': 'Розгорнути',
+  'window.restore': 'Відновити',
+  'window.quit': 'Вийти',
+  'window.title_bar_menu': 'Меню вікна',
   'dashboard.unpin_tooltip': 'Відкріпити',
 
   // ── 选择模式 ──

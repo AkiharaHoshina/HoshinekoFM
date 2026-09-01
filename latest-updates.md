@@ -1,5 +1,31 @@
 # 更新日志
 
+## v0.11.20 — 自定义 M3 标题栏（frameless + 窗口控制 + 标题规则）
+
+### 自定义标题栏
+
+- **frameless 窗口**：`frame: false` 彻底隐藏原生标题栏；`Menu.setApplicationMenu(null)` 屏蔽 Alt 唤出顶栏；F12 开发人员工具经 `before-input-event` 手动补回（菜单移除后 Chromium 快捷键失效）
+- **M3 标题栏组件**（`TitleBar`）：整条 `-webkit-app-region: drag` 可拖动（按钮 no-drag）；左侧「v」菜单按钮（最大化/最小化/退出，复用 ContextMenu）；右侧 最小化 / 最大化（最大化时显示还原图标，经 `window:maximized-changed` 事件推送切换）/ 关闭 三按钮；标题超长截断尾部 `…`，开启滚动文本时经 MarqueeText 滚动显示
+- **三态开关**（与明暗主题开关同构）：`settings.titleBar: boolean | null`（默认 null=跟随系统）——跟随系统时经新增 `system:detect-window-manager`（XDG_CURRENT_DESKTOP → XDG_SESSION_DESKTOP 探测链 + 平铺/常规白名单归类）判定：**平铺 WM（niri/hyprland/i3/sway 等）隐藏、常规 DE（xfce/gnome/kde_plasma 等）显示，fallback 显示**；手动开/关持久化 + 跨窗口同步；设置放「外观」区（开关 + 「跟随系统」复位 + 检测来源副标题）
+- **窗口标题规则**（标题栏与 Electron 窗口标题实时同步，document.title 自动同步至任务栏等 DE 区域）：仪表盘 →「Hoshineko Nya~」；回收站 →「回收站」（nav.trash）；目录 → 目录名；「标题栏显示完整路径」开关开启时显示完整路径
+- 窗口控制 IPC：`window:minimize` / `window:toggle-maximize` / `window:close` / `window:is-maximized` + `maximize/unmaximize` 状态推送；选择器窗口同样挂载标题栏（标题为选择器标题）
+- portal 后端 `setupPortalFileChooser` 支持 `busName` 覆盖（e2e 用独立名称避免与运行中实例抢名）
+- i18n 新增 7 键 × 12：`settings.title_bar`、`settings.show_full_path_title`、`window.minimize/maximize/restore/quit/title_bar_menu`
+
+### 迭代修复（标题栏与界面）
+
+- **标题栏设置确定时生效**：开关与「显示完整路径」改为设置对话框内本地预览（pending），点「完成」/关闭（退出 = 确定）时才应用——与语言、界面缩放一致；修复此前「更改即生效」（根因：App 与 useTitleBar 各持同键 useLocalStorage 实例不同步，状态改由 hook 独占持有）
+- **v 菜单对齐与图标等大**：`ContextMenuItem` 新增 `iconSize`，v 菜单三项字号与右侧按钮一致（18/22/22）；前导图标槽定宽 22px 居中（`span[slot="start"]`），不同字号下文字（headline）左对齐
+- **仪表盘滚动条贴边**：移除 `.dashboard-container` 的 `margin-right: 18px`（历史「滚动条间距」导致滚动条偏离边缘）——现在紧贴窗口右缘，预览面板开启时即预览区左缘
+- **应用名全面修正为 HoshinekoFM**：`productName`（构建产物 AppImage/可执行名/.desktop 命名）、`app.setDesktopName('HoshinekoFM.desktop')`（Wayland app_id，此前指向 materials.desktop 导致 DMS 显示 materials）、`index.html` 初始标题、packaging D-Bus 服务 Exec 路径、AGENTS/进度/可行性报告文档——DMS 任务栏前缀不再出现 material-3-file-manager 或 materials
+
+### e2e
+
+- 新增 15-title-bar 用例：标题规则（目录名/回收站/仪表盘/完整路径开关）、document.title 与 Electron 窗口标题同步、v 菜单（图标字号 18/22/22 + 文字对齐断言）、设置确定时生效（切换不立即变、关闭后生效）、最大化/还原（主进程状态 + 图标切换）、最小化、跟随系统在本机 niri 隐藏标题栏、detect-window-manager 结构化结果
+- 坑点记录：标题断言读 `.title-bar-title .marquee-container` 的 title 属性（跑马灯把文本复制多份，textContent 不可靠）；重载后启动路径异步解析须 waitFor 目标标题
+
+- 版本号升至 `0.11.20`
+
 ## v0.11.19 — 选择器通信层扩展：类型过滤器、初始目录与并发独立
 
 ### 选择器通信层（picker:open 扩展）
