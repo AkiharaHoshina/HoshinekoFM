@@ -166,6 +166,7 @@ const koCN = {
   'settings.integration_uninstall_failed': '시스템 통합 제거 실패',
   'settings.integration_confirm_title': '시스템 통합 설치 전 확인',
   'settings.integration_confirm_message': 'HoshinekoFM이 아직 기본 파일 관리자로 설정되지 않았습니다. 먼저 "기본 파일 관리자로 설정"을 완료하는 것을 권장합니다. 그렇지 않으면 설치 후에도 폴더가 다른 앱으로 열릴 수 있습니다. 계속 설치하시겠습니까?',
+  'settings.integration_confirm_ready_message': 'portal 설정, D-Bus 활성화 파일을 설치하고 앱을 /usr/local/bin/HoshinekoFM에 설치합니다(권한 필요). 계속하시겠습니까?',
   'settings.about': '정보',
   'settings.version': '버전',
 

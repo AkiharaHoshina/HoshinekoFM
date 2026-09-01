@@ -165,6 +165,7 @@ const zhCT = {
   'settings.integration_uninstall_failed': '系統整合移除失敗',
   'settings.integration_confirm_title': '安裝系統整合前確認',
   'settings.integration_confirm_message': '仲未將 HoshinekoFM 設為預設檔案管理員。建議先完成「設為預設檔案管理員」，否則裝完之後目錄預設開啟可能用唔到本應用。要繼續安裝？',
+  'settings.integration_confirm_ready_message': '會安裝 portal 設定、D-Bus 啟用檔案同埋將應用安裝到 /usr/local/bin/HoshinekoFM（需要授權）。確定繼續？',
   'settings.about': '關於',
   'settings.version': '版本',
 

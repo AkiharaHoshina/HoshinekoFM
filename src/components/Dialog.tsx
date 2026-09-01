@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { Dialog as MdDialog } from './md';
 
 const SCROLLBAR_STYLE_ID = 'md-dialog-scrollbar-style';
@@ -42,11 +42,26 @@ const SCROLLBAR_CSS = `
 }
 `;
 
-function injectScrollbarStyle(root: ShadowRoot) {
+/**
+ * 叠层对话框遮罩：对话框盖在另一个对话框上时（如确认框盖在设置
+ * 对话框上），md-dialog 自带 .scrim 是普通 z-index 元素，会被下方
+ * modal 对话框的 **top layer** 压住——实测下层对话框表面不被压暗，
+ * 两层同色面板融为一体。原生 `::backdrop` 渲染在 top layer 内、
+ * 位于本对话框表面之下、下方对话框表面之上，正好充当两层之间的
+ * 遮罩（与单层对话框外的 .scrim 视觉一致：32% 黑）。
+ */
+const DIALOG_BACKDROP_CSS = `
+dialog::backdrop {
+  background: var(--md-sys-color-scrim, #000);
+  opacity: 32%;
+}
+`;
+
+function injectDialogStyle(root: ShadowRoot, backdrop: boolean) {
   if (root.getElementById(SCROLLBAR_STYLE_ID)) return;
   const style = document.createElement('style');
   style.id = SCROLLBAR_STYLE_ID;
-  style.textContent = SCROLLBAR_CSS;
+  style.textContent = SCROLLBAR_CSS + (backdrop ? DIALOG_BACKDROP_CSS : '');
   root.appendChild(style);
 }
 
@@ -56,6 +71,9 @@ interface DialogProps {
   onClose: () => void;
   children: React.ReactNode;
   actions?: React.ReactNode;
+  /** 叠层遮罩：对话框叠在另一个对话框上时启用（如确认框盖在
+   *  设置对话框上），在两层之间渲染一层原生 ::backdrop 遮罩 */
+  backdrop?: boolean;
 }
 
 /**
@@ -68,7 +86,7 @@ const DIALOG_GAP_MS = 250;
 
 let lastDialogClosedAt = 0;
 
-export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, actions }) => {
+export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, actions, backdrop = false }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dialogRef = useRef<any>(null);
 
@@ -114,12 +132,16 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
     };
   }, [open]);
 
-  const handleOpened = useCallback(() => {
+  /**
+   * 挂载时注入 shadow root 样式（滚动条统一 + 可选叠层遮罩）。
+   * 每次打开经 key={cycle} 重挂载全新 md-dialog，shadow root 全新，
+   * 在可见前（layout effect）注入，避免遮罩闪烁。
+   */
+  useLayoutEffect(() => {
+    if (!visible) return;
     const el = dialogRef.current;
-    if (!el) return;
-    const root = el.shadowRoot;
-    if (root) injectScrollbarStyle(root);
-  }, []);
+    if (el?.shadowRoot) injectDialogStyle(el.shadowRoot, backdrop);
+  }, [visible, backdrop]);
 
   return (
     <MdDialog
@@ -128,7 +150,6 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
       open={visible}
       onCancel={onClose}
       onClose={onClose}
-      onOpened={handleOpened}
     >
       <span slot="headline">{title}</span>
       <div slot="content">{children}</div>

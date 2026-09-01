@@ -176,6 +176,7 @@ const enUS = {
   'settings.integration_uninstall_failed': 'Failed to uninstall system integration',
   'settings.integration_confirm_title': 'Before installing system integration',
   'settings.integration_confirm_message': 'HoshinekoFM is not set as the default file manager yet. It is recommended to set it as default first, otherwise folders may still open with other apps. Continue anyway?',
+  'settings.integration_confirm_ready_message': 'This will install the portal config, D-Bus activation files, and the app to /usr/local/bin/HoshinekoFM (authorization required). Continue?',
   'settings.about': 'About',
   'settings.version': 'Version',
 

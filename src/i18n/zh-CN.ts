@@ -165,6 +165,7 @@ const zhCN = {
   'settings.integration_uninstall_failed': '系统集成卸载失败',
   'settings.integration_confirm_title': '安装系统集成前确认',
   'settings.integration_confirm_message': '尚未将 HoshinekoFM 设为默认文件管理器。建议先完成「设为默认文件管理器」，否则安装后目录默认打开可能无法正常使用本应用。仍要继续安装吗？',
+  'settings.integration_confirm_ready_message': '将安装 portal 配置、D-Bus 激活文件并把应用安装到 /usr/local/bin/HoshinekoFM（需要授权）。确定继续吗？',
   'settings.about': '关于',
   'settings.version': '版本',
 

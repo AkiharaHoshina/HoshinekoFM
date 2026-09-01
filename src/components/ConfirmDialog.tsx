@@ -26,6 +26,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     title={title}
     open={open}
     onClose={onCancel}
+    backdrop
     actions={
       <>
         <Button variant="text" onClick={onCancel}>{t('dialog.button.cancel')}</Button>

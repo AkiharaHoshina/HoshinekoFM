@@ -204,6 +204,7 @@ const ukUA = {
   'settings.integration_uninstall_failed': 'Не вдалося видалити системну інтеграцію',
   'settings.integration_confirm_title': 'Підтвердження перед встановленням системної інтеграції',
   'settings.integration_confirm_message': 'HoshinekoFM ще не призначено файловим менеджером за замовчуванням. Рекомендується спочатку виконати «Зробити файловим менеджером за замовчуванням», інакше після встановлення папки можуть відкриватися іншими програмами. Продовжити встановлення?',
+  'settings.integration_confirm_ready_message': 'Буде встановлено конфігурацію portal, файли активації D-Bus, а застосунок — у /usr/local/bin/HoshinekoFM (потрібна авторизація). Продовжити?',
   'settings.about': 'Про застосунок',
   'settings.version': 'Версія',
 
