@@ -33,6 +33,7 @@
   - 跟随系统检测链：DMS（`settings.json` 存在时经门户后端 gsettings color-scheme）→ GNOME（gsettings）→ KDE（kreadconfig6/5 读 kdeglobals ColorScheme）→ fallback 暗色；niri 不负责明暗主题（其 preferred-color-scheme 仅告知合成器偏好），不参与检测
   - 经 `nativeTheme.themeSource`（`theme:set-source` IPC）全局即时同步所有窗口（含文件选择器），现有全部主题 CSS（暗 `:root` + 亮 `@media`）无需改动即正确切换
   - 草稿机制：开关只改本地预览不立即生效，「应用/确定」时经 `onDarkModeChange` 持久化（`settings.darkMode`）并由 App 全局应用；取消回滚快照
+  - **明暗草稿即时预览（仅预览卡）**：切换/复位时解析注入 CSS（`parseThemeCssToVars`，MutationObserver 订阅 `#app-theme`）得到明暗两套变量表，把目标模式对应的整套变量以内联样式盖在预览卡容器上（自定义属性向下继承）——预览卡组件随草稿即时切换明暗，应用其余部分仍在确定/应用后才全局切换；跟随系统草稿在系统偏好检测返回前不覆盖（保持应用实际模式）
 - md-switch 纯展示化（`pointer-events: none` + 内部 input 移出 Tab 序，交互由外层容器接管）：规避 md-switch 内部 checkbox 状态机与 React 受控赋值的时序竞争（「跟随模式点两次才生效」的根因）
 
 ### 界面缩放

@@ -188,6 +188,70 @@ export function seedToCss(seed: string, options?: { scheme?: string; contrast?: 
 }
 
 /**
+ * 从注入的主题 CSS 文本解析深色/浅色两套 CSS 变量表。
+ *
+ * 兼容两种常见结构：
+ * - 本项目生成模板与 matugen 默认模板：深色在顶层 `:root`，
+ *   浅色在 `@media (prefers-color-scheme: light)` 内；
+ * - 反向模板：浅色在顶层 `:root`，深色在
+ *   `@media (prefers-color-scheme: dark)` 内。
+ *
+ * 任一模式缺失（如只含单模式的 fallback.css 风格）时对应表为空，
+ * 调用方按「无可用覆盖」处理。
+ *
+ * @param css - 注入的主题 CSS 全文
+ * @returns dark/light 两套 `--var: value` 变量表（可能为空对象）
+ */
+export function parseThemeCssToVars(css: string): {
+  dark: Record<string, string>;
+  light: Record<string, string>;
+} {
+  const empty = { dark: {}, light: {} };
+  if (!css) return empty;
+  /** 提取文本中首个 :root { ... } 块的声明内容 */
+  const rootBlock = (text: string): string => {
+    const m = text.match(/:root\s*\{([^}]*)\}/);
+    return m ? m[1] : '';
+  };
+  /**
+   * 提取指定明暗的 prefers-color-scheme 媒体查询块内容（首个）。
+   * 用花括号配平计数而非正则捕获——媒体块内嵌 :root { } 时，
+   * 非贪婪正则会停在内层右括号导致块内容不完整。
+   */
+  const mediaBlock = (text: string, scheme: 'dark' | 'light'): string => {
+    const re = new RegExp(`@media\\s*\\(prefers-color-scheme:\\s*${scheme}\\)\\s*\\{`);
+    const m = re.exec(text);
+    if (!m) return '';
+    const start = m.index + m[0].length;
+    let depth = 1;
+    for (let i = start; i < text.length; i++) {
+      if (text[i] === '{') depth++;
+      else if (text[i] === '}') {
+        depth--;
+        if (depth === 0) return text.slice(start, i);
+      }
+    }
+    return '';
+  };
+  /** 把块内容解析成 --var: value 表 */
+  const decls = (text: string): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const m of text.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
+      out[m[1]] = m[2].trim();
+    }
+    return out;
+  };
+
+  const darkMedia = mediaBlock(css, 'dark');
+  const lightMedia = mediaBlock(css, 'light');
+  const topLevel = rootBlock(css);
+  // 有 dark 媒体查询说明模板是「浅色在 :root」的反向结构
+  const darkSource = darkMedia ? rootBlock(darkMedia) : topLevel;
+  const lightSource = lightMedia ? rootBlock(lightMedia) : (darkMedia ? topLevel : '');
+  return { dark: decls(darkSource), light: decls(lightSource) };
+}
+
+/**
  * 把 DMS 颜色角色表（snake_case 键）转成 CSS 变量表。
  * 键缺失的角色跳过（前端 CSS 会回退到 fallback.css 的值）。
  */

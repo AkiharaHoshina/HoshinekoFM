@@ -6,7 +6,7 @@ import { Icon } from './Icon';
 import { Switch } from './md';
 import { ColorPickerDialog } from './ColorPickerDialog';
 import { ThemeService } from '../services/ThemeService';
-import { seedToCss } from '../services/themeEngine';
+import { seedToCss, parseThemeCssToVars } from '../services/themeEngine';
 import { showToast } from '../utils/toast';
 import { t } from '../i18n';
 import { THEME_PRESETS, type ThemeConfig } from '../types/theme';
@@ -28,11 +28,13 @@ interface ThemeColorDialogProps {
 
 /**
  * 二级主题颜色对话框（比设置主对话框更大）：
- * - 顶部 M3 预览卡（随全局即时预览变色）；
+ * - 顶部 M3 预览卡（随全局即时预览变色；随明暗草稿单独即时切换明暗）；
  * - 预设色盘（M3 基线 12 色）；
  * - 三个特殊颜色卡：系统主题（DMS）、壁纸取色（matugen）、自定义（调色盘）；
+ * - 黑暗主题开关：跟随系统/强制暗色/强制亮色，切换即时预览（仅预览卡）；
  * - 底部按钮：取消（回滚快照）/ 应用（保存不关闭）/ 确定（保存并关闭）。
- * 选择即全局即时预览；取消时恢复打开对话框前的 CSS 快照。
+ * 选择即全局即时预览；明暗草稿只影响预览卡，确定/应用后才全局生效；
+ * 取消时恢复打开对话框前的 CSS 快照。
  */
 export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, current, onSave, onClose, darkMode, onDarkModeChange }) => {
   const [draft, setDraft] = useState<ThemeConfig | null>(current);
@@ -42,11 +44,20 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
   /** 系统明暗偏好检测结果（「跟随系统」的副标题来源） */
   const [detectedScheme, setDetectedScheme] = useState<{ mode: 'dark' | 'light'; source: 'dms' | 'gnome' | 'kde' | 'fallback' } | null>(null);
   /**
-   * 明暗模式草稿：开关只改本地预览，**不立即生效**——
-   * 「应用」/「确定」时才经 onDarkModeChange 持久化并由 App 全局
-   * 应用（nativeTheme.themeSource，所有窗口即时同步）。
+   * 明暗模式草稿：开关只改草稿（预览卡即时跟随，见 previewStyle），
+   * **不全局生效**——「应用」/「确定」时才经 onDarkModeChange
+   * 持久化（settings.darkMode）并由 App 全局应用（nativeTheme.themeSource，
+   * 所有窗口即时同步），取消时草稿丢弃。
    */
   const [pendingDarkMode, setPendingDarkMode] = useState<boolean | null>(darkMode);
+  /**
+   * 当前注入主题的深色/浅色变量表（解析自 #app-theme 注入的 CSS），
+   * 供预览卡按明暗草稿本地覆盖——不触碰全局 nativeTheme。
+   */
+  const [varMaps, setVarMaps] = useState<{
+    dark: Record<string, string>;
+    light: Record<string, string>;
+  }>({ dark: {}, light: {} });
   const snapshotRef = useRef<string | null>(null);
   /** 「确定」主动关闭标志：md-dialog 的 close 事件二次触发时跳过取消回滚 */
   const confirmedRef = useRef(false);
@@ -78,7 +89,49 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
     : pendingDarkMode;
 
   /**
-   * 切换明暗：仅更新草稿（切换后不立刻生效，确定时生效）。
+   * 订阅注入主题 CSS（#app-theme）的明暗变量表：
+   * - 打开时先解析一次（可能已有注入的主题）；
+   * - 选择预设/壁纸/自定义等导致注入 CSS 变化时经 MutationObserver
+   *   重新解析——颜色预览与应用可能是异步的（壁纸取色/DMS 读取），
+   *   不能依赖 React 状态更新时机，直接观察 style 标签最可靠。
+   */
+  useEffect(() => {
+    if (!open) return;
+    const styleTag = document.getElementById('app-theme');
+    if (!styleTag) return;
+    const update = () => setVarMaps(parseThemeCssToVars(styleTag.textContent ?? ''));
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(styleTag, { childList: true, characterData: true, subtree: true });
+    return () => observer.disconnect();
+  }, [open]);
+
+  /**
+   * 明暗草稿的目标模式（预览卡应显示的模式）：
+   * - 显式草稿（true/false）直接对应暗/亮；
+   * - 跟随系统草稿用检测到的系统偏好；检测尚未返回时为 null
+   *   （不覆盖，预览卡保持应用当前实际模式，检测到达后自动跟随）。
+   */
+  const previewTargetMode: 'dark' | 'light' | null = pendingDarkMode !== null
+    ? (pendingDarkMode ? 'dark' : 'light')
+    : (detectedScheme?.mode ?? null);
+
+  /**
+   * 预览卡的本地明暗覆盖样式：把目标模式对应的整套 CSS 变量以
+   * 内联样式盖在预览卡容器上（自定义属性会向下继承）——预览卡
+   * 组件随明暗草稿即时切换，而应用其余部分仍在确定/应用后才切换。
+   * 变量表为空（无注入主题/单模式 CSS）时返回 undefined，不覆盖。
+   */
+  const previewOverrideStyle = (() => {
+    if (!previewTargetMode) return undefined;
+    const vars = previewTargetMode === 'dark' ? varMaps.dark : varMaps.light;
+    if (!vars || Object.keys(vars).length === 0) return undefined;
+    return vars as React.CSSProperties;
+  })();
+
+  /**
+   * 切换明暗：仅更新草稿——预览卡即时跟随草稿切换（见
+   * previewOverrideStyle），全局明暗仍在确定/应用时才切换。
    *
    * 语义（用户明确约定）：
    * - 跟随系统模式下点开关：同时「退出跟随」+「切换草稿」——
@@ -290,8 +343,10 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
         }
       >
         <div className="theme-color-content">
-          {/* 预览卡：颜色全部取自 CSS 变量，随全局即时预览同步变化 */}
-          <div className="theme-color-preview">
+          {/* 预览卡：颜色全部取自 CSS 变量，随全局即时预览同步变化；
+              明暗草稿经 previewOverrideStyle 内联覆盖整套变量，预览卡
+              单独即时跟随明暗草稿，其余部分仍确定/应用后才切换 */}
+          <div className="theme-color-preview" style={previewOverrideStyle}>
             <div className="theme-color-preview-top">
               <div className="theme-color-preview-title">{t('theme.preview')}</div>
               <div className="theme-color-preview-pill">M3</div>
@@ -305,9 +360,10 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
             </div>
           </div>
 
-          {/* 黑暗主题开关：默认跟随系统；切换只改草稿，确定/应用才生效。
-              复位按钮常驻在开关左侧（跟随模式下禁用置灰），开关位置
-              在任何模式下都不变，反复切换/复位不会落点漂移。 */}
+          {/* 黑暗主题开关：默认跟随系统；切换只改草稿（预览卡即时
+              跟随），确定/应用才全局生效。复位按钮常驻在开关左侧
+              （跟随模式下禁用置灰），开关位置在任何模式下都不变，
+              反复切换/复位不会落点漂移。 */}
           <div className="theme-dark-row">
             <div className="theme-dark-text">
               <span className="theme-dark-title">{t('theme.dark_mode')}</span>
