@@ -6,6 +6,7 @@ import { spawn, exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import dbus from 'dbus-next';
 import { getMountMap, invalidateMountMapCache, getExecError } from '../shared';
+import { getThumbnailCacheInfo, clearThumbnailCache } from '../fsUtils';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -1363,6 +1364,18 @@ export function registerSystemHandlers() {
   ipcMain.handle('system:get-all-devices', async () => getAllDevices());
 
   ipcMain.handle('system:has-device-watcher', async () => udisks2Available);
+
+  /**
+   * 缩略图缓存占用统计（设置页「缩略图缓存」行副标题显示）。
+   * 目录不存在/读取失败返回全 0。
+   */
+  ipcMain.handle('system:get-thumbnail-cache-info', async () => getThumbnailCacheInfo());
+
+  /**
+   * 清空缩略图缓存（整目录删除后重建空目录）。
+   * 返回清除前的文件数与释放字节数，供前端 toast 提示。
+   */
+  ipcMain.handle('system:clear-thumbnail-cache', async () => clearThumbnailCache());
 
   /**
    * 当前 gvfs 会话设备列表（MTP 手机 / PTP 相机，含未挂载卷）。

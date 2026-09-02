@@ -109,6 +109,10 @@ contextBridge.exposeInMainWorld('electron', {
   },
   getStorageUsage: () => ipcRenderer.invoke('system:get-storage-usage'),
   getStorageUsages: (paths: string[]) => ipcRenderer.invoke('system:get-storage-usages', paths),
+  /** 缩略图缓存占用统计（设置页显示） */
+  getThumbnailCacheInfo: () => ipcRenderer.invoke('system:get-thumbnail-cache-info'),
+  /** 清空缩略图缓存，返回清除前文件数与释放字节数 */
+  clearThumbnailCache: () => ipcRenderer.invoke('system:clear-thumbnail-cache'),
   getStartupPath: () => ipcRenderer.invoke('app:get-startup-path'),
   getStartupRequest: () => ipcRenderer.invoke('app:get-startup-request'),
   getVersion: () => ipcRenderer.invoke('app:get-version'),

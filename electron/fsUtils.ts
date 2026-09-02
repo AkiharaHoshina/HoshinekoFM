@@ -404,7 +404,15 @@ export async function detectMimeBatch(filePaths: string[]): Promise<Map<string, 
 
 // ── Thumbnail generation & caching ────────────────────────────────
 
-const THUMB_CACHE_DIR = path.join(os.homedir(), '.cache', 'hoshineko-fm', 'thumbnails');
+/** 应用缓存根目录（缩略图/拖拽图标等） */
+const APP_CACHE_DIR = path.join(os.homedir(), '.cache', 'hoshineko-fm');
+const THUMB_CACHE_DIR = path.join(APP_CACHE_DIR, 'thumbnails');
+
+/** p 是否位于 dir 内部（不含 dir 自身；相对路径不逃逸） */
+function isPathInside(dir: string, p: string): boolean {
+  const rel = path.relative(dir, p);
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
 
 function ensureThumbCacheDir(): void {
   if (!existsSync(THUMB_CACHE_DIR)) {
@@ -418,8 +426,13 @@ function thumbCacheKey(key: string): string {
 }
 
 /**
- * Generate a thumbnail for the given file (image only) and return the
- * cache file path.  Returns `null` if the file cannot be thumbnailed.
+ * 生成图片缩略图并返回可服务路径（命中缓存直接返回缓存文件）。
+ * 返回 `null` 表示无法生成缩略图（非图片/生成失败）。
+ *
+ * 递归防护：源文件位于应用缓存目录（~/.cache/hoshineko-fm，含
+ * thumbnails/drag-icons）内时**不缓存**——直接返回原文件路径。
+ * 否则打开缩略图目录浏览时，会为每个缩略图再生成一份缩略图，
+ * 文件数在几分钟内从个位数滚雪球到数千（递归膨胀 + IO 卡顿）。
  *
  * Strategy:
  *   1. If ImageMagick `convert` is available, use it (fast, subprocess).
@@ -428,6 +441,9 @@ function thumbCacheKey(key: string): string {
  * @param cropToSquare — when true, center-crop to a square (for drag icons).
  */
 export async function getThumbnail(filePath: string, maxSize: number, cropToSquare = false): Promise<string | null> {
+  // 缓存目录内的文件不参与缓存（防递归雪球），直接以原文件服务
+  if (isPathInside(APP_CACHE_DIR, filePath)) return filePath;
+
   ensureThumbCacheDir();
   const cacheKey = cropToSquare ? `${filePath}@${maxSize}-square` : `${filePath}@${maxSize}`;
   const cachePath = thumbCacheKey(cacheKey);
@@ -473,6 +489,41 @@ export async function getThumbnail(filePath: string, maxSize: number, cropToSqua
 }
 
 const DRAG_ICON_DIR = path.join(os.homedir(), '.cache', 'hoshineko-fm', 'drag-icons');
+
+/**
+ * 统计缩略图缓存目录占用（文件数 + 总字节）。目录不存在/读取失败返回 0。
+ * 供设置页「缩略图缓存」行显示当前占用。
+ */
+export async function getThumbnailCacheInfo(): Promise<{ fileCount: number; totalBytes: number }> {
+  try {
+    const entries = await fs.readdir(THUMB_CACHE_DIR, { withFileTypes: true });
+    let fileCount = 0;
+    let totalBytes = 0;
+    for (const e of entries) {
+      if (!e.isFile()) continue;
+      fileCount++;
+      try {
+        totalBytes += (await fs.stat(path.join(THUMB_CACHE_DIR, e.name))).size;
+      } catch { /* 单文件统计失败忽略 */ }
+    }
+    return { fileCount, totalBytes };
+  } catch {
+    return { fileCount: 0, totalBytes: 0 };
+  }
+}
+
+/**
+ * 清空缩略图缓存目录（整目录删除后重建空目录，保持后续写入路径可用）。
+ * 返回清除前的文件数与释放字节数。
+ */
+export async function clearThumbnailCache(): Promise<{ removedCount: number; freedBytes: number }> {
+  const before = await getThumbnailCacheInfo();
+  try {
+    await fs.rm(THUMB_CACHE_DIR, { recursive: true, force: true });
+  } catch { /* 删除失败保持现状 */ }
+  ensureThumbCacheDir();
+  return { removedCount: before.fileCount, freedBytes: before.totalBytes };
+}
 
 /** Path for a cached Material Symbols drag icon by icon name */
 export function getCachedDragIconPath(iconName: string): string {

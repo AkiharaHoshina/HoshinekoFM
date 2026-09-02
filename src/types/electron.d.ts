@@ -300,6 +300,10 @@ export interface IElectronAPI {
      * 单条失败跳过）。
      */
     getStorageUsages: (paths: string[]) => Promise<Array<{ path: string; total: number; used: number; free: number }>>;
+    /** 缩略图缓存占用统计（设置页「缩略图缓存」行显示；空缓存返回全 0） */
+    getThumbnailCacheInfo: () => Promise<{ fileCount: number; totalBytes: number }>;
+    /** 清空缩略图缓存（整目录删除后重建），返回清除前文件数与释放字节数 */
+    clearThumbnailCache: () => Promise<{ removedCount: number; freedBytes: number }>;
     getDrives: () => Promise<IDrive[]>;
     getAllDevices: () => Promise<AllDevice[]>;
     /** GVfs 会话设备列表（MTP 手机 / PTP 相机，含未挂载卷） */

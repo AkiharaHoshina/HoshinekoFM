@@ -518,6 +518,26 @@ function AppContent() {
   } | null>(null);
   const [integrationBusy, setIntegrationBusy] = useState(false);
 
+  /** 缩略图缓存占用（设置页「缩略图缓存」行副标题；null = 尚未查询） */
+  const [thumbCacheInfo, setThumbCacheInfo] = useState<{
+    fileCount: number;
+    totalBytes: number;
+  } | null>(null);
+  const [thumbCacheBusy, setThumbCacheBusy] = useState(false);
+
+  /** 字节数 → 人类可读大小（缩略图缓存 toast/副标题用） */
+  const formatBytes = (bytes: number): string => {
+    if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let v = bytes;
+    let i = 0;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i++;
+    }
+    return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+  };
+
   /** 设置对话框打开时刷新默认文件管理器状态（异步回填） */
   useEffect(() => {
     if (!settingsDialogOpen) return;
@@ -549,6 +569,41 @@ function AppContent() {
       cancelled = true;
     };
   }, [settingsDialogOpen]);
+
+  /** 设置对话框打开时刷新缩略图缓存占用（异步回填） */
+  useEffect(() => {
+    if (!settingsDialogOpen) return;
+    let cancelled = false;
+    void window.electron
+      ?.getThumbnailCacheInfo()
+      .then((info) => {
+        if (!cancelled && info) setThumbCacheInfo(info);
+      })
+      .catch(() => { /* 查询失败保持现状 */ });
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsDialogOpen]);
+
+  /** 清空缩略图缓存：toast 提示释放空间并刷新占用显示 */
+  const handleClearThumbCache = useCallback(async () => {
+    if (thumbCacheBusy) return;
+    setThumbCacheBusy(true);
+    try {
+      const res = await window.electron?.clearThumbnailCache();
+      if (res && res.freedBytes > 0) {
+        showToast(t("settings.thumb_cache_cleared", formatBytes(res.freedBytes)), "success");
+      } else {
+        showToast(t("settings.thumb_cache_empty"), "info");
+      }
+      const info = await window.electron?.getThumbnailCacheInfo();
+      if (info) setThumbCacheInfo(info);
+    } catch {
+      showToast(t("settings.clear_thumb_cache_failed"), "error");
+    } finally {
+      setThumbCacheBusy(false);
+    }
+  }, [thumbCacheBusy]);
 
   /** 一键安装系统集成（portal 配置 + D-Bus 激活文件，经 pkexec 授权） */
   const handleInstallIntegration = useCallback(async () => {
@@ -1674,6 +1729,9 @@ function AppContent() {
             integrationBusy={integrationBusy}
             onInstallIntegration={() => void handleInstallIntegration()}
             onUninstallIntegration={() => void handleUninstallIntegration()}
+            thumbCacheInfo={thumbCacheInfo}
+            thumbCacheBusy={thumbCacheBusy}
+            onClearThumbCache={() => void handleClearThumbCache()}
             titleBarMode={titleBarMode}
             onTitleBarChange={setTitleBarMode}
             showFullPathTitle={showFullPathTitle}

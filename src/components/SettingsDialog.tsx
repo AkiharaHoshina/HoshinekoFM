@@ -51,6 +51,11 @@ interface SettingsDialogProps {
   integrationBusy: boolean;
   onInstallIntegration: () => void;
   onUninstallIntegration: () => void;
+  /** 缩略图缓存占用（null = 尚未查询，副标题显示「缓存为空」兜底） */
+  thumbCacheInfo: { fileCount: number; totalBytes: number } | null;
+  thumbCacheBusy: boolean;
+  /** 清空缩略图缓存（toast 与占用刷新由 App 处理） */
+  onClearThumbCache: () => void;
   /** 标题栏模式（null = 跟随系统，true/false = 手动开/关） */
   titleBarMode: boolean | null;
   onTitleBarChange: (mode: boolean | null) => void;
@@ -96,6 +101,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   integrationBusy,
   onInstallIntegration,
   onUninstallIntegration,
+  thumbCacheInfo,
+  thumbCacheBusy,
+  onClearThumbCache,
   titleBarMode,
   onTitleBarChange,
   showFullPathTitle,
@@ -117,6 +125,19 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       integrationStatus.portalService &&
       integrationStatus.portalsConf,
   );
+
+  /** 字节数 → 人类可读大小（缩略图缓存副标题用） */
+  const formatBytes = (bytes: number): string => {
+    if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let v = bytes;
+    let i = 0;
+    while (v >= 1024 && i < units.length - 1) {
+      v /= 1024;
+      i++;
+    }
+    return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+  };
 
   /**
    * 应用版本号（来自主进程 app.getVersion()）。
@@ -489,6 +510,31 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 {t("settings.install_integration")}
               </Button>
             )}
+          </div>
+
+          {/* 缩略图缓存：占用展示 + 一键清除。浏览缓存目录已不再递归
+              生成缓存（fsUtils 递归防护），此处提供手动清理入口 */}
+          <div className="settings-row">
+            <div className="settings-row__start">
+              <Icon name="image" />
+              <div className="settings-row__label-col">
+                <div className="settings-row__label">
+                  {t("settings.thumb_cache")}
+                </div>
+                <div className="settings-row__sub settings-row__sub--wrap">
+                  {thumbCacheInfo && thumbCacheInfo.totalBytes > 0
+                    ? t("settings.thumb_cache_info", thumbCacheInfo.fileCount, formatBytes(thumbCacheInfo.totalBytes))
+                    : t("settings.thumb_cache_empty")}
+                </div>
+              </div>
+            </div>
+            <Button
+              variant="outlined"
+              disabled={thumbCacheBusy || !thumbCacheInfo || thumbCacheInfo.totalBytes === 0}
+              onClick={onClearThumbCache}
+            >
+              {t("settings.clear_thumb_cache")}
+            </Button>
           </div>
         </div>
 
