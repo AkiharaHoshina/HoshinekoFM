@@ -442,7 +442,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
         className="file-group-header"
         style={{
           ...style,
-          padding: "20px 2px 8px",
+          padding: "20px 16px 8px",
           fontWeight: 500,
           color: "var(--md-sys-color-primary)",
           borderBottom: "1px solid var(--md-sys-color-outline-variant)",

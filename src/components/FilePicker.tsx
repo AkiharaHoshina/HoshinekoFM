@@ -20,7 +20,7 @@ import { showToast, shortPath } from '../utils/toast';
 import { sortFiles } from '../utils/fileSort';
 import { t, useLocale } from '../i18n';
 import { registerKeyboardZone, focusNextKeyboardZone, trackKeyboardZoneFocus } from '../utils/focusZones';
-import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, type ListItem } from './FileList/utils';
+import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, computeShiftArrowRange, type ListItem } from './FileList/utils';
 import type { IFile, AllDevice, GvfsVolume } from '../types/files';
 import type { ThemeConfig } from '../types/theme';
 import type { PickerConfig, PickerFilter } from '../types/picker';
@@ -377,14 +377,31 @@ const FilePicker: React.FC = () => {
   );
 
   /** 橡皮筋框选：过滤掉不可选类型，其余全部选中（folder 模式此前强制单选，现与其余模式一致支持多选）。
-   *  保存模式无框选语义：直接忽略。覆盖框选后锚点/游标 = 框选集首个（显示序）。 */
+   *  保存模式无框选语义：直接忽略。覆盖框选（replace）后锚点 = 拖拽起点、
+   *  游标 = 拖拽终点（起终点重合/缺失时退化为框选集首个，显示序）——
+   *  后续 Shift+方向键从框选包围盒整体扩/缩，与主窗口同语义。 */
   const handleSetSelected = useCallback(
-    (paths: Set<string>) => {
+    (
+      paths: Set<string>,
+      mode?: "replace" | "union" | "intersection" | "difference",
+      corners?: { startPath: string | null; endPath: string | null },
+    ) => {
       if (config?.mode === 'save') return;
       const valid = displayFiles.filter((f) => paths.has(f.path) && isSelectable(f));
       setSelected(new Set(valid.map((f) => f.path)));
-      setLastSelectedPath(valid[0]?.path ?? null);
-      setCursorPath(valid[0]?.path ?? null);
+      if (mode === 'replace') {
+        const startItem =
+          corners && corners.startPath && corners.startPath !== corners.endPath
+            ? (valid.find((f) => f.path === corners.startPath) ?? null)
+            : null;
+        const endItem = startItem && corners?.endPath
+          ? (valid.find((f) => f.path === corners.endPath) ?? null)
+          : null;
+        const anchor = startItem ?? valid[0] ?? null;
+        const cursor = endItem ?? anchor;
+        setLastSelectedPath(anchor?.path ?? null);
+        setCursorPath(cursor?.path ?? null);
+      }
     },
     [displayFiles, isSelectable, config],
   );
@@ -457,6 +474,22 @@ const FilePicker: React.FC = () => {
         return;
       }
 
+      // Ctrl+A 全选：位于键盘分区守卫之前（与主窗口同语义）——焦点不在
+      // 输入框内时全选文件区可选条目，避免浏览器默认全选整个窗口文字。
+      // 保存模式无选择语义，仅阻止默认行为。
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault();
+        if (config?.mode !== 'save') {
+          const selectableFiles = displayFiles.filter((f) => isSelectable(f));
+          if (selectableFiles.length > 0) {
+            setSelected(new Set(selectableFiles.map((f) => f.path)));
+            setLastSelectedPath(selectableFiles[0].path);
+            setCursorPath(selectableFiles[selectableFiles.length - 1].path);
+          }
+        }
+        return;
+      }
+
       // 键盘分区守卫：侧边栏/顶栏分区内由分区自身处理（方向键移动/Enter 激活）。
       // 双重判定：e.target 可能因变体切换脱离 DOM，以当前焦点元素兜底
       const zoneEl = target?.closest?.('[data-kb-zone]');
@@ -496,7 +529,29 @@ const FilePicker: React.FC = () => {
           guard++;
         }
         if (targetFile) {
-          handleSelect(targetFile, false, e.shiftKey);
+          if (e.shiftKey && lastSelectedPath) {
+            // Shift+方向键与主窗口同语义：选区边缘随游标移动（向外扩、往回缩，
+            // 每次按键必有变化），结果过滤掉不可选条目（folder 模式的文件等）
+            const range = computeShiftArrowRange(
+              layout.items,
+              selected,
+              lastSelectedPath,
+              targetFile.path,
+              e.key,
+              viewMode,
+            );
+            if (range) {
+              const next = new Set<string>();
+              for (const p of range) {
+                const f = displayFiles.find((x) => x.path === p);
+                if (f && isSelectable(f)) next.add(p);
+              }
+              if (next.size > 0) setSelected(next);
+              setCursorPath(targetFile.path);
+            }
+          } else {
+            handleSelect(targetFile, false, e.shiftKey);
+          }
           setKeyboardScrollPath(targetFile.path);
         }
         return;
@@ -559,7 +614,7 @@ const FilePicker: React.FC = () => {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [confirm, cancel, selected.size, config, fileName, displayFiles, cursorPath, lastSelectedPath, viewMode, isSelectable, handleSelect]);
+  }, [confirm, cancel, selected, config, fileName, displayFiles, cursorPath, lastSelectedPath, viewMode, isSelectable, handleSelect]);
 
   /** focusin 跟踪当前分区（Tab 循环从最近聚焦的分区继续） */
   useEffect(() => {

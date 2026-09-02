@@ -46,7 +46,7 @@ import {
   type ConflictResult,
 } from '../utils/fileConflict';
 import { registerKeyboardZone } from '../utils/focusZones';
-import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, computeCtrlArrowTarget, type ListItem } from './FileList/utils';
+import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, computeCtrlArrowTarget, computeShiftArrowRange, type ListItem } from './FileList/utils';
 
 interface ExplorerTabProps {
     tabId: string;
@@ -1128,6 +1128,23 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (document.querySelector('md-dialog[open], .context-menu, [role="dialog"]')) return;
+
+      // Ctrl+A 全选：位于键盘分区守卫**之前**——焦点不在输入框/对话框内
+      // 时（无论落在导航栏/侧边栏/标签栏/顶栏等哪个分区），都全选当前
+      // 文件区的条目；否则浏览器默认行为会全选整个 Web UI 的文字。
+      // 全选后锚点 = 首项、游标 = 末项（显示序）：后续 Shift+方向键
+      // 从全选包围盒的整体边界扩/缩（与框选同语义），而非塌缩到单项
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault();
+        const allPaths = new Set(sortedFiles.map(f => f.path));
+        setSelectedFiles(allPaths);
+        if (sortedFiles.length > 0) {
+          setLastSelectedPath(sortedFiles[0].path);
+          setCursorPath(sortedFiles[sortedFiles.length - 1].path);
+        }
+        return;
+      }
+
       // 键盘分区守卫：焦点在导航栏/侧边栏/顶栏等分区内时，由分区自身的
       // onKeyDown 处理（方向键移动/Enter 激活），文件区快捷键不插手。
       // 双重判定：e.target 可能因分区激活的变体切换而脱离 DOM（closest 失效），
@@ -1157,7 +1174,25 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           target = computeArrowTarget(layout.items, cursorPath ?? lastSelectedPath, e.key, viewMode);
         }
         if (target) {
-          handleSelect(target, false, e.shiftKey);
+          if (e.shiftKey) {
+            // Shift+方向键：选区边缘随游标移动——向外扩、往回缩（矩形对角线
+            // 语义，锚点固定；每次按键必有可见变化，见 computeShiftArrowRange）
+            const range = computeShiftArrowRange(
+              layout.items,
+              selectedFiles,
+              lastSelectedPath,
+              target.path,
+              e.key,
+              viewMode,
+            );
+            if (range) {
+              setSelectedFiles(range);
+              setCursorPath(target.path);
+              if (!lastSelectedPath) setLastSelectedPath(target.path);
+            }
+          } else {
+            handleSelect(target, false, false);
+          }
           setKeyboardScrollPath(target.path);
         }
         return;
@@ -1256,13 +1291,6 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           handleSelect(target, false, false);
           setKeyboardScrollPath(target.path);
         }
-        return;
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-        e.preventDefault();
-        const allPaths = new Set(sortedFiles.map(f => f.path));
-        setSelectedFiles(allPaths);
         return;
       }
 
@@ -1556,21 +1584,32 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   /**
    * 橡皮筋框选回传（FileList → useRubberBandSelection）：
-   * - replace（无修饰键覆盖框选）：锚点/游标设为框选集在显示序中的首个文件，
-   *   与单击选中保持一致的语义（框选不走 handleSelect，锚点必须在此补上）；
-   * - union/intersection/difference（Ctrl/Shift 组合）：保留现有锚点/游标不变，
-   *   后续方向键/Shift 范围选择仍以最近一次单击的位置为基准。
+   * - replace（无修饰键覆盖框选）：锚点 = 拖拽**起点**命中条目、游标 =
+   *   拖拽**终点**命中条目（框选包围盒的对角两角，由 hook 按中心距离
+   *   就近取；起终点重合的微小框退化为框选集首个文件）——后续
+   *   Shift+方向键从框选整体向外扩/往回缩，而不是塌缩到单个文件；
+   * - union/intersection/difference（Ctrl/Shift 组合）：保留现有锚点/游标
+   *   不变，后续方向键/Shift 范围选择仍以最近一次单击的位置为基准。
    */
   const handleBoxSelect = useCallback(
     (
       paths: Set<string>,
       mode?: "replace" | "union" | "intersection" | "difference",
+      corners?: { startPath: string | null; endPath: string | null },
     ) => {
       setSelectedFiles(paths);
       if (mode === "replace") {
-        const anchor = sortedFiles.find((f) => paths.has(f.path)) ?? null;
+        const startItem =
+          corners && corners.startPath && corners.startPath !== corners.endPath
+            ? (sortedFiles.find((f) => f.path === corners.startPath) ?? null)
+            : null;
+        const endItem = startItem && corners?.endPath
+          ? (sortedFiles.find((f) => f.path === corners.endPath) ?? null)
+          : null;
+        const anchor = startItem ?? (sortedFiles.find((f) => paths.has(f.path)) ?? null);
+        const cursor = endItem ?? anchor;
         setLastSelectedPath(anchor ? anchor.path : null);
-        setCursorPath(anchor ? anchor.path : null);
+        setCursorPath(cursor ? cursor.path : null);
       }
     },
     [sortedFiles],

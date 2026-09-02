@@ -38,6 +38,7 @@ interface FileListProps {
   onSetSelected?: (
     paths: Set<string>,
     mode?: "replace" | "union" | "intersection" | "difference",
+    corners?: { startPath: string | null; endPath: string | null },
   ) => void;
   onSelectionModeChange?: (
     mode: "replace" | "union" | "intersection" | "difference" | null,
@@ -509,10 +510,10 @@ const FileListComponent: React.FC<FileListProps> = ({
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest?.(".file-rename-input")) return;
         e.preventDefault();
+        // 条目外（空白处与分组头）右键 = 背景菜单：分组头是「分类显示
+        // 区域」，无独立条目语义，归入背景菜单（新建/粘贴/刷新等）
         if (
-          !(e.target as HTMLElement).closest(
-            ".file-list-item, .file-group-header",
-          )
+          !(e.target as HTMLElement).closest?.(".file-list-item")
         ) {
           onBackgroundContextMenu?.(e);
         }

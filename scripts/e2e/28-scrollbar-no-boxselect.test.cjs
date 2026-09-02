@@ -71,11 +71,15 @@ const h = require('./harness.cjs');
     const selAfter = await h.js(win, `document.querySelector('.file-list-item.selected')?.dataset.path ?? null`);
     h.assert.strictEqual(selAfter.value, `${dir}/f000.txt`, '滚动后原选中应保持');
 
-    // 滚动后的第一次点选即可选中（不被 didSelectRef 守卫吃掉）
+    // 滚动后的第一次点选即可选中（不被 didSelectRef 守卫吃掉）。
+    // 可见性判定以文件区容器矩形为准（窗口矩形会把容器下方被裁切的
+    // 半可见行算进去，点击中心会落在状态栏上打不中条目）
     const target = await h.js(win, `(() => {
+      const cont = document.querySelector('.file-list-container');
+      const r = cont.getBoundingClientRect();
       const el = [...document.querySelectorAll('.file-list-item')].find(x => {
-        const r = x.getBoundingClientRect();
-        return r.width > 0 && r.top >= 0 && r.bottom <= window.innerHeight && !x.className.includes('selected');
+        const b = x.getBoundingClientRect();
+        return b.width > 0 && b.top >= r.top && b.bottom <= r.bottom && !x.className.includes('selected');
       });
       return el ? el.dataset.path : null;
     })()`);

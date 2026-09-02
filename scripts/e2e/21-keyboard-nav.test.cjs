@@ -179,7 +179,8 @@ const h = require('./harness.cjs');
 
     h.assert.ok((await selCount()).value >= 10, '框选应选中多个条目');
 
-    // Down：以框选首项为锚点，折叠为单选并移到下一行同列（期望值取 DOM——与渲染布局同源）
+    // Down：游标 = 框选拖拽终点（本用例拖向左上，终点即首项），折叠为
+    // 单选并移到下一行同列（期望值取 DOM——与渲染布局同源）
     await h.key(win, 'Down');
     await h.sleep(300);
     const expectPath = await h.js(
@@ -257,20 +258,41 @@ const h = require('./harness.cjs');
     ].sort();
     h.assert.deepStrictEqual(s.value, expected3, 'Shift+Right 应扩展为 3 行 × 2 列矩形');
 
-    // Shift+Left 两次：锚点行基准不收缩——游标向左扩展 col0（游标在
-    // 其他行时只能扩展、不能收缩锚点行选区 col1..col2；第一次 Left 到
-    // col1 无变化，第二次到 col0 左扩为 col0..col2）
-    await h.key(win, 'Left', ['shift']);
-    await h.sleep(200);
+    // Shift+Left：选区边缘随游标移动（向外扩、往回缩）——第一次 Left
+    // 游标回到 col1，列区间收缩为仅 col1（col2 随之取消）；第二次 Left
+    // 游标到 col0，向左扩展为 col0..col1；第三次到行首不可再移，选区不变
     await h.key(win, 'Left', ['shift']);
     await h.sleep(250);
     s = await sel();
-    const col0 = [
-      `${dir}/f01.txt`, `${dir}/f02.txt`, `${dir}/f03.txt`,
-      `${dir}/f${String(1 + cols).padStart(2, '0')}.txt`, `${dir}/f${String(2 + cols).padStart(2, '0')}.txt`, `${dir}/f${String(3 + cols).padStart(2, '0')}.txt`,
-      `${dir}/f${String(1 + cols * 2).padStart(2, '0')}.txt`, `${dir}/f${String(2 + cols * 2).padStart(2, '0')}.txt`, `${dir}/f${String(3 + cols * 2).padStart(2, '0')}.txt`,
-    ].sort();
-    h.assert.deepStrictEqual(s.value, col0, 'Shift+Left×2 应以锚点行为基准：左扩至 col0..col2（col2 不收缩）');
+    h.assert.deepStrictEqual(
+      s.value,
+      [`${dir}/f02.txt`, r1c1, r2c1].sort(),
+      'Shift+Left 第一次：游标回 col1，收缩为仅 col1 三行',
+    );
+    await h.key(win, 'Left', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [
+        `${dir}/f01.txt`, `${dir}/f02.txt`,
+        `${dir}/f${String(1 + cols).padStart(2, '0')}.txt`, `${dir}/f${String(2 + cols).padStart(2, '0')}.txt`,
+        `${dir}/f${String(1 + cols * 2).padStart(2, '0')}.txt`, `${dir}/f${String(2 + cols * 2).padStart(2, '0')}.txt`,
+      ].sort(),
+      'Shift+Left 第二次：游标到 col0，左扩为 col0..col1',
+    );
+    await h.key(win, 'Left', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [
+        `${dir}/f01.txt`, `${dir}/f02.txt`,
+        `${dir}/f${String(1 + cols).padStart(2, '0')}.txt`, `${dir}/f${String(2 + cols).padStart(2, '0')}.txt`,
+        `${dir}/f${String(1 + cols * 2).padStart(2, '0')}.txt`, `${dir}/f${String(2 + cols * 2).padStart(2, '0')}.txt`,
+      ].sort(),
+      'Shift+Left 第三次（游标已到行首）选区应保持不变',
+    );
 
     // ── 跨分类：zdir（Folders 组）Shift+Down 跨分组头到 Documents 组 ──
     await h.clickEl(win, `.file-list-item[data-path="${dir}/zdir"]`);
@@ -308,6 +330,336 @@ const h = require('./harness.cjs');
       s.value,
       rectExpected,
       `鼠标 Shift+点击应按矩形选择同列三行，实际 ${JSON.stringify(s.value)} / 期望 ${JSON.stringify(rectExpected)}`,
+    );
+  });
+
+  await h.run('21d2 网格 Shift 边缘随游标扩缩（每次按键必有变化，用户场景回归）', async () => {
+    // 复现报告场景：N 列网格（6..14 列，前两行满列），点击第 5 项
+    // （row0 col4）→ Shift+Down 同列两行 → Shift+Left 扩左一列 → 之后
+    // Shift+Right/Left 必须**每次按键都有可见变化**：往外按扩选、
+    // 往回按收缩（旧行为：游标走回已选区域内按键空转，需按两次以上）。
+    const dir = h.tempDir();
+    const entries = {};
+    for (let i = 1; i <= 20; i++) entries[`f${String(i).padStart(2, '0')}.txt`] = 'x';
+    h.makeFileTree(dir, entries);
+
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 20`);
+
+    await h.js(
+      win,
+      `localStorage.setItem('settings.viewMode', JSON.stringify('grid'));
+       localStorage.setItem('settings.groupingEnabled', JSON.stringify(false));
+       localStorage.setItem('settings.iconSize', JSON.stringify(64));
+       location.reload();`,
+    );
+    await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 20`);
+    await h.waitFor(win, `document.querySelectorAll('.grid-row-container').length >= 2`);
+
+    const sel = () =>
+      h.js(win, `Array.from(document.querySelectorAll('.file-list-item.selected')).map((el) => el.dataset.path).sort()`);
+    const cols = (
+      await h.js(win, `Math.max(...Array.from(document.querySelectorAll('.grid-row-container')).map((r) => r.querySelectorAll('.file-grid-item').length))`)
+    ).value;
+    h.assert.ok(cols >= 6 && cols <= 14, `场景需要 6..14 列（保证 20 项排成两行且第 6 列存在），实际 ${cols}`);
+
+    const f = (i) => `${dir}/f${String(i).padStart(2, '0')}.txt`;
+
+    // 1) 点击第 5 项（row0 col4）
+    await h.clickEl(win, `.file-list-item[data-path="${f(5)}"]`);
+    let s = await sel();
+    h.assert.deepStrictEqual(s.value, [f(5)], '点击应单选 f05');
+
+    // 2) Shift+Down → 同列两行
+    await h.key(win, 'Down', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(s.value, [f(5), f(5 + cols)].sort(), 'Shift+Down 应选 f05 + 下一行同列');
+
+    // 3) Shift+Left → 左扩一列（cols 3..4 × 两行）
+    await h.key(win, 'Left', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [f(4), f(5), f(4 + cols), f(5 + cols)].sort(),
+      'Shift+Left 应左扩一列',
+    );
+
+    // 4) Shift+Right（往回按）→ 收缩回 col4（col3 取消）
+    await h.key(win, 'Right', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [f(5), f(5 + cols)].sort(),
+      'Shift+Right 往回按应收缩回 col4 两行',
+    );
+
+    // 5) Shift+Right（往外按）→ 右扩一列（cols 4..5 × 两行）
+    await h.key(win, 'Right', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [f(5), f(6), f(5 + cols), f(6 + cols)].sort(),
+      'Shift+Right 往外按应右扩一列（不空转）',
+    );
+
+    // 6) Shift+Left（往回按）→ 收缩回 col4（col5 取消）
+    await h.key(win, 'Left', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [f(5), f(5 + cols)].sort(),
+      'Shift+Left 往回按应收缩回 col4 两行',
+    );
+
+    // 7) Shift+Left（往外按）→ 左扩一列（cols 3..4）
+    await h.key(win, 'Left', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [f(4), f(5), f(4 + cols), f(5 + cols)].sort(),
+      'Shift+Left 往外按应左扩一列（不空转）',
+    );
+
+    // 8) 再按一次 Shift+Left：继续左扩一列（cols 2..4）
+    await h.key(win, 'Left', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [f(3), f(4), f(5), f(3 + cols), f(4 + cols), f(5 + cols)].sort(),
+      'Shift+Left 第二次应继续左扩一列',
+    );
+  });
+
+  await h.run('21d3 框选后 Shift+方向键从框选包围盒扩/缩（不塌缩）', async () => {
+    // 回归：鼠标框选拉出多选范围后，Shift+方向键以「拖拽起点=锚点、
+    // 拖拽终点=游标」为基准——向外按扩选、往回按收缩，框选包围盒不再
+    // 塌缩为单个文件。框选拖拽从 row2 col0 左侧的行间空白（margin 区）
+    // 拖到 row0 col2 中心：框 = rows 0..2 × cols 0..2（9 项），
+    // 锚点 = (2,0)（拖拽起点最近条目）、游标 = (0,2)（拖拽终点）。
+    const dir = h.tempDir();
+    const entries = {};
+    for (let i = 1; i <= 30; i++) entries[`f${String(i).padStart(2, '0')}.txt`] = 'x';
+    h.makeFileTree(dir, entries);
+
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 30`);
+
+    await h.js(
+      win,
+      `localStorage.setItem('settings.viewMode', JSON.stringify('grid'));
+       localStorage.setItem('settings.groupingEnabled', JSON.stringify(false));
+       localStorage.setItem('settings.iconSize', JSON.stringify(128));
+       location.reload();`,
+    );
+    await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 30`);
+    await h.waitFor(win, `document.querySelectorAll('.grid-row-container').length >= 4`);
+
+    const sel = () =>
+      h.js(win, `Array.from(document.querySelectorAll('.file-list-item.selected')).map((el) => el.dataset.path).sort()`);
+    const cols = (
+      await h.js(win, `Math.max(...Array.from(document.querySelectorAll('.grid-row-container')).map((r) => r.querySelectorAll('.file-grid-item').length))`)
+    ).value;
+    h.assert.ok(cols >= 5 && cols <= 9, `场景需要 5..9 列（保证 col2 存在且 row3 col2 不越界），实际 ${cols}`);
+
+    const f = (i) => `${dir}/f${String(i).padStart(2, '0')}.txt`;
+
+    // 框选拖拽：起点 = row2 col0 左侧空白（条目左 margin 区），终点 = f03 中心
+    const geo = await h.js(
+      win,
+      `(() => {
+        const rows = document.querySelectorAll('.grid-row-container');
+        const first = rows[2].querySelectorAll('.file-grid-item')[0].getBoundingClientRect();
+        const end = document.querySelector('.file-list-item[data-path="${f(3)}"]').getBoundingClientRect();
+        return {
+          sx: Math.round(first.left - 10),
+          sy: Math.round(first.top + first.height / 2),
+          ex: Math.round(end.left + end.width / 2),
+          ey: Math.round(end.top + end.height / 2),
+        };
+      })()`,
+    );
+    await win.webContents.sendInputEvent({ type: 'mouseDown', x: geo.value.sx, y: geo.value.sy, button: 'left', clickCount: 1 });
+    for (let t = 1; t <= 10; t++) {
+      await win.webContents.sendInputEvent({
+        type: 'mouseMove',
+        x: Math.round(geo.value.sx + ((geo.value.ex - geo.value.sx) * t) / 10),
+        y: Math.round(geo.value.sy + ((geo.value.ey - geo.value.sy) * t) / 10),
+      });
+      await h.sleep(30);
+    }
+    await win.webContents.sendInputEvent({ type: 'mouseUp', x: geo.value.ex, y: geo.value.ey, button: 'left', clickCount: 1 });
+    await h.sleep(400);
+
+    const box9 = [
+      f(1), f(2), f(3),
+      f(1 + cols), f(2 + cols), f(3 + cols),
+      f(1 + 2 * cols), f(2 + 2 * cols), f(3 + 2 * cols),
+    ].sort();
+    let s = await sel();
+    h.assert.deepStrictEqual(s.value, box9, `框选应为 rows 0..2 × cols 0..2，实际 ${JSON.stringify(s.value)}`);
+
+    // 1) Shift+Right：锚点 (2,0)、游标 (0,2) → 右扩一列（cols 0..3 × rows 0..2）
+    await h.key(win, 'Right', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [
+        f(1), f(2), f(3), f(4),
+        f(1 + cols), f(2 + cols), f(3 + cols), f(4 + cols),
+        f(1 + 2 * cols), f(2 + 2 * cols), f(3 + 2 * cols), f(4 + 2 * cols),
+      ].sort(),
+      '框选后 Shift+Right 应右扩一列（不塌缩），实际 ' + JSON.stringify(s.value),
+    );
+
+    // 2) Shift+Left（往回按）：收缩回框选包围盒
+    await h.key(win, 'Left', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(s.value, box9, 'Shift+Left 往回按应收缩回框选范围');
+
+    // 3) Shift+Down（往回按）：游标从 row0 移到 row1 → 收缩掉锚点对侧行（rows 1..2）
+    await h.key(win, 'Down', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [
+        f(1 + cols), f(2 + cols), f(3 + cols),
+        f(1 + 2 * cols), f(2 + 2 * cols), f(3 + 2 * cols),
+      ].sort(),
+      'Shift+Down 往回按应收缩掉锚点对侧行（rows 1..2），实际 ' + JSON.stringify(s.value),
+    );
+
+    // 4) Shift+Down 再按：游标回锚点行 → 仅锚点行（row2）
+    await h.key(win, 'Down', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [f(1 + 2 * cols), f(2 + 2 * cols), f(3 + 2 * cols)].sort(),
+      'Shift+Down 第二次应收缩到锚点行（row2 cols 0..2）',
+    );
+
+    // 5) Shift+Down（往外按）：越过锚点行 → 向下扩展 row3（rows 2..3）
+    await h.key(win, 'Down', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [
+        f(1 + 2 * cols), f(2 + 2 * cols), f(3 + 2 * cols),
+        f(1 + 3 * cols), f(2 + 3 * cols), f(3 + 3 * cols),
+      ].sort(),
+      'Shift+Down 往外按应向下扩一行（rows 2..3）',
+    );
+
+    // 6) Shift+Up（往回按）：收缩回锚点行
+    await h.key(win, 'Up', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      [f(1 + 2 * cols), f(2 + 2 * cols), f(3 + 2 * cols)].sort(),
+      'Shift+Up 往回按应收缩回锚点行',
+    );
+  });
+
+  await h.run('21d4 Ctrl+A 后 Shift+方向键从整体边界扩/缩', async () => {
+    // 回归：Ctrl+A 全选后锚点 = 首项（f01）、游标 = 末项（f30）——
+    // Shift+方向键从全选包围盒整体扩/缩，而非塌缩到单项。
+    // 期望值按实际布局计算（R 行、每行 cols 列、末行 lastLen 项）：
+    // Up 收缩末行（30-lastLen）、Down 恢复全选、Left 每行收缩右一列
+    // （R×(lastLen-1)）、Right 恢复（R×lastLen）。
+    const dir = h.tempDir();
+    const entries = {};
+    for (let i = 1; i <= 30; i++) entries[`f${String(i).padStart(2, '0')}.txt`] = 'x';
+    h.makeFileTree(dir, entries);
+
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 30`);
+
+    await h.js(
+      win,
+      `localStorage.setItem('settings.viewMode', JSON.stringify('grid'));
+       localStorage.setItem('settings.groupingEnabled', JSON.stringify(false));
+       localStorage.setItem('settings.iconSize', JSON.stringify(128));
+       location.reload();`,
+    );
+    await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 30`);
+    await h.waitFor(win, `document.querySelectorAll('.grid-row-container').length >= 2`);
+
+    const sel = () =>
+      h.js(win, `Array.from(document.querySelectorAll('.file-list-item.selected')).map((el) => el.dataset.path).sort()`);
+    const layout = (
+      await h.js(win, `(() => {
+        const rows = [...document.querySelectorAll('.grid-row-container')];
+        return {
+          rows: rows.length,
+          cols: Math.max(...rows.map((r) => r.querySelectorAll('.file-grid-item').length)),
+          lastLen: rows[rows.length - 1].querySelectorAll('.file-grid-item').length,
+        };
+      })()`)
+    ).value;
+    const { rows: R, cols, lastLen } = layout;
+    h.assert.ok(R >= 2 && lastLen >= 2, `布局需要至少 2 行且末行至少 2 项，实际 R=${R} lastLen=${lastLen}`);
+
+    const f = (i) => `${dir}/f${String(i).padStart(2, '0')}.txt`;
+
+    await h.hotkey(win, 'a', ['ctrl']);
+    await h.sleep(300);
+    let s = await sel();
+    h.assert.strictEqual(s.value.length, 30, `Ctrl+A 应选中全部 30 项，实际 ${s.value.length}`);
+
+    // Shift+Up：游标 f30 → 上一行，收缩末行（rows 0..R-2 × 全部列）
+    await h.key(win, 'Up', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.deepStrictEqual(
+      s.value,
+      Array.from({ length: 30 - lastLen }, (_, i) => f(i + 1)).sort(),
+      `Ctrl+A 后 Shift+Up 应收缩末行（${30 - lastLen} 项），实际 ${s.value.length}`,
+    );
+
+    // Shift+Down：恢复全选
+    await h.key(win, 'Down', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    h.assert.strictEqual(s.value.length, 30, 'Shift+Down 应恢复全选 30 项');
+
+    // Shift+Left：每行收缩右一列（rows 0..R-1 × cols 0..lastLen-2）
+    await h.key(win, 'Left', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    const leftSet = [];
+    for (let r = 0; r < R; r++) {
+      for (let c = 0; c <= lastLen - 2; c++) leftSet.push(f(1 + r * cols + c));
+    }
+    h.assert.deepStrictEqual(
+      s.value,
+      leftSet.sort(),
+      `Shift+Left 应每行收缩右一列（${R * (lastLen - 1)} 项），实际 ${s.value.length}`,
+    );
+
+    // Shift+Right：恢复（rows 0..R-1 × cols 0..lastLen-1）
+    await h.key(win, 'Right', ['shift']);
+    await h.sleep(250);
+    s = await sel();
+    const rightSet = [];
+    for (let r = 0; r < R; r++) {
+      for (let c = 0; c <= lastLen - 1; c++) rightSet.push(f(1 + r * cols + c));
+    }
+    h.assert.deepStrictEqual(
+      s.value,
+      rightSet.sort(),
+      `Shift+Right 应恢复（${R * lastLen} 项），实际 ${s.value.length}`,
     );
   });
 
@@ -399,6 +751,13 @@ const h = require('./harness.cjs');
 
     await clickLastFullyVisible();
     const beforeL = (await scrollEl()).value.top;
+    // 被点击条目的「行底 - 条目底」内嵌量：条目底部以上的行留白
+    // 不参与「完整可见」判定，向下滚动可按该留白超出一个行高
+    const insetL = await h.js(win, `(() => {
+      const el = [...document.querySelectorAll('.file-list-item')].find((x) => x.classList.contains('selected'));
+      const p = el?.parentElement?.getBoundingClientRect();
+      return el && p ? p.bottom - el.getBoundingClientRect().bottom : 0;
+    })()`);
     await h.key(win, 'Down');
     await h.sleep(300);
     const afterL = (await scrollEl()).value.top;
@@ -409,8 +768,8 @@ const h = require('./harness.cjs');
     const deltaL = afterL - beforeL;
     h.assert.ok(deltaL > 0, `列表 Down 越出视口应发生滚动，实际 Δ=${deltaL}`);
     h.assert.ok(
-      deltaL <= rowStep.value + 2,
-      `列表 Down 滚动量应 ≤ 一行高度（${rowStep.value}px），实际 ${deltaL}px`,
+      deltaL <= rowStep.value + insetL.value + 2,
+      `列表 Down 滚动量应 ≤ 一行高度+条目内嵌（${rowStep.value}+${insetL.value}px），实际 ${deltaL}px`,
     );
 
     // ── 网格视图：Down 一次只滚 ≤ 一网格行高度 ──
@@ -423,6 +782,13 @@ const h = require('./harness.cjs');
 
     await clickLastFullyVisible();
     const beforeG = (await scrollEl()).value.top;
+    // 网格行容器带上下留白，条目底部以上的留白不参与「完整可见」判定
+    // （行底可能超出视口），滚动量允许按该内嵌量超出一个行高
+    const insetG = await h.js(win, `(() => {
+      const el = [...document.querySelectorAll('.file-list-item')].find((x) => x.classList.contains('selected'));
+      const p = el?.parentElement?.getBoundingClientRect();
+      return el && p ? p.bottom - el.getBoundingClientRect().bottom : 0;
+    })()`);
     await h.key(win, 'Down');
     await h.sleep(300);
     const afterG = (await scrollEl()).value.top;
@@ -433,8 +799,8 @@ const h = require('./harness.cjs');
     const deltaG = afterG - beforeG;
     h.assert.ok(deltaG > 0, `网格 Down 越出视口应发生滚动，实际 Δ=${deltaG}`);
     h.assert.ok(
-      deltaG <= gridStep.value + 2,
-      `网格 Down 滚动量应 ≤ 一网格行高度（${gridStep.value}px），实际 ${deltaG}px`,
+      deltaG <= gridStep.value + insetG.value + 2,
+      `网格 Down 滚动量应 ≤ 一网格行高度+条目内嵌（${gridStep.value}+${insetG.value}px），实际 ${deltaG}px`,
     );
   });
 

@@ -494,12 +494,101 @@ export function computeShiftRange(
   return result;
 }
 
+/**
+ * Shift+方向键范围选择（键盘专用，与鼠标 Shift+点击的 computeShiftRange
+ * 语义分离）：**每次按键必产生可见变化**——游标向外走选区扩展、往回走
+ * 选区收缩（矩形对角线语义，锚点固定），不存在「按键空转」的卡状态。
+ * 复杂度 O(rows + cols)：不遍历全量选中集，超大目录（十万+ 文件）下
+ * 单次按键仍是常数级开销，不会随目录规模退化。
+ * - 列表视图：与 computeShiftRange 一致（扁平序 anchor↔cursor 连续区间，
+ *   可收缩）；
+ * - 网格视图 Left/Right：列区间 = 锚点列↔游标列的连续区间（每按一次
+ *   边缘随游标移一列——向外扩、往回缩）；行区间 = 锚点行↔游标行不变；
+ * - 网格视图 Up/Down：行区间 = 锚点行↔游标行的连续区间（可收缩）；
+ *   列区间 = 锚点行当前选区跨度（anchorSpan）与游标列（短行钳制落点）
+ *   的并集——锚点行选区不因游标行较短而收缩（第一行 5 个/第二行 3 个
+ *   时分别选 5/3，与旧键盘语义一致）；
+ * - 分组头跳过、矩形跨分类连续。锚点缺失时退化为仅选中游标项
+ *   （调用方补设锚点）。
+ *
+ * @param items - 扁平化布局（flattenItems 产物，与渲染同源）
+ * @param selectedPaths - 当前选中集（仅用于 Up/Down 的锚点行跨度）
+ * @param anchorPath - Shift 锚点（lastSelectedPath；无锚点为 null）
+ * @param cursorPath - 按下方向键后的新游标位置（computeArrowTarget 产物）
+ * @param key - 按下方向
+ * @param viewMode - 网格/列表
+ * @returns 应选中的路径集合；游标不可定位时返回 null（调用方忽略本次按键）
+ */
+export function computeShiftArrowRange(
+  items: ListItem[],
+  selectedPaths: Set<string>,
+  anchorPath: string | null,
+  cursorPath: string,
+  key: "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight",
+  viewMode: "grid" | "list",
+): Set<string> | null {
+  const cursorIdx = findItemIndexOfPath(items, cursorPath);
+  if (cursorIdx === -1) return null;
+  const anchorIdx = anchorPath ? findItemIndexOfPath(items, anchorPath) : -1;
+  if (anchorIdx === -1 || items[anchorIdx].kind === "header") {
+    // 无锚点：Shift 从无选中开始 = 仅游标项（与 computeShiftRange 退化语义一致）
+    return new Set([cursorPath]);
+  }
+
+  if (viewMode === "list") {
+    return computeShiftRange(items, anchorPath, cursorPath, viewMode, null);
+  }
+
+  // 网格：行序列（跳过 header；行号 = 在 grid-row 中的序，与分类无关）
+  const rows: IFile[][] = [];
+  for (const it of items) {
+    if (it.kind === "grid-row") rows.push(it.files);
+  }
+  if (rows.length === 0) return new Set([cursorPath]);
+
+  const anchorRow = rows.findIndex((fs) => fs.some((f) => f.path === anchorPath));
+  const cursorRow = rows.findIndex((fs) => fs.some((f) => f.path === cursorPath));
+  if (anchorRow === -1 || cursorRow === -1) return new Set([cursorPath]);
+
+  const aCol = Math.max(0, rows[anchorRow].findIndex((f) => f.path === anchorPath));
+  const cCol = Math.max(0, rows[cursorRow].findIndex((f) => f.path === cursorPath));
+
+  let colLow: number;
+  let colHigh: number;
+  if (key === "ArrowLeft" || key === "ArrowRight") {
+    // 水平移动：列区间 = 锚点列↔游标列（矩形对角线）——游标向外扩展、
+    // 往回收缩，边缘始终跟随游标，每按一列
+    colLow = Math.min(aCol, cCol);
+    colHigh = Math.max(aCol, cCol);
+  } else {
+    // 垂直移动：列区间 = 锚点行选区跨度与游标列（短行钳制落点）的并集，
+    // 锚点行选区不收缩（短行取全部，见 computeAnchorRowSpan 语义）
+    const anchorSpan = computeAnchorRowSpan(items, anchorPath, selectedPaths);
+    colLow = Math.min(anchorSpan?.low ?? aCol, cCol);
+    colHigh = Math.max(anchorSpan?.high ?? aCol, cCol);
+  }
+  // 行区间 = 锚点行↔游标行的连续区间（Left/Right 不改变行区间）
+  const rowLow = Math.min(anchorRow, cursorRow);
+  const rowHigh = Math.max(anchorRow, cursorRow);
+
+  const result = new Set<string>();
+  for (let ri = rowLow; ri <= rowHigh && ri < rows.length; ri++) {
+    const fs = rows[ri];
+    for (let c = colLow; c <= colHigh && c < fs.length; c++) {
+      result.add(fs[c].path);
+    }
+  }
+  return result;
+}
+
 export function listSpacing(iconSize: number) {
-  const gap = Math.max(4, Math.round(iconSize * 0.3125));
-  const paddingV = Math.max(2, Math.round(iconSize * 0.125));
-  const paddingH = Math.max(4, Math.round(iconSize * 0.1875));
-  const marginV = Math.max(2, Math.round(iconSize * 0.125));
-  const marginH = Math.max(4, Math.round(iconSize * 0.1875));
+  const gap = Math.max(6, Math.round(iconSize * 0.3125));
+  const paddingV = Math.max(4, Math.round(iconSize * 0.125));
+  const paddingH = Math.max(8, Math.round(iconSize * 0.1875));
+  // 行间纵向间距（marginV*2）与左右边缘留白（marginH）：放大后条目之间
+  // 与边缘有足够的空白区域供空白处右键/框选（太小会难以命中背景菜单）
+  const marginV = Math.max(6, Math.round(iconSize * 0.1875));
+  const marginH = Math.max(8, Math.round(iconSize * 0.25));
   const borderRadius = Math.max(4, Math.round(iconSize * 0.1875));
   const innerH = Math.max(iconSize, 20) + paddingV * 2;
   return { gap, paddingV, paddingH, marginV, marginH, borderRadius, innerH };
@@ -509,7 +598,8 @@ export function LIST_ROW_HEIGHT(iconSize: number) {
   const sp = listSpacing(iconSize);
   return sp.innerH + sp.marginV * 2;
 }
-export function GRID_ROW_HEIGHT(iconSize: number) { return iconSize + 38; }
+/** 网格行高：图标 + 名称文本 + 行容器上下留白（.grid-row-container padding 8px×2） */
+export function GRID_ROW_HEIGHT(iconSize: number) { return iconSize + 48; }
 export const HEADER_HEIGHT = 48;
 
 export interface ItemBox {

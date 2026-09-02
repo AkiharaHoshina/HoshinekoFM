@@ -50,9 +50,16 @@ export function useRubberBandSelection(
   selectedFiles: Set<string>,
   /** 框选结果回传：第二参数为本次框选的组合模式（replace/union/intersection/difference），
    *  供调用方在 replace（覆盖）时同步「锚点」（lastSelectedPath）——锚点决定方向键导航
-   *  与 Shift 范围选择的起点，框选不走单击路径必须在此补上。 */
+   *  与 Shift 范围选择的起点，框选不走单击路径必须在此补上。
+   *  第三参数 corners 为拖拽起/终点命中的条目（按条目中心到起/终点的最近距离取，
+   *  框选为空时为 null）——replace 时调用方以起点为锚点、终点为游标，
+   *  使后续 Shift+方向键从框选包围盒的对角扩/缩，而非塌缩到单个文件。 */
   onSetSelected:
-    | ((paths: Set<string>, mode?: "replace" | "union" | "intersection" | "difference") => void)
+    | ((
+        paths: Set<string>,
+        mode?: "replace" | "union" | "intersection" | "difference",
+        corners?: { startPath: string | null; endPath: string | null },
+      ) => void)
     | undefined,
   onSelectionModeChange:
     | ((mode: "replace" | "union" | "intersection" | "difference" | null) => void)
@@ -197,6 +204,15 @@ export function useRubberBandSelection(
       // 覆盖多列才表现正常，这正是「列表模式框选无效」的根因）。
       if (cw > 2 || ch > 2) {
         const boxPaths = new Set<string>();
+        // 拖拽起/终点命中的条目（框内条目中心到起/终点的最近者）：
+        // replace 时作为锚点/游标（见 onSetSelected 文档）——与框选
+        // 判定同一次遍历完成，超大目录下不增加额外全量扫描
+        let startPath: string | null = null;
+        let endPath: string | null = null;
+        let bestStart = Number.POSITIVE_INFINITY;
+        let bestEnd = Number.POSITIVE_INFINITY;
+        const st = contentStartRef.current!;
+        const en = contentEndRef.current!;
         for (const ib of itemBoxesRef.current) {
           if (
             ib.top < cBottom &&
@@ -205,20 +221,33 @@ export function useRubberBandSelection(
             ib.left + ib.width > cLeft
           ) {
             boxPaths.add(ib.path);
+            const cx = ib.left + ib.width / 2;
+            const cy = ib.top + ib.height / 2;
+            const ds = (cx - st.x) ** 2 + (cy - st.y) ** 2;
+            const de = (cx - en.x) ** 2 + (cy - en.y) ** 2;
+            if (ds < bestStart) {
+              bestStart = ds;
+              startPath = ib.path;
+            }
+            if (de < bestEnd) {
+              bestEnd = de;
+              endPath = ib.path;
+            }
           }
         }
+        const corners = { startPath, endPath };
         if (ctrlHeld && shiftHeld) {
           if (boxPaths.size > 0) {
             const ns = new Set(prevSet);
             for (const p of boxPaths) ns.delete(p);
-            onSetSelected?.(ns, "difference");
+            onSetSelected?.(ns, "difference", corners);
             didSelectRef.current = true;
           }
         } else if (ctrlHeld) {
           if (boxPaths.size > 0) {
             const ns = new Set(prevSet);
             for (const p of boxPaths) ns.add(p);
-            onSetSelected?.(ns, "union");
+            onSetSelected?.(ns, "union", corners);
             didSelectRef.current = true;
           }
         } else if (shiftHeld) {
@@ -227,12 +256,12 @@ export function useRubberBandSelection(
             if (boxPaths.has(p)) ns.add(p);
           }
           if (ns.size > 0 || prevSet.size > 0) {
-            onSetSelected?.(ns, "intersection");
+            onSetSelected?.(ns, "intersection", corners);
             didSelectRef.current = true;
           }
         } else {
           if (boxPaths.size > 0) {
-            onSetSelected?.(boxPaths, "replace");
+            onSetSelected?.(boxPaths, "replace", corners);
             didSelectRef.current = true;
           }
         }
