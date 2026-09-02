@@ -126,6 +126,8 @@ function formatBytes(bytes: number): string {
 /**
  * 归一化 POSIX 路径：折叠 `.`、`..` 与多余斜杠（渲染进程无 node:path）。
  * 不做任何文件系统访问——仅字符串处理，供 Markdown 相对路径解析用。
+ * 绝对路径（以 `/` 开头）越过根目录的 `..` 被钳制丢弃（`/a/../../etc` →
+ * `/etc`）；相对路径开头的 `..` 保留（无法脱离基准目录判断）。
  *
  * @param p - 输入路径（可含 `.`/`..`/双斜杠）
  * @returns 归一化后的绝对路径
@@ -136,7 +138,7 @@ function normalizePosixPath(p: string): string {
     if (part === '' || part === '.') continue;
     if (part === '..') {
       if (out.length > 0 && out[out.length - 1] !== '..') out.pop();
-      else out.push('..');
+      else if (!p.startsWith('/')) out.push('..');
       continue;
     }
     out.push(part);
@@ -145,26 +147,48 @@ function normalizePosixPath(p: string): string {
 }
 
 /**
- * 把 Markdown 渲染结果中的本地相对图片 `src` 改写为 `preview://` 绝对路径。
- * - 相对路径（`docs/x.png`、`./x.png`、`../x.png`）按 Markdown 文件所在目录解析；
- * - 以 `/` 开头的按文件系统根路径解析；
- * - 协议相对（`//…`）、显式协议（http/https/data/preview/media 等）与锚点不处理。
- * 路径经 DOM API 写回（属性自动转义，无注入风险），`#`/`?` 编码防止
- * 被当作 URL 片段/查询截断。
+ * 把 Markdown 渲染结果中的本地相对路径改写为绝对路径：
+ * - `<img src>`：改写为 `preview://localhost<绝对路径>`（图片预览协议）；
+ * - `<a href>`：目标绝对路径写入 `data-fm-path` 属性（href 保持原样，
+ *   点击由容器上的委托处理器拦截，见 handleMarkdownClick）。
+ * 路径解析规则（图片与链接一致）：
+ * - 相对路径（`docs/x.md`、`./x.md`、`../x.md`）按 Markdown 文件所在目录解析；
+ * - 以 `/` 开头的按文件系统根路径解析（绝对链接 = 绝对文件系统路径）；
+ * - 协议相对（`//…`）、显式协议（http/https/data/preview/media 等）与
+ *   页内锚点（`#…`）不处理。
+ * marked 已把 URL 中非 ASCII 字符百分号编码（encodeURI 语义），此处先
+ * decode 得到真实文件名字符再解析——**不得再次 encodeURI**（双重编码会
+ * 让 preview:// 端解码一次后拿到带 `%` 字面量的错误路径）。图片 src 只
+ * 转义会改变 URL 结构的三个字符（`%`/`#`/`?`），非 ASCII 交给浏览器按
+ * URL 规范编码一次，preview:// 端 decodeURIComponent 一次即可还原。
+ * 路径经 DOM API 写回（属性自动转义，无注入风险）。
  *
  * @param html - DOMPurify 消毒后的 HTML
  * @param baseDir - Markdown 文件所在目录（绝对路径）
- * @returns 图片路径改写后的 HTML
+ * @returns 路径改写后的 HTML
  */
-function rewriteMarkdownImageSrcs(html: string, baseDir: string): string {
+function rewriteMarkdownLinks(html: string, baseDir: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   doc.querySelectorAll('img').forEach((img) => {
     const src = img.getAttribute('src');
-    if (!src) return;
-    if (/^\/\//.test(src) || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(src) || src.startsWith('#')) return;
-    const clean = src.split(/[?#]/)[0];
+    if (!src || src.startsWith('#')) return;
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(src) || src.startsWith('//')) return;
+    const raw = src.split(/[?#]/)[0];
+    let clean = raw;
+    try { clean = decodeURIComponent(raw); } catch { /* 非标准转义序列：原样使用 */ }
     const abs = normalizePosixPath(clean.startsWith('/') ? clean : `${baseDir}/${clean}`);
-    img.setAttribute('src', `preview://localhost${encodeURI(abs).replace(/#/g, '%23')}`);
+    const escaped = abs.replace(/%/g, '%25').replace(/#/g, '%23').replace(/\?/g, '%3F');
+    img.setAttribute('src', `preview://localhost${escaped}`);
+  });
+  doc.querySelectorAll('a[href]').forEach((a) => {
+    const href = a.getAttribute('href') ?? '';
+    if (!href || href.startsWith('#') || href.startsWith('//')) return;
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) return;
+    const raw = href.split(/[?#]/)[0];
+    let clean = raw;
+    try { clean = decodeURIComponent(raw); } catch { /* 非标准转义序列：原样使用 */ }
+    const abs = normalizePosixPath(clean.startsWith('/') ? clean : `${baseDir}/${clean}`);
+    a.setAttribute('data-fm-path', abs);
   });
   return doc.body.innerHTML;
 }
@@ -202,6 +226,11 @@ interface FilePreviewPanelProps {
   dirTrashOriginalPath?: string;
   /** 面板宽度（百分比，由父级分隔条拖动控制） */
   width: number;
+  /**
+   * Markdown 预览内链点击（本地路径已解析为绝对路径）：
+   * 父级负责定位目标（文件→目录内选中并切换预览；目录→进入该目录）。
+   */
+  onMarkdownLink?: (targetPath: string) => void;
 }
 
 /** 目录属性加载状态（未选中条目时面板常驻展示当前目录）：
@@ -293,7 +322,7 @@ const PdfPage: React.FC<{ doc: PDFDocumentProxy; pageNumber: number; width: numb
  * 顶部小标题栏显示文件名与大小；媒体元素以 file.path 为 key，
  * 切换选中项时整体重建（无跨文件缓冲复用问题）。
  */
-export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multiple, dirPath, dirTrashOriginalPath, width }) => {
+export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multiple, dirPath, dirTrashOriginalPath, width, onMarkdownLink }) => {
   const kind = file ? getPreviewKind(file) : null;
   /** 目录属性视图激活：无选中文件且传入了目录路径 */
   const dirActive = !file && !multiple && !!dirPath;
@@ -382,9 +411,9 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
         ]);
         if (cancelled) return;
         const html = DOMPurify.sanitize(marked.parse(res.content ?? '', { async: false }) as string);
-        // 本地相对图片按 Markdown 文件所在目录解析为 preview:// 绝对路径
+        // 本地相对图片/链接按 Markdown 文件所在目录解析为绝对路径
         const baseDir = file.path.substring(0, file.path.lastIndexOf('/'));
-        setMdState({ status: 'ready', content: rewriteMarkdownImageSrcs(html, baseDir) });
+        setMdState({ status: 'ready', content: rewriteMarkdownLinks(html, baseDir) });
       } catch {
         if (!cancelled) setMdState({ status: 'error' });
       }
@@ -394,6 +423,51 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随文件/类型/内容变化（mtime）重载
   }, [file?.path, kind, mtimeMs]);
+
+  /**
+   * Markdown 预览内链点击委托处理（容器 onClick，DOMPurify 消毒后的
+   * 内容安全注入，无脚本）。所有 `a[href]` 点击一律 preventDefault——
+   * 相对链接若放行默认行为会被 Chromium 以应用页 file:// 为基准解析，
+   * 把文件管理器当浏览器导航（白屏 404 / 目录穿越 / 打开本地 HTML 执行
+   * 脚本）。分支：
+   * - `data-fm-path`（本地路径，渲染时已解析）→ onMarkdownLink 定位；
+   * - 页内锚点（`#…`）→ scrollIntoView 滚动；
+   * - 显式协议（http/https/mailto 等）→ openExternal 交系统浏览器；
+   * - 协议相对（`//…`）→ 按 https 交系统浏览器。
+   */
+  const handleMarkdownClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    const anchor = target.closest('a[href]');
+    if (!anchor) return;
+    e.preventDefault();
+    const fmPath = anchor.getAttribute('data-fm-path');
+    if (fmPath) {
+      onMarkdownLink?.(fmPath);
+      return;
+    }
+    const href = anchor.getAttribute('href') ?? '';
+    if (!href) return;
+    if (href.startsWith('#')) {
+      let id = href.slice(1);
+      try { id = decodeURIComponent(id); } catch { /* 保留原样 */ }
+      document.getElementById(id)?.scrollIntoView({ block: 'start' });
+      return;
+    }
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) {
+      void window.electron.openExternal(href);
+      return;
+    }
+    if (href.startsWith('//')) {
+      void window.electron.openExternal(`https:${href}`);
+    }
+  };
+
+  /** 中键点击链接：阻止 Chromium 以 file:// 基准新开窗口打开相对链接 */
+  const handleMarkdownAuxClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target;
+    if (target instanceof Element && target.closest('a[href]')) e.preventDefault();
+  };
 
   /** PDF 惰性加载：动态 import pdfjs-dist（独立 chunk），配置 worker 后打开文档 */
   useEffect(() => {
@@ -692,6 +766,8 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
           <div
             key={file.path}
             className="file-preview-markdown"
+            onClick={handleMarkdownClick}
+            onAuxClick={handleMarkdownAuxClick}
             // DOMPurify 已消毒（脚本/事件属性/危险协议全部移除），安全注入
             dangerouslySetInnerHTML={{ __html: mdState.content ?? '' }}
           />

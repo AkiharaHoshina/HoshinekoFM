@@ -629,6 +629,7 @@ const koKP = {
   'preview.archive_truncated_unknown': '…더 많은 항목이 있습니다',
   'preview.pdf_more_pages': (n: number) => `처음 5페이지까지만 표시됨（총 ${n}페이지）`,
   'preview.unsupported_format': '지원되지 않는 형식',
+  'preview.md_target_not_found': '링크 대상을 찾을 수 없습니다',
 } as const;
 
 export const match = (lang: string) => lang === 'ko-KP';

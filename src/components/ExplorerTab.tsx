@@ -502,6 +502,34 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     await renameFile(file.path, `${parentDir}/${newName}`, () => loadPath(currentPath));
   }, [loadPath, currentPath]);
 
+  /**
+   * Markdown 预览内链点击（路径已在预览面板解析为绝对路径）：
+   * - 目标为目录 → 进入该目录（loadPath）；
+   * - 目标为文件 → 「定位到所在文件夹」：导航到其父目录并选中该条目
+   *   （onRevealFile，预览面板随选中自动切换到目标文件）；
+   * - 目标不存在 → toast 提示。
+   * 目录穿越（`../../etc/passwd` 等）经 normalizePosixPath 折叠后得到
+   * 绝对路径，由文件管理器在文件区展示/预览——绝不在应用内直接加载
+   * 目标内容（本地 HTML 等不会被当页面打开，无 XSS 面）。
+   */
+  const handleMarkdownLink = useCallback(async (targetPath: string) => {
+    try {
+      const st = await window.electron?.stat(targetPath);
+      if (!st) {
+        showToast(t('preview.md_target_not_found'), 'warning');
+        return;
+      }
+      if (st.isDirectory) {
+        loadPath(targetPath, true);
+        return;
+      }
+      const name = targetPath.split('/').filter(Boolean).pop() ?? '';
+      onRevealFile(targetPath, name);
+    } catch {
+      showToast(t('preview.md_target_not_found'), 'warning');
+    }
+  }, [loadPath, onRevealFile]);
+
   const handleUp = async () => {
     // 虚拟目录（仪表盘/回收站）无「上级」概念——直接返回，
     // 否则 getParentPath('trash://') 会得到 '.' 之类的意外路径
@@ -1879,6 +1907,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                       previewState.kind === 'directory' ? previewState.trashOriginalPath : undefined
                     }
                     width={previewWidth}
+                    onMarkdownLink={handleMarkdownLink}
                   />
                 </>
               )}

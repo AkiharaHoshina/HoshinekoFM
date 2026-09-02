@@ -671,6 +671,7 @@ const ruUA = {
   'preview.archive_truncated_unknown': '…ещё больше элементов',
   'preview.pdf_more_pages': (n: number) => `Показаны первые 5 страниц из ${n}`,
   'preview.unsupported_format': 'Неподдерживаемый формат',
+  'preview.md_target_not_found': 'Целевой объект ссылки не найден',
 } as const;
 
 export const match = (lang: string) => lang.startsWith('ru');

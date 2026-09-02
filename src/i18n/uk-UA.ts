@@ -668,6 +668,7 @@ const ukUA = {
   'preview.archive_truncated_unknown': '…ще більше елементів',
   'preview.pdf_more_pages': (n: number) => `Показано перші 5 сторінок із ${n}`,
   'preview.unsupported_format': 'Непідтримуваний формат',
+  'preview.md_target_not_found': 'Цільовий об’єкт посилання не знайдено',
 } as const;
 
 export const match = (lang: string) => lang.startsWith('uk');

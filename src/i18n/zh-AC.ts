@@ -629,6 +629,7 @@ const zhAC = {
   'preview.archive_truncated_unknown': '…还有更多条目未显示',
   'preview.pdf_more_pages': (n: number) => `仅显示前 5 页，全文共 ${n} 页`,
   'preview.unsupported_format': '不支持的格式',
+  'preview.md_target_not_found': '链接目标不存在',
 } as const;
 
 export const match = () => false;

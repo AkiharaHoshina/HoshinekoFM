@@ -629,6 +629,7 @@ const zhTW = {
   'preview.archive_truncated_unknown': '…還有更多條目未顯示',
   'preview.pdf_more_pages': (n: number) => `僅顯示前 5 頁，全文共 ${n} 頁`,
   'preview.unsupported_format': '不支援的格式',
+  'preview.md_target_not_found': '連結目標不存在',
 } as const;
 
 export const match = (lang: string) => lang === 'zh-TW' || lang.toLowerCase() === 'zh-hant-tw';

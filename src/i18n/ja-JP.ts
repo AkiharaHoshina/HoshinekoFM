@@ -629,6 +629,7 @@ const jaJP = {
   'preview.archive_truncated_unknown': '…他にもエントリがあります',
   'preview.pdf_more_pages': (n: number) => `先頭 5 ページのみ表示（全 ${n} ページ）`,
   'preview.unsupported_format': '対応していない形式です',
+  'preview.md_target_not_found': 'リンク先が見つかりません',
 } as const;
 
 export const match = (lang: string) => lang.startsWith('ja');

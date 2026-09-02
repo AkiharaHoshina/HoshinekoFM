@@ -637,6 +637,7 @@ const enUS = {
   'preview.archive_truncated_unknown': '...more entries not shown',
   'preview.pdf_more_pages': (n: number) => `Showing the first 5 of ${n} pages`,
   'preview.unsupported_format': 'Unsupported format',
+  'preview.md_target_not_found': 'Link target not found',
 } as const;
 
 export const match = (lang: string) => lang.startsWith('en');
