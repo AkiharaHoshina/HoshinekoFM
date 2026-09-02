@@ -1091,7 +1091,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         const layout = fileListLayoutRef.current;
         if (!layout || sortedFiles.length === 0) return;
         e.preventDefault();
-        let target: IFile | null = null;
+        let target: IFile | null;
         if (e.ctrlKey) {
           target = computeCtrlArrowTarget(layout.items, cursorPath ?? lastSelectedPath, e.key, viewMode);
         } else {

@@ -13,15 +13,13 @@ export function useDeviceActions() {
   const handleDeviceMount = useCallback(async (devicePath: string) => {
     const dev = shortPath(devicePath);
     let toastId: ReturnType<typeof showProgressToast> | null = null;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       toastId = showProgressToast(t('device.mounting', dev));
     }, 500);
 
     const result = await FileSystemService.mountDevice(devicePath);
 
-    if (timer) clearTimeout(timer);
+    clearTimeout(timer);
 
     if (result.success) {
       const mp = shortPath(result.mountpoint || '');
@@ -44,15 +42,13 @@ export function useDeviceActions() {
   const handleDeviceUnmount = useCallback(async (devicePath: string) => {
     const dev = shortPath(devicePath);
     let toastId: ReturnType<typeof showProgressToast> | null = null;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       toastId = showProgressToast(t('device.unmounting', dev));
     }, 500);
 
     const result = await FileSystemService.unmountDevice(devicePath);
 
-    if (timer) clearTimeout(timer);
+    clearTimeout(timer);
 
     if (result.success) {
       if (toastId) {
@@ -73,15 +69,13 @@ export function useDeviceActions() {
   const handleDeviceEject = useCallback(async (devicePath: string) => {
     const dev = shortPath(devicePath);
     let toastId: ReturnType<typeof showProgressToast> | null = null;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       toastId = showProgressToast(t('device.unmounting', dev));
     }, 500);
 
     const result = await FileSystemService.ejectDevice(devicePath);
 
-    if (timer) clearTimeout(timer);
+    clearTimeout(timer);
 
     if (result.success) {
       if (toastId) {
@@ -108,15 +102,13 @@ export function useDeviceActions() {
   const handleGvfsUnmount = useCallback(async (volume: GvfsVolume) => {
     const name = volume.name;
     let toastId: ReturnType<typeof showProgressToast> | null = null;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       toastId = showProgressToast(t('device.unmounting', name));
     }, 500);
 
     const result = await FileSystemService.unmountGvfs(volume.mountpoint ?? '');
 
-    if (timer) clearTimeout(timer);
+    clearTimeout(timer);
 
     if (result.success) {
       if (toastId) {
@@ -146,9 +138,7 @@ export function useDeviceActions() {
   const handleGvfsMount = useCallback(async (volume: GvfsVolume): Promise<{ success: boolean; mountpoint?: string }> => {
     const name = volume.name;
     let toastId: ReturnType<typeof showProgressToast> | null = null;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       toastId = showProgressToast(t('device.mounting', name));
     }, 500);
 
@@ -170,7 +160,7 @@ export function useDeviceActions() {
       }
     }
 
-    if (timer) clearTimeout(timer);
+    clearTimeout(timer);
 
     if (final.success) {
       const msg = t('device.mounted', name, final.mountpoint ? shortPath(final.mountpoint) : '…');

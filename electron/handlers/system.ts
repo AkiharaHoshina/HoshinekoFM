@@ -940,7 +940,7 @@ export function registerSystemHandlers() {
       }
     };
     const home = os.homedir();
-    let portalsConf = false;
+    let portalsConf: boolean;
     try {
       const content = await fs.readFile(
         path.join(home, '.config', 'xdg-desktop-portal', 'portals.conf'),
@@ -1091,7 +1091,7 @@ export function registerSystemHandlers() {
     ];
     let changed = false;
     for (const file of files) {
-      let content = '';
+      let content: string;
       try {
         content = await fs.readFile(file, 'utf-8');
       } catch {
