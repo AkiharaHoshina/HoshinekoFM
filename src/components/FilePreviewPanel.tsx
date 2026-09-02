@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
 import type { IFile } from '../types/files';
 import { Icon } from './Icon';
 import { PropertiesGrid } from './PropertiesGrid';
@@ -120,6 +120,52 @@ function formatBytes(bytes: number): string {
   return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
 }
 
+/**
+ * 归一化 POSIX 路径：折叠 `.`、`..` 与多余斜杠（渲染进程无 node:path）。
+ * 不做任何文件系统访问——仅字符串处理，供 Markdown 相对路径解析用。
+ *
+ * @param p - 输入路径（可含 `.`/`..`/双斜杠）
+ * @returns 归一化后的绝对路径
+ */
+function normalizePosixPath(p: string): string {
+  const out: string[] = [];
+  for (const part of p.split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') {
+      if (out.length > 0 && out[out.length - 1] !== '..') out.pop();
+      else out.push('..');
+      continue;
+    }
+    out.push(part);
+  }
+  return (p.startsWith('/') ? '/' : '') + out.join('/');
+}
+
+/**
+ * 把 Markdown 渲染结果中的本地相对图片 `src` 改写为 `preview://` 绝对路径。
+ * - 相对路径（`docs/x.png`、`./x.png`、`../x.png`）按 Markdown 文件所在目录解析；
+ * - 以 `/` 开头的按文件系统根路径解析；
+ * - 协议相对（`//…`）、显式协议（http/https/data/preview/media 等）与锚点不处理。
+ * 路径经 DOM API 写回（属性自动转义，无注入风险），`#`/`?` 编码防止
+ * 被当作 URL 片段/查询截断。
+ *
+ * @param html - DOMPurify 消毒后的 HTML
+ * @param baseDir - Markdown 文件所在目录（绝对路径）
+ * @returns 图片路径改写后的 HTML
+ */
+function rewriteMarkdownImageSrcs(html: string, baseDir: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('img').forEach((img) => {
+    const src = img.getAttribute('src');
+    if (!src) return;
+    if (/^\/\//.test(src) || /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(src) || src.startsWith('#')) return;
+    const clean = src.split(/[?#]/)[0];
+    const abs = normalizePosixPath(clean.startsWith('/') ? clean : `${baseDir}/${clean}`);
+    img.setAttribute('src', `preview://localhost${encodeURI(abs).replace(/#/g, '%23')}`);
+  });
+  return doc.body.innerHTML;
+}
+
 /** 文本/Markdown 加载状态 */
 interface TextState {
   status: 'idle' | 'loading' | 'ready' | 'too_large' | 'error';
@@ -164,9 +210,20 @@ interface DirInfoState {
   sizePath?: string;
 }
 
-/** 单页 PDF 画布：按面板宽度自适应缩放渲染（dpr 上限 2 防超大画布） */
+/**
+ * 单页 PDF 画布：按面板宽度自适应缩放渲染（dpr 上限 2 防超大画布）。
+ *
+ * 并发防护：同一 canvas 上不允许两个 render 任务并行——面板宽度经
+ * ResizeObserver 连续变化（初次测量/窗口缩放/分隔条拖动）会触发多次
+ * 重渲染，若不取消上一轮仍在进行的任务，旧任务会在 canvas 位图被
+ * 重置（canvas.width 赋值清空并复位 context 变换）后继续绘制，产生
+ * 黑底/上下翻转的坏页（首屏先渲染的第一页最先命中）。清理阶段必须
+ * cancel 进行中的 render 任务。
+ */
 const PdfPage: React.FC<{ doc: PDFDocumentProxy; pageNumber: number; width: number }> = ({ doc, pageNumber, width }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  /** 当前进行中的渲染任务（卸载/重渲染前 cancel，防旧任务画坏画布） */
+  const renderTaskRef = useRef<RenderTask | null>(null);
 
   useEffect(() => {
     // 宽度未测量前（0）跳过渲染：ResizeObserver 测量到容器宽后会重跑
@@ -181,18 +238,36 @@ const PdfPage: React.FC<{ doc: PDFDocumentProxy; pageNumber: number; width: numb
         const viewport = page.getViewport({ scale });
         const canvas = canvasRef.current;
         if (!canvas) return;
+
+        // 取消上一轮仍未结束的渲染任务（pdf.js 同一 canvas 并发 render
+        // 不安全——旧任务会在画布重置后继续绘制）
+        if (renderTaskRef.current) {
+          renderTaskRef.current.cancel();
+          renderTaskRef.current = null;
+        }
+
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
         canvas.width = Math.floor(viewport.width * dpr);
         canvas.height = Math.floor(viewport.height * dpr);
         canvas.style.width = `${Math.floor(viewport.width)}px`;
         canvas.style.height = `${Math.floor(viewport.height)}px`;
-        void page
-          .render({ canvas, viewport, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined })
-          .promise.catch(() => { /* 渲染失败：页面保持空白，不打断其余页面 */ });
+
+        const task = page.render({
+          canvas,
+          viewport,
+          transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
+        });
+        renderTaskRef.current = task;
+        void task.promise.catch(() => { /* 取消/渲染失败：下一轮重渲染兜底，不打断其余页面 */ });
       })
       .catch(() => { /* 单页解析失败：跳过 */ });
     return () => {
       cancelled = true;
+      // 取消进行中的渲染：旧任务不得在重渲染/卸载后的画布上继续绘制
+      if (renderTaskRef.current) {
+        renderTaskRef.current.cancel();
+        renderTaskRef.current = null;
+      }
     };
   }, [doc, pageNumber, width]);
 
@@ -297,7 +372,9 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
         ]);
         if (cancelled) return;
         const html = DOMPurify.sanitize(marked.parse(res.content ?? '', { async: false }) as string);
-        setMdState({ status: 'ready', content: html });
+        // 本地相对图片按 Markdown 文件所在目录解析为 preview:// 绝对路径
+        const baseDir = file.path.substring(0, file.path.lastIndexOf('/'));
+        setMdState({ status: 'ready', content: rewriteMarkdownImageSrcs(html, baseDir) });
       } catch {
         if (!cancelled) setMdState({ status: 'error' });
       }

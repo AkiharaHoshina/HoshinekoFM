@@ -43,6 +43,18 @@
 - **设置开关**：新增「计算目录大小」（`settings.calculateDirSize`，默认开，设置 → 行为）——关闭后属性网格与删除确认都不再发起 du 遍历（频繁遍历大目录对磁盘不好）
 - e2e 22：成功/切换杀死/超时/失败四条 IPC 路径 + 设置关闭（不发起 du）+ 超时后「无法获取」展示；e2e 16/16b 定位设置行改为按文案匹配（新增开关会改变行下标）
 
+### 迭代修复（Markdown 预览本地相对图片不显示）
+
+- **根因**：Markdown 渲染后相对图片路径（`img/pic.png`）直接作为 img src 使用，浏览器按页面 origin 解析必然 404——外链（https://）不受影响，本地图全灭
+- **修复**（FilePreviewPanel）：DOMPurify 消毒后把 `img[src]` 中的本地路径按 Markdown 文件所在目录解析（`normalizePosixPath` 折叠 `./`/`../`，`/` 开头按文件系统根解析），改写为 `preview://localhost<绝对路径>`（原图协议）；外链/显式协议（http/https/data 等）与锚点不动；路径经 DOM API 写回无注入风险、`#`/`?` 编码防截断
+- e2e 23：相对图改写加载成功（naturalWidth > 0）、外链与 data: 协议 src 保持原样
+
+### 迭代修复（PDF 预览第一页黑屏/上下翻转）
+
+- **根因**：面板宽度经 ResizeObserver 连续变化（初次测量/窗口缩放/分隔条拖动）触发 PdfPage 多次重渲染，而上一轮仍在进行的 pdf.js render 任务未被取消——旧任务在 canvas 位图被重置（`canvas.width` 赋值清空并复位 context 变换）后继续绘制，产生黑底/上下翻转的坏页；第一页最先开始渲染，命中宽度收敛窗口的概率最高
+- **修复**（FilePreviewPanel `PdfPage`）：render 任务存入 ref——重渲染前与卸载清理时 `cancel()` 进行中的任务（pdf.js 同一 canvas 并发 render 不安全），新任务重新设置画布尺寸后完整重绘
+- 验证：真实应用 CDP 驱动打开 5 页 PDF → 6 次窗口缩放 + 重开预览 + 20 次快速随机缩放（150ms 间隔）压力测试，逐页采样像素无非黑帧
+
 - 版本号升至 `0.11.26`
 
 ## v0.11.25 — portal SaveFile 保存对话框与服务模式激活修复
