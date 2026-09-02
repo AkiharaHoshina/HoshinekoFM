@@ -420,6 +420,7 @@ async function sendMouse(win, type, x, y, opts = {}) {
     y: py,
     button,
     clickCount: opts.clickCount || 1,
+    ...(opts.modifiers ? { modifiers: opts.modifiers } : {}),
     ...(type === 'mouseDown' ? { clickCount: opts.clickCount || 1 } : {}),
   });
 }

@@ -724,6 +724,9 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
    *  方向键时游标前进、锚点固定，范围随之扩展/收缩（锚点游标合一模型下
    *  第二次按键会从锚点重算、范围不扩展） */
   const [cursorPath, setCursorPath] = useState<string | null>(null);
+  /** 键盘 Enter 进入目录的目标路径：加载完成后选中新目录首个条目
+   *  （连续 Enter 逐层进入；null = 无待选首项） */
+  const selectFirstAfterEnterRef = useRef<string | null>(null);
   /** type-ahead 键入定位：连续键入累积的前缀与上次键入时间（1.5s 空闲重置） */
   const typeAheadRef = useRef<{ buffer: string; lastTime: number }>({ buffer: '', lastTime: 0 });
   const [selectionMode, setSelectionMode] = useState<string | null>(null);
@@ -1082,6 +1085,25 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     setSelectedFiles(newSelection);
   };
 
+  /**
+   * 键盘 Enter 进入目录后的「选中首项」落地：目标目录加载完成
+   * （currentPath 与待选路径一致）时选中排序后的首个条目——连续
+   * Enter 可以逐层进入/打开；空目录无可选则直接消费标记。声明在
+   * 「路径变化清空选择」效果之后：先清空旧选择，再选中新目录首项。
+   */
+  useEffect(() => {
+    const target = selectFirstAfterEnterRef.current;
+    if (!target) return;
+    if (currentPath !== target) {
+      // 导航未达预期（回退/失败）：放弃待选首项，避免误选其他目录
+      selectFirstAfterEnterRef.current = null;
+      return;
+    }
+    selectFirstAfterEnterRef.current = null;
+    if (sortedFiles.length === 0) return;
+    handleSelect(sortedFiles[0], false, false);
+  }, [currentPath, sortedFiles]); // eslint-disable-line react-hooks/exhaustive-deps -- handleSelect 为稳定逻辑（渲染期重建，无需列入）
+
   const executePasteAction = useCallback(async () => {
     if (clipboard && clipboard.files.length > 0) {
       const existingNames = files.map((f) => f.name);
@@ -1171,9 +1193,27 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         const path = cursorPath ?? (selectedFiles.size === 1 ? Array.from(selectedFiles)[0] : null);
         if (path) {
           const f = files.find((x) => x.path === path);
-          if (f) void handleNavigate(f);
+          if (f) {
+            // 键盘 Enter 进入目录：加载完成后选中新目录首个条目——
+            // 「继续按下回车，可以再进入一层/打开这个文件」
+            if (f.isDirectory) selectFirstAfterEnterRef.current = f.path;
+            void handleNavigate(f);
+          }
         } else if (currentPath !== 'app://dashboard' && currentPath !== 'trash://') {
           void handleUp();
+        }
+        return;
+      }
+
+      // Escape：取消文件选择（右键菜单/对话框打开时本 handler 已早退，
+      // 由各自组件先消费 ESC——「先关上层组件，再取消选择」的层级语义）
+      if (e.key === 'Escape') {
+        if (selectedFiles.size > 0 || lastSelectedPath || cursorPath) {
+          e.preventDefault();
+          // 与 handleDeselectAll 同语义（锚点/游标一并清空）
+          setSelectedFiles(new Set());
+          setLastSelectedPath(null);
+          setCursorPath(null);
         }
         return;
       }

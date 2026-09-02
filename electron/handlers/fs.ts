@@ -994,25 +994,66 @@ export function registerFsHandlers() {
    * 打开文件后立刻切换目录、焦点变化）时 promise 永不落定，导致
    * ipcMain.handle 的回复通道被 GC 后以「reply was never sent」拒绝。
    * 这里直接 spawn xdg-open，spawn/error 事件必然落定 promise。
+   *
+   * 无后缀的可执行文件（stat X_OK 位）**直接执行**：xdg-open 对无
+   * 扩展名的 ELF/脚本常按 octet-stream 交给浏览器（弹出「是否保存
+   * 此文件」），不是双击打开的可执行语义。内核拒绝执行（ENOEXEC，
+   * 无 shebang 的文本等）时回退 xdg-open。
    */
   ipcMain.handle('fs:open', async (_, filePath: string) => {
     if (typeof filePath !== 'string' || !filePath) return 'Invalid path';
-    return new Promise<string>((resolve) => {
-      try {
-        const child = spawn('xdg-open', [filePath], {
-          detached: true,
-          stdio: 'ignore',
-          env: { ...process.env, MM_NOTTTY: '1' },
+
+    const openWithXdg = () =>
+      new Promise<string>((resolve) => {
+        try {
+          const child = spawn('xdg-open', [filePath], {
+            detached: true,
+            stdio: 'ignore',
+            env: { ...process.env, MM_NOTTTY: '1' },
+          });
+          child.on('error', (err: Error) => resolve(err.message));
+          child.on('spawn', () => {
+            child.unref();
+            resolve('');
+          });
+        } catch (e) {
+          resolve(getExecError(e).message);
+        }
+      });
+
+    try {
+      const stats = await fs.stat(filePath);
+      if (stats.isFile() && !path.extname(filePath) && (stats.mode & 0o111) !== 0) {
+        return new Promise<string>((resolve) => {
+          let child: ChildProcess;
+          try {
+            // cwd = 文件所在目录（可执行程序通常依赖自身目录）
+            child = spawn(filePath, [], {
+              detached: true,
+              stdio: 'ignore',
+              cwd: path.dirname(filePath),
+            });
+          } catch (e) {
+            resolve(getExecError(e).message);
+            return;
+          }
+          child.on('error', (err: Error) => {
+            // 无 shebang 的文本等被内核拒绝执行：回退默认打开
+            if ((err as NodeJS.ErrnoException).code === 'ENOEXEC') {
+              resolve(openWithXdg());
+            } else {
+              resolve(err.message);
+            }
+          });
+          child.on('spawn', () => {
+            child.unref();
+            resolve('');
+          });
         });
-        child.on('error', (err: Error) => resolve(err.message));
-        child.on('spawn', () => {
-          child.unref();
-          resolve('');
-        });
-      } catch (e) {
-        resolve(getExecError(e).message);
       }
-    });
+    } catch { /* stat 失败（路径不存在等）：交给 xdg-open 报错 */ }
+
+    return openWithXdg();
   });
 
   // Extract archives: .zip via unzip, .tar/.gz/.xz via tar. Extracts to archive's parent dir.

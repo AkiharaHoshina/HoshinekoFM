@@ -101,6 +101,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
         onCloseRef.current();
       }
     };
+    // ESC 关闭菜单（与外部按下同语义；父组件打开菜单期间会跳过其全局
+    // 快捷键处理，不会与这里竞争）。**立即注册**：ESC 是键盘事件，不存在
+    // 打开手势冒泡误关的竞态（mousedown/contextmenu 才需延迟到下一宏任务）
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCloseRef.current();
+    };
+    document.addEventListener('keydown', handleKey);
     const timer = setTimeout(() => {
       document.addEventListener('mousedown', handleOutside);
       document.addEventListener('contextmenu', handleOutside);
@@ -109,6 +116,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
       clearTimeout(timer);
       document.removeEventListener('mousedown', handleOutside);
       document.removeEventListener('contextmenu', handleOutside);
+      document.removeEventListener('keydown', handleKey);
     };
   }, []);
 
