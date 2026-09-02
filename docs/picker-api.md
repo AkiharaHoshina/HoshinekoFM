@@ -27,6 +27,7 @@ resolvePicker: (paths: string[] | null) => Promise<void>;
 | `filters` | `PickerFilter[]`? | 文件类型过滤器；缺失/空数组 = 仅「所有文件」 |
 | `initialPath` | `string`? | 初始目录（绝对路径；缺省从家目录开始） |
 | `defaultFilterId` | `string`? | 默认选中的过滤器 id（缺省「所有文件」；id 不在 filters 中时回退所有文件） |
+| `pinnedDirs` | `PinnedDirEntry[]`? | **仅主进程注入**：侧边栏固定目录（`{ name, path, isDir }`）。服务模式（`--portal`/`--filemanager1` 常驻进程）的 userData 与 GUI 隔离、读不到 GUI 的 localStorage，主进程从 GUI userData 下的 `sidebar-pinned.json` 快照补齐此字段；调用方经 `picker:open` 传入的该字段被白名单校验忽略（不可伪造固定项） |
 
 ```ts
 interface PickerFilter {
@@ -111,3 +112,4 @@ const picked = await window.electron.openPicker({
 
 - v0.11.15：`picker:open` 的 mode 声明补全 `items` 类型与文档；`PickerConfig` 注释明确"第三方接入时声明可选条目类型"的接口语义；新增本文档。
 - v0.11.19：`PickerConfig` 扩展 `filters` / `initialPath` / `defaultFilterId`；主进程白名单校验与 `resolvedMime` 解析；底部类型下拉（所有文件常驻 + 各类型，切换清除失效选中）；并发语义文档化；类型抽至 `src/types/picker.ts` 三端同源。
+- v0.11.30：`PickerConfig` 增加主进程注入的 `pinnedDirs`（固定项快照，服务模式选择器/保存器显示侧边栏固定目录；调用方传入一律忽略）。

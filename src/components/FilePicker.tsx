@@ -100,7 +100,14 @@ const FilePicker: React.FC = () => {
   const [viewMode] = useLocalStorage<'grid' | 'list'>('settings.viewMode', 'grid');
   const [filledIcons] = useLocalStorage<boolean>('settings.filledIcons', false);
   const [marqueeEnabled] = useLocalStorage<boolean>('settings.marqueeEnabled', true);
-  const [pinnedDirs] = useLocalStorage<SidebarPinnedItem[]>('sidebar.pinned', []);
+  const [localPinnedDirs] = useLocalStorage<SidebarPinnedItem[]>('sidebar.pinned', []);
+  /**
+   * 侧边栏固定目录数据源：优先取主进程注入的 config.pinnedDirs
+   * （服务模式选择器 userData 隔离，localStorage 读不到 GUI 固定项，
+   * 由主进程从快照文件补齐）；GUI 模式无注入，回落共享 session 的
+   * localStorage（含 storage 事件实时同步）。
+   */
+  const pinnedDirs: SidebarPinnedItem[] = config?.pinnedDirs ?? localPinnedDirs;
   const [sortBy, setSortBy] = useLocalStorage<'name' | 'size' | 'date'>('settings.sortBy', 'name');
   const [sortOrder, setSortOrder] = useLocalStorage<'asc' | 'desc'>('settings.sortOrder', 'asc');
   const [groupingEnabled, setGroupingEnabled] = useLocalStorage<boolean>('settings.groupingEnabled', true);

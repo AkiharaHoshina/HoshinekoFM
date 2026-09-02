@@ -27,6 +27,16 @@ export interface PickerFilter {
   resolvedMime?: string;
 }
 
+/** 侧边栏固定目录条目（与 src/types/picker.ts 的 PinnedDirEntry 同源） */
+export interface PinnedDirEntry {
+  /** 显示名（路径最后一段） */
+  name: string;
+  /** 目录绝对路径 */
+  path: string;
+  /** 是否为目录（当前固定功能仅允许目录） */
+  isDir: boolean;
+}
+
 /**
  * 选择器配置（picker:open 的声明 / picker:get-config 的返回）。
  * 字段与 `src/types/picker.ts` 的 PickerConfig 一一对应——前端类型
@@ -46,6 +56,12 @@ export interface PickerConfig {
   defaultFileName?: string;
   /** 保存模式确定按钮文案覆盖（portal accept_label；缺省用 i18n 确定） */
   acceptLabel?: string;
+  /**
+   * 侧边栏固定目录列表。**仅主进程注入**（main.ts 为服务模式选择器
+   * 补齐 GUI 固定项快照）：sanitizeOptions 白名单忽略调用方传入的
+   * 该字段，第三方无法伪造固定项。
+   */
+  pinnedDirs?: PinnedDirEntry[];
 }
 
 /** 合法的选择模式白名单（防止任意值进入配置） */
@@ -106,6 +122,7 @@ export function openPickerWindow(
  * - 对缺省 label 的 filter 解析首扩展名 mime（resolvedMime，供前端
  *   生成 i18n 显示名）。
  * 未知字段一律忽略（向前兼容）；已知字段非法时忽略该字段（mode 非法抛错）。
+ * pinnedDirs 不在此白名单内：固定项只允许主进程注入，调用方传入一律丢弃。
  */
 function sanitizeOptions(options: unknown): PickerConfig {
   const raw = (options ?? {}) as Record<string, unknown>;

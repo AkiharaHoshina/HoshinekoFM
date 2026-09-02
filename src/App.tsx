@@ -317,6 +317,18 @@ function AppContent() {
   );
 
   /**
+   * 固定项上报主进程（含首次挂载）：主进程原子落盘快照到 GUI 的
+   * userData 目录，服务模式（--portal / --filemanager1）常驻进程的
+   * 选择器/保存器窗口经快照读取固定目录——其 userData 与 GUI 隔离，
+   * 读不到本窗口的 localStorage（详见 main.ts 的隔离注释）。
+   */
+  useEffect(() => {
+    void window.electron.setPinnedDirs(pinnedDirs).catch(() => {
+      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
+    });
+  }, [pinnedDirs]);
+
+  /**
    * 仪表盘固定项状态。上提到 App 而非留在 Dashboard 内：
    * 同窗口两个 useLocalStorage 同键实例不会互相同步（storage 事件
    * 只在跨窗口触发），文件/文件夹右键菜单「固定到仪表盘」与仪表盘

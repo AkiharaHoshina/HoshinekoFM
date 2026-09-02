@@ -1,5 +1,5 @@
 import type { IFile, AllDevice, GvfsVolume } from './files';
-import type { PickerConfig } from './picker';
+import type { PickerConfig, PinnedDirEntry } from './picker';
 
 export interface IDrive {
     name: string;
@@ -141,6 +141,8 @@ export interface IElectronAPI {
     getPickerConfig: () => Promise<PickerConfig | null>;
     /** 选择器窗口回传选中结果（null = 取消），主进程随后关闭该窗口 */
     resolvePicker: (paths: string[] | null) => Promise<void>;
+    /** 上报侧边栏固定项（主进程落盘快照，供服务模式选择器窗口显示固定目录） */
+    setPinnedDirs: (pinnedDirs: PinnedDirEntry[]) => Promise<void>;
     readFile: (path: string) => Promise<string | null>;
     /**
      * 读取文本预览内容（预览面板用）。大小上限 512 KiB：

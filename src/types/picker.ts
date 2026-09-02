@@ -30,6 +30,16 @@ export interface PickerFilter {
   resolvedMime?: string;
 }
 
+/** 侧边栏固定目录条目（快照字段与 SidebarPinnedItem 一一对应） */
+export interface PinnedDirEntry {
+  /** 显示名（路径最后一段） */
+  name: string;
+  /** 目录绝对路径 */
+  path: string;
+  /** 是否为目录（当前固定功能仅允许目录） */
+  isDir: boolean;
+}
+
 /** 选择器窗口配置（picker:get-config 的返回值，普通窗口为 null） */
 export interface PickerConfig {
   /**
@@ -47,6 +57,12 @@ export interface PickerConfig {
   defaultFileName?: string;
   /** 保存模式确定按钮文案覆盖（portal accept_label；缺省用 i18n「确定」） */
   acceptLabel?: string;
+  /**
+   * 侧边栏固定目录列表（内部注入：主进程为服务模式选择器窗口
+   * 补齐，供 Sidebar 渲染）。调用方经 picker:open 传入的该字段
+   * 被主进程白名单校验忽略——固定项来源唯一，不可由第三方伪造。
+   */
+  pinnedDirs?: PinnedDirEntry[];
 }
 
 /** picker:open 的选项（渲染进程入口） */

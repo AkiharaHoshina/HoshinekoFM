@@ -11,7 +11,7 @@ import { registerFsHandlers } from './handlers/fs';
 import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor } from './handlers/system';
 import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers } from './handlers/theme';
-import { registerPickerHandlers, type PickerConfig } from './handlers/picker';
+import { registerPickerHandlers, type PickerConfig, type PinnedDirEntry } from './handlers/picker';
 import { registerServiceBackends } from './backends';
 import { initJobHandlers } from './jobs';
 
@@ -42,6 +42,59 @@ const startupSelectByWindow = new WeakMap<BrowserWindow, { fileName: string; ope
 
 /** 每个窗口注册的目录监听器（窗口关闭时统一移除） */
 const watchListenersByWindow = new WeakMap<WebContents, Map<string, (dir: string) => void>>();
+
+/**
+ * 侧边栏固定项快照文件：GUI 渲染进程经 `app:set-pinned-dirs` 上报，
+ * 主进程原子落盘（写在 **GUI 的 userData** 目录，即 LEGACY_USER_DATA_DIR，
+ * 而非服务模式的 `<userData>-service`）。
+ *
+ * 存在原因：服务模式（--portal / --filemanager1）常驻进程的 userData
+ * 与 GUI 完全隔离（见 SERVICE_ONLY_MODE 注释），其选择器窗口读不到
+ * GUI 的 localStorage，侧边栏固定项为空。落一份**纯 JSON 快照**到
+ * GUI 目录即可让常驻进程读取——只读我们自己的 JSON 文件、绝不触碰
+ * GUI 的 Local Storage LevelDB（那是共享 userData 灾难的根源），
+ * 隔离约束完好保留。
+ */
+const PINNED_SNAPSHOT_FILE = path.join(LEGACY_USER_DATA_DIR, 'sidebar-pinned.json');
+
+/** 固定项快照内存缓存（GUI 模式由 IPC 上报保持最新；服务模式首次读取后缓存） */
+let pinnedSnapshotCache: PinnedDirEntry[] | null = null;
+
+/**
+ * 校验固定项数组（来源可能是 localStorage 快照文件，可能被手改/损坏）：
+ * 只保留 name/path/isDir 合法且 path 为绝对路径的条目，超长截断。
+ */
+function sanitizePinnedDirs(input: unknown): PinnedDirEntry[] {
+  if (!Array.isArray(input)) return [];
+  const result: PinnedDirEntry[] = [];
+  for (const item of input.slice(0, 100)) {
+    const it = (item ?? {}) as Record<string, unknown>;
+    if (typeof it.path !== 'string' || !it.path.startsWith('/')) continue;
+    const name =
+      typeof it.name === 'string' && it.name.trim()
+        ? it.name.trim().slice(0, 255)
+        : it.path.split('/').pop() || it.path;
+    result.push({ name, path: it.path, isDir: it.isDir === true });
+  }
+  return result;
+}
+
+/**
+ * 读取固定项快照（服务模式选择器窗口注入用）：
+ * - GUI 模式下缓存由 `app:set-pinned-dirs` 保持最新，命中缓存直接返回；
+ * - 服务模式下缓存恒为 null（无渲染进程上报），**每次调用现读文件**——
+ *   GUI 运行期间改动固定项，常驻进程下次弹选择器立即看到，无需重启。
+ *   读取失败/文件不存在时退化为空数组（纯 JSON 读取，不碰 LevelDB）。
+ */
+async function loadPinnedSnapshot(): Promise<PinnedDirEntry[]> {
+  if (pinnedSnapshotCache !== null) return pinnedSnapshotCache;
+  try {
+    const raw = await fs.readFile(PINNED_SNAPSHOT_FILE, 'utf-8');
+    return sanitizePinnedDirs(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
 
 function getWindows(): BrowserWindow[] {
   return Array.from(windows);
@@ -99,6 +152,16 @@ async function createWindow(
   } = {},
 ): Promise<BrowserWindow> {
   const isPicker = options.picker === true;
+  // 服务模式选择器：userData 隔离读不到 GUI 的 localStorage（侧边栏固定项），
+  // 主进程从 GUI userData 的快照文件补齐 pinnedDirs 注入配置。
+  // GUI 模式不做注入——选择器窗口与主窗口共享 session，FilePicker 直接
+  // 读 localStorage（含 storage 事件实时同步），行为保持不变。
+  if (isPicker && options.pickerConfig && SERVICE_ONLY_MODE) {
+    const pinned = await loadPinnedSnapshot();
+    if (pinned.length > 0) {
+      options.pickerConfig = { ...options.pickerConfig, pinnedDirs: pinned };
+    }
+  }
   const win = new BrowserWindow({
     width: isPicker ? 900 : 1200,
     height: isPicker ? 620 : 800,
@@ -375,6 +438,21 @@ ipcMain.handle('app:get-startup-request', (event) => {
 ipcMain.handle('picker:get-config', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   return win ? (pickerConfigByWindow.get(win) ?? null) : null;
+});
+
+// GUI 渲染进程上报侧边栏固定项：更新内存缓存 + 原子落盘快照
+// （tmp + rename，防半写），供服务模式常驻进程的选择器窗口读取。
+ipcMain.handle('app:set-pinned-dirs', async (_event, input: unknown) => {
+  const dirs = sanitizePinnedDirs(input);
+  pinnedSnapshotCache = dirs;
+  const tmp = `${PINNED_SNAPSHOT_FILE}.tmp`;
+  try {
+    await fs.mkdir(LEGACY_USER_DATA_DIR, { recursive: true });
+    await fs.writeFile(tmp, JSON.stringify(dirs), 'utf-8');
+    await fs.rename(tmp, PINNED_SNAPSHOT_FILE);
+  } catch {
+    await fs.rm(tmp, { force: true }).catch(() => {});
+  }
 });
 
 registerFsHandlers();

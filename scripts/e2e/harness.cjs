@@ -87,6 +87,9 @@ const startupSelectByWindow = new WeakMap();
 const pickerConfigByWindow = new WeakMap();
 /** 每窗口目录监听（fs:watch-dir/unwatch-dir，与 main.ts 同步） */
 const watchListenersByWindow = new WeakMap();
+/** 固定项快照缓存与文件（与 main.ts 的 app:set-pinned-dirs / loadPinnedSnapshot 同步） */
+let pinnedSnapshotCache = null;
+const pinnedSnapshotFile = () => path.join(app.getPath('userData'), 'sidebar-pinned.json');
 
 /**
  * 后端总线名（进程级随机隔离）：每个测试文件是独立 Electron 进程，
@@ -251,6 +254,25 @@ function registerIpc() {
     const win = BrowserWindow.fromWebContents(event.sender);
     return win ? (pickerConfigByWindow.get(win) ?? null) : null;
   });
+
+  // 与 main.ts 的 app:set-pinned-dirs 同步：GUI 渲染进程上报固定项，
+  // 内存缓存 + 原子落盘快照，供选择器窗口注入（见 createTestWindow）
+  ipcMain.handle('app:set-pinned-dirs', async (_event, input) => {
+    const dirs = Array.isArray(input)
+      ? input
+          .filter((it) => it && typeof it.path === 'string' && it.path.startsWith('/') && typeof it.name === 'string')
+          .map((it) => ({ name: it.name.slice(0, 255), path: it.path, isDir: it.isDir === true }))
+          .slice(0, 100)
+      : [];
+    pinnedSnapshotCache = dirs;
+    try {
+      const tmp = `${pinnedSnapshotFile()}.tmp`;
+      await fs.promises.writeFile(tmp, JSON.stringify(dirs), 'utf-8');
+      await fs.promises.rename(tmp, pinnedSnapshotFile());
+    } catch {
+      /* 写快照失败：仅影响固定项注入，不阻塞测试 */
+    }
+  });
 }
 
 /** 注册 media/preview 协议（与 main.ts 的 handler 同步） */
@@ -356,7 +378,22 @@ async function createTestWindow({ argv = [], picker = false, pickerConfig = null
   win.on('unmaximize', emitMaximizeState);
   if (startupPath) startupPathByWindow.set(win, startupPath);
   if (startupSelect) startupSelectByWindow.set(win, startupSelect);
-  if (picker) pickerConfigByWindow.set(win, pickerConfig);
+  if (picker && pickerConfig) {
+    // 与 main.ts 服务模式注入同步：选择器窗口补上固定项快照
+    // （userData 隔离下 localStorage 读不到 GUI 固定项）
+    if (pinnedSnapshotCache === null) {
+      try {
+        const raw = await fs.promises.readFile(pinnedSnapshotFile(), 'utf-8');
+        pinnedSnapshotCache = JSON.parse(raw);
+      } catch {
+        pinnedSnapshotCache = [];
+      }
+    }
+    if (pinnedSnapshotCache.length > 0) {
+      pickerConfig = { ...pickerConfig, pinnedDirs: pinnedSnapshotCache };
+    }
+    pickerConfigByWindow.set(win, pickerConfig);
+  }
   if (picker) {
     await win.loadFile(path.join(DIST, 'index.html'), { query: { mode: 'picker' } });
   } else {

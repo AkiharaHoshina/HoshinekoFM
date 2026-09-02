@@ -60,6 +60,8 @@ contextBridge.exposeInMainWorld('electron', {
   openPicker: (options: { mode: 'file' | 'folder' | 'files' | 'items' }) => ipcRenderer.invoke('picker:open', options),
   getPickerConfig: () => ipcRenderer.invoke('picker:get-config'),
   resolvePicker: (paths: string[] | null) => ipcRenderer.invoke('picker:resolve', paths),
+  /** 上报侧边栏固定项（主进程落盘快照，供服务模式选择器窗口显示固定目录） */
+  setPinnedDirs: (pinnedDirs: unknown) => ipcRenderer.invoke('app:set-pinned-dirs', pinnedDirs),
   readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path),
   readPreviewText: (path: string) => ipcRenderer.invoke('fs:read-preview-text', path),
   listArchive: (path: string, requestId?: string) => ipcRenderer.invoke('fs:list-archive', path, requestId),
