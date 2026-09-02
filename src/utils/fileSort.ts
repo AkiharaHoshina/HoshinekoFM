@@ -67,3 +67,51 @@ export function sortFiles(files: IFile[], options: SortOptions): IFile[] {
     return options.sortOrder === 'asc' ? result : -result;
   });
 }
+
+/**
+ * 搜索结果按所在目录分组排序（设置「搜索分类」开启时）：
+ * - 隐藏文件过滤与 sortFiles 一致；
+ * - 组间：按父目录完整路径的自然序（数字段数值比较）；
+ * - 组内：文件与目录混合（分类包含两者），目录优先，其余按配置的
+ *   sortBy/sortOrder 排序——与普通列表组内语义一致。
+ * 输出为「同目录条目连续」的扁平数组，FileList 的 flattenItems
+ * 再按相邻条目的父目录切分组头（见 FileList 的 groupByDir）。
+ *
+ * @param files - 搜索结果（跨目录）
+ * @param options - 排序选项
+ * @returns 按目录聚簇排序后的新数组
+ */
+export function sortFilesByDir(files: IFile[], options: SortOptions): IFile[] {
+  const filtered = files.filter((f) => options.showHiddenFiles || !f.name.startsWith('.'));
+  const byDir = new Map<string, IFile[]>();
+  for (const f of filtered) {
+    const parent = f.path.substring(0, f.path.lastIndexOf('/')) || '/';
+    const list = byDir.get(parent);
+    if (list) list.push(f);
+    else byDir.set(parent, [f]);
+  }
+  const collator = getNaturalCollator();
+  const dirs = [...byDir.keys()].sort((a, b) => collator.compare(a, b));
+  const out: IFile[] = [];
+  for (const dir of dirs) {
+    const group = byDir.get(dir)!;
+    group.sort((a, b) => {
+      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+      let result = 0;
+      switch (options.sortBy) {
+      case 'name':
+        result = collator.compare(a.name, b.name);
+        break;
+      case 'size':
+        result = a.size - b.size;
+        break;
+      case 'date':
+        result = a.mtime.getTime() - b.mtime.getTime();
+        break;
+      }
+      return options.sortOrder === 'asc' ? result : -result;
+    });
+    out.push(...group);
+  }
+  return out;
+}

@@ -431,6 +431,11 @@ function AppContent() {
     "settings.groupingEnabled",
     true,
   );
+  /** 搜索分类：搜索结果按同目录分组（组头 = 完整目录路径） */
+  const [searchGroupByDir, setSearchGroupByDir] = useLocalStorage<boolean>(
+    "settings.searchGroupByDir",
+    true,
+  );
   const [locale, setLocaleState] = useLocalStorage<Locale>(
     "settings.locale",
     getLocale(),
@@ -1373,6 +1378,7 @@ function AppContent() {
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   groupingEnabled={groupingEnabled}
+                  searchGroupByDir={searchGroupByDir}
                   onSortByChange={setSortBy}
                   onSortOrderChange={setSortOrder}
                   onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}
@@ -1732,6 +1738,8 @@ function AppContent() {
             thumbCacheInfo={thumbCacheInfo}
             thumbCacheBusy={thumbCacheBusy}
             onClearThumbCache={() => void handleClearThumbCache()}
+            searchGroupByDir={searchGroupByDir}
+            onToggleSearchGroupByDir={() => setSearchGroupByDir(!searchGroupByDir)}
             titleBarMode={titleBarMode}
             onTitleBarChange={setTitleBarMode}
             showFullPathTitle={showFullPathTitle}

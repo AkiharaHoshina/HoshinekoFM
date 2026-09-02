@@ -145,6 +145,8 @@ const zhTW = {
   'settings.behavior': '行為',
   'settings.language': '語言',
   'settings.marquee_text': '跑馬燈文字',
+  'settings.search_group_by_dir': '搜尋分類',
+  'settings.search_group_by_dir_desc': '將同目錄的項目分為一類',
   'settings.show_home_storage': '顯示首頁儲存佔用',
   'settings.file_preview': '檔案預覽',
   'settings.calculate_dir_size': '計算目錄大小',

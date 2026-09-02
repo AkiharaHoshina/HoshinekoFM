@@ -145,6 +145,8 @@ const zhCN = {
   'settings.behavior': '行为',
   'settings.language': '语言',
   'settings.marquee_text': '滚动文本',
+  'settings.search_group_by_dir': '搜索分类',
+  'settings.search_group_by_dir_desc': '将同目录的项目分为一类',
   'settings.show_home_storage': '显示主页存储占用',
   'settings.file_preview': '文件预览',
   'settings.calculate_dir_size': '计算目录大小',

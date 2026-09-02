@@ -146,6 +146,8 @@ const koKP = {
   'settings.behavior': '동작',
   'settings.language': '언어',
   'settings.marquee_text': '흐르는 원문',
+  'settings.search_group_by_dir': '검색 분류',
+  'settings.search_group_by_dir_desc': '같은 디렉터리의 항목을 그룹화',
   'settings.show_home_storage': '초기 화면 기억장치 사용량 표시',
   'settings.file_preview': '파일 미리보기',
   'settings.calculate_dir_size': '디렉토리 크기 계산',

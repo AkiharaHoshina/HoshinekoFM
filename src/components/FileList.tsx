@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, memo } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, memo } from "react";
 import type { MutableRefObject } from "react";
 import type { IFile } from "../types/files";
 import "./FileList.css";
@@ -72,6 +72,18 @@ interface FileListProps {
    * 与渲染完全同源的 columns/items（含分组头与网格行分组）。
    */
   layoutRef?: MutableRefObject<{ columns: number; items: ListItem[] } | null>;
+  /**
+   * 悬停标题显示完整路径（搜索结果跨目录展示，仅文件名无法定位
+   * 来源目录；普通目录浏览保持文件名/符号链接等既有标题语义）。
+   */
+  showPathTitle?: boolean;
+  /**
+   * 按所在目录分组（搜索结果「搜索分类」设置）：组头显示完整父目录
+   * 路径（长路径截断/跑马灯），组内文件与目录混合。开启时替代语义
+   * 分组（groupingEnabled 不再生效）；依赖 files 已按
+   * sortFilesByDir 聚簇排序（同目录条目相邻）。
+   */
+  groupByDir?: boolean;
 }
 
 // --- Main component ---
@@ -101,11 +113,27 @@ const FileListComponent: React.FC<FileListProps> = ({
   disableNativeDrag = false,
   scrollToPath = null,
   layoutRef,
+  showPathTitle = false,
+  groupByDir = false,
 }) => {
   const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
+
+  /** 分组配置（渲染/滚动定位/布局快照三处同源）：
+   *  groupByDir 时按父目录分组（组头 = 完整目录路径），否则语义分组 */
+  const effectiveGrouping = groupByDir || groupingEnabled;
+  const groupInfo = useMemo(
+    () =>
+      groupByDir
+        ? (file: IFile) => {
+          const parent = file.path.substring(0, file.path.lastIndexOf('/')) || '/';
+          return { key: parent, label: parent };
+        }
+        : undefined,
+    [groupByDir],
+  );
 
   // 订阅语言变更：FileList 被 memo 包裹，语言切换后需要主动重渲染，
   // 分组标题等 t() 惰性求值的文本才能更新
@@ -200,7 +228,7 @@ const FileListComponent: React.FC<FileListProps> = ({
       viewMode === "grid"
         ? Math.max(1, Math.floor((containerWidth + 8) / (iconSize + 40)))
         : 0;
-    const items = flattenItems(files, groupingEnabled, viewMode, columns);
+    const items = flattenItems(files, effectiveGrouping, viewMode, columns, groupInfo);
     let flattenedIdx = -1;
     let foundFileIdx = 0;
     for (let i = 0; i < items.length; i++) {
@@ -234,6 +262,8 @@ const FileListComponent: React.FC<FileListProps> = ({
     viewMode,
     iconSize,
     groupingEnabled,
+    effectiveGrouping,
+    groupInfo,
     onSelect,
     currentPath,
     onScrollToComplete,
@@ -529,7 +559,7 @@ const FileListComponent: React.FC<FileListProps> = ({
               ? Math.max(1, Math.floor((width + 8) / (iconSize + 40)))
               : 0;
 
-          const items = flattenItems(files, groupingEnabled, viewMode, columns);
+          const items = flattenItems(files, effectiveGrouping, viewMode, columns, groupInfo);
 
           // 渲染期布局快照：供方向键导航滚动与父组件导航计算（与渲染同源）
           renderLayoutRef.current = { columns, items };
@@ -568,6 +598,7 @@ const FileListComponent: React.FC<FileListProps> = ({
             viewMode,
             columns,
             marqueeEnabled,
+            showPathTitle,
           };
 
           return (

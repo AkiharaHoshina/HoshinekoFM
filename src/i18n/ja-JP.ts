@@ -145,6 +145,8 @@ const jaJP = {
   'settings.behavior': '動作',
   'settings.language': '言語',
   'settings.marquee_text': 'スクロールテキスト',
+  'settings.search_group_by_dir': '検索結果を分類',
+  'settings.search_group_by_dir_desc': '同じディレクトリの項目をグループ化',
   'settings.show_home_storage': 'ホームのストレージ使用量を表示',
   'settings.file_preview': 'ファイルプレビュー',
   'settings.calculate_dir_size': 'ディレクトリサイズを計算',

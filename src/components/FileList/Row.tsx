@@ -37,6 +37,8 @@ interface RowData {
   viewMode: "grid" | "list";
   columns: number;
   marqueeEnabled: boolean;
+  /** 悬停标题显示完整路径（搜索结果跨目录展示，文件名不足以定位来源） */
+  showPathTitle: boolean;
 }
 
 function FileIconDisplay({
@@ -143,6 +145,7 @@ function FileNameDisplay({
   marqueeTextStyle,
   marqueeEnabled,
   noHint,
+  showPathTitle = false,
 }: {
   file: IFile;
   isRenaming: boolean;
@@ -156,6 +159,8 @@ function FileNameDisplay({
   marqueeEnabled: boolean;
   /** 隐藏编辑框底部提示线（列表模式最小图标时行高不足，提示线会被裁掉一半） */
   noHint?: boolean;
+  /** 悬停标题显示完整路径（搜索结果用，见 RowData.showPathTitle） */
+  showPathTitle?: boolean;
 }) {
   const isSymlink = !!file.symlinkTarget;
 
@@ -190,7 +195,7 @@ function FileNameDisplay({
         enabled={marqueeEnabled}
         className="file-name-text"
         style={marqueeTextStyle}
-        title={getFileTitle(file)}
+        title={showPathTitle ? file.path : getFileTitle(file)}
       >
         {file.name}
       </MarqueeText>
@@ -277,6 +282,7 @@ function ListRowItem({
         marqueeTextStyle={{ paddingRight: sp.paddingH }}
         marqueeEnabled={data.marqueeEnabled}
         noHint={data.viewMode === "list" && data.iconSize === 16}
+        showPathTitle={data.showPathTitle}
       />
       {!isRenaming && (
         <span
@@ -375,6 +381,7 @@ function GridRowItem({
         marqueeTextStyle={{ paddingLeft: 0, paddingRight: 0 }}
         marqueeEnabled={data.marqueeEnabled}
         noHint={data.viewMode === "list" && data.iconSize === 16}
+        showPathTitle={data.showPathTitle}
       />
     </div>
   );
@@ -432,6 +439,7 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
   if (item.kind === "header") {
     return (
       <div
+        className="file-group-header"
         style={{
           ...style,
           padding: "20px 2px 8px",
@@ -439,9 +447,17 @@ function Row({ index, style, ...data }: RowComponentProps<RowData>) {
           color: "var(--md-sys-color-primary)",
           borderBottom: "1px solid var(--md-sys-color-outline-variant)",
           boxSizing: "border-box",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
         }}
       >
-        {item.label}
+        {item.marquee ? (
+          <MarqueeText enabled={data.marqueeEnabled} title={item.label}>
+            {item.label}
+          </MarqueeText>
+        ) : (
+          item.label
+        )}
       </div>
     );
   }

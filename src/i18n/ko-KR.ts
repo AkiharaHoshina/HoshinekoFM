@@ -146,6 +146,8 @@ const koKR = {
   'settings.behavior': '동작',
   'settings.language': '언어',
   'settings.marquee_text': '스크롤 텍스트',
+  'settings.search_group_by_dir': '검색 분류',
+  'settings.search_group_by_dir_desc': '같은 디렉터리의 항목을 그룹화',
   'settings.show_home_storage': '홈 스토리지 사용량 표시',
   'settings.file_preview': '파일 미리보기',
   'settings.calculate_dir_size': '디렉터리 크기 계산',

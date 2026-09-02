@@ -56,6 +56,9 @@ interface SettingsDialogProps {
   thumbCacheBusy: boolean;
   /** 清空缩略图缓存（toast 与占用刷新由 App 处理） */
   onClearThumbCache: () => void;
+  /** 搜索分类：搜索结果按同目录分组（组头 = 完整目录路径） */
+  searchGroupByDir: boolean;
+  onToggleSearchGroupByDir: () => void;
   /** 标题栏模式（null = 跟随系统，true/false = 手动开/关） */
   titleBarMode: boolean | null;
   onTitleBarChange: (mode: boolean | null) => void;
@@ -104,6 +107,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   thumbCacheInfo,
   thumbCacheBusy,
   onClearThumbCache,
+  searchGroupByDir,
+  onToggleSearchGroupByDir,
   titleBarMode,
   onTitleBarChange,
   showFullPathTitle,
@@ -419,6 +424,21 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               </div>
             </div>
             <Switch selected={marqueeEnabled} onClick={onToggleMarquee} />
+          </div>
+
+          <div className="settings-row" onClick={onToggleSearchGroupByDir}>
+            <div className="settings-row__start">
+              <Icon name="account_tree" />
+              <div className="settings-row__label-col">
+                <div className="settings-row__label">
+                  {t("settings.search_group_by_dir")}
+                </div>
+                <div className="settings-row__sub settings-row__sub--wrap">
+                  {t("settings.search_group_by_dir_desc")}
+                </div>
+              </div>
+            </div>
+            <Switch selected={searchGroupByDir} onClick={onToggleSearchGroupByDir} />
           </div>
 
           <div className="settings-row" onClick={onToggleShowHomeStorageUsage}>

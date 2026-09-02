@@ -187,6 +187,8 @@ const ruUA = {
   'settings.behavior': 'Поведение',
   'settings.language': 'Язык',
   'settings.marquee_text': 'Бегущая строка',
+  'settings.search_group_by_dir': 'Группировка результатов поиска',
+  'settings.search_group_by_dir_desc': 'Группировать элементы из одного каталога',
   'settings.show_home_storage': 'Показывать занятость домашнего хранилища',
   'settings.file_preview': 'Предпросмотр файлов',
   'settings.calculate_dir_size': 'Вычислять размер папок',

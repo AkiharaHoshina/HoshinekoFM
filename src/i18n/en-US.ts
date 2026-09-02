@@ -156,6 +156,8 @@ const enUS = {
   'settings.behavior': 'Behavior',
   'settings.language': 'Language',
   'settings.marquee_text': 'Marquee text',
+  'settings.search_group_by_dir': 'Group search results',
+  'settings.search_group_by_dir_desc': 'Group items from the same directory',
   'settings.show_home_storage': 'Show home storage usage',
   'settings.file_preview': 'File preview',
   'settings.calculate_dir_size': 'Calculate directory sizes',

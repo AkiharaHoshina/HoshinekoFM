@@ -209,25 +209,46 @@ export function formatSize(bytes: number) {
 }
 
 export type ListItem =
-  | { kind: "header"; label: string }
+  | { kind: "header"; label: string; marquee?: boolean }
   | { kind: "file"; file: IFile }
   | { kind: "grid-row"; files: IFile[] };
 
+/**
+ * 扁平化文件列表为渲染条目（分组头 + 行/网格行）。
+ *
+ * @param files - 已排序的文件列表（分组依赖相邻条目同组连续）
+ * @param groupingEnabled - 是否分组（语义分组或 groupInfo 自定义分组）
+ * @param viewMode - 网格/列表
+ * @param columns - 网格列数
+ * @param groupInfo - 自定义分组函数（搜索结果按目录分组用）：返回分组
+ *   键与显示标签；返回 null 表示该条目不分组。缺省时走语义分组
+ *   （Folders/Media/…）。自定义分组的头 marquee=true——长目录路径
+ *   由渲染层截断/跑马灯（语义分组标签短，保持纯文本）。
+ * @returns 渲染条目列表（header/file/grid-row）
+ */
 export function flattenItems(
   files: IFile[],
   groupingEnabled: boolean,
   viewMode: "grid" | "list",
   columns: number,
+  groupInfo?: (file: IFile) => { key: string; label: string } | null,
 ): ListItem[] {
   const items: ListItem[] = [];
   let lastGroup = "";
 
+  const groupOf = (file: IFile): { key: string; label: string } | null => {
+    if (!groupingEnabled) return null;
+    if (groupInfo) return groupInfo(file);
+    return { key: getSemanticGroup(file), label: tGroup(getSemanticGroup(file)) };
+  };
+
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
-    const group = groupingEnabled ? getSemanticGroup(file) : "";
-    if (groupingEnabled && group !== lastGroup) {
-      items.push({ kind: "header", label: tGroup(group) });
-      lastGroup = group;
+    const group = groupOf(file);
+    const key = group?.key ?? "";
+    if (group && key !== lastGroup) {
+      items.push({ kind: "header", label: group.label, marquee: !!groupInfo });
+      lastGroup = key;
     }
 
     if (viewMode === "grid") {
@@ -235,8 +256,8 @@ export function flattenItems(
       let j = i + 1;
       while (j < files.length && rowFiles.length < columns) {
         const nextFile = files[j];
-        const nextGroup = groupingEnabled ? getSemanticGroup(nextFile) : "";
-        if (groupingEnabled && nextGroup !== lastGroup) break;
+        const nextKey = groupOf(nextFile)?.key ?? "";
+        if (nextKey !== key) break;
         rowFiles.push(nextFile);
         j++;
       }

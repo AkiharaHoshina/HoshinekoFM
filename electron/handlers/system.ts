@@ -6,7 +6,7 @@ import { spawn, exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import dbus from 'dbus-next';
 import { getMountMap, invalidateMountMapCache, getExecError } from '../shared';
-import { getThumbnailCacheInfo, clearThumbnailCache } from '../fsUtils';
+import { getThumbnailCacheInfo, clearThumbnailCache, detectMime } from '../fsUtils';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -1610,19 +1610,23 @@ export function registerSystemHandlers() {
       });
 
       const lines = stdout.split('\n').filter(Boolean);
-      const results: { name: string; path: string; isDirectory: boolean; size: number; mtime: Date }[] = [];
+      const results: { name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null }[] = [];
 
       const topLines = lines.slice(0, 100);
 
       for (const pathStr of topLines) {
         try {
           const stats = await fs.stat(pathStr);
+          // mime 必须随结果返回：文件列表图标/缩略图按 mime 判定——
+          // 缺省会让搜索结果全部显示为通用文件图标（与真实类型不符）
+          const mime = stats.isDirectory() ? 'inode/directory' : await detectMime(pathStr);
           results.push({
             name: path.basename(pathStr),
             path: pathStr,
             isDirectory: stats.isDirectory(),
             size: stats.size,
-            mtime: stats.mtime
+            mtime: stats.mtime,
+            mime,
           });
         } catch { /* continue */ }
       }

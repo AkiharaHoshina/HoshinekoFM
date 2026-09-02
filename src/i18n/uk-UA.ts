@@ -184,6 +184,8 @@ const ukUA = {
   'settings.behavior': 'Поведінка',
   'settings.language': 'Мова',
   'settings.marquee_text': 'Біжучий текст',
+  'settings.search_group_by_dir': 'Групування результатів пошуку',
+  'settings.search_group_by_dir_desc': 'Групувати елементи з однієї директорії',
   'settings.show_home_storage': 'Показувати заповнення домашнього сховища',
   'settings.file_preview': 'Попередній перегляд файлів',
   'settings.calculate_dir_size': 'Обчислювати розмір папок',

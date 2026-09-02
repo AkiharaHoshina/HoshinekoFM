@@ -35,7 +35,7 @@ import { useDrag } from '../contexts/DragContext';
 import { t } from '../i18n';
 import { extractDropPaths, samePathSet } from '../utils/dragDrop';
 import { shouldSuppressDrop } from '../utils/nativeDragTracker';
-import { sortFiles, type SortBy, type SortOrder } from '../utils/fileSort';
+import { sortFiles, sortFilesByDir, type SortBy, type SortOrder } from '../utils/fileSort';
 import type { ContextMenuItem } from './ContextMenu';
 import {
   checkConflicts,
@@ -79,6 +79,9 @@ interface ExplorerTabProps {
     sortOrder: SortOrder;
     /** 分组开关（受控：settings.groupingEnabled 持久化，与选择器同步） */
     groupingEnabled: boolean;
+    /** 搜索分类开关（受控：settings.searchGroupByDir 持久化）——搜索结果
+     *  按同目录分组，组头显示完整目录路径（截断/跑马灯） */
+    searchGroupByDir: boolean;
     /** 修改排序字段（App 写入持久化键，跨窗口同步） */
     onSortByChange: (by: SortBy) => void;
     /** 修改排序方向（App 写入持久化键，跨窗口同步） */
@@ -132,7 +135,7 @@ interface ExplorerTabProps {
     terminalOpen?: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, onSortByChange, onSortOrderChange, onGroupingToggle, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, onSortByChange, onSortOrderChange, onGroupingToggle, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -706,9 +709,13 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   // 过滤 + 分组 + 排序（共享逻辑：与文件选择器完全一致，
   // 偏好经 settings.sortBy / settings.sortOrder / settings.groupingEnabled 同步）
+  // 搜索分类开启时按同目录聚簇排序（sortFilesByDir），组内仍按配置排序
   const sortedFiles = useMemo(() => {
+    if (searchActive && searchGroupByDir) {
+      return sortFilesByDir(files, { showHiddenFiles, sortBy, sortOrder, groupingEnabled });
+    }
     return sortFiles(files, { showHiddenFiles, sortBy, sortOrder, groupingEnabled });
-  }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled]);
+  }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled, searchActive, searchGroupByDir]);
     // Selection State
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   /** Shift 范围选择的锚点（方向键/鼠标 Shift 范围从它起算，范围变化时不动） */
@@ -1444,7 +1451,15 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           label: t('search.locate'),
           icon: 'folder_open',
           action: () => {
-            onRevealFile(file.path, file.name);
+            // 目标就在被搜索目录内时，父目录 = currentPath——直接
+            // onRevealFile 不会触发目录重载（initialPath 不变），搜索
+            // 结果列表保持原样、定位看似「没反应」。必须先 loadPath
+            // 退出搜索并加载父目录，再走定位提示选中目标条目。
+            const parent = file.path.substring(0, file.path.lastIndexOf('/')) || '/';
+            void (async () => {
+              await loadPath(parent);
+              onRevealFile(file.path, file.name);
+            })();
           },
         },
         { label: '', divider: true, action: () => {} },
@@ -1887,6 +1902,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                   marqueeEnabled={marqueeEnabled}
                   scrollToPath={keyboardScrollPath}
                   layoutRef={fileListLayoutRef}
+                  showPathTitle={searchActive}
+                  groupByDir={searchActive && searchGroupByDir}
                 />
               </div>
 
