@@ -216,6 +216,21 @@ const FM1_ONLY_MODE = process.argv.includes('--filemanager1');
 /** 服务模式（portal / filemanager1）：只注册 D-Bus 后端，不创建主窗口 */
 const SERVICE_ONLY_MODE = PORTAL_ONLY_MODE || FM1_ONLY_MODE;
 
+/**
+ * 服务模式隔离 userData：常驻服务（dbus 激活的 --portal / --filemanager1）
+ * 与 GUI 共享同一 userData 时，两个进程会同时打开 Local Storage 的
+ * LevelDB——后启动的常驻进程（如为外部应用弹起选择器窗口时）会持有
+ * 数据库锁，GUI 的 storage 句柄空闲后无法重新打开，之后的
+ * localStorage 提交全部静默失败；常驻进程退出时还会用它读到的旧
+ * 快照覆盖落盘，表现为「设置/固定项/最近文件重启后全部消失」。
+ * 服务模式不承载用户持久化数据（选择器窗口用默认设置即可），
+ * 因此把它的 userData 指到 `<userData>-service`，与 GUI 数据完全隔离。
+ * 必须在 ready 之前、任何 session/storage 使用之前执行。
+ */
+if (SERVICE_ONLY_MODE) {
+  app.setPath('userData', `${LEGACY_USER_DATA_DIR}-service`);
+}
+
 // ── 单实例锁：第二次启动复用已有后端，为其再开一个窗口 ──
 // 服务模式（--portal / --filemanager1）**不请求单实例锁**：服务形态靠
 // D-Bus 名字仲裁（requestName DO_NOT_QUEUE，失败即 exit(1)，见
@@ -535,4 +550,24 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
+});
+
+/**
+ * 退出前强制落盘 localStorage（DOM Storage）：
+ * Chromium 的 localStorage 提交是 ~5 秒一次的定时批量写——在提交
+ * 间隙内关窗退出（用户改完设置/固定项立刻关闭很常见）会把未提交
+ * 的写入丢弃，表现为「设置/固定项/最近文件重启后消失」。flushStorageData
+ * 把未落盘的 DOM Storage 立即写盘后再真正退出（首次 before-quit
+ * preventDefault + 重入守卫，避免死循环）。
+ */
+let storageFlushDone = false;
+app.on('before-quit', (event) => {
+  if (storageFlushDone) return;
+  event.preventDefault();
+  storageFlushDone = true;
+  // flushStorageData 同步把未落盘的 DOM Storage 写盘（void API，无 Promise）
+  for (const win of windows) {
+    if (!win.isDestroyed()) win.webContents.session.flushStorageData();
+  }
+  app.quit();
 });

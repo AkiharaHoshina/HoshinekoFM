@@ -410,7 +410,37 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
           import('dompurify'),
         ]);
         if (cancelled) return;
-        const html = DOMPurify.sanitize(marked.parse(res.content ?? '', { async: false }) as string);
+        // GitHub 风格标题锚点：为每个标题生成 id（slug），`#xxx` 链接
+        // 才能定位到目标标题（marked 默认不产出标题 id——跳转链接点击
+        // 无任何反应）。slug 规则与 GitHub 一致：纯文本（内联 code/
+        // 强调取内容、图片跳过）→ 小写 → 去标点 → 空白折叠为连字符；
+        // 重复 id 追加 -1/-2 序号保持唯一。
+        const slugCounts = new Map<string, number>();
+        const renderer = new marked.Renderer();
+        renderer.heading = function ({ tokens, depth }) {
+          const text = tokens
+            .map((t: { type?: string; text?: string; tokens?: unknown[] }) =>
+              t.type === 'image'
+                ? ''
+                : typeof t.text === 'string'
+                  ? t.text
+                  : Array.isArray(t.tokens)
+                    ? t.tokens.map((sub) => (sub as { text?: string }).text ?? '').join('')
+                    : '')
+            .join('');
+          let id = text
+            .toLowerCase()
+            .replace(/[^\p{L}\p{N}\s-]/gu, '')
+            .trim()
+            .replace(/\s+/g, '-') || 'section';
+          const count = slugCounts.get(id) ?? 0;
+          slugCounts.set(id, count + 1);
+          if (count > 0) id = `${id}-${count}`;
+          return `<h${depth} id="${id}">${this.parser.parseInline(tokens)}</h${depth}>`;
+        };
+        const html = DOMPurify.sanitize(
+          marked.parse(res.content ?? '', { async: false, renderer }) as string,
+        );
         // 本地相对图片/链接按 Markdown 文件所在目录解析为绝对路径
         const baseDir = file.path.substring(0, file.path.lastIndexOf('/'));
         setMdState({ status: 'ready', content: rewriteMarkdownLinks(html, baseDir) });
@@ -638,7 +668,8 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
       <div className="file-preview-header">
         <Icon name={headerIcon} className="file-preview-header-icon" />
         <div className="file-preview-title">
-          <span className="file-preview-name" title={dirActive ? dirPath : file?.name}>
+          {/* 悬停统一显示完整路径（目录与文件一致；显示名仍为名称/目录名） */}
+          <span className="file-preview-name" title={dirActive ? dirPath : file?.path}>
             {dirActive ? dirDisplayName : multiple ? t('preview.multiple') : file?.name}
           </span>
           {(dirActive || (file && !multiple)) && (

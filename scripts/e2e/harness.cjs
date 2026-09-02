@@ -115,7 +115,11 @@ let watchdogArmed = false;
  * @returns { userData: string } 隔离的用户数据目录（含 clipboard.json 等）
  */
 async function setupApp() {
-  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-'));
+  // HOSHINEKO_E2E_USER_DATA 覆盖：多进程两段式测试（持久化回归）共享
+  // 同一 userData；缺省仍为临时随机目录（进程级隔离）
+  const userData = process.env.HOSHINEKO_E2E_USER_DATA
+    ? process.env.HOSHINEKO_E2E_USER_DATA
+    : fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-'));
   app.setPath('userData', userData);
   app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
   // 全局看门狗：任一环节挂起（如 Wayland 合成器竞态导致 whenReady 不落定）

@@ -206,5 +206,50 @@ const { ipcMain } = require('electron');
     );
   });
 
+  await h.run('23c 页内标题锚点跳转（GitHub 风格 heading id）', async () => {
+    // 标题在页面下部（超出预览可视区），点击 # 链接应滚动到标题
+    const anchorMd = [
+      '# top',
+      '',
+      '[跳转](#普瑞巴林-精二)',
+      '',
+      ...Array.from({ length: 200 }, (_, i) => `padding line ${i}`),
+      '',
+      '## 普瑞巴林 `精二`',
+      '',
+      'target content',
+    ].join('\n');
+    const notePath = `${dir}/anchor.md`;
+    fs.writeFileSync(notePath, anchorMd);
+
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${notePath}"]')`);
+    await h.js(
+      win,
+      `localStorage.setItem('settings.filePreview', JSON.stringify(true)); location.reload();`,
+    );
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${notePath}"]')`);
+    await h.clickEl(win, `.file-list-item[data-path="${notePath}"]`);
+    await h.waitFor(win, `!!document.querySelector('.file-preview-markdown')`);
+
+    // 标题已带 slug id（marked 默认不产出——点击 # 链接无任何反应）
+    await h.waitFor(win, `!!document.getElementById('普瑞巴林-精二')`, { timeout: 5000 });
+
+    // 点击 # 链接 → 标题滚入可视区（容器 scrollTop > 0 且标题可见）
+    await h.clickEl(win, `.file-preview-markdown a[href^="#"]`);
+    await h.waitFor(
+      win,
+      `(() => {
+        const cont = document.querySelector('.file-preview-markdown');
+        const h = document.getElementById('普瑞巴林-精二');
+        if (!cont || !h) return false;
+        const cr = cont.getBoundingClientRect();
+        const hr = h.getBoundingClientRect();
+        return cont.scrollTop > 0 && hr.top >= cr.top - 1 && hr.top < cr.bottom;
+      })()`,
+      { timeout: 5000 },
+    );
+  });
+
   h.finish();
 })();

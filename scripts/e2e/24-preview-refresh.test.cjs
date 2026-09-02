@@ -32,6 +32,10 @@ const PNG_ALT_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4
     await h.clickEl(win, `.file-list-item[data-path="${dir}/note.md"]`);
     await h.waitFor(win, `(document.querySelector('.file-preview-markdown')?.textContent ?? '').includes('rev1')`);
 
+    // 预览标题悬停 = 完整路径（目录与文件统一；显示名仍为文件名）
+    const nameTitle = await h.js(win, `document.querySelector('.file-preview-name')?.getAttribute('title') ?? null`);
+    h.assert.strictEqual(nameTitle.value, `${dir}/note.md`, '文件预览标题悬停应为完整路径');
+
     fs.writeFileSync(path.join(dir, 'note.md'), '# t\n\nrev2');
     await h.waitFor(
       win,
