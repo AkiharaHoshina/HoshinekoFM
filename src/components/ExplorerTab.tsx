@@ -45,7 +45,8 @@ import {
   type ConflictEntry,
   type ConflictResult,
 } from '../utils/fileConflict';
-import { computeArrowTarget, type ListItem } from './FileList/utils';
+import { registerKeyboardZone } from '../utils/focusZones';
+import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, computeCtrlArrowTarget, type ListItem } from './FileList/utils';
 
 interface ExplorerTabProps {
     tabId: string;
@@ -125,9 +126,13 @@ interface ExplorerTabProps {
     pendingPropertiesPath?: string;
     /** 属性对话框已弹出（消费提示） */
     onPropertiesComplete?: () => void;
+    /** 内置终端是否打开：打开且预览面板可见时，内容行向下延伸 24px 越过
+     *  状态栏——预览/文件区底贴紧终端标题栏，状态栏（「N 个项目」）
+     *  叠在预览底部边缘之上、终端标题栏正上方；终端关闭时布局不变 */
+    terminalOpen?: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, onSortByChange, onSortOrderChange, onGroupingToggle, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, onSortByChange, onSortOrderChange, onGroupingToggle, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -498,6 +503,9 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   }, [loadPath, currentPath]);
 
   const handleUp = async () => {
+    // 虚拟目录（仪表盘/回收站）无「上级」概念——直接返回，
+    // 否则 getParentPath('trash://') 会得到 '.' 之类的意外路径
+    if (!currentPath || currentPath === 'app://dashboard' || currentPath === 'trash://') return;
     if (window.electron && currentPath) {
       const parent = await window.electron.getParentPath(currentPath);
       loadPath(parent, true);
@@ -675,7 +683,14 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled]);
     // Selection State
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  /** Shift 范围选择的锚点（方向键/鼠标 Shift 范围从它起算，范围变化时不动） */
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
+  /** 键盘游标（focus）：方向键移动的起点。与锚点分离——按住 Shift 连按
+   *  方向键时游标前进、锚点固定，范围随之扩展/收缩（锚点游标合一模型下
+   *  第二次按键会从锚点重算、范围不扩展） */
+  const [cursorPath, setCursorPath] = useState<string | null>(null);
+  /** type-ahead 键入定位：连续键入累积的前缀与上次键入时间（1.5s 空闲重置） */
+  const typeAheadRef = useRef<{ buffer: string; lastTime: number }>({ buffer: '', lastTime: 0 });
   const [selectionMode, setSelectionMode] = useState<string | null>(null);
   const [modifiers, setModifiers] = useState({ ctrl: false, shift: false });
   const [suppressClickHint, setSuppressClickHint] = useState(false);
@@ -685,6 +700,135 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   const fileListLayoutRef = useRef<{ columns: number; items: ListItem[] } | null>(null);
   /** 方向键导航滚动目标（FileList 据此 scrollToRow，超出视野时滚过去） */
   const [keyboardScrollPath, setKeyboardScrollPath] = useState<string | null>(null);
+  /** 文件区键盘分区容器（Tab 分区循环聚焦落点，方向键/Enter/Space 在此生效） */
+  const fileZoneRef = useRef<HTMLDivElement | null>(null);
+  /** 顶栏三个分区容器：返回上级键 / 地址栏内（Omnibar）/ 分类开关和排序方式 */
+  const upZoneRef = useRef<HTMLSpanElement | null>(null);
+  const omnibarZoneRef = useRef<HTMLDivElement | null>(null);
+  const sortZoneRef = useRef<HTMLDivElement | null>(null);
+
+  /** 顶栏分区通用按钮选择器（含活动态 filled 变体） */
+  const TOP_BAR_BTN_SELECTOR =
+    'md-icon-button, md-filled-icon-button, md-tonal-icon-button, md-outlined-icon-button';
+
+  /**
+   * files 分区 Tab 停靠回调（渲染期同步最新闭包，注册 effect 只经 ref 调用）：
+   * Tab 循环落到文件区时，用**文件区的选择机制**（handleSelect）选中视口内
+   * 第一个可见文件——锚点/游标同步、方向键/Enter 语义不变，且不直接聚焦
+   * 条目元素（避免此前 Tab 聚焦条目引发的键盘崩溃场景）；选中后再把焦点
+   * 放到分区容器上，方向键选择与下一 Tab（循环回 nav）继续生效。
+   */
+  const filesZoneFocusRef = useRef<() => void>(() => {});
+  // eslint-disable-next-line react-hooks/refs -- 渲染期同步命令式回调（稳定 effect 经 ref 读取最新闭包）
+  filesZoneFocusRef.current = () => {
+    const container = fileZoneRef.current;
+    if (!container) return;
+    // 视口内第一个可见文件：条目与分区容器矩形相交（部分可见也算），
+    // DOM 序即显示序（react-window 按序渲染，含 overscan 之外的条目按矩形过滤）
+    const v = container.getBoundingClientRect();
+    let first: IFile | null = null;
+    for (const el of Array.from(container.querySelectorAll<HTMLElement>('.file-list-item'))) {
+      const r = el.getBoundingClientRect();
+      if (r.bottom <= v.top + 1 || r.top >= v.bottom - 1) continue;
+      const path = el.dataset.path;
+      if (!path) continue;
+      first = files.find((f) => f.path === path) ?? null;
+      if (first) break;
+    }
+    if (first) {
+      handleSelect(first, false, false);
+    }
+    container.focus();
+  };
+
+  /**
+   * 键盘分区（files）：Tab 分区循环聚焦进来时选中视口内第一个可见文件
+   * 并聚焦文件区容器（文件条目 tabIndex=-1 不进 Tab 序，方向键选择由
+   * 全局 handler 负责）。仅活动标签页且非仪表盘时注册（仪表盘无文件区）。
+   */
+  useEffect(() => {
+    if (!isActive || currentPath === 'app://dashboard') return;
+    return registerKeyboardZone({
+      id: 'files',
+      focus: () => {
+        filesZoneFocusRef.current();
+      },
+    });
+  }, [isActive, currentPath]);
+
+  /**
+   * 键盘分区（topbar-up / topbar-omnibar / topbar-sort）：顶栏三站
+   * 独立 Tab 停靠——返回上级键（回收站视图无此键，不注册）、地址栏内
+   * （Omnibar 触发钮）、分类开关和排序方式（首按钮）。仪表盘视图无顶栏，
+   * 均不注册（分区循环自动跳过）。
+   */
+  useEffect(() => {
+    if (!isActive || currentPath === 'app://dashboard') return;
+    const cleanups: Array<() => void> = [];
+    if (currentPath !== 'trash://') {
+      cleanups.push(registerKeyboardZone({
+        id: 'topbar-up',
+        focus: () => {
+          upZoneRef.current?.querySelector<HTMLElement>(TOP_BAR_BTN_SELECTOR)?.focus();
+        },
+      }));
+    }
+    cleanups.push(registerKeyboardZone({
+      id: 'topbar-omnibar',
+      focus: () => {
+        omnibarZoneRef.current?.querySelector<HTMLElement>(TOP_BAR_BTN_SELECTOR)?.focus();
+      },
+    }));
+    cleanups.push(registerKeyboardZone({
+      id: 'topbar-sort',
+      focus: () => {
+        sortZoneRef.current?.querySelector<HTMLElement>(TOP_BAR_BTN_SELECTOR)?.focus();
+      },
+    }));
+    return () => {
+      for (const fn of cleanups) fn();
+    };
+  }, [isActive, currentPath]);
+
+  /**
+   * 顶栏分区通用键盘处理（三个分区容器共用）：
+   * - ←/→ 在本容器按钮间循环移动焦点；
+   * - Enter/Space 显式点击焦点按钮（注入键盘事件不合成原生点击）；
+   * - 激活后若焦点回落到 body（变体切换替换元素/视图切换），渲染落定后
+   *   把焦点恢复到同一下标的新按钮；焦点仍在容器内（如 Omnibar 编辑
+   *   输入框）则不动。
+   */
+  const handleTopBarKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    const container = e.currentTarget;
+    const btns = Array.from(container.querySelectorAll<HTMLElement>(TOP_BAR_BTN_SELECTOR));
+    if (btns.length === 0) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      // 事件由本分区消费：阻止冒泡到文件区全局 handler（变体切换替换
+      // 元素时 e.target 脱离 DOM，全局分区守卫会失效——见 18.9 记录）
+      e.stopPropagation();
+      const cur = document.activeElement as HTMLElement | null;
+      const idx = cur ? btns.indexOf(cur) : -1;
+      const next = e.key === 'ArrowRight'
+        ? (idx + 1) % btns.length
+        : (idx <= 0 ? btns.length - 1 : idx - 1);
+      btns[next]?.focus();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el || !container.contains(el) || !btns.includes(el)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const idx = btns.indexOf(el);
+      el.click();
+      requestAnimationFrame(() => {
+        if (document.activeElement && document.activeElement !== document.body) return;
+        const fresh = Array.from(container.querySelectorAll<HTMLElement>(TOP_BAR_BTN_SELECTOR));
+        (fresh[idx] ?? fresh[0])?.focus();
+      });
+    }
+  };
 
   // ── 文件预览面板 ──
   /** 预览区宽度钳制范围（百分比） */
@@ -839,35 +983,65 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     if (!scrollToFileName && prevScrollToRef.current === undefined) {
       setSelectedFiles(new Set());
       setLastSelectedPath(null);
+      setCursorPath(null);
     }
     prevScrollToRef.current = scrollToFileName;
   }, [currentPath, scrollToFileName]);
 
+  /**
+   * 选择核心逻辑（点击/方向键/Shift 范围共用）：
+   * - range：Shift 范围选择——锚点（lastSelectedPath）固定，游标 = 目标项；
+   *   列表 = 扁平序连续区间，网格 = 锚点↔游标为对角线的矩形（跨分类），
+   *   布局取与渲染同源的 layoutRef（缺失时退化为扁平序区间）；
+   *   游标行较短时以锚点行为准（anchorSpan 列区间不收缩，短行取全部）；
+   * - toggle：Ctrl 点击加/减选中，锚点与游标同步到点击项；
+   * - 普通选择：单选并同步锚点与游标。
+   */
   const handleSelect = (file: IFile, toggle: boolean, range: boolean) => {
     const newSelection = new Set(toggle ? selectedFiles : []);
 
-    if (range && lastSelectedPath) {
-      const start = sortedFiles.findIndex(f => f.path === lastSelectedPath);
-      const end = sortedFiles.findIndex(f => f.path === file.path);
-      if (start !== -1 && end !== -1) {
-        const low = Math.min(start, end);
-        const high = Math.max(start, end);
-        for (let i = low; i <= high; i++) {
-          newSelection.add(sortedFiles[i].path);
+    if (range) {
+      const layout = fileListLayoutRef.current;
+      if (lastSelectedPath && layout && layout.items.length > 0) {
+        const anchorSpan = viewMode === 'grid'
+          ? computeAnchorRowSpan(layout.items, lastSelectedPath, selectedFiles)
+          : null;
+        for (const p of computeShiftRange(layout.items, lastSelectedPath, file.path, viewMode, anchorSpan)) {
+          newSelection.add(p);
         }
+        setCursorPath(file.path);
+      } else if (lastSelectedPath) {
+        // 布局未就绪：退化为扁平序连续区间
+        const start = sortedFiles.findIndex((f) => f.path === lastSelectedPath);
+        const end = sortedFiles.findIndex((f) => f.path === file.path);
+        if (start !== -1 && end !== -1) {
+          const low = Math.min(start, end);
+          const high = Math.max(start, end);
+          for (let i = low; i <= high; i++) {
+            newSelection.add(sortedFiles[i].path);
+          }
+        } else {
+          newSelection.add(file.path);
+        }
+        setCursorPath(file.path);
       } else {
+        // 无锚点：Shift 从无选中开始 = 普通单选（锚点与游标 = 目标）
         newSelection.add(file.path);
+        setLastSelectedPath(file.path);
+        setCursorPath(file.path);
       }
     } else if (toggle) {
       if (selectedFiles.has(file.path)) {
         newSelection.delete(file.path);
       } else {
         newSelection.add(file.path);
-        setLastSelectedPath(file.path);
       }
+      setLastSelectedPath(file.path);
+      setCursorPath(file.path);
     } else {
       newSelection.add(file.path);
       setLastSelectedPath(file.path);
+      setCursorPath(file.path);
     }
 
     setSelectedFiles(newSelection);
@@ -897,16 +1071,114 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (document.querySelector('md-dialog[open], .context-menu, [role="dialog"]')) return;
+      // 键盘分区守卫：焦点在导航栏/侧边栏/顶栏等分区内时，由分区自身的
+      // onKeyDown 处理（方向键移动/Enter 激活），文件区快捷键不插手。
+      // 双重判定：e.target 可能因分区激活的变体切换而脱离 DOM（closest 失效），
+      // 此时再以当前焦点元素兜底（分区内已 stopPropagation，双保险）
+      const zoneEl = (e.target as HTMLElement)?.closest?.('[data-kb-zone]');
+      const activeZone = (document.activeElement as HTMLElement | null)?.closest?.('[data-kb-zone]');
+      if (
+        (zoneEl && zoneEl.getAttribute('data-kb-zone') !== 'files') ||
+        (activeZone && activeZone.getAttribute('data-kb-zone') !== 'files')
+      ) {
+        return;
+      }
 
       // 方向键：选择相邻文件（列表=显示序上下左右；网格=二维移动），
       // 阻止默认滚动行为；超出视野时经 scrollToPath 滚动过去。
+      // Ctrl+方向键：网格跳行首/行尾列与首/末行；列表跳首/末项。
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         const layout = fileListLayoutRef.current;
         if (!layout || sortedFiles.length === 0) return;
         e.preventDefault();
-        const target = computeArrowTarget(layout.items, lastSelectedPath, e.key, viewMode);
+        let target: IFile | null = null;
+        if (e.ctrlKey) {
+          target = computeCtrlArrowTarget(layout.items, cursorPath ?? lastSelectedPath, e.key, viewMode);
+        } else {
+          // 从键盘游标起步（Shift 按住时游标前进、锚点固定，范围扩展/收缩）；
+          // 游标缺失（从未选中）时退化为锚点/无锚点语义（取首末项）
+          target = computeArrowTarget(layout.items, cursorPath ?? lastSelectedPath, e.key, viewMode);
+        }
         if (target) {
           handleSelect(target, false, e.shiftKey);
+          setKeyboardScrollPath(target.path);
+        }
+        return;
+      }
+
+      // Home/End：跳首/末项；PageUp/PageDown：翻页（按显示序步进估算）
+      if (e.key === 'Home' || e.key === 'End' || e.key === 'PageUp' || e.key === 'PageDown') {
+        if (sortedFiles.length === 0) return;
+        e.preventDefault();
+        let idx = sortedFiles.findIndex((f) => f.path === (cursorPath ?? lastSelectedPath));
+        if (e.key === 'Home') idx = 0;
+        else if (e.key === 'End') idx = sortedFiles.length - 1;
+        else {
+          // 翻页步长：列表按 10 项估算；网格按 2 行 × 列数估算
+          const layout = fileListLayoutRef.current;
+          const cols = layout ? layout.columns : 1;
+          const step = viewMode === 'grid' ? Math.max(cols * 2, 2) : 10;
+          idx = e.key === 'PageDown'
+            ? Math.min((idx === -1 ? 0 : idx) + step, sortedFiles.length - 1)
+            : Math.max((idx === -1 ? sortedFiles.length - 1 : idx) - step, 0);
+        }
+        const target = sortedFiles[idx];
+        if (target) {
+          handleSelect(target, false, e.shiftKey);
+          setKeyboardScrollPath(target.path);
+        }
+        return;
+      }
+
+      // Enter：打开游标/单选条目（目录进入、文件打开）；空选择且为真实目录时返回上级
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const path = cursorPath ?? (selectedFiles.size === 1 ? Array.from(selectedFiles)[0] : null);
+        if (path) {
+          const f = files.find((x) => x.path === path);
+          if (f) void handleNavigate(f);
+        } else if (currentPath !== 'app://dashboard' && currentPath !== 'trash://') {
+          void handleUp();
+        }
+        return;
+      }
+
+      // Space：切换游标条目选中（不触发列表滚动）
+      if (e.key === ' ') {
+        if (cursorPath) {
+          e.preventDefault();
+          const next = new Set(selectedFiles);
+          if (next.has(cursorPath)) next.delete(cursorPath);
+          else next.add(cursorPath);
+          setSelectedFiles(next);
+          setLastSelectedPath(cursorPath);
+        }
+        return;
+      }
+
+      // Type-ahead 键入定位：文件区/空白焦点下键入字符 → 累积前缀并
+      // 跳到名称匹配的首个条目（1.5s 空闲重置；无匹配时回退为仅本次按键）
+      if (
+        e.key.length === 1 &&
+        e.key !== ' ' &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        sortedFiles.length > 0
+      ) {
+        const ta = typeAheadRef.current;
+        const now = Date.now();
+        if (now - ta.lastTime > 1500) ta.buffer = '';
+        ta.lastTime = now;
+        ta.buffer += e.key.toLowerCase();
+        let target = sortedFiles.find((f) => f.name.toLowerCase().startsWith(ta.buffer));
+        if (!target) {
+          ta.buffer = e.key.toLowerCase();
+          target = sortedFiles.find((f) => f.name.toLowerCase().startsWith(ta.buffer));
+        }
+        if (target) {
+          e.preventDefault();
+          handleSelect(target, false, false);
           setKeyboardScrollPath(target.path);
         }
         return;
@@ -981,7 +1253,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, sortedFiles, selectedFiles, lastSelectedPath, currentPath, loadPath, clipboard, onConfirmDialog, viewMode, handleSelect]);
+  }, [isActive, sortedFiles, selectedFiles, lastSelectedPath, cursorPath, currentPath, files, loadPath, clipboard, onConfirmDialog, viewMode, handleSelect]);
 
   const handleBackgroundContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -1193,16 +1465,17 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   const handleDeselectAll = useCallback(() => {
     setSelectedFiles(new Set());
-    // 清空锚点：方向键导航与 Shift 范围选择都从 lastSelectedPath 起步，
-    // 取消选中后必须同步清除，否则会以旧锚点为基准跳到意料之外的位置
+    // 清空锚点与游标：方向键导航与 Shift 范围选择都从 lastSelectedPath
+    // 起步，取消选中后必须同步清除，否则会以旧锚点为基准跳到意料之外的位置
     setLastSelectedPath(null);
+    setCursorPath(null);
   }, []);
 
   /**
    * 橡皮筋框选回传（FileList → useRubberBandSelection）：
-   * - replace（无修饰键覆盖框选）：锚点设为框选集在显示序中的首个文件，
+   * - replace（无修饰键覆盖框选）：锚点/游标设为框选集在显示序中的首个文件，
    *   与单击选中保持一致的语义（框选不走 handleSelect，锚点必须在此补上）；
-   * - union/intersection/difference（Ctrl/Shift 组合）：保留现有锚点不变，
+   * - union/intersection/difference（Ctrl/Shift 组合）：保留现有锚点/游标不变，
    *   后续方向键/Shift 范围选择仍以最近一次单击的位置为基准。
    */
   const handleBoxSelect = useCallback(
@@ -1214,6 +1487,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       if (mode === "replace") {
         const anchor = sortedFiles.find((f) => paths.has(f.path)) ?? null;
         setLastSelectedPath(anchor ? anchor.path : null);
+        setCursorPath(anchor ? anchor.path : null);
       }
     },
     [sortedFiles],
@@ -1280,15 +1554,17 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   return (
     <div style={{ display: isActive ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
-      {/* Top Bar */}
+      {/* Top Bar（键盘分区三站：topbar-up 返回上级键 / topbar-omnibar 地址栏内 / topbar-sort 分类排序） */}
       {(currentPath !== 'app://dashboard') && (
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', padding: '8px 24px 0' }}>
           {currentPath !== 'trash://' && (
-            <IconButton onClick={handleUp} variant="standard">
-              <Icon name="arrow_upward" />
-            </IconButton>
+            <span ref={upZoneRef} data-kb-zone="topbar-up" onKeyDown={handleTopBarKeyDown} style={{ display: 'inline-flex', flexShrink: 0 }}>
+              <IconButton onClick={handleUp} variant="standard">
+                <Icon name="arrow_upward" />
+              </IconButton>
+            </span>
           )}
-          <div style={{ flex: 1, overflow: 'hidden' }}>
+          <div ref={omnibarZoneRef} data-kb-zone="topbar-omnibar" onKeyDown={handleTopBarKeyDown} style={{ flex: 1, overflow: 'hidden' }}>
             <Omnibar
               currentPath={currentPath}
               onNavigate={(p: string) => loadPath(p, true)}
@@ -1297,14 +1573,16 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               onDropExternalFiles={handleExternalDropOnBreadcrumb}
             />
           </div>
-          <SortControls
-            sortBy={sortBy}
-            sortOrder={sortOrder}
-            groupingEnabled={groupingEnabled}
-            onSortByChange={onSortByChange}
-            onSortOrderChange={onSortOrderChange}
-            onGroupingToggle={onGroupingToggle}
-          />
+          <div ref={sortZoneRef} data-kb-zone="topbar-sort" onKeyDown={handleTopBarKeyDown} style={{ flexShrink: 0 }}>
+            <SortControls
+              sortBy={sortBy}
+              sortOrder={sortOrder}
+              groupingEnabled={groupingEnabled}
+              onSortByChange={onSortByChange}
+              onSortOrderChange={onSortOrderChange}
+              onGroupingToggle={onGroupingToggle}
+            />
+          </div>
         </div>
       )}
 
@@ -1322,7 +1600,17 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           />
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+        // 内置终端打开且预览可见时：内容行向下负外边距 24px（状态栏高度），
+        // 预览/文件区延伸贴紧终端标题栏，状态栏叠在其底部边缘上方（终端标题正上方）
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: 1,
+            overflow: 'hidden',
+            marginBottom: terminalOpen && previewState.kind !== 'hidden' ? -24 : 0,
+          }}
+        >
           {searchActive && (
             <div style={{ padding: '8px 24px', background: 'var(--md-sys-color-surface-container)', color: 'var(--md-sys-color-on-surface-variant)', fontSize: '14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1374,8 +1662,14 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
             </div>
           )}
           {/* 文件列表 + 预览面板行容器：预览区在文件区右侧「挤压」出现，
-              两者一起随内置终端挤压（终端在 content-area 下方，flex 列自动生效） */}
-          <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+              两者一起随内置终端挤压（终端在 content-area 下方，flex 列自动生效）。
+              键盘分区（files）：Tab 分区循环的焦点落点 */}
+          <div
+            ref={fileZoneRef}
+            data-kb-zone="files"
+            tabIndex={-1}
+            style={{ flex: 1, overflow: 'hidden', position: 'relative', outline: 'none' }}
+          >
             <div
               ref={previewRowRef}
               className={previewDragging ? 'file-preview-row file-preview-row--dragging' : 'file-preview-row'}

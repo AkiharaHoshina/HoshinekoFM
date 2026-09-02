@@ -3,6 +3,9 @@
 .file-preview-panel {
   flex-shrink: 0;
   height: 100%;
+  /* content-box 下 height:100% + 上下 padding 会把面板撑高 24px，
+     底部越过 .file-preview-row 陷进状态栏——必须 border-box */
+  box-sizing: border-box;
   min-width: 0;
   display: flex;
   flex-direction: column;

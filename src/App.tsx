@@ -66,6 +66,7 @@ import { useCreateDialog } from "./hooks/useCreateDialog";
 import { useDeviceActions } from "./hooks/useDeviceActions";
 import { useTitleBar } from "./hooks/useTitleBar";
 import { attachNativeDragTracker } from "./utils/nativeDragTracker";
+import { focusNextKeyboardZone, trackKeyboardZoneFocus } from "./utils/focusZones";
 
 function AppContent() {
   const {
@@ -803,6 +804,69 @@ function AppContent() {
     return () => window.removeEventListener('wheel', handler);
   }, []);
 
+  /**
+   * 键盘分区框架（见 utils/focusZones）：
+   * - Tab 在「导航栏 → 侧边栏 → 文件区」分区间循环切换焦点（Shift+Tab
+   *   反向），文件条目不再进 Tab 序（tabIndex=-1，方向键负责选择）；
+   * - 输入框/终端（INPUT/TEXTAREA）与打开的对话框保持浏览器默认 Tab
+   *   行为（对话框内部焦点遍历、xterm 补全不被劫持）；
+   * - document focusin 跟踪当前分区（点击导航栏/侧边栏后 Tab 从该
+   *   分区继续循环）。
+   */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+      if (document.querySelector('md-dialog[open], .context-menu, [role="dialog"]')) return;
+      e.preventDefault();
+      focusNextKeyboardZone(e.shiftKey ? -1 : 1);
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      trackKeyboardZoneFocus(e.target as Element | null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    document.addEventListener('focusin', onFocusIn);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('focusin', onFocusIn);
+    };
+  }, []);
+
+  /**
+   * 标签页快捷键：Ctrl+Tab / Ctrl+Shift+Tab 切换、Ctrl+W 关闭当前、
+   * Ctrl+T 新建（焦点在输入框/对话框内时不拦截）。
+   */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (document.querySelector('md-dialog[open], .context-menu, [role="dialog"]')) return;
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'Tab') {
+        e.preventDefault();
+        if (tabs.length === 0) return;
+        const idx = tabs.findIndex((tab) => tab.id === activeTabId);
+        const next = (((idx + 1) % tabs.length) + tabs.length) % tabs.length;
+        setActiveTabId(tabs[next].id);
+      } else if (e.ctrlKey && e.shiftKey && !e.altKey && e.key === 'Tab') {
+        e.preventDefault();
+        if (tabs.length === 0) return;
+        const idx = tabs.findIndex((tab) => tab.id === activeTabId);
+        const next = (((idx - 1) % tabs.length) + tabs.length) % tabs.length;
+        setActiveTabId(tabs[next].id);
+      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'w' || e.key === 'W')) {
+        e.preventDefault();
+        if (activeTabId) handleCloseTab(activeTabId);
+      } else if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        handleAddTab();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [tabs, activeTabId, setActiveTabId, handleCloseTab, handleAddTab]);
+
   const toggleTerminal = () => {
     // 每次呼出恢复默认高度（关闭时重置无副作用）
     setTerminalHeight(DEFAULT_TERMINAL_HEIGHT);
@@ -1285,6 +1349,7 @@ function AppContent() {
                   filePreviewEnabled={filePreviewEnabled}
                   previewWidth={previewWidth}
                   onPreviewWidthChange={setPreviewWidth}
+                  terminalOpen={terminalOpen}
                 />
               </div>
             ))}

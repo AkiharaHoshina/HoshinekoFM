@@ -12,6 +12,7 @@ import { ContextMenu } from "./ContextMenu";
 import type { ContextMenuItem } from "./ContextMenu";
 import { useDrag } from "../contexts/DragContext";
 import { shouldSuppressDrop } from "../utils/nativeDragTracker";
+import { registerKeyboardZone } from "../utils/focusZones";
 
 /** 侧边栏固定目录条目（仅目录，与仪表盘固定项相互独立） */
 export interface SidebarPinnedItem {
@@ -124,6 +125,63 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   /** 侧边栏滚动容器（边缘自动滚动操作对象） */
   const asideRef = useRef<HTMLElement | null>(null);
+
+  /** 键盘导航最近聚焦的条目（Tab 分区切换时聚焦回它） */
+  const kbFocusRef = useRef<HTMLElement | null>(null);
+
+  /**
+   * 键盘分区（sidebar）：主窗口与选择器窗口均注册——Tab 分区循环聚焦
+   * 进来时落到当前路径对应条目（或上次聚焦条目/首项）；区内 ↑/↓ 在
+   * 全部可交互条目（位置/固定项/设备）间按可视顺序移动焦点，Enter/Space
+   * 由条目自身处理（原生按钮/既有 onKeyDown）。
+   */
+  useEffect(() => {
+    return registerKeyboardZone({
+      id: 'sidebar',
+      focus: () => {
+        const aside = asideRef.current;
+        if (!aside) return;
+        const items = Array.from(aside.querySelectorAll<HTMLElement>('.sidebar-item, .sidebar-partition'));
+        if (items.length === 0) return;
+        const target =
+          items.find((el) => el.classList.contains('active')) ??
+          (kbFocusRef.current && aside.contains(kbFocusRef.current) ? kbFocusRef.current : null) ??
+          items[0];
+        target.focus();
+      },
+    });
+     
+  }, []);
+
+  /** 区内键盘：↑/↓ 按可视顺序（DOM 顺序）在可交互条目间循环移动焦点；
+   *  Enter 显式点击焦点按钮——原生按钮的 Enter→click 合成对注入型键盘
+   *  事件（e2e/辅助工具）不可靠，且 div 条目（固定/分区）自带 onKeyDown
+   *  处理 Enter/Space，这里只处理原生 BUTTON，避免双重激活 */
+  const handleSidebarKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      e.stopPropagation();
+      const aside = asideRef.current;
+      if (!aside) return;
+      const items = Array.from(aside.querySelectorAll<HTMLElement>('.sidebar-item, .sidebar-partition'));
+      if (items.length === 0) return;
+      const cur = document.activeElement as HTMLElement | null;
+      const idx = cur ? items.indexOf(cur) : -1;
+      const next = e.key === 'ArrowDown'
+        ? (idx + 1) % items.length
+        : (idx <= 0 ? items.length - 1 : idx - 1);
+      items[next]?.focus();
+      return;
+    }
+    if (e.key === 'Enter') {
+      const t = e.target as HTMLElement | null;
+      if (t && t.tagName === 'BUTTON' && asideRef.current?.contains(t)) {
+        e.preventDefault();
+        e.stopPropagation();
+        t.click();
+      }
+    }
+  };
 
   // 供文档级监听器读取最新数据（监听器在 effect 中注册一次，见 TabBar 同款模式）
   const placesRef = useRef(places);
@@ -553,13 +611,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside className="sidebar" ref={asideRef}>
+    <aside
+      className="sidebar"
+      ref={asideRef}
+      data-kb-zone="sidebar"
+      onKeyDown={handleSidebarKeyDown}
+      onFocusCapture={(e) => {
+        const t = e.target as HTMLElement;
+        if (t.matches?.('.sidebar-item, .sidebar-partition')) {
+          kbFocusRef.current = t;
+        }
+      }}
+    >
       <div className="sidebar-section">
         <h3 className="sidebar-title">{t("sidebar.places")}</h3>
         <div className="sidebar-list">
           {!isPicker && (
             <button
               className={`sidebar-item ${currentPath === "app://dashboard" ? "active" : ""}`}
+              tabIndex={-1}
               onClick={() => onNavigate("app://dashboard")}
             >
               <Icon
@@ -582,6 +652,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   key={place.path}
                   className={`sidebar-item ${!pinnedSamePath && currentPath === place.path ? "active" : ""} ${dragOverTarget === `${TARGET_PREFIX_PLACE}${place.path}` ? "drag-over" : ""}`}
                   data-sidebar-target={`${TARGET_PREFIX_PLACE}${place.path}`}
+                  tabIndex={-1}
                   onClick={() => onNavigate(place.path)}
                 >
                   <Icon
@@ -608,7 +679,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className={`sidebar-item ${currentPath === item.path ? "active" : ""} ${dragOverTarget === `${TARGET_PREFIX_PLACE}${item.path}` ? "drag-over" : ""}`}
                 data-sidebar-target={`${TARGET_PREFIX_PLACE}${item.path}`}
                 role="button"
-                tabIndex={0}
+                tabIndex={-1}
                 onClick={() => onNavigate(item.path)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -648,6 +719,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               className={`sidebar-item sidebar-add-pin ${dragOverTarget === TARGET_PIN ? "drag-over" : ""}`}
               data-sidebar-target={TARGET_PIN}
+              tabIndex={-1}
               onClick={() => { void handlePickPinDir(); }}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -710,6 +782,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         marqueeEnabled={marqueeEnabled}
                         dropTarget={`${TARGET_PREFIX_DEVICE}${part.devicePath}`}
                         dragOver={dragOverTarget === `${TARGET_PREFIX_DEVICE}${part.devicePath}`}
+                        tabIndex={-1}
                       />
                     ))}
                   </>
@@ -726,6 +799,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     showEject
                     dropTarget={`${TARGET_PREFIX_DEVICE}${disk.devicePath}`}
                     dragOver={dragOverTarget === `${TARGET_PREFIX_DEVICE}${disk.devicePath}`}
+                    tabIndex={-1}
                   />
                 )}
               </div>
@@ -739,7 +813,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   className={`sidebar-item sidebar-partition ${!volume.mounted ? "unmounted" : ""} ${isActive ? "active" : ""} ${dragOverTarget === `${TARGET_PREFIX_GVFS}${gvfsKey}` ? "drag-over" : ""}`}
                   data-sidebar-target={`${TARGET_PREFIX_GVFS}${gvfsKey}`}
                   role="button"
-                  tabIndex={0}
+                  tabIndex={-1}
                   onClick={() => { void handleGvfsClick(volume); }}
                   onContextMenu={(e) => onGvfsContextMenu?.(e, volume)}
                   onKeyDown={(e) => {

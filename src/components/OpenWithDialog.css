@@ -1,0 +1,6 @@
+/* 程序列表条目键盘焦点提示环：Tab 停靠或方向键细选时的焦点落点。
+   :focus-visible 保证鼠标点击（无键盘焦点环）不出现多余描边 */
+.open-with-item:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
+}

@@ -15,6 +15,8 @@ interface IconButtonProps {
   className?: string;
   style?: React.CSSProperties;
   title?: string;
+  /** 无障碍标签（转发到宿主元素的 aria-label） */
+  ariaLabel?: string;
   onClick?: React.MouseEventHandler<HTMLElement>;
   onDragOver?: React.DragEventHandler<HTMLElement>;
   onDragEnter?: React.DragEventHandler<HTMLElement>;
@@ -43,6 +45,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
   type,
   style,
   title,
+  ariaLabel,
   onClick,
   onDragOver,
   onDragEnter,
@@ -62,6 +65,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
       type={type ?? 'button'}
       style={style}
       title={title}
+      aria-label={ariaLabel}
       onClick={onClick}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}

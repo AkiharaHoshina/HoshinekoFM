@@ -255,7 +255,7 @@ function ListRowItem({
       onDrop={
         file.isDirectory ? (e) => data.onFolderDrop(e, file) : undefined
       }
-      tabIndex={0}
+      tabIndex={-1}
       role="button"
     >
       <FileIconDisplay
@@ -335,7 +335,7 @@ function GridRowItem({
       onDrop={
         file.isDirectory ? (e) => data.onFolderDrop(e, file) : undefined
       }
-      tabIndex={0}
+      tabIndex={-1}
       role="button"
     >
       <FileIconDisplay

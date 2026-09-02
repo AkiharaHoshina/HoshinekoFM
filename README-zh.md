@@ -35,7 +35,7 @@ Hoshineko 文件管理器是一款基于 Material 3 设计语言、Electron 和 
 - **界面缩放**：整页缩放 50%–200%，全窗口（含文件选择器）实时同步。
 - **自定义 M3 标题栏**（可选，默认跟随系统）：frameless 窗口 + 最小化/最大化还原/关闭三按钮 + 「v」窗口菜单 + 实时窗口标题（仪表盘 →「Hoshineko Nya~」、回收站或目录名/完整路径）同步至任务栏——平铺 WM（niri/hyprland/i3/sway）自动隐藏、常规 DE 显示、可手动覆盖；保留 F12 开发人员工具。
 - **智能右键菜单**：按条目类型（文件/目录/设备/回收站/背景）动态生成菜单项，适配触屏长按操作。
-- **选择与快捷键**：Ctrl/Shift 多选、Ctrl+A、橡皮筋框选（4 种模式 + 边缘自动滚动）、方向键选择导航（列表视图沿显示序移动、网格视图二维移动且列位钳制——边缘不环绕、越界自动滚动）、Delete/Shift+Delete/Ctrl+C/X/V、F5。
+- **选择与快捷键**：Ctrl/Shift 多选、Ctrl+A、橡皮筋框选（4 种模式 + 边缘自动滚动）与**全键盘导航体系**——Tab 在「功能栏 → places → 标签页 → 返回上级键 → 地址栏内 → 分类排序 → 文件区」分区间循环（反向 Shift+Tab；仪表盘为 存储/固定项/最近访问 三子区），分区内方向键移动、Enter/Space 激活；文件区方向键 = 移动选择（列表沿显示序、网格二维移动且列位钳制——边缘不环绕、越界最小滚动），Shift+方向键 / Shift+点击 = 范围选择（网格矩形跨分类连续，以**锚点行为基准**——比基准短的行取全部），Home/End、PageUp/PageDown、Ctrl+方向键、Space 切换选中、type-ahead 键入定位；对话框保持原生 Tab 序（如「打开方式」：搜索框 → 程序列表第一项 → 取消 → 打开，方向键细选应用）并校正为最小滚动；Delete/Shift+Delete/Ctrl+C/X/V、F5、Ctrl+T/W/Tab。
 - **国际化**：12 种语言，确定时应用并跨窗口同步。
 
 ## 从原项目的重构和更改
@@ -149,7 +149,7 @@ scheme-monochrome：单色/黑白灰调。
 
 ## 测试
 
-端到端测试位于 `scripts/e2e/`（24 套用例，无测试框架——Electron 自身驱动真实构建，`sendInputEvent` 模拟输入、`executeJavaScript` 断言）：
+端到端测试位于 `scripts/e2e/`（27 套用例，无测试框架——Electron 自身驱动真实构建，`sendInputEvent` 模拟输入、`executeJavaScript` 断言）：
 
 ```bash
 npm run e2e                # 先构建，再依次运行 scripts/e2e/*.test.cjs

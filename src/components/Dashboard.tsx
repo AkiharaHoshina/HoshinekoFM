@@ -4,6 +4,7 @@ import { ContextMenu } from './ContextMenu';
 import { MarqueeText } from './MarqueeText';
 import './Dashboard.css';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { registerKeyboardZone } from '../utils/focusZones';
 import type { IFile, AllDevice } from '../types/files';
 import { getDeviceIcon } from '../utils/deviceUtils';
 import { t as ti } from '../i18n';
@@ -143,6 +144,86 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
   const [storageCards, setStorageCards] = useState<StorageCard[]>([]);
 
   const [recentFiles] = useLocalStorage<IFile[]>('dashboard.recent', []);
+
+  /**
+   * 键盘分区（dashboard-storage / dashboard-pinned / dashboard-recent）：
+   * 仪表盘三个子区域各自作为独立 Tab 停靠（顺序：存储 → 固定项 → 最近访问）。
+   * 区内 ↑/↓ 在条目间移动焦点；Enter/Space 显式点击（注入键盘事件
+   * 不合成原生点击；存储卡自带 onKeyDown，激活走其既有路径）。
+   */
+  const storageZoneRef = useRef<HTMLDivElement | null>(null);
+  const pinnedZoneRef = useRef<HTMLDivElement | null>(null);
+  const recentZoneRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    return registerKeyboardZone({
+      id: 'dashboard-storage',
+      focus: () => {
+        storageZoneRef.current?.querySelector<HTMLElement>('.storage-sub')?.focus();
+      },
+    });
+  }, []);
+
+  // 固定项/最近访问为空时仍注册（聚焦无条目时落空即可），保持分区顺序稳定
+  useEffect(() => {
+    return registerKeyboardZone({
+      id: 'dashboard-pinned',
+      focus: () => {
+        pinnedZoneRef.current?.querySelector<HTMLElement>('.pinned-item')?.focus();
+      },
+    });
+  }, []);
+
+  useEffect(() => {
+    return registerKeyboardZone({
+      id: 'dashboard-recent',
+      focus: () => {
+        recentZoneRef.current?.querySelector<HTMLElement>('.recent-item')?.focus();
+      },
+    });
+  }, []);
+
+  /** 仪表盘子区域通用键盘：↑/↓ 在条目间移动；Enter/Space 激活焦点条目 */
+  const handleZoneKeyDown = (e: React.KeyboardEvent<HTMLElement>, itemSelector: string) => {
+    const container = e.currentTarget;
+    const items = Array.from(container.querySelectorAll<HTMLElement>(itemSelector));
+    if (items.length === 0) return;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      e.stopPropagation();
+      const cur = document.activeElement as HTMLElement | null;
+      const idx = cur ? items.indexOf(cur) : -1;
+      const next = e.key === 'ArrowDown'
+        ? (idx + 1) % items.length
+        : (idx <= 0 ? items.length - 1 : idx - 1);
+      items[next]?.focus();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && container.contains(el) && items.includes(el)) {
+        e.preventDefault();
+        e.stopPropagation();
+        el.click();
+      }
+    }
+  };
+
+  /** 存储子区键盘：条目自带 Enter/Space 处理（onKeyDown），容器只负责 ↑/↓ 移动 */
+  const handleStorageZoneKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    const container = e.currentTarget;
+    const items = Array.from(container.querySelectorAll<HTMLElement>('.storage-sub'));
+    if (items.length === 0) return;
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const cur = document.activeElement as HTMLElement | null;
+    const idx = cur ? items.indexOf(cur) : -1;
+    const next = e.key === 'ArrowDown'
+      ? (idx + 1) % items.length
+      : (idx <= 0 ? items.length - 1 : idx - 1);
+    items[next]?.focus();
+  };
 
   /**
    * 供仪表盘右键菜单「刷新」调用。effect 挂载时赋值为内部 refresh 的
@@ -350,7 +431,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
             <span>{t('dashboard.storage')}</span>
           </div>
           {storageCards.length > 0 ? (
-            <div className="storage-list">
+            <div
+              ref={storageZoneRef}
+              className="storage-list"
+              data-kb-zone="dashboard-storage"
+              onKeyDown={handleStorageZoneKeyDown}
+            >
               {storageCards.map((card) => (
                 <div
                   key={`${card.label}-${card.path}`}
@@ -398,11 +484,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
             <Icon name="push_pin" filled />
             <span>{t('dashboard.pinned')}</span>
           </div>
-          <div className="pinned-grid">
+          <div
+            ref={pinnedZoneRef}
+            className="pinned-grid"
+            data-kb-zone="dashboard-pinned"
+            onKeyDown={(e) => handleZoneKeyDown(e, '.pinned-item')}
+          >
             {pinnedItems.map((item, idx) => (
               <div
                 key={idx}
                 className={`pinned-item${dragOverIndex === idx ? ' pinned-item--drag-over' : ''}`}
+                role="button"
+                tabIndex={-1}
                 draggable
                 onDragStart={(e) => handlePinDragStart(e, idx)}
                 onDragOver={(e) => handlePinDragOver(e, idx)}
@@ -435,6 +528,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
             ))}
             <div
               className="pinned-item add-pin"
+              role="button"
+              tabIndex={-1}
               onClick={(e) => {
                 e.stopPropagation();
                 setRefreshMenuPos(null);
@@ -469,12 +564,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
             <Icon name="history" filled />
             <span>{t('dashboard.recent')}</span>
           </div>
-          <div className="recent-list">
+          <div
+            ref={recentZoneRef}
+            className="recent-list"
+            data-kb-zone="dashboard-recent"
+            onKeyDown={(e) => handleZoneKeyDown(e, '.recent-item')}
+          >
             {recentFiles.length === 0 ? (
               <div className="recent-placeholder">{t('dashboard.no_recent')}</div>
             ) : (
               recentFiles.slice(0, 10).map((file, idx) => (
-                <div key={idx} className="recent-item" onClick={() => onNavigate(file.path)}>
+                <div
+                  key={idx}
+                  className="recent-item"
+                  role="button"
+                  tabIndex={-1}
+                  onClick={() => onNavigate(file.path)}
+                >
                   <Icon name={file.isDirectory ? 'folder' : 'article'} size={20} />
                   <MarqueeText enabled={marqueeEnabled} className="recent-name" title={file.path}>
                     {t(file.name)}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
 import { Icon } from './Icon';
@@ -6,6 +6,7 @@ import { OutlinedTextField } from './md';
 import { showToast } from '../utils/toast';
 import { formatFileOpError } from '../utils/fileOperations';
 import { t as ti } from '../i18n';
+import './OpenWithDialog.css';
 
 interface OpenWithDialogProps {
     open: boolean;
@@ -40,6 +41,13 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
   const [recommendedApps, setRecommendedApps] = useState<AppEntry[]>([]);
   const [search, setSearch] = useState('');
   const [selectedApp, setSelectedApp] = useState<AppEntry | null>(null);
+  /**
+   * 键盘焦点索引（roving tabindex）：Tab 从搜索框停靠到该项（初始为
+   * 程序列表第一项），↑/↓ 在条目间细选并同步更新选中应用。
+   */
+  const [kbIdx, setKbIdx] = useState(0);
+  /** 程序列表滚动容器：键盘细选时聚焦条目（浏览器自动滚入视口） */
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -58,6 +66,30 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
     return allApps.filter(app => app.name.toLowerCase().includes(search.toLowerCase()));
   }, [allApps, search]);
 
+  /** 是否处于搜索过滤状态（仅空白字符视为未搜索） */
+  const isSearching = search.trim().length > 0;
+
+  /**
+   * 键盘遍历的扁平列表，与渲染顺序一致：
+   * 无搜索 = 推荐程序 + 所有应用程序；搜索时 = 过滤结果。
+   */
+  const flatApps = useMemo(() => {
+    return isSearching ? filteredAllApps : [...recommendedApps, ...allApps];
+  }, [isSearching, filteredAllApps, recommendedApps, allApps]);
+
+  /**
+   * 重新打开或搜索词变化时把键盘焦点重置到列表第一项；选中应用被
+   * 过滤掉时清除选中（避免「打开」按钮启用却指向不可见应用）。
+   */
+  useEffect(() => {
+    setKbIdx(0); // eslint-disable-line react-hooks/set-state-in-effect -- 打开/搜索时重置键盘焦点到首项
+    setSelectedApp((prev) => (prev && flatApps.includes(prev) ? prev : null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 open/search 变化时重置
+  }, [open, search]);
+
+  /** 键盘焦点索引钳制到当前列表长度（异步加载应用后列表可能收缩） */
+  const kb = Math.min(kbIdx, Math.max(0, flatApps.length - 1));
+
   // 核心修复：加入容错捕获，防止后端 spawn 找不到执行文件时主进程抛错崩溃
   const handleConfirm = async () => {
     if (selectedApp) {
@@ -72,10 +104,59 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
     }
   };
 
-  const renderAppItem = (app: AppEntry, idx: number) => (
+  /** 移动键盘焦点并选中第 idx 项（roving tabindex + 聚焦滚入视口） */
+  const moveToListIndex = (idx: number) => {
+    const app = flatApps[idx];
+    if (!app) return;
+    setKbIdx(idx);
+    setSelectedApp(app);
+    listRef.current?.querySelector<HTMLElement>(`[data-kb-index="${idx}"]`)?.focus();
+  };
+
+  /**
+   * 程序列表键盘导航：↑/↓ 在条目间细选（循环）、Home/End 跳首尾、
+   * Enter 打开当前选中应用。Tab 保持浏览器默认焦点序
+   * （搜索框 → 列表当前项 → 取消 → 打开，可用时），md-dialog 焦点
+   * 陷阱负责两端循环。
+   */
+  const handleListKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (flatApps.length === 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      e.stopPropagation();
+      const next = e.key === 'ArrowDown'
+        ? (kb + 1) % flatApps.length
+        : (kb <= 0 ? flatApps.length - 1 : kb - 1);
+      moveToListIndex(next);
+      return;
+    }
+    if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      e.stopPropagation();
+      moveToListIndex(e.key === 'Home' ? 0 : flatApps.length - 1);
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void handleConfirm();
+    }
+  };
+
+  /**
+   * 单个应用条目：role="option" 的 roving tabindex 成员。
+   * 点击与聚焦（Tab 停靠/方向键移动）都同步选中，保证「打开」按钮
+   * 与焦点项一致。
+   */
+  const renderAppItem = (app: AppEntry, flatIdx: number) => (
     <div
-      key={`${app.name}-${idx}`}
-      onClick={() => setSelectedApp(app)}
+      key={`${app.name}-${flatIdx}`}
+      role="option"
+      aria-selected={selectedApp === app}
+      data-kb-index={flatIdx}
+      tabIndex={flatIdx === kb ? 0 : -1}
+      className="open-with-item"
+      onClick={() => { setSelectedApp(app); setKbIdx(flatIdx); }}
+      onFocus={() => { setSelectedApp(app); setKbIdx(flatIdx); }}
       style={{
         display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px',
         borderRadius: '8px',
@@ -111,20 +192,26 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
           style={{ width: '100%' }}
         />
 
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {recommendedApps.length > 0 && !search && (
+        <div
+          ref={listRef}
+          role="listbox"
+          aria-label={tOpenWith('All Applications')}
+          onKeyDown={handleListKeyDown}
+          style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}
+        >
+          {recommendedApps.length > 0 && !isSearching && (
             <>
-              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-primary)', marginTop: '8px', paddingLeft: '12px' }}>
+              <div role="presentation" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-primary)', marginTop: '8px', paddingLeft: '12px' }}>
                 {tOpenWith('Recommended')}
               </div>
               {recommendedApps.map((app, idx) => renderAppItem(app, idx))}
-              <div style={{ height: '1px', background: 'var(--md-sys-color-outline-variant)', margin: '8px 0' }} />
-              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-primary)', paddingLeft: '12px' }}>
+              <div role="presentation" style={{ height: '1px', background: 'var(--md-sys-color-outline-variant)', margin: '8px 0' }} />
+              <div role="presentation" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--md-sys-color-primary)', paddingLeft: '12px' }}>
                 {tOpenWith('All Applications')}
               </div>
             </>
           )}
-          {filteredAllApps.map((app, idx) => renderAppItem(app, idx))}
+          {filteredAllApps.map((app, idx) => renderAppItem(app, (isSearching ? 0 : recommendedApps.length) + idx))}
         </div>
       </div>
     </Dialog>

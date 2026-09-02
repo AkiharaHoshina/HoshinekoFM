@@ -28,6 +28,8 @@ No unit-test framework — e2e tests live in `scripts/e2e/` (Electron main-proce
   - **md-select 程序化选择**：`select(value)` 是静默的（不派发事件），须补 `dispatchEvent(new Event('input'))` 才触发 React onInput（harness 已封装 `selectOption`）；选项是宿主**轻 DOM** 子节点（非 shadow）。
   - **标题栏标题断言**：跑马灯（MarqueeText）会把文本复制多份渲染，textContent 不可靠——读 `.title-bar-title .marquee-container` 的 title 属性；重载后启动路径异步解析（初始为默认仪表盘标签），须 waitFor 目标标题。
   - **portal 后端总线名**：e2e 用独立名 `…hoshineko.e2e`（`setupPortalFileChooser` 的 busName 覆盖），避免与运行中的应用实例抢标准名。
+  - **注入键盘事件的 Enter 不合成原生按钮点击**：sendInputEvent/CDP 注入的 keydown Enter 不触发 `<button>` 的 Enter→click 默认行为（Space keyup 反而可以）——键盘导航的「Enter 激活」在应用内显式 `click()`（NavigationRail/Sidebar 均如此），测试不要依赖原生合成。
+  - **导航栏活动项是 `md-filled-icon-button` 变体**：标准 `md-icon-button` 选择器不含活动项——e2e 15 按标准按钮计下标（0..3 = 仪表盘/回收站/终端/设置，活动项 Files 不计入）；激活导致变体切换替换元素丢焦点，应用内键盘激活后经 rAF 恢复同下标焦点（测试勿依赖激活后的焦点落点，必要时显式 focus）。
   - 菜单/按钮文案按中英文双匹配（`/取消|Cancel/`），规避系统语言差异。
   - 对话框内容超出视口时点击前 `scrollIntoView`。
 - harness 有 120s 全局看门狗，任何挂起会强制退出并报 WATCHDOG TIMEOUT。

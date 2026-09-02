@@ -30,6 +30,16 @@
   user-select: none;
 }
 
+/* 无原生控件行的键盘焦点（主题颜色入口）：Tab 停靠提示环。
+   其余行的焦点落在行内控件（Switch/Button）上，不会命中本规则。
+   行无水平内边距，焦点环向外偏移（两侧各留几像素），不遮挡行内
+   图标与文字 */
+.settings-row:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
 .settings-row__start {
   display: flex;
   align-items: center;

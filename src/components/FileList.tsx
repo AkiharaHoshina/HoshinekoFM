@@ -64,7 +64,7 @@ interface FileListProps {
   disableNativeDrag?: boolean;
   /**
    * 方向键导航滚动目标（ExplorerTab 在方向键选择后设置）：滚动到该
-   * 路径所在行（align smart，已在视野内则不滚动）。
+   * 路径所在行（align auto——最小滚动，已在视野内则不滚动）。
    */
   scrollToPath?: string | null;
   /**
@@ -242,6 +242,9 @@ const FileListComponent: React.FC<FileListProps> = ({
 
   // 方向键导航滚动：scrollToPath 变化时滚动到该条目所在行。
   // 列表未挂载时不消费目标（等 listEl 就绪后效果重试再滚）。
+  // align "auto"：最小滚动——目标行完整可见时不滚，否则只滚动到恰好
+  // 完整显示（react-window v2 的 "smart" 在行不可见时退化为居中，
+  // 一次方向键会跳半屏，视觉上误导）。
   const prevKeyboardScrollPathRef = useRef<string | null>(null);
   useEffect(() => {
     if (!scrollToPath || scrollToPath === prevKeyboardScrollPathRef.current) return;
@@ -251,7 +254,7 @@ const FileListComponent: React.FC<FileListProps> = ({
     prevKeyboardScrollPathRef.current = scrollToPath;
     const idx = findItemIndexOfPath(layout.items, scrollToPath);
     if (idx !== -1) {
-      listElNow.scrollToRow({ index: idx, align: "smart" });
+      listElNow.scrollToRow({ index: idx, align: "auto" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- listImperativeRef 为稳定 ref 对象
   }, [scrollToPath, listEl]);
@@ -279,7 +282,10 @@ const FileListComponent: React.FC<FileListProps> = ({
       const isModifier = e.ctrlKey || e.metaKey;
       const isRange = e.shiftKey;
       if (isModifier || isRange) {
-        lastClickRef.current = { path: file.path, time: Date.now() };
+        // 修饰键点击不参与双击检测：记录 lastClickRef 会让
+        // 「Shift/Ctrl 点击后快速再点同项」被误判为双击（触发
+        // 打开/导航而非单选）——清空并重建配对仅由普通点击负责
+        lastClickRef.current = null;
         onSelect(file, isModifier, isRange);
         return;
       }

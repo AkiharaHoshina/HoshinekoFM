@@ -48,6 +48,93 @@
 
 - 版本号升至 `0.11.27`
 
+## v0.11.28 — 全键盘导航框架与文件区交互修复（分区 Tab 循环、Shift 范围基准行、对话框键盘语义）
+
+### 迭代修复（文件预览面板底部陷入状态栏）
+
+- **根因**：`.file-preview-panel` 的 `height: 100%` 在 content-box 下与上下 `padding: 12px` 叠加——面板实际高度 = 行高 + 24px，底部越过 `.file-preview-row` 溢出到状态栏区域（面板底与窗口底重合）
+- **修复**（FilePreviewPanel.css）：面板补 `box-sizing: border-box`（高度含 padding，与行高严格一致）；CDP 实测面板 bottom 与状态栏顶部对齐
+
+### 预览区与内置终端的联动（终端打开时预览底贴紧终端标题栏）
+
+- **需求**：内置终端打开时，预览区底部贴紧终端标题栏；「N 个项目」状态栏不消失，而是叠在预览底部边缘之上、**实时贴紧终端标题栏**（终端标题正上方）；终端关闭时保持原布局（预览底 = 状态栏顶部、状态栏原位）
+- **实现**：App 把 `terminalOpen` 传入 ExplorerTab——终端打开且预览面板可见时，内容行负下外边距 24px（状态栏高度）向下延伸，状态栏仍在根布局原位（DOM 后序自然覆盖预览底边）；终端高度拖动时状态栏随根布局实时跟随
+- 验证：CDP 实测终端关闭 panel.bottom=995=状态栏顶；终端打开 panel.bottom=598=终端标题栏顶、状态栏 574–598 贴于标题栏正上方
+
+### Shift+方向键范围选择（一期：锚点/游标分离 + 网格矩形）
+
+- **需求**：Shift+方向键多选——列表沿显示序连续区间；网格以开始项与游标为对角线选矩形；UI 键盘导航另行评估（可行性报告第十八节，二期）
+- **修复核心缺陷（锚点/游标合一）**：`lastSelectedPath` 同时当锚点与游标导致按住 Shift 连按方向键范围不扩展——新增 `cursorPath` 状态分离游标：Shift+方向键游标前进、锚点固定，范围随之扩展/收缩；普通方向键单选并同步两者
+- **网格矩形**：`FileList/utils.ts` 新增 `computeShiftRange`——列表 = 扁平序 anchor↔cursor 连续区间；网格 = (row, col) 对角线的矩形（每行取列区间、按行长度钳制），分组头跳过（矩形**跨分类连续**，后续迭代修订）；鼠标 Shift+点击共用同一函数（顺带修复网格 Shift 点击的扁平锯齿语义）
+- **同步面**：点击/Ctrl 点击/框选（replace）/取消选中/换目录全部同步锚点与游标；无锚点时 Shift 退化单选
+- e2e 21d（网格矩形扩展两次/加列/收缩/组内截断/鼠标 Shift 点击矩形）+ 21e（列表 Shift 连续扩展/收缩）
+
+### 键盘分区与 Tab 循环（二期：UI 键盘导航框架）
+
+- **需求**：Tab 不应用于选择文件（修复 Tab 聚焦条目 + Shift 方向键的崩溃场景）；Tab 在「导航栏 → 侧边栏 → 文件区」分区间循环切换焦点（Shift+Tab 反向），分区内方向键移动、Enter 激活
+- **崩溃根因实录**：Enter 激活导航栏活动项时，活动态切换把 `md-icon-button` 换成 `md-filled-icon-button`（元素被替换、焦点丢失）——同一 keydown 继续冒泡到文件区全局 handler，分区守卫读到脱离 DOM 的事件目标失效；Enter 分支走 `handleUp` → `getParentPath('trash://')` = `dirname('trash://')` = **'.'** → 加载 '.'（应用 cwd）——表现即 Tab+方向键/Enter 组合后视图乱跳（用户报「崩溃」）
+- **修复**：
+  - NavigationRail 活动项**统一用同一 `md-icon-button` 标签**（`selected` 切换 filled 视觉）——活动态切换不再替换元素、焦点保持
+  - ExplorerTab `handleUp`/Enter 分支对虚拟目录（仪表盘/回收站）早退（虚拟目录无上级）
+  - 文件条目 `tabIndex=-1` 移出 Tab 序（Tab 不再选择文件）
+- **键盘分区框架**（`src/utils/focusZones.ts`）：分区注册/注销 + focusin 跟踪当前分区 + Tab 循环（焦点不在当前分区时先落入当前分区）；App 全局拦截 Tab（输入框/终端/对话框不拦）——拦截链：对话框 guard → INPUT/TEXTAREA guard → 分区循环
+- **分区内导航**：导航栏 ↑/↓ roving tabindex + Enter/Space 显式 click（**注入键盘事件的 Enter 不合成原生按钮点击**——实测 Space keyup 可以、Enter keydown 不行）；侧边栏 ↑/↓ 按可视顺序循环 + Enter 显式点击原生按钮（div 条目自带 onKeyDown 不双重激活）；文件区 Enter 打开游标/单选条目、空选择回上级（虚拟目录除外）、Space 切换选中、Home/End 首末项、PageUp/PageDown 翻页估算、Ctrl+方向键网格跳行首行尾/首末行
+- **标签页快捷键**（App 级）：Ctrl+Tab/Ctrl+Shift+Tab 切换、Ctrl+W 关闭、Ctrl+T 新建
+- **IconButton**：补 `ariaLabel` 转发（此前导航栏 aria-label 从未渲染——顺手修复）
+- e2e 25（分区循环/焦点不落条目/导航栏 Enter 激活/侧边栏方向键+Enter/文件区 Enter+Space/崩溃场景压测）；e2e 15 导航栏下标随统一标签修正
+
+### 键盘分区扩充（标签栏/顶栏）+ 三期（type-ahead 与选择器统一）
+
+- **需求**：标签页（TabBar）、Omnibar 与分类开关/排序方式也应能 Tab 轮流选中；执行三期（type-ahead 键入定位 + 选择器窗口键盘语义统一）
+- **分区扩充**：新增 `tabbar`（标签条目 + 新标签按钮，←/→ + Enter 激活，roving tabindex）与 `topbar`（向上/Omnibar/排序分组控件组，←/→ + Enter/Space 显式点击）；Tab 循环顺序固定为 **tabbar → topbar → nav → sidebar → files**（`ZONE_ORDER`，未注册分区自动跳过）；SortControls 活动态改单标签 `selected`（variant 切换替换元素会丢焦点）
+- **type-ahead 键入定位**（主窗口 + 选择器）：文件区/空白焦点下键入字符累积前缀（1.5s 空闲重置），跳转到名称匹配的首个条目并选中滚动；无匹配回退仅本次按键
+- **选择器窗口键盘语义统一**（三期）：FilePicker 引入同一套分区框架（Tab 拦截 + focusin 跟踪 + files/topbar 分区注册，Sidebar 分区不再区分窗口）；方向键选择（**跳过不可选条目**——folder 模式的普通文件沿同方向继续走）、Shift 范围（网格矩形，锚点游标分离）、Home/End、Space 切换、type-ahead；Enter 确认/Esc 取消沿用既有语义；FileList 接入 layoutRef/scrollToPath（与主窗口同源布局）
+- e2e 25 重写（新分区循环全链路 + type-ahead + 顶栏 Enter 进入 Omnibar 编辑态）；e2e 26（选择器 Tab 循环/方向键/Shift 扩展/Space/type-ahead/Enter 确认回传）
+
+### 迭代修复（功能栏高亮失效 + 仪表盘 Tab 失效 + 分区顺序调整）
+
+- **功能栏高亮失效根因**：为修焦点丢失曾把活动项统一为 `md-icon-button` + `selected`——MD web 的 `selected` 视觉要求 `toggle` 属性（内部 `.selected` 类仅在 `this.toggle && this.selected` 时挂载），标准变体下高亮完全不显示。**修复**：恢复 `filled` 变体切换（原高亮视觉）；键盘激活后变体替换元素丢焦点的问题改为 **rAF 后按同下标恢复焦点**（仅当焦点回落到 body 时——Omnibar 编辑输入框等焦点仍在容器内的场景不抢焦点）。SortControls 同步恢复
+- **仪表盘 Tab 失效根因**：仪表盘视图下 `files` 分区仍注册（聚焦落点容器不存在 → Tab 落到空处）、顶栏分区也未按视图跳过——分区循环在仪表盘几乎不可用
+- **分区顺序调整**（用户约定）：`ZONE_ORDER` = nav（功能栏）→ sidebar（places）→ tabbar（标签页）→ topbar-up（返回上级键，回收站无此键自动跳过）→ topbar-omnibar（地址栏内）→ topbar-sort（分类开关和排序方式）→ **dashboard-storage → dashboard-pinned → dashboard-recent**（仪表盘三子区）→ files；未注册分区自动跳过——文件页顺序即 功能栏-places-标签页-返回上级键-地址栏内-分类排序-文件区，仪表盘顺序即 功能栏-places-标签页-存储-固定项-最近访问
+- **顶栏拆分**：原单一 topbar 分区拆为三站（各自独立 Tab 停靠 + 区内 ←/→ + Enter/Space 激活）；仪表盘新增三子区（Dashboard 组件注册，存储卡自带 Enter/Space、固定项/最近访问容器级 Enter 点击，↑/↓ 条目间移动，条目 tabIndex=-1）
+- e2e 25 按新顺序重写（含仪表盘三子区循环与激活、顶栏三站循环）；e2e 26 选择器循环改为 sidebar → topbar-omnibar → topbar-sort → files
+
+### 迭代修复（分类开关激活后 Tab 失效）
+
+- **根因**：顶栏分区内 Enter 激活「分类开关/排序按钮」时变体切换（standard↔filled）替换元素、事件目标脱离 DOM——文件区全局 handler 的分区守卫失效，Enter 分支误触发 `handleUp`（跳到上级目录）；焦点也被带回 files 分区，Tab 循环看似中断（后续 Tab 从 files 继续而非排序分区）
+- **修复**：
+  - 所有分区级键盘处理（导航栏/顶栏/侧边栏/标签栏/仪表盘子区）在消费方向键与 Enter/Space 时补 `e.stopPropagation()`——事件不再冒泡到文件区全局 handler
+  - 文件区全局 handler 的分区守卫改**双重判定**：e.target 之外再以 `document.activeElement` 兜底（目标脱离 DOM 时仍能识别分区）
+- 验证：CDP 实测 分类开关 Enter 后焦点保持 topbar-sort（新按钮）、Tab 正常前进 files 再循环回 nav，标题不再误跳上级目录；全套 36 项 e2e 全绿
+
+### 迭代修复（Shift 范围选择 + 键盘选择滚动量）
+
+- **修饰键点击污染双击检测**（FileList handleItemClick）：Shift/Ctrl 点击把 lastClickRef 记为目标项，「Shift+点击后快速再点同项」被误判为双击（触发打开/导航而非单选）——修饰键点击改为清空 lastClickRef，双击/慢双击（重命名）配对仅由普通点击建立
+- **键盘选择滚动量**（FileList scrollToPath）：react-window v2 的 `scrollToRow align "smart"` 在目标行不可见时退化为**居中**（实测选中视口最后一项按 Down 滚动 475px ≈ 5 行，视觉误导）——改为 `align "auto"`：目标行完整可见不滚，否则只滚动到恰好完整显示（同场景实测 85px ≈ 1 行）
+- e2e 21d 鼠标 Shift+点击补 shift 预置 mouseMove（注入事件修饰键以最新输入为准，避免偶发丢 shift）+ 失败信息带实际值；新增 e2e 21f：列表/网格 Down 越出视口滚动量 ≤ 一行高度
+
+### 迭代修复（对话框键盘导航：打开方式弹窗 Tab 顺序 + 设置主题入口）
+
+- **打开方式弹窗**（OpenWithDialog）：程序列表改为 `role="listbox"` 的 roving tabindex 条目——Tab 顺序 = 搜索框 → 程序列表第一项 → 取消 → 打开（可用时）→ 循环；停靠/方向键移动即选中（「打开」同步启用），↑/↓ 循环细选、Home/End 跳首尾、Enter 打开；搜索变化/重开时焦点重置首项、选中项被过滤则清除；新增 OpenWithDialog.css 焦点环
+- **设置弹窗**（SettingsDialog）：主题颜色入口行无原生控件（色点 span 不可聚焦），补 `role="button"` + `tabIndex=0` + Enter/Space 显式激活（注入键盘事件不合成原生点击），Tab 可停靠并打开二级主题颜色对话框；焦点环向外偏移 3px 不遮挡行内图标与文字
+- e2e 27：27a 打开方式弹窗 Tab 全链路（首停靠/细选/取消/打开/循环回搜索框）；27b 设置 Tab 聚焦主题入口 + Enter 打开二级对话框
+
+### 迭代修复（对话框焦点滚动校正 + 网格 Shift 跨分类 + files 分区 Tab 选择）
+
+- **对话框焦点滚动校正**（Dialog）：Chromium 对移出视口的焦点目标默认**居中滚动**（Tab 与 `focus()` 均如此）——打开方式列表 ↓ 细选一次跳 ~242px、设置弹窗 Tab 遍历一次跳 ~250px，视觉误导。focusin 后延迟校正（焦点滚动的 scroll 事件比 focusin 晚约 2ms 派发）：把目标所在的滚动容器（对话框 shadow `.scroller` + 嵌套 light-DOM 滚动 div）逐一校正为最小滚动——目标在视口外只滚到恰好完整显示，已可见但本次聚焦刚引发滚动（居中跳屏）则按焦点移动方向贴底/贴顶回滚。实现要点：shadow scroller 的 scroll 事件不穿透 shadow 边界到 window 捕获（实测），且 Lit 首帧渲染异步——`.scroller` 需 rAF 重试后直接挂监听；slotted 内容对 `scroller.contains` 返回 false，须沿光 DOM 上溯 `assignedSlot` 判定归属
+- **网格 Shift 跨分类**（FileList/utils `computeShiftRange`）：开启分类后网格矩形遇分组头由 `break` 改为跳过——Shift 范围选择（方向键/鼠标 Shift+点击）可跨分类连续（中间组行按列区间钳制纳入）
+- **files 分区 Tab 选择首可见文件**（ExplorerTab）：Tab 循环落到文件区时，用文件区选择机制（`handleSelect`，锚点/游标同步）选中视口内第一个可见文件再聚焦分区容器——不直接聚焦条目元素（避免 Tab 聚焦条目引发的键盘崩溃场景）；下一 Tab 照旧循环回功能栏
+- e2e 27c（对话框滚动量：打开方式 ↓ 增量 ≤ 条目高度、设置聚焦底部控件贴底最小滚动）；21d 组内截断改跨分类断言；25 补 files 分区选中首可见文件断言
+
+### 迭代修复（网格 Shift 短行/跨分类：锚点行为基准）
+
+- **场景**：第一行 5 个、第二行 3 个，先选中第一行全部再 Shift 选第二行——原实现以游标列为准收缩列区间，变成「每行 3 个」（锚点行丢掉后两列）；跨分类时同样复现（从短行继续 Shift+Down 到满行，游标行「够长」后游标重新控制区间，把已建立的 5 列缩回 3 列）
+- **修复**（`FileList/utils.ts`）：新增 `computeAnchorRowSpan`——取锚点行当前选中的列区间（含锚点列）传入 `computeShiftRange`；列区间规则以**锚点行（基准行）**为准——游标在锚点行内时游标完全控制（行内收缩/扩展不变）；游标在其他行（含跨分类）时锚点行选区**不收缩**、游标只能在基准两侧扩展，短行按列区间钳制取全部（第一行 5 个、第二行 3 个时两行分别选 5/3；继续 Down 到满行也不缩回 3 个）
+- **同步面**：主窗口 handleSelect 与选择器窗口（FilePicker）统一传入锚点行列区间（Shift 更新前的选中集计算）
+- e2e 21g（动态构造「满列行 + 3 项短行」鼠标/键盘两条路径）；21h（跨分类三组 5/3/5：Folders 满行 → Media 短行 → Documents 满行，键盘 Shift+Down 与鼠标 Shift+点击均保持 5/3/5）；21d 收缩断言随基准语义更新（游标在其他行 Left 只左扩不收缩）；harness 新增 `shiftClickEl`（mouseMove 预置 shift 修饰防注入事件丢修饰键）
+
+- 版本号升至 `0.11.28`
+
 ## v0.11.26 — 项目重命名彻底收尾（material-3 遗留清理）
 
 - **npm 包名**：package.json `name` 由 `material-3-file-manager` 改为 **`hoshineko-fm`**（v0.11.20 仅 `app.setName` 修正运行时前缀，包名一直是旧名，DMS 前缀已不出现但包身份未改）；`appId` 由 `com.material3.filemanager` 改为 `com.hoshineko.fm`

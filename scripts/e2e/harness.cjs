@@ -445,6 +445,20 @@ async function rightClickEl(win, selector, opts = {}) {
 }
 
 /**
+ * Shift+点击指定元素：先移动（带 shift 修饰）再按下/抬起——注入事件
+ * 的修饰键状态以最新输入事件为准，move 预置可避免 down/up 偶发丢 shift。
+ */
+async function shiftClickEl(win, selector, opts = {}) {
+  const c = await elementCenter(win, selector, opts.index ?? 0);
+  const zf = win.webContents.getZoomFactor();
+  const x = Math.round(c.x * zf);
+  const y = Math.round(c.y * zf);
+  await win.webContents.sendInputEvent({ type: 'mouseMove', x, y, modifiers: ['shift'] });
+  await win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1, modifiers: ['shift'] });
+  await win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1, modifiers: ['shift'] });
+}
+
+/**
  * 双击指定元素：发送两对 down/up（间隔 60ms）——应用内导航用
  * 手动双次 click 检测（lastClickRef + 时间阈值），必须产生两个
  * 独立 click 事件；第二对带 clickCount:2 使浏览器 dblclick 语义正确。
@@ -596,6 +610,7 @@ module.exports = {
   clickAt,
   clickEl,
   rightClickEl,
+  shiftClickEl,
   doubleClickEl,
   key,
   hotkey,

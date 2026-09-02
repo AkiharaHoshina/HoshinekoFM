@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ToastContainer } from 'react-toastify';
 import { FileList } from './FileList';
 import { Omnibar } from './Omnibar';
@@ -19,6 +19,8 @@ import { TitleBar } from './TitleBar';
 import { showToast, shortPath } from '../utils/toast';
 import { sortFiles } from '../utils/fileSort';
 import { t, useLocale } from '../i18n';
+import { registerKeyboardZone, focusNextKeyboardZone, trackKeyboardZoneFocus } from '../utils/focusZones';
+import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, type ListItem } from './FileList/utils';
 import type { IFile, AllDevice, GvfsVolume } from '../types/files';
 import type { ThemeConfig } from '../types/theme';
 import type { PickerConfig, PickerFilter } from '../types/picker';
@@ -65,6 +67,22 @@ const FilePicker: React.FC = () => {
   const [files, setFiles] = useState<IFile[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
+  /** 键盘游标（focus）：与主窗口同语义——Shift+方向键游标前进锚点固定 */
+  const [cursorPath, setCursorPath] = useState<string | null>(null);
+  /** type-ahead 键入定位缓冲（与主窗口同语义） */
+  const typeAheadRef = useRef<{ buffer: string; lastTime: number }>({ buffer: '', lastTime: 0 });
+  /** FileList 渲染期回传的布局（方向键/矩形范围计算用） */
+  const fileListLayoutRef = useRef<{ columns: number; items: ListItem[] } | null>(null);
+  /** 方向键导航滚动目标 */
+  const [keyboardScrollPath, setKeyboardScrollPath] = useState<string | null>(null);
+  /** 文件区键盘分区容器 */
+  const fileZoneRef = useRef<HTMLDivElement | null>(null);
+  /** 顶栏两个分区容器（地址栏内 / 分类排序） */
+  const omnibarZoneRef = useRef<HTMLDivElement | null>(null);
+  const sortZoneRef = useRef<HTMLDivElement | null>(null);
+  /** 顶栏分区通用按钮选择器（含活动态 filled 变体） */
+  const TOP_BAR_BTN_SELECTOR =
+    'md-icon-button, md-filled-icon-button, md-tonal-icon-button, md-outlined-icon-button';
   /** 保存模式：文件名输入框（初值 = 保存请求方声明的默认文件名） */
   const [fileName, setFileName] = useState('');
   /** 选择器窗口标题（标题栏 + document.title 同步） */
@@ -301,7 +319,10 @@ const FilePicker: React.FC = () => {
 
   /** 单选/ctrl 多选/shift 范围选择（各模式均支持多选；folder 模式只选目录，
    *  file/files 只选文件，items 两者皆可选）。
-   *  保存模式无选择语义：点击文件 = 把文件名填入输入框。 */
+   *  保存模式无选择语义：点击文件 = 把文件名填入输入框。
+   *  键盘语义与主窗口统一：锚点（lastSelectedPath）与游标（cursorPath）
+   *  分离——Shift 范围时锚点固定游标前进；网格 Shift 为矩形（跨分类，
+   *  游标行较短时以锚点行为准取全部）。 */
   const handleSelect = useCallback(
     (file: IFile, toggle: boolean, range: boolean) => {
       if (config?.mode === 'save') {
@@ -310,19 +331,33 @@ const FilePicker: React.FC = () => {
       }
       if (!isSelectable(file)) return;
       if (range && lastSelectedPath) {
-        const start = displayFiles.findIndex((f) => f.path === lastSelectedPath);
-        const end = displayFiles.findIndex((f) => f.path === file.path);
-        if (start !== -1 && end !== -1) {
-          const next = new Set<string>();
-          const lo = Math.min(start, end);
-          const hi = Math.max(start, end);
-          for (let i = lo; i <= hi; i++) {
-            if (isSelectable(displayFiles[i])) next.add(displayFiles[i].path);
+        const layout = fileListLayoutRef.current;
+        let paths: Set<string>;
+        if (layout && layout.items.length > 0) {
+          const anchorSpan = viewMode === 'grid'
+            ? computeAnchorRowSpan(layout.items, lastSelectedPath, selected)
+            : null;
+          paths = computeShiftRange(layout.items, lastSelectedPath, file.path, viewMode, anchorSpan);
+        } else {
+          const start = displayFiles.findIndex((f) => f.path === lastSelectedPath);
+          const end = displayFiles.findIndex((f) => f.path === file.path);
+          paths = new Set<string>();
+          if (start !== -1 && end !== -1) {
+            const lo = Math.min(start, end);
+            const hi = Math.max(start, end);
+            for (let i = lo; i <= hi; i++) {
+              if (isSelectable(displayFiles[i])) paths.add(displayFiles[i].path);
+            }
           }
-          setSelected(next);
-          setLastSelectedPath(file.path);
-          return;
         }
+        const next = new Set<string>();
+        for (const p of paths) {
+          const f = displayFiles.find((x) => x.path === p);
+          if (f && isSelectable(f)) next.add(p);
+        }
+        if (next.size > 0) setSelected(next);
+        setCursorPath(file.path);
+        return;
       }
       setSelected((prev) => {
         const next = new Set(prev);
@@ -336,17 +371,20 @@ const FilePicker: React.FC = () => {
         return next;
       });
       setLastSelectedPath(file.path);
+      setCursorPath(file.path);
     },
-    [isSelectable, lastSelectedPath, displayFiles, config],
+    [isSelectable, lastSelectedPath, displayFiles, config, viewMode, selected],
   );
 
   /** 橡皮筋框选：过滤掉不可选类型，其余全部选中（folder 模式此前强制单选，现与其余模式一致支持多选）。
-   *  保存模式无框选语义：直接忽略。 */
+   *  保存模式无框选语义：直接忽略。覆盖框选后锚点/游标 = 框选集首个（显示序）。 */
   const handleSetSelected = useCallback(
     (paths: Set<string>) => {
       if (config?.mode === 'save') return;
       const valid = displayFiles.filter((f) => paths.has(f.path) && isSelectable(f));
       setSelected(new Set(valid.map((f) => f.path)));
+      setLastSelectedPath(valid[0]?.path ?? null);
+      setCursorPath(valid[0]?.path ?? null);
     },
     [displayFiles, isSelectable, config],
   );
@@ -400,25 +438,198 @@ const FilePicker: React.FC = () => {
     [config, isSelectable, loadPath, currentPath, joinPath],
   );
 
-  /** Enter 确认 / Esc 取消（Omnibar 编辑输入框内不拦截）；
-   *  保存模式：Enter = 确定（文件名非空时；输入框内的 Enter 由
-   *  输入框自身的 onKeyDown 处理） */
+  /**
+   * 选择器键盘语义（与主窗口统一，三期）：
+   * - Tab 在「顶栏 → 侧边栏 → 文件区」分区间循环（Shift+Tab 反向）；
+   * - 文件区：方向键选择（跳过不可选条目）、Shift 范围（网格矩形）、
+   *   Home/End 首末项、Space 切换选中、type-ahead 键入定位；
+   * - Enter 确认 / Esc 取消沿用既有语义（Omnibar 编辑输入框内不拦截）。
+   */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+
+      if (e.key === 'Tab') {
+        if (document.querySelector('md-dialog[open], .context-menu, [role="dialog"]')) return;
+        e.preventDefault();
+        focusNextKeyboardZone(e.shiftKey ? -1 : 1);
+        return;
+      }
+
+      // 键盘分区守卫：侧边栏/顶栏分区内由分区自身处理（方向键移动/Enter 激活）。
+      // 双重判定：e.target 可能因变体切换脱离 DOM，以当前焦点元素兜底
+      const zoneEl = target?.closest?.('[data-kb-zone]');
+      const activeZone = (document.activeElement as HTMLElement | null)?.closest?.('[data-kb-zone]');
+      if (
+        (zoneEl && zoneEl.getAttribute('data-kb-zone') !== 'files') ||
+        (activeZone && activeZone.getAttribute('data-kb-zone') !== 'files')
+      ) {
+        return;
+      }
+
       if (e.key === 'Enter') {
         if (config?.mode === 'save') {
           if (fileName.trim()) confirm();
         } else if (selected.size > 0) {
           confirm();
         }
+        return;
       }
-      if (e.key === 'Escape') cancel();
+      if (e.key === 'Escape') {
+        cancel();
+        return;
+      }
+
+      // 保存模式无文件选择语义（Enter 确定已处理，方向键交给滚动默认行为）
+      if (config?.mode === 'save') return;
+
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const layout = fileListLayoutRef.current;
+        if (!layout || displayFiles.length === 0) return;
+        e.preventDefault();
+        let targetFile = computeArrowTarget(layout.items, cursorPath ?? lastSelectedPath, e.key, viewMode);
+        // 跳过不可选条目（folder 模式的文件等）——沿同方向继续走
+        let guard = 0;
+        while (targetFile && !isSelectable(targetFile) && guard < layout.items.length) {
+          targetFile = computeArrowTarget(layout.items, targetFile.path, e.key, viewMode);
+          guard++;
+        }
+        if (targetFile) {
+          handleSelect(targetFile, false, e.shiftKey);
+          setKeyboardScrollPath(targetFile.path);
+        }
+        return;
+      }
+
+      if (e.key === 'Home' || e.key === 'End') {
+        if (displayFiles.length === 0) return;
+        e.preventDefault();
+        const idx = e.key === 'Home' ? 0 : displayFiles.length - 1;
+        const targetFile = displayFiles[idx];
+        if (targetFile && isSelectable(targetFile)) {
+          handleSelect(targetFile, false, e.shiftKey);
+          setKeyboardScrollPath(targetFile.path);
+        }
+        return;
+      }
+
+      if (e.key === ' ') {
+        if (cursorPath) {
+          const f = displayFiles.find((x) => x.path === cursorPath);
+          if (f && isSelectable(f)) {
+            e.preventDefault();
+            setSelected((prev) => {
+              const next = new Set(prev);
+              if (next.has(cursorPath)) next.delete(cursorPath);
+              else next.add(cursorPath);
+              return next;
+            });
+            setLastSelectedPath(cursorPath);
+          }
+        }
+        return;
+      }
+
+      // type-ahead 键入定位（与主窗口同语义，仅可选条目参与匹配）
+      if (
+        e.key.length === 1 &&
+        e.key !== ' ' &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        displayFiles.length > 0
+      ) {
+        const ta = typeAheadRef.current;
+        const now = Date.now();
+        if (now - ta.lastTime > 1500) ta.buffer = '';
+        ta.lastTime = now;
+        ta.buffer += e.key.toLowerCase();
+        let targetFile = displayFiles.find((f) => isSelectable(f) && f.name.toLowerCase().startsWith(ta.buffer));
+        if (!targetFile) {
+          ta.buffer = e.key.toLowerCase();
+          targetFile = displayFiles.find((f) => isSelectable(f) && f.name.toLowerCase().startsWith(ta.buffer));
+        }
+        if (targetFile) {
+          e.preventDefault();
+          handleSelect(targetFile, false, false);
+          setKeyboardScrollPath(targetFile.path);
+        }
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [confirm, cancel, selected.size, config, fileName]);
+  }, [confirm, cancel, selected.size, config, fileName, displayFiles, cursorPath, lastSelectedPath, viewMode, isSelectable, handleSelect]);
+
+  /** focusin 跟踪当前分区（Tab 循环从最近聚焦的分区继续） */
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      trackKeyboardZoneFocus(e.target as Element | null);
+    };
+    document.addEventListener('focusin', onFocusIn);
+    return () => document.removeEventListener('focusin', onFocusIn);
+  }, []);
+
+  /** 键盘分区（files）：Tab 分区循环聚焦落点 */
+  useEffect(() => {
+    return registerKeyboardZone({
+      id: 'files',
+      focus: () => {
+        fileZoneRef.current?.focus();
+      },
+    });
+  }, []);
+
+  /** 键盘分区（topbar-omnibar / topbar-sort）：选择器顶栏两站（无返回上级键） */
+  useEffect(() => {
+    const cleanups: Array<() => void> = [];
+    cleanups.push(registerKeyboardZone({
+      id: 'topbar-omnibar',
+      focus: () => {
+        omnibarZoneRef.current?.querySelector<HTMLElement>(TOP_BAR_BTN_SELECTOR)?.focus();
+      },
+    }));
+    cleanups.push(registerKeyboardZone({
+      id: 'topbar-sort',
+      focus: () => {
+        sortZoneRef.current?.querySelector<HTMLElement>(TOP_BAR_BTN_SELECTOR)?.focus();
+      },
+    }));
+    return () => {
+      for (const fn of cleanups) fn();
+    };
+  }, []);
+
+  /** 顶栏分区通用键盘（←/→ 移动 + Enter/Space 激活 + 焦点恢复），与主窗口同构 */
+  const handleTopBarKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    const container = e.currentTarget;
+    const btns = Array.from(container.querySelectorAll<HTMLElement>(TOP_BAR_BTN_SELECTOR));
+    if (btns.length === 0) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      e.stopPropagation();
+      const cur = document.activeElement as HTMLElement | null;
+      const idx = cur ? btns.indexOf(cur) : -1;
+      const next = e.key === 'ArrowRight'
+        ? (idx + 1) % btns.length
+        : (idx <= 0 ? btns.length - 1 : idx - 1);
+      btns[next]?.focus();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el || !container.contains(el) || !btns.includes(el)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const idx = btns.indexOf(el);
+      el.click();
+      requestAnimationFrame(() => {
+        if (document.activeElement && document.activeElement !== document.body) return;
+        const fresh = Array.from(container.querySelectorAll<HTMLElement>(TOP_BAR_BTN_SELECTOR));
+        (fresh[idx] ?? fresh[0])?.focus();
+      });
+    }
+  };
 
   /** 文件名输入变化：剔除路径分隔符与控制字符（防路径注入），限长 255 */
   const handleFileNameChange = useCallback((e: Event) => {
@@ -551,30 +762,54 @@ const FilePicker: React.FC = () => {
 
         <main className="picker-main">
           <div className="picker-topbar">
-            <Omnibar
-              currentPath={currentPath}
-              onNavigate={(p) => { void loadPath(p); }}
-              onSearch={(q) => { void handleSearch(q); }}
-              onDropFiles={() => {}}
-              onDropExternalFiles={() => {}}
-            />
-            <SortControls
-              sortBy={sortBy}
-              sortOrder={sortOrder}
-              groupingEnabled={groupingEnabled}
-              onSortByChange={setSortBy}
-              onSortOrderChange={setSortOrder}
-              onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}
-            />
+            <div
+              ref={omnibarZoneRef}
+              data-kb-zone="topbar-omnibar"
+              onKeyDown={handleTopBarKeyDown}
+              style={{ flex: 1, overflow: 'hidden', minWidth: 0 }}
+            >
+              <Omnibar
+                currentPath={currentPath}
+                onNavigate={(p) => { void loadPath(p); }}
+                onSearch={(q) => { void handleSearch(q); }}
+                onDropFiles={() => {}}
+                onDropExternalFiles={() => {}}
+              />
+            </div>
+            <div
+              ref={sortZoneRef}
+              data-kb-zone="topbar-sort"
+              onKeyDown={handleTopBarKeyDown}
+              style={{ flexShrink: 0 }}
+            >
+              <SortControls
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                groupingEnabled={groupingEnabled}
+                onSortByChange={setSortBy}
+                onSortOrderChange={setSortOrder}
+                onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}
+              />
+            </div>
           </div>
-          <div className="picker-filelist">
+          <div
+            ref={fileZoneRef}
+            className="picker-filelist"
+            data-kb-zone="files"
+            tabIndex={-1}
+            style={{ outline: 'none' }}
+          >
             <FileList
               files={displayFiles}
               selectedFiles={selected}
               onSelect={handleSelect}
               onNavigate={handleNavigate}
               onSetSelected={handleSetSelected}
-              onDeselectAll={() => setSelected(new Set())}
+              onDeselectAll={() => {
+                setSelected(new Set());
+                setLastSelectedPath(null);
+                setCursorPath(null);
+              }}
               viewMode={viewMode}
               iconSize={iconSize}
               filledIcons={filledIcons}
@@ -583,6 +818,8 @@ const FilePicker: React.FC = () => {
               currentPath={currentPath}
               allowBoxFromItems
               disableNativeDrag
+              scrollToPath={keyboardScrollPath}
+              layoutRef={fileListLayoutRef}
             />
           </div>
         </main>

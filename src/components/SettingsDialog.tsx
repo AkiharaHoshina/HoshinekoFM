@@ -307,8 +307,22 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             <Switch selected={filledIcons} onClick={onToggleFilledIcons} />
           </div>
 
-          {/* 主题颜色入口：打开二级颜色设置对话框 */}
-          <div className="settings-row" onClick={onThemeColor}>
+          {/* 主题颜色入口：打开二级颜色设置对话框。
+              无原生控件的行（色点 span 不可聚焦），显式 role="button" +
+               tabIndex 让它进入 Tab 停靠；Enter/Space 显式激活（注入键盘
+              事件不合成原生点击） */}
+          <div
+            className="settings-row"
+            role="button"
+            tabIndex={0}
+            onClick={onThemeColor}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onThemeColor();
+              }
+            }}
+          >
             <div className="settings-row__start">
               <Icon name="palette" />
               <div className="settings-row__label">

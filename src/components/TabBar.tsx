@@ -4,6 +4,7 @@ import { t } from '../i18n';
 import { showToast } from '../utils/toast';
 import { useDrag } from '../contexts/DragContext';
 import { shouldSuppressDrop } from '../utils/nativeDragTracker';
+import { registerKeyboardZone } from '../utils/focusZones';
 import type { IFile } from '../types/files';
 import './TabBar.css';
 
@@ -71,6 +72,69 @@ export const TabBar: React.FC<TabBarProps> = ({
 }) => {
   const { getDragState, endDrag } = useDrag();
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
+  /** 键盘当前项下标（0..tabs.length-1 = 标签页，tabs.length = 新标签按钮） */
+  const [kbIdx, setKbIdx] = useState(0);
+  const kbIdxRef = useRef(kbIdx);
+  const barRef = useRef<HTMLDivElement | null>(null);
+
+  // 活动标签变化时同步键盘当前项
+  useEffect(() => {
+    const i = tabs.findIndex((tab) => tab.id === activeTabId);
+    if (i !== -1) setKbIdx(i); // eslint-disable-line react-hooks/set-state-in-effect -- 外部 active 变化同步游标
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随活动标签变化同步
+  }, [activeTabId]);
+
+  useEffect(() => {
+    kbIdxRef.current = kbIdx;
+  }, [kbIdx]);
+
+  /** 键盘可聚焦项：标签条目（.tab-item）＋新标签按钮（.new-tab-btn） */
+  const kbItems = (): HTMLElement[] => {
+    const bar = barRef.current;
+    if (!bar) return [];
+    return Array.from(bar.querySelectorAll<HTMLElement>('.tab-item, .new-tab-btn'));
+  };
+
+  /**
+   * 键盘分区（tabbar）：Tab 分区循环聚焦进来时落在活动标签上；
+   * 区内 ←/→ 在「标签页 + 新标签按钮」间移动（roving tabindex），
+   * Enter 激活（显式 click——注入键盘事件的 Enter 不合成原生点击）。
+   */
+  useEffect(() => {
+    return registerKeyboardZone({
+      id: 'tabbar',
+      focus: () => {
+        const items = kbItems();
+        (items[kbIdxRef.current] ?? items[0])?.focus();
+      },
+    });
+  }, []);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    const items = kbItems();
+    if (items.length === 0) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      e.stopPropagation();
+      const count = items.length;
+      const cur = document.activeElement as HTMLElement | null;
+      const idx = cur ? items.indexOf(cur) : -1;
+      const next = e.key === 'ArrowRight'
+        ? (idx + 1) % count
+        : (idx <= 0 ? count - 1 : idx - 1);
+      setKbIdx(next);
+      items[next]?.focus();
+      return;
+    }
+    if (e.key === 'Enter') {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && barRef.current?.contains(el)) {
+        e.preventDefault();
+        e.stopPropagation();
+        el.click();
+      }
+    }
+  };
 
   // 始终指向最新的 tabs/回调，供文档级原生事件监听器使用
   const tabsRef = useRef(tabs);
@@ -178,17 +242,21 @@ export const TabBar: React.FC<TabBarProps> = ({
   }, [getDragState, handleTabDrop]);
 
   return (
-    <div className="tab-bar">
-      {tabs.map(tab => (
+    <div className="tab-bar" ref={barRef} data-kb-zone="tabbar" onKeyDown={handleKeyDown}>
+      {tabs.map((tab, index) => (
         <div
           key={tab.id}
           data-tab-id={tab.id}
           className={`tab-item ${tab.id === activeTabId ? 'active' : ''} ${tab.id === dragOverTabId ? 'drag-over' : ''}`}
+          // roving tabindex：键盘当前项可聚焦，其余移出 Tab 序（Tab 交给分区循环）
+          tabIndex={index === kbIdx ? 0 : -1}
+          role="button"
           onClick={() => onTabClick(tab.id)}
         >
           <span className="tab-title">{getTabTitle(tab.title)}</span>
           <button
             className="tab-close-btn"
+            tabIndex={-1}
             onClick={(e) => {
               e.stopPropagation();
               onTabClose(tab.id);
@@ -198,7 +266,11 @@ export const TabBar: React.FC<TabBarProps> = ({
           </button>
         </div>
       ))}
-      <button className="new-tab-btn" onClick={onNewTab}>
+      <button
+        className="new-tab-btn"
+        tabIndex={kbIdx === tabs.length ? 0 : -1}
+        onClick={onNewTab}
+      >
         <Icon name="add" />
       </button>
     </div>

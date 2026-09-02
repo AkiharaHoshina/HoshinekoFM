@@ -24,6 +24,9 @@ interface SidebarPartitionItemProps {
   dropTarget?: string;
   /** 拖拽悬停高亮：当前光标命中的目标条目 */
   dragOver?: boolean;
+  /** Tab 序索引：主窗口键盘分区模式下传 -1（Tab 只做分区循环，
+   *  分区内方向键移动）；选择器窗口保持默认 0 */
+  tabIndex?: number;
 }
 
 export const SidebarPartitionItem: React.FC<SidebarPartitionItemProps> = ({
@@ -38,6 +41,7 @@ export const SidebarPartitionItem: React.FC<SidebarPartitionItemProps> = ({
   showEject = false,
   dropTarget,
   dragOver = false,
+  tabIndex = 0,
 }) => {
   return (
     <div
@@ -45,7 +49,7 @@ export const SidebarPartitionItem: React.FC<SidebarPartitionItemProps> = ({
       className={`sidebar-item sidebar-partition ${!device.mounted ? "unmounted" : ""} ${isActive ? "active" : ""} ${dragOver ? "drag-over" : ""}`}
       data-sidebar-target={dropTarget}
       role="button"
-      tabIndex={0}
+      tabIndex={tabIndex}
       onClick={() => onPartitionClick(device)}
       onContextMenu={(e) => {
         e.preventDefault();

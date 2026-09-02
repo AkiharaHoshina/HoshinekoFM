@@ -35,7 +35,7 @@ The Hoshineko file explorer is a modification and reconstruction of [bhimio1](ht
 - **UI Zoom**: whole-page zoom (50%–200%) synced across all windows, including the file picker.
 - **Custom M3 Title Bar** (optional, default follows the system): frameless window with minimize / maximize-restore / close buttons, a "v" window menu, and a live window title (dashboard → "Hoshineko Nya~", trash, or the directory name / full path) synced to the taskbar — hidden automatically on tiling WMs (niri/hyprland/i3/sway), shown on stacking DEs, with manual override; F12 devtools preserved.
 - **Smart Context Menu**: menu items generated dynamically per item type (files/folders/devices/trash/background), with touch long-press support.
-- **Selection & Shortcuts**: Ctrl/Shift multi-select, Ctrl+A, rubber-band selection (4 modes with edge auto-scroll), arrow-key selection navigation (list view moves along the display order; grid view moves two-dimensionally with column clamping — no wrap at edges, auto-scrolls into view), Delete/Shift+Delete/Ctrl+C/X/V, F5.
+- **Selection & Shortcuts**: Ctrl/Shift multi-select, Ctrl+A, rubber-band selection (4 modes with edge auto-scroll), and a full keyboard-navigation system — Tab cycles focus zones (nav rail → places → tab bar → up button → omnibar → sort controls → file area, and back; dashboard zones: storage/pinned/recent), Enter/Space activate controls, arrows move within each zone; in the file area arrows move the selection (list view along the display order; grid view two-dimensionally with column clamping — no wrap at edges, minimal auto-scroll into view), Shift+arrows / Shift+click = range selection (the grid rectangle spans groups, with the **anchor row as the baseline** — rows shorter than the anchor's span take all their items), Home/End, PageUp/PageDown, Ctrl+arrows, Space toggles selection, type-ahead jumps to a name; dialogs keep their native Tab order (e.g. "Open With": search → first app → Cancel → Open, arrows fine-select apps) with minimal-scroll focus correction; Delete/Shift+Delete/Ctrl+C/X/V, F5, Ctrl+T/W/Tab.
 - **Internationalization**: 12 languages, apply-on-confirm with cross-window sync.
 
 ## Refactoring and modification of core functionalities from material-3-file-explorer project
@@ -149,7 +149,7 @@ Please switch to "Releases" page
 
 ## Testing
 
-End-to-end tests live in `scripts/e2e/` (24 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
+End-to-end tests live in `scripts/e2e/` (27 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
 
 ```bash
 npm run e2e                # builds first, then runs every scripts/e2e/*.test.cjs

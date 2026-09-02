@@ -325,6 +325,154 @@ export function computeArrowTarget(
   return null;
 }
 
+/**
+ * Ctrl+方向键跳转（现代文件管理器惯例）：
+ * - 列表视图：与 Home/End 一致——Up/Left 首项、Down/Right 末项；
+ * - 网格视图：Up/Down 跳首/末行（列位钳制到当前列或 0），
+ *   Left/Right 跳当前行行首/行尾；游标缺失时退化为首行。
+ *
+ * @param items - 扁平化布局（flattenItems 产物）
+ * @param anchorPath - 当前游标文件路径（无游标为 null）
+ */
+export function computeCtrlArrowTarget(
+  items: ListItem[],
+  anchorPath: string | null,
+  key: "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight",
+  viewMode: "grid" | "list",
+): IFile | null {
+  const rows = items.filter((it) => it.kind !== "header");
+  if (rows.length === 0) return null;
+  const firstRow = filesInItem(rows[0]);
+  const lastRow = filesInItem(rows[rows.length - 1]);
+  if (firstRow.length === 0 || lastRow.length === 0) return null;
+
+  if (viewMode === "list") {
+    return key === "ArrowUp" || key === "ArrowLeft" ? firstRow[0] : lastRow[lastRow.length - 1];
+  }
+
+  const idx = anchorPath ? findItemIndexOfPath(items, anchorPath) : -1;
+  const curRowFiles = idx !== -1 && items[idx].kind !== "header" ? filesInItem(items[idx]) : firstRow;
+  const curCol = Math.max(0, curRowFiles.findIndex((f) => f.path === anchorPath));
+
+  if (key === "ArrowUp") return firstRow[Math.min(curCol, firstRow.length - 1)];
+  if (key === "ArrowDown") return lastRow[Math.min(curCol, lastRow.length - 1)];
+  if (key === "ArrowLeft") return curRowFiles[0];
+  return curRowFiles[curRowFiles.length - 1];
+}
+
+/**
+ * 网格 Shift 范围：锚点行当前选中的列区间。
+ * 游标行比锚点行选区短时（如第一行 5 个、第二行 3 个），以锚点行为准
+ * 决定列区间——锚点行选区不被收缩，短行按列区间钳制取全部。
+ *
+ * @param items - 扁平化布局（flattenItems 产物）
+ * @param anchorPath - Shift 锚点
+ * @param selectedPaths - 当前选中集（Shift 更新前）
+ * @returns 锚点行选中的列区间；锚点行不可用/非网格行时 null
+ */
+export function computeAnchorRowSpan(
+  items: ListItem[],
+  anchorPath: string | null,
+  selectedPaths: Set<string>,
+): { low: number; high: number } | null {
+  const anchorIdx = anchorPath ? findItemIndexOfPath(items, anchorPath) : -1;
+  if (anchorIdx === -1) return null;
+  const item = items[anchorIdx];
+  if (item.kind !== 'grid-row') return null;
+  const cols: number[] = [];
+  item.files.forEach((f, i) => {
+    if (selectedPaths.has(f.path)) cols.push(i);
+  });
+  // 锚点列始终纳入区间（锚点被 Ctrl 移出选中时仍保持矩形语义）
+  const aCol = item.files.findIndex((f) => f.path === anchorPath);
+  if (aCol >= 0) cols.push(aCol);
+  if (cols.length === 0) return null;
+  return { low: Math.min(...cols), high: Math.max(...cols) };
+}
+
+/**
+ * Shift 范围选择：计算锚点（anchorPath）与游标（cursorPath）之间的选中集。
+ * - 列表视图：扁平显示序上 anchor↔cursor 的连续区间（跳过分组头）；
+ * - 网格视图：anchor 与 cursor 所在 grid-row 的 (row, col) 为对角线的
+ *   **矩形**——中间行整行纳入、边界行按列区间钳制；分组头跳过，
+ *   矩形**跨分类连续**（开启分类后 Shift 仍可跨组选择）。
+ *   列区间以**锚点行（基准行）**为准：游标在锚点行内时由游标完全控制
+ *   （行内收缩/扩展）；游标在其他行（含跨分类）时锚点行当前选区
+ *   （anchorSpan）不收缩，游标只能在基准两侧扩展——第一行 5 个、
+ *   第二行 3 个时两行分别选 5/3，继续 Down 到满行也不缩回 3 个；
+ *   短行按列区间钳制取全部。
+ * 锚点缺失/落在分组头时退化为仅选中游标项。
+ *
+ * @param items - 扁平化布局（flattenItems 产物，与渲染同源）
+ * @param anchorPath - Shift 锚点（无锚点时 null）
+ * @param cursorPath - 当前游标文件路径
+ * @param viewMode - 网格/列表
+ * @param anchorSpan - 锚点行当前选中的列区间（computeAnchorRowSpan 产物，
+ *   游标在其他行时作为基准；null 时退化为锚点列）
+ * @returns 应选中的路径集合
+ */
+export function computeShiftRange(
+  items: ListItem[],
+  anchorPath: string | null,
+  cursorPath: string,
+  viewMode: "grid" | "list",
+  anchorSpan?: { low: number; high: number } | null,
+): Set<string> {
+  const result = new Set<string>();
+  const cursorIdx = findItemIndexOfPath(items, cursorPath);
+  if (cursorIdx === -1) return result;
+  const anchorIdx = anchorPath ? findItemIndexOfPath(items, anchorPath) : -1;
+  if (anchorIdx === -1 || items[anchorIdx].kind === "header") {
+    // 无锚点：仅游标项（Shift 从无选中开始的退化语义）
+    result.add(cursorPath);
+    return result;
+  }
+
+  if (viewMode === "list") {
+    const low = Math.min(anchorIdx, cursorIdx);
+    const high = Math.max(anchorIdx, cursorIdx);
+    for (let i = low; i <= high; i++) {
+      const fs = filesInItem(items[i]);
+      for (const f of fs) result.add(f.path);
+    }
+    return result;
+  }
+
+  // 网格：矩形（锚点与游标所在行/列为对角线；每行都取对角线列区间
+  //  colLow..colHigh 内的列——含边界行与中间行，列区间按行长度钳制）。
+  // 分组头跳过：矩形跨分类连续，不截断。
+  // 列区间规则（基准行 = 锚点行）：
+  // - 游标在锚点行内：游标完全控制列区间（行内收缩/扩展）；
+  // - 游标在其他行（含跨分类）：以锚点行当前选区（anchorSpan）为基准——
+  //   各行选取数由基准行决定，游标只能在基准两侧扩展、不能收缩
+  //   （第一行 5 个、第二行 3 个：两行分别选 5/3；继续 Down 到满行
+  //   也不会缩回 3 个）；短行按列区间钳制取全部
+  const anchorRowFiles = filesInItem(items[anchorIdx]);
+  const cursorRowFiles = filesInItem(items[cursorIdx]);
+  const aCol = Math.max(0, anchorRowFiles.findIndex((f) => f.path === anchorPath));
+  const cCol = Math.max(0, cursorRowFiles.findIndex((f) => f.path === cursorPath));
+  const hasAnchorSpan = anchorSpan !== null && anchorSpan !== undefined;
+  const colLow = cursorIdx !== anchorIdx && hasAnchorSpan
+    ? Math.min(anchorSpan.low, cCol)
+    : Math.min(aCol, cCol);
+  const colHigh = cursorIdx !== anchorIdx && hasAnchorSpan
+    ? Math.max(anchorSpan.high, cCol)
+    : Math.max(aCol, cCol);
+  const step = cursorIdx >= anchorIdx ? 1 : -1;
+
+  for (let i = anchorIdx; i >= 0 && i < items.length; i += step) {
+    const item = items[i];
+    if (item.kind === "header") continue; // 跨分类：跳过而不截断
+    const fs = filesInItem(item);
+    if (fs.length === 0) break;
+    for (let c = colLow; c <= colHigh && c < fs.length; c++) {
+      result.add(fs[c].path);
+    }
+    if (i === cursorIdx) break;
+  }
+  return result;
+}
+
 export function listSpacing(iconSize: number) {
   const gap = Math.max(4, Math.round(iconSize * 0.3125));
   const paddingV = Math.max(2, Math.round(iconSize * 0.125));
