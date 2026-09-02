@@ -20,6 +20,28 @@ interface RubberBandState {
   handleBackgroundMouseDown: (e: React.MouseEvent) => void;
 }
 
+/**
+ * 判断指针是否落在 scroller 的原生滚动条占位区（右侧垂直条 / 底部
+ * 水平条，含角落）。滚动条上的按下/拖动不应启动框选：滚动条拖动
+ * 期间 mousemove/scroll 会被误当框选拖拽——选框在鼠标位置拉成长线、
+ * 覆盖到的条目被误改选中集，且 `didSelectRef` 被置位会让滚动后的
+ * 第一次点选被 FileList 的点击守卫吃掉（第二次点选才生效）。
+ *
+ * @param e - 按下/点击事件（以 scroller 为 target 时判定）
+ * @param scrollEl - react-window 的滚动容器（listImperativeRef.element）
+ * @returns 是否落在滚动条占位区
+ */
+export function isPointerOnScrollbar(e: React.MouseEvent | MouseEvent, scrollEl: HTMLElement): boolean {
+  const rect = scrollEl.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const vBarWidth = rect.width - scrollEl.clientWidth;
+  const hBarHeight = rect.height - scrollEl.clientHeight;
+  const hasV = scrollEl.scrollHeight > scrollEl.clientHeight && vBarWidth > 0;
+  const hasH = scrollEl.scrollWidth > scrollEl.clientWidth && hBarHeight > 0;
+  return (hasV && x >= rect.width - vBarWidth) || (hasH && y >= rect.height - hBarHeight);
+}
+
 export function useRubberBandSelection(
   containerRef: React.RefObject<HTMLDivElement | null>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -90,6 +112,15 @@ export function useRubberBandSelection(
     // 注意：是否「允许从条目上开始框选」由调用方（FileList）在
     // 调进本函数之前决定——选择器窗口允许从条目按下框选，
     // 主窗口保留「空白处按下才框选」以免干扰单击/拖拽。
+
+    // 滚动条上的按下不启动框选：原生滚动条拖动期间 mousemove/scroll
+    // 会驱动 updateSelection——选框跟着拉成长线并误改选中集，且
+    // didSelectRef 置位吃掉滚动后的第一次点选。早退不做任何
+    // preventDefault/模式回调，原生滚动行为完整保留。
+    const scrollElForGuard = listImperativeRef.current?.element;
+    if (scrollElForGuard && e.target === scrollElForGuard && isPointerOnScrollbar(e, scrollElForGuard)) {
+      return;
+    }
 
     (document.activeElement as HTMLElement)?.blur();
     e.preventDefault();

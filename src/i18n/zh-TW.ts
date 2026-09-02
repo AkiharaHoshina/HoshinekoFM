@@ -22,7 +22,6 @@ const zhTW = {
   'context_menu.open_with': '選擇其他應用程式...',
   'context_menu.open_terminal': '在內建終端機開啟',
   'context_menu.open_in_terminal': '在預設終端機中開啟',
-  'context_menu.run_in_terminal': '在預設終端機中執行',
   'context_menu.copy': '複製',
   'context_menu.cut': '剪下',
   'context_menu.paste': '貼上',

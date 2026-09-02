@@ -1276,41 +1276,6 @@ export function registerSystemHandlers() {
     return result === true ? { success: true } : { success: false, error: result };
   });
 
-  /**
-   * 在系统默认终端中运行可执行文件。
-   * 后端复核可执行位（防御性检查，前端只对可执行文件显示入口）：
-   * 目录虽有 X_OK 位但无法被终端执行，需单独排除；
-   * 不可执行时返回 `code: 'NOT_EXECUTABLE'`。
-   */
-  ipcMain.handle('system:run-in-terminal', async (_event, filePath: string) => {
-    try {
-      const stats = await fs.stat(filePath);
-      if (stats.isDirectory()) return { success: false, code: 'NOT_EXECUTABLE' };
-    } catch {
-      return { success: false, code: 'NOT_EXECUTABLE' };
-    }
-
-    try {
-      await fs.access(filePath, fs.constants.X_OK);
-    } catch {
-      return { success: false, code: 'NOT_EXECUTABLE' };
-    }
-
-    const terminal = await getDefaultTerminal();
-    if (!terminal) return { success: false, code: 'NO_TERMINAL' };
-
-    const cwd = path.dirname(filePath);
-
-    if (terminal.delegate) {
-      const result = await spawnDetached(terminal.command, [filePath], cwd);
-      return result === true ? { success: true } : { success: false, error: result };
-    }
-
-    const args = terminal.spec?.exec ? terminal.spec.exec([filePath]) : ['-e', filePath];
-    const result = await spawnDetached(terminal.command, args, cwd);
-    return result === true ? { success: true } : { success: false, error: result };
-  });
-
   ipcMain.handle('system:get-drives', async () => {
     try {
       const { stdout } = await execAsync('lsblk --json -o NAME,LABEL,MOUNTPOINT,SIZE,TYPE,TRAN,RM');

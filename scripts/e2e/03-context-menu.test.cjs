@@ -19,6 +19,12 @@ const h = require('./harness.cjs');
     await h.waitFor(win, `document.querySelectorAll('.context-menu md-list-item').length >= 1`);
     const items = await h.js(win, `document.querySelectorAll('.context-menu md-list-item').length`);
     h.assert.ok(items.value >= 5, `文件右键菜单条目应 ≥ 5，实际 ${items.value}`);
+    // 文件无「终端目录」语义：不应出现「在内置终端打开」（chdir 到文件会失败）
+    const fileHasTerminal = await h.js(
+      win,
+      `[...document.querySelectorAll('.context-menu md-list-item')].some(li => /内置终端|built-in terminal/i.test(li.textContent ?? ''))`,
+    );
+    h.assert.strictEqual(fileHasTerminal.value, false, '文件右键菜单不应包含「在内置终端打开」');
 
     // 点击窗口空白处（标签条区域）→ 菜单关闭（mousedown 外部关闭）
     await h.clickAt(win, 700, 8);
@@ -43,6 +49,12 @@ const h = require('./harness.cjs');
     // 右键子目录 → 菜单出现 → 点击「打开」（精确匹配，排除「打开方式」）
     await h.rightClickEl(win, `.file-list-item[data-path="${dir}/sub"]`);
     await h.waitFor(win, `document.querySelectorAll('.context-menu md-list-item').length >= 1`);
+    // 目录右键应保留「在内置终端打开」（cwd = 目录本身）
+    const dirHasTerminal = await h.js(
+      win,
+      `[...document.querySelectorAll('.context-menu md-list-item')].some(li => /内置终端|built-in terminal/i.test(li.textContent ?? ''))`,
+    );
+    h.assert.strictEqual(dirHasTerminal.value, true, '目录右键菜单应包含「在内置终端打开」');
     const clicked = await h.js(
       win,
       `(() => {

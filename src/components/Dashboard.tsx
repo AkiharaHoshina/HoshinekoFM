@@ -579,13 +579,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
                   className="recent-item"
                   role="button"
                   tabIndex={-1}
+                  // 整行悬停提示完整路径（名称/路径均可能截断或跑马灯）
+                  title={file.path}
                   onClick={() => onNavigate(file.path)}
                 >
                   <Icon name={file.isDirectory ? 'folder' : 'article'} size={20} />
-                  <MarqueeText enabled={marqueeEnabled} className="recent-name" title={file.path}>
-                    {t(file.name)}
-                  </MarqueeText>
-                  <span className="recent-path">{file.path}</span>
+                  {/* 外层 wrap 作为 flex item 定宽（收缩优先级/上限），
+                      内层 MarqueeText 两种模式（跑马灯/省略号）都受其约束——
+                      直接以 MarqueeText 为 flex item 时其禁用分支的内联
+                      max-width:100% 会压过类样式，长名称连省略号一起溢出条目 */}
+                  <span className="recent-name-wrap">
+                    <MarqueeText enabled={marqueeEnabled} className="recent-name">
+                      {t(file.name)}
+                    </MarqueeText>
+                  </span>
+                  <span className="recent-path-wrap">
+                    <MarqueeText enabled={marqueeEnabled} className="recent-path">
+                      {file.path}
+                    </MarqueeText>
+                  </span>
                 </div>
               ))
             )}

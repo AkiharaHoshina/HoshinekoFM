@@ -1,5 +1,21 @@
 # 更新日志
 
+## v0.11.30 — 「在默认终端中运行」功能移除
+
+- **背景**：默认终端生态参数规格五花八门（`-e` 语义在各终端间不一致、
+  client-server 架构丢弃参数等），逐终端适配不可持续——按二选一方案
+  的另一项执行：**移除该功能**（可执行文件右键的「在默认终端中运行」）
+- **移除范围**：
+  - `src/App.tsx`：可执行文件右键菜单「在默认终端中运行」入口
+    （`context_menu.run_in_terminal`，含 `(mode & 0o111)` 判定）
+  - `src/utils/fileOperations.ts`：`runInDefaultTerminal` 封装
+  - `electron/handlers/system.ts`：`system:run-in-terminal` IPC handler
+  - `electron/preload.ts` / `src/types/electron.d.ts`：`runInTerminal` 桥
+  - i18n 13 种语言：`context_menu.run_in_terminal` 键
+- 保留：「在默认终端中打开」目录项（`system:open-terminal` 经
+  `sh -c 'cd "$1" && exec "$SHELL"'` 包装，参数以 argv 传递，
+  ghostty 等单实例终端可靠生效）不受影响
+
 ## v0.11.30 — portal 后端冲突可观测性、升级接管与 e2e 盲区修复
 
 ### 背景（9 月 2 日实录：e2e 全绿但功能完全无效）

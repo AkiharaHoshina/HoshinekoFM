@@ -22,7 +22,6 @@ const zhHK = {
   'context_menu.open_with': '開啟方式...',
   'context_menu.open_terminal': '於內置終端機開啟',
   'context_menu.open_in_terminal': '於預設終端機中開啟',
-  'context_menu.run_in_terminal': '於預設終端機中執行',
   'context_menu.copy': '複製',
   'context_menu.cut': '剪切',
   'context_menu.paste': '貼上',

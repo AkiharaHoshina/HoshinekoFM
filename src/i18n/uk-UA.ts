@@ -45,7 +45,6 @@ const ukUA = {
   'context_menu.open_with': 'Відкрити за допомогою...',
   'context_menu.open_terminal': 'Відкрити у вбудованому терміналі',
   'context_menu.open_in_terminal': 'Відкрити в стандартному терміналі',
-  'context_menu.run_in_terminal': 'Запустити в стандартному терміналі',
   'context_menu.copy': 'Копіювати',
   'context_menu.cut': 'Вирізати',
   'context_menu.paste': 'Вставити',

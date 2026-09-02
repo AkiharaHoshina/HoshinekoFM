@@ -22,7 +22,6 @@ const jaJP = {
   'context_menu.open_with': 'プログラムから開く...',
   'context_menu.open_terminal': '内蔵ターミナルで開く',
   'context_menu.open_in_terminal': 'デフォルトの端末で開く',
-  'context_menu.run_in_terminal': 'デフォルトの端末で実行',
   'context_menu.copy': 'コピー',
   'context_menu.cut': '切り取り',
   'context_menu.paste': '貼り付け',

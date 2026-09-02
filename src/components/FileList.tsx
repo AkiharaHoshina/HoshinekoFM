@@ -17,7 +17,7 @@ import {
   computeItemBoxes,
 } from "./FileList/utils";
 import { Row, type RowData } from "./FileList/Row";
-import { useRubberBandSelection } from "../hooks/useRubberBandSelection";
+import { useRubberBandSelection, isPointerOnScrollbar } from "../hooks/useRubberBandSelection";
 import { useLocale } from "../i18n";
 import { startNativeDragTracking, shouldSuppressDrop } from "../utils/nativeDragTracker";
 
@@ -488,11 +488,23 @@ const FileListComponent: React.FC<FileListProps> = ({
         }
       }}
       onClick={(e) => {
+        const clickTarget = e.target as HTMLElement;
         if (
-          !(e.target as HTMLElement).closest(
+          !clickTarget.closest(
             ".file-list-item, .file-group-header",
           )
         ) {
+          // 滚动条上的点击（含拖动滚动条后 mouseup 合成的 click）
+          // 不视为空白处点击——滚动不应取消选中（与框选守卫同源：
+          // 见 useRubberBandSelection.isPointerOnScrollbar）
+          const scrollElForClick = listImperativeRef.current?.element;
+          if (
+            scrollElForClick &&
+            e.target === scrollElForClick &&
+            isPointerOnScrollbar(e, scrollElForClick)
+          ) {
+            return;
+          }
           if (didSelectRef.current) {
             didSelectRef.current = false;
             return;

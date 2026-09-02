@@ -44,7 +44,6 @@ import {
   openFile,
   buildPermanentDeleteMessage,
   openInDefaultTerminal,
-  runInDefaultTerminal,
 } from "./utils/fileOperations";
 import { NameInputDialog } from "./components/NameInputDialog";
 import { CompressDialog, type CompressFormat } from "./components/CompressDialog";
@@ -970,27 +969,21 @@ function AppContent() {
             closeContextMenu();
           },
         },
-        {
-          label: t("context_menu.open_terminal"),
-          icon: "terminal",
-          action: () => openTerminalAt(item.path),
-        },
+        // 内置终端以目录为 cwd 打开——文件无「终端目录」语义
+        // （chdir(2) failed: Not a directory），仅目录显示此项
+        ...(item.isDirectory
+          ? [{
+            label: t("context_menu.open_terminal"),
+            icon: "terminal",
+            action: () => openTerminalAt(item.path),
+          }]
+          : []),
         ...(item.isDirectory
           ? [{
             label: t("context_menu.open_in_terminal"),
             icon: "terminal",
             action: () => {
               void openInDefaultTerminal(item.path);
-              closeContextMenu();
-            },
-          }]
-          : []),
-        ...(item.mode !== undefined && !item.isDirectory && (item.mode & 0o111) !== 0
-          ? [{
-            label: t("context_menu.run_in_terminal"),
-            icon: "play_arrow",
-            action: () => {
-              void runInDefaultTerminal(item.path);
               closeContextMenu();
             },
           }]

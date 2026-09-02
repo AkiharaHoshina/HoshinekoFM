@@ -870,14 +870,3 @@ export async function openInDefaultTerminal(dir: string): Promise<void> {
     showTerminalLaunchError(result.code, result.error);
   }
 }
-
-/**
- * 在系统默认终端中运行可执行文件。失败时按错误码弹 toast 提示。
- * @param filePath - 可执行文件绝对路径（调用方已确认含可执行位）
- */
-export async function runInDefaultTerminal(filePath: string): Promise<void> {
-  const result = await window.electron.runInTerminal(filePath);
-  if (!result.success) {
-    showTerminalLaunchError(result.code, result.error);
-  }
-}

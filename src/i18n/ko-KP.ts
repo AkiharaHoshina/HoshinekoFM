@@ -23,7 +23,6 @@ const koKP = {
   'context_menu.open_with': '다른 프로그램으로 열기...',
   'context_menu.open_terminal': '내장 단말기에서 열기',
   'context_menu.open_in_terminal': '기본 단말기에서 열기',
-  'context_menu.run_in_terminal': '기본 단말기에서 실행',
   'context_menu.copy': '복사',
   'context_menu.cut': '오려내기',
   'context_menu.paste': '붙여넣기',

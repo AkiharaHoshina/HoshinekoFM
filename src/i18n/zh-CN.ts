@@ -22,7 +22,6 @@ const zhCN = {
   'context_menu.open_with': '打开方式...',
   'context_menu.open_terminal': '在内置终端打开',
   'context_menu.open_in_terminal': '在默认终端中打开',
-  'context_menu.run_in_terminal': '在默认终端中运行',
   'context_menu.copy': '复制',
   'context_menu.cut': '剪切',
   'context_menu.paste': '粘贴',

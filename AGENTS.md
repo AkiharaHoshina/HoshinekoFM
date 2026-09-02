@@ -30,6 +30,7 @@ No unit-test framework — e2e tests live in `scripts/e2e/` (Electron main-proce
   - **portal 后端总线名**：e2e 用**进程级随机名** `…hoshineko.e2e.p<pid>.r<随机>`（`h.E2E_PORTAL_BUS_NAME` / `h.E2E_FM1_BUS_NAME`，harness 经 backends.js 注册），避免与运行中的应用实例/残留 e2e 进程抢名；后端就绪断言 `await h.getBackendRegistration()` 返回值（本进程注册状态），**不要用 GetNameOwner 轮询**（只证明名字有主、不证明主是本进程）。
   - **注入键盘事件的 Enter 不合成原生按钮点击**：sendInputEvent/CDP 注入的 keydown Enter 不触发 `<button>` 的 Enter→click 默认行为（Space keyup 反而可以）——键盘导航的「Enter 激活」在应用内显式 `click()`（NavigationRail/Sidebar 均如此），测试不要依赖原生合成。
   - **导航栏活动项是 `md-filled-icon-button` 变体**：标准 `md-icon-button` 选择器不含活动项——e2e 15 按标准按钮计下标（0..3 = 仪表盘/回收站/终端/设置，活动项 Files 不计入）；激活导致变体切换替换元素丢焦点，应用内键盘激活后经 rAF 恢复同下标焦点（测试勿依赖激活后的焦点落点，必要时显式 focus）。
+  - **滚动条拖动（sendInputEvent）**：Chromium 原生滚动条接管拖动，期间**不向页面派发 mousemove**（mousedown/mouseup 照常、click 被吞）——框选副作用由 scroll 事件驱动；e2e 28 断言「滚动条拖动不得进入框选模式」用状态栏框选提示（onSelectionModeChange 副作用）作确定性信号（选框本身依赖几何，合成输入下不一定出现）。
   - 菜单/按钮文案按中英文双匹配（`/取消|Cancel/`），规避系统语言差异。
   - 对话框内容超出视口时点击前 `scrollIntoView`。
 - harness 有 120s 全局看门狗，任何挂起会强制退出并报 WATCHDOG TIMEOUT。

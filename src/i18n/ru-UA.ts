@@ -48,7 +48,6 @@ const ruUA = {
   'context_menu.open_with': 'Открыть с помощью...',
   'context_menu.open_terminal': 'Открыть во встроенном терминале',
   'context_menu.open_in_terminal': 'Открыть в терминале по умолчанию',
-  'context_menu.run_in_terminal': 'Запустить в терминале по умолчанию',
   'context_menu.copy': 'Копировать',
   'context_menu.cut': 'Вырезать',
   'context_menu.paste': 'Вставить',
