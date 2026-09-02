@@ -668,6 +668,7 @@ const ruUA = {
   'preview.drag_hint': 'Перетащите, чтобы изменить размер',
   'preview.entries': (n: number) => `${n} элементов`,
   'preview.archive_truncated': (n: number) => `…ещё ${n} элементов`,
+  'preview.archive_truncated_unknown': '…ещё больше элементов',
   'preview.pdf_more_pages': (n: number) => `Показаны первые 5 страниц из ${n}`,
   'preview.unsupported_format': 'Неподдерживаемый формат',
 } as const;

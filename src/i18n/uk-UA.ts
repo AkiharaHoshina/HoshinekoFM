@@ -665,6 +665,7 @@ const ukUA = {
   'preview.drag_hint': 'Перетягніть, щоб змінити розмір',
   'preview.entries': (n: number) => `${n} елементів`,
   'preview.archive_truncated': (n: number) => `…ще ${n} елементів`,
+  'preview.archive_truncated_unknown': '…ще більше елементів',
   'preview.pdf_more_pages': (n: number) => `Показано перші 5 сторінок із ${n}`,
   'preview.unsupported_format': 'Непідтримуваний формат',
 } as const;

@@ -625,6 +625,7 @@ const zhCT = {
   'preview.drag_hint': '拖動調整預覽區大小',
   'preview.entries': (n: number) => `${n} 個條目`,
   'preview.archive_truncated': (n: number) => `…仲有 ${n} 個條目未顯示`,
+  'preview.archive_truncated_unknown': '…仲有更多條目未顯示',
   'preview.pdf_more_pages': (n: number) => `淨係顯示前 5 頁，全文共 ${n} 頁`,
   'preview.unsupported_format': '不支援嘅格式',
 } as const;

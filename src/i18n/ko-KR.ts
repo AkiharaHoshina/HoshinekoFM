@@ -626,6 +626,7 @@ const koKR = {
   'preview.drag_hint': '드래그하여 미리보기 크기 조절',
   'preview.entries': (n: number) => `항목 ${n}개`,
   'preview.archive_truncated': (n: number) => `…외 ${n}개 항목`,
+  'preview.archive_truncated_unknown': '…더 많은 항목이 있습니다',
   'preview.pdf_more_pages': (n: number) => `처음 5페이지까지만 표시됨（총 ${n}페이지）`,
   'preview.unsupported_format': '지원되지 않는 형식',
 } as const;

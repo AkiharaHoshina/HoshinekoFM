@@ -156,17 +156,23 @@ export interface IElectronAPI {
     /**
      * 列出归档文件内容条目（预览面板归档视图用）。
      * entries 上限 5000（超出 truncated=true）；
-     * 错误码：INVALID_PATH / NOT_FILE / UNSUPPORTED / NO_TOOL / READ_FAILED。
+     * requestId 供切文件时经 cancelArchiveList 定向取消；
+     * 收集满上限后主进程会提前终止列表进程——此时 total 为 null
+     * （未提前终止且截断时 total 为完整总数）。
+     * 错误码：INVALID_PATH / NOT_FILE / UNSUPPORTED / NO_TOOL /
+     * READ_FAILED / TIMEOUT / KILLED（切换文件或取消时旧请求被终止）。
      */
-    listArchive: (path: string) => Promise<{
+    listArchive: (path: string, requestId?: string) => Promise<{
       success: boolean;
       entries?: string[];
       truncated?: boolean;
-      /** 完整条目总数（截断时用） */
-      total?: number;
-      code?: 'INVALID_PATH' | 'NOT_FILE' | 'UNSUPPORTED' | 'NO_TOOL' | 'READ_FAILED';
+      /** 完整条目总数（截断时用；提前终止时为 null） */
+      total?: number | null;
+      code?: 'INVALID_PATH' | 'NOT_FILE' | 'UNSUPPORTED' | 'NO_TOOL' | 'READ_FAILED' | 'TIMEOUT' | 'KILLED';
       error?: string;
     }>;
+    /** 取消指定 requestId 的归档列表（切文件时调用，杀掉后台 unzip/tar 进程组） */
+    cancelArchiveList: (requestId: string) => void;
     /**
      * 读取目录属性信息（预览面板「未选中条目」时的目录属性视图，
      * **轻量**：不含 du，大小由前端另走 getDirectorySize）。

@@ -36,6 +36,9 @@ const MARKDOWN_EXT_WHITELIST = new Set(['.md', '.markdown']);
 /** PDF 预览页数上限：只渲染前 5 页，超出时在尾部显示「全文不止 5 页」说明 */
 const PDF_PREVIEW_PAGES = 5;
 
+/** 归档列表请求序号（与时间戳/随机数拼成 requestId，用于切文件时定向取消） */
+let archiveRequestSeq = 0;
+
 /** mime 缺失/未知时按扩展名判定文本的兜底白名单 */
 const TEXT_EXT_WHITELIST = new Set([
   '.txt', '.json', '.xml', '.log', '.csv', '.ini', '.conf', '.cfg',
@@ -183,8 +186,8 @@ interface ArchiveState {
   status: 'idle' | 'loading' | 'ready' | 'error';
   entries?: string[];
   truncated?: boolean;
-  /** 完整条目总数（截断时用于提示隐藏数量） */
-  total?: number;
+  /** 完整条目总数（截断时用于提示隐藏数量；主进程提前终止时为 null） */
+  total?: number | null;
 }
 
 interface FilePreviewPanelProps {
@@ -437,18 +440,21 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
     return () => observer.disconnect();
   }, [kind, pdfState.status]);
 
-  /** 归档内容列表惰性加载 */
+  /** 归档内容列表惰性加载：切文件/卸载时经 cancelArchiveList
+   *  立即杀掉后台 unzip/tar 列表进程（含 xz/gzip 等解压孙进程），
+   *  避免快速浏览大归档时进程堆积占用 CPU 与内存 */
   useEffect(() => {
     if (!file || kind !== 'archive') return;
     let cancelled = false;
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}-${++archiveRequestSeq}`;
     void window.electron
-      ?.listArchive(file.path)
+      ?.listArchive(file.path, requestId)
       .then((res) => {
         if (cancelled) return;
         if (!res || !res.success || !Array.isArray(res.entries)) {
           setArchiveState({ status: 'error' });
         } else {
-          setArchiveState({ status: 'ready', entries: res.entries, truncated: res.truncated, total: res.total });
+          setArchiveState({ status: 'ready', entries: res.entries, truncated: res.truncated, total: res.total ?? null });
         }
       })
       .catch(() => {
@@ -456,6 +462,7 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
       });
     return () => {
       cancelled = true;
+      window.electron?.cancelArchiveList(requestId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随文件/类型/内容变化（mtime）重载
   }, [file?.path, kind, mtimeMs]);
@@ -664,7 +671,9 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
             ))}
             {archiveState.truncated && (
               <div className="file-preview-archive-truncated">
-                {t('preview.archive_truncated', Math.max((archiveState.total ?? 0) - (archiveState.entries?.length ?? 0), 0))}
+                {archiveState.total != null
+                  ? t('preview.archive_truncated', Math.max(archiveState.total - (archiveState.entries?.length ?? 0), 0))
+                  : t('preview.archive_truncated_unknown')}
               </div>
             )}
           </div>

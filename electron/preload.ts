@@ -62,7 +62,9 @@ contextBridge.exposeInMainWorld('electron', {
   resolvePicker: (paths: string[] | null) => ipcRenderer.invoke('picker:resolve', paths),
   readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path),
   readPreviewText: (path: string) => ipcRenderer.invoke('fs:read-preview-text', path),
-  listArchive: (path: string) => ipcRenderer.invoke('fs:list-archive', path),
+  listArchive: (path: string, requestId?: string) => ipcRenderer.invoke('fs:list-archive', path, requestId),
+  /** 取消指定 requestId 的归档列表（切文件时调用，杀掉后台 unzip/tar 进程组） */
+  cancelArchiveList: (requestId: string) => ipcRenderer.send('fs:cancel-archive-list', requestId),
   getDirInfo: (path: string) => ipcRenderer.invoke('fs:get-dir-info', path),
   /** 窗口管理器类型检测（自定义标题栏跟随系统模式） */
   detectWindowManager: () => ipcRenderer.invoke('system:detect-window-manager'),

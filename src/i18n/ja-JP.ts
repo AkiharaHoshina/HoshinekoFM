@@ -626,6 +626,7 @@ const jaJP = {
   'preview.drag_hint': 'ドラッグしてプレビューサイズを変更',
   'preview.entries': (n: number) => `${n} 件のエントリ`,
   'preview.archive_truncated': (n: number) => `…他に ${n} 件のエントリ`,
+  'preview.archive_truncated_unknown': '…他にもエントリがあります',
   'preview.pdf_more_pages': (n: number) => `先頭 5 ページのみ表示（全 ${n} ページ）`,
   'preview.unsupported_format': '対応していない形式です',
 } as const;

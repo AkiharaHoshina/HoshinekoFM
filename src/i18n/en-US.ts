@@ -634,6 +634,7 @@ const enUS = {
   'preview.drag_hint': 'Drag to resize',
   'preview.entries': (n: number) => `${n} entries`,
   'preview.archive_truncated': (n: number) => `...and ${n} more entries`,
+  'preview.archive_truncated_unknown': '...more entries not shown',
   'preview.pdf_more_pages': (n: number) => `Showing the first 5 of ${n} pages`,
   'preview.unsupported_format': 'Unsupported format',
 } as const;

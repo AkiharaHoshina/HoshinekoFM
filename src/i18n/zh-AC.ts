@@ -626,6 +626,7 @@ const zhAC = {
   'preview.drag_hint': '拖动调整预览区大小',
   'preview.entries': (n: number) => `${n} 个条目`,
   'preview.archive_truncated': (n: number) => `…还有 ${n} 个条目未显示`,
+  'preview.archive_truncated_unknown': '…还有更多条目未显示',
   'preview.pdf_more_pages': (n: number) => `仅显示前 5 页，全文共 ${n} 页`,
   'preview.unsupported_format': '不支持的格式',
 } as const;

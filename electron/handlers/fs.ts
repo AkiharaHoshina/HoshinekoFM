@@ -26,6 +26,147 @@ type DirSizeResult =
   | { success: true; size: number }
   | { success: false; code: 'TIMEOUT' | 'KILLED' | 'FAILED' };
 
+/** 归档内容列表单次超时：超过即杀进程组并返回 TIMEOUT */
+const ARCHIVE_LIST_TIMEOUT_MS = 30_000;
+
+/**
+ * 当前活跃的归档列表子进程（全局同一时刻只允许一个）。
+ * pgid 为进程组 id（spawn 时 detached:true → 子进程 pid 即组长），
+ * requestId 为渲染进程生成的请求标识（切文件取消时定向匹配）。
+ */
+let activeArchiveList: { requestId: string | null; pgid: number } | null = null;
+
+/**
+ * SIGKILL 杀掉归档列表进程组：detached spawn 使列表工具成为组长，
+ * 组内一并包含 tar/unzip 派生的 xz/gzip/bzip2 等解压孙进程——
+ * 只杀父进程会遗留孤儿解压进程继续消耗 CPU。
+ *
+ * @param pgid - 进程组 id
+ */
+function killArchiveGroup(pgid: number): void {
+  if (!pgid) return;
+  try {
+    process.kill(-pgid, 'SIGKILL');
+  } catch {
+    // 进程组已退出
+  }
+}
+
+/** fs:list-archive 的返回结构（KILLED = 切换文件/取消时被终止） */
+type ArchiveListResult =
+  | { success: true; entries: string[]; truncated: boolean; total: number | null }
+  | { success: false; code: 'INVALID_PATH' | 'NOT_FILE' | 'UNSUPPORTED' | 'NO_TOOL' | 'READ_FAILED' | 'TIMEOUT' | 'KILLED'; error?: string };
+
+/**
+ * 以 spawn 运行归档列表工具并流式收集条目（fs:list-archive 的执行体）。
+ *
+ * 资源控制：
+ * - detached:true 建立独立进程组，终止时 SIGKILL 整组（解压孙进程
+ *   一并杀掉，不留孤儿进程）；
+ * - 收集满 ARCHIVE_LIST_MAX_ENTRIES + 1 条立即杀组返回 truncated
+ *   （预览只需要这么多条目，无需继续解压整个归档；此时 total 为 null）；
+ * - 超时（默认 30s）杀组返回 TIMEOUT；
+ * - 被外部杀组（新请求接管 / fs:cancel-archive-list）时返回 KILLED。
+ *
+ * 测试缝隙（环境变量，缺省完全无影响）：
+ * - HOSHINEKO_ARCHIVE_TIMEOUT_MS：覆盖超时阈值（e2e 用短超时确定性
+ *   测 TIMEOUT 路径）；
+ * - HOSHINEKO_ARCHIVE_STALL_MS：列表命令前先 sleep——真实小归档瞬间
+ *   完成，无法确定性制造「仍在运行」状态来测杀死/早停路径。
+ *
+ * @param command - 列表工具命令
+ * @param args - 命令参数（最后一个为归档路径）
+ * @param parse - 行 → 条目名解析器（返回 null 跳过该行）
+ * @param requestId - 渲染进程请求 id（取消时定向匹配；null 不参与匹配）
+ * @returns 永不 reject——spawn 失败经 'error' 事件落定为 READ_FAILED
+ */
+function runArchiveListing(
+  command: string,
+  args: string[],
+  parse: (line: string) => string | null,
+  requestId: string | null,
+): Promise<ArchiveListResult> {
+  return new Promise<ArchiveListResult>((resolve) => {
+    const timeoutMs = Number(process.env.HOSHINEKO_ARCHIVE_TIMEOUT_MS) || ARCHIVE_LIST_TIMEOUT_MS;
+    const stallMs = Number(process.env.HOSHINEKO_ARCHIVE_STALL_MS) || 0;
+    const child = stallMs > 0
+      ? spawn('sh', ['-c', `sleep ${stallMs / 1000}; exec "$0" "$@"`, command, ...args], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] })
+      : spawn(command, args, { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    const pid = child.pid ?? 0;
+    activeArchiveList = { requestId, pgid: pid };
+
+    let buf = '';
+    let settled = false;
+    /** 本函数自身触发的杀组（超时/早停），与外部杀组（KILLED）区分 */
+    let selfKilled = false;
+    const entries: string[] = [];
+
+    /** 防重入落定：清除定时器、解除活跃引用后只 resolve 一次 */
+    const finish = (r: ArchiveListResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (activeArchiveList?.pgid === pid) activeArchiveList = null;
+      resolve(r);
+    };
+
+    const timer = setTimeout(() => {
+      selfKilled = true;
+      killArchiveGroup(pid);
+      finish({ success: false, code: 'TIMEOUT' });
+    }, timeoutMs);
+
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      if (settled) return;
+      buf += chunk;
+      let idx: number;
+      while (!settled && (idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx);
+        buf = buf.slice(idx + 1);
+        const entry = parse(line.trim());
+        if (entry !== null) entries.push(entry);
+        if (entries.length > ARCHIVE_LIST_MAX_ENTRIES) {
+          // 条目足够展示：立即杀组返回，不再解压整个归档
+          selfKilled = true;
+          killArchiveGroup(pid);
+          finish({ success: true, entries: entries.slice(0, ARCHIVE_LIST_MAX_ENTRIES), truncated: true, total: null });
+          return;
+        }
+      }
+    });
+
+    child.on('error', (err) => {
+      finish({ success: false, code: 'READ_FAILED', error: err.message });
+    });
+
+    child.on('close', (code, signal) => {
+      if (settled || selfKilled) return;
+      if (signal !== null) {
+        // 被外部（新请求接管或 cancel）杀组
+        finish({ success: false, code: 'KILLED' });
+        return;
+      }
+      if (code !== 0) {
+        finish({ success: false, code: 'READ_FAILED', error: `exited with code ${code}` });
+        return;
+      }
+      // 自然退出：收尾缓冲中最后一行（无换行符的尾部）
+      if (buf.trim()) {
+        const entry = parse(buf.trim());
+        if (entry !== null) entries.push(entry);
+      }
+      const truncated = entries.length > ARCHIVE_LIST_MAX_ENTRIES;
+      finish({
+        success: true,
+        entries: entries.slice(0, ARCHIVE_LIST_MAX_ENTRIES),
+        truncated,
+        total: truncated ? null : entries.length,
+      });
+    });
+  });
+}
+
 /** zip 系 mime（unzip -Z1 可列） */
 const ZIP_MIMES = new Set(['application/zip', 'application/x-zip-compressed', 'application/java-archive']);
 /** tar/压缩流系 mime（tar -tf 可列） */
@@ -1124,13 +1265,20 @@ export function registerFsHandlers() {
    * - .7z → 优先 `bsdtar -tf`（libarchive），无 bsdtar 时 `7z l -slt`
    *   解析 `Path = ` 行（对含空格文件名稳健）。
    *
-   * 条目数超过 ARCHIVE_LIST_MAX_ENTRIES 时截断并返回 truncated=true。
+   * 并发/资源控制（见 runArchiveListing）：
+   * - 同一时刻只允许一个列表进程；新请求到达（切文件）时 SIGKILL 杀掉
+   *   旧进程组（含 tar 的 xz/gzip 等解压孙进程，不遗留孤儿进程）；
+   * - 收集满 ARCHIVE_LIST_MAX_ENTRIES+1 条立即杀组返回（足够展示，
+   *   无需继续解压整个归档——提前终止时 total 为 null）；
+   * - 单次超过 ARCHIVE_LIST_TIMEOUT_MS 杀组并返回 TIMEOUT；
+   * - 渲染进程可经 fs:cancel-archive-list 定向取消（requestId 匹配）。
    *
    * @returns success + entries + truncated；失败时携带
    *          INVALID_PATH / NOT_FILE / UNSUPPORTED（无法识别归档类型）/
-   *          NO_TOOL（7z 文件但 bsdtar 与 7z 均不可用）/ READ_FAILED
+   *          NO_TOOL（7z 文件但 bsdtar 与 7z 均不可用）/ READ_FAILED /
+   *          TIMEOUT / KILLED（切换文件或取消时被终止）
    */
-  ipcMain.handle('fs:list-archive', async (_, filePath: string) => {
+  ipcMain.handle('fs:list-archive', async (_, filePath: string, requestId?: string) => {
     if (typeof filePath !== 'string' || !filePath.startsWith('/')) {
       return { success: false, code: 'INVALID_PATH' };
     }
@@ -1140,6 +1288,15 @@ export function registerFsHandlers() {
     } catch {
       return { success: false, code: 'READ_FAILED' };
     }
+
+    // 切文件/新请求：先杀上一单仍在跑的列表进程组（旧结果已无意义），
+    // 避免快速浏览大归档时 unzip/tar 堆积占用 CPU 与内存
+    if (activeArchiveList) {
+      killArchiveGroup(activeArchiveList.pgid);
+      activeArchiveList = null;
+    }
+
+    const reqId = typeof requestId === 'string' ? requestId : null;
 
     const lower = filePath.toLowerCase();
     const ext = lower.slice(lower.lastIndexOf('.') < 0 ? lower.length : lower.lastIndexOf('.'));
@@ -1159,39 +1316,27 @@ export function registerFsHandlers() {
 
     try {
       if (useZip) {
-        const { stdout } = await execFileAsync('unzip', ['-Z1', filePath], { timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
-        const all = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
-        const truncated = all.length > ARCHIVE_LIST_MAX_ENTRIES;
-        return { success: true, entries: all.slice(0, ARCHIVE_LIST_MAX_ENTRIES), truncated, total: all.length };
+        return await runArchiveListing('unzip', ['-Z1', filePath], (l) => (l === '' ? null : l), reqId);
       }
 
       if (use7z) {
         const bsdtar = await commandExists('bsdtar');
         if (bsdtar) {
-          const { stdout } = await execFileAsync('bsdtar', ['-tf', filePath], { timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
-          const all = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
-          const truncated = all.length > ARCHIVE_LIST_MAX_ENTRIES;
-          return { success: true, entries: all.slice(0, ARCHIVE_LIST_MAX_ENTRIES), truncated, total: all.length };
+          return await runArchiveListing('bsdtar', ['-tf', filePath], (l) => (l === '' ? null : l), reqId);
         }
         const has7z = await commandExists('7z');
         if (has7z) {
-          const { stdout } = await execFileAsync('7z', ['l', '-slt', filePath], { timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
-          const all = stdout
-            .split('\n')
-            .filter((l) => l.startsWith('Path = '))
-            .map((l) => l.slice('Path = '.length).trim())
-            .filter((p) => p && p !== path.basename(filePath));
-          const truncated = all.length > ARCHIVE_LIST_MAX_ENTRIES;
-          return { success: true, entries: all.slice(0, ARCHIVE_LIST_MAX_ENTRIES), truncated, total: all.length };
+          return await runArchiveListing('7z', ['l', '-slt', filePath], (l) => {
+            if (!l.startsWith('Path = ')) return null;
+            const p = l.slice('Path = '.length).trim();
+            return p && p !== path.basename(filePath) ? p : null;
+          }, reqId);
         }
         return { success: false, code: 'NO_TOOL' };
       }
 
       if (useTar) {
-        const { stdout } = await execFileAsync('tar', ['-tf', filePath], { timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
-        const all = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
-        const truncated = all.length > ARCHIVE_LIST_MAX_ENTRIES;
-        return { success: true, entries: all.slice(0, ARCHIVE_LIST_MAX_ENTRIES), truncated, total: all.length };
+        return await runArchiveListing('tar', ['-tf', filePath], (l) => (l === '' ? null : l), reqId);
       }
 
       return { success: false, code: 'UNSUPPORTED' };
@@ -1200,6 +1345,18 @@ export function registerFsHandlers() {
       console.error('list archive failed', e);
       return { success: false, code: 'READ_FAILED', error: message };
     }
+  });
+
+  /**
+   * 取消归档列表：渲染进程切换文件（预览面板 effect cleanup）时调用。
+   * 仅当活跃列表的 requestId 匹配时才杀进程组——避免误杀其他窗口
+   * 正在进行的列表。
+   */
+  ipcMain.on('fs:cancel-archive-list', (_event, requestId: unknown) => {
+    if (!activeArchiveList) return;
+    if (requestId != null && activeArchiveList.requestId !== requestId) return;
+    killArchiveGroup(activeArchiveList.pgid);
+    activeArchiveList = null;
   });
 
   // Resolve a path to its canonical absolute path, following all symlinks.
