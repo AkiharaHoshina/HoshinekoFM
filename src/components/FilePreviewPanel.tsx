@@ -294,6 +294,12 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
   const kind = file ? getPreviewKind(file) : null;
   /** 目录属性视图激活：无选中文件且传入了目录路径 */
   const dirActive = !file && !multiple && !!dirPath;
+  /**
+   * 文件修改时间（毫秒，原始值）：外部编辑保存 → fs:dir-changed →
+   * 父级重列目录后 file.mtime 更新。作为内容变更信号驱动各预览类型的
+   * 重载 effect 与媒体 URL 缓存戳（路径不变时依赖它检测内容变化）。
+   */
+  const mtimeMs = file?.mtime?.getTime() ?? 0;
   const [textState, setTextState] = useState<TextState>({ status: 'idle' });
   const [mdState, setMdState] = useState<TextState>({ status: 'idle' });
   const [pdfState, setPdfState] = useState<PdfState>({ status: 'idle' });
@@ -307,11 +313,12 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
   const [pdfWidth, setPdfWidth] = useState(0);
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // 文件切换/目录变化时重置全部加载状态：React 官方「渲染期间重置状态」
-  // 模式（跟踪上一个 file.path 或目录路径，变化时在渲染中同步 setState，
+  // 文件切换/内容变化（mtime）/目录变化时重置全部加载状态：React 官方
+  // 「渲染期间重置状态」模式（跟踪上一个 key，变化时在渲染中同步 setState，
   // 避免 effect 内 setState 的级联渲染与瞬时陈旧态）；需要异步加载的
-  // 类型初始即进入加载态，随后由对应加载 effect 拉取内容。
-  const previewKey = file?.path ?? (dirActive ? `dir:${dirPath}` : undefined);
+  // 类型初始即进入加载态，随后由对应加载 effect 拉取内容。外部编辑保存
+  // 后父级重列目录会带来新的 mtime——路径不变也能触发重置与重载。
+  const previewKey = file ? `${file.path}:${mtimeMs}` : (dirActive ? `dir:${dirPath}` : undefined);
   const lastPathRef = useRef<string | undefined>(undefined);
   if (lastPathRef.current !== previewKey) {
     lastPathRef.current = previewKey;
@@ -347,8 +354,8 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随文件与类型变化重载
-  }, [file?.path, kind]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随文件/类型/内容变化（mtime）重载
+  }, [file?.path, kind, mtimeMs]);
 
   /** Markdown 惰性加载：读文本 → marked 渲染 → DOMPurify 消毒 */
   useEffect(() => {
@@ -382,8 +389,8 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随文件与类型变化重载
-  }, [file?.path, kind]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随文件/类型/内容变化（mtime）重载
+  }, [file?.path, kind, mtimeMs]);
 
   /** PDF 惰性加载：动态 import pdfjs-dist（独立 chunk），配置 worker 后打开文档 */
   useEffect(() => {
@@ -397,7 +404,7 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
         const pdfjs = await import('pdfjs-dist');
         const workerModule = await import('pdfjs-dist/build/pdf.worker.min.mjs?url');
         pdfjs.GlobalWorkerOptions.workerSrc = workerModule.default;
-        task = pdfjs.getDocument({ url: `preview://localhost${file.path}` });
+        task = pdfjs.getDocument({ url: `preview://localhost${file.path}?v=${mtimeMs}` });
         const doc = await task.promise;
         if (cancelled) {
           void task.destroy();
@@ -413,8 +420,8 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
       cancelled = true;
       if (task) void task.destroy().catch(() => { /* 销毁失败忽略 */ });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随文件与类型变化重载
-  }, [file?.path, kind]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随文件/类型/内容变化（mtime）重载
+  }, [file?.path, kind, mtimeMs]);
 
   /** PDF 容器宽度测量（ResizeObserver）：页面 canvas 按容器宽自适应缩放。
    *  依赖含 pdfState.status——容器在 status==='ready' 时才挂载，
@@ -450,8 +457,8 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随文件与类型变化重载
-  }, [file?.path, kind]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随文件/类型/内容变化（mtime）重载
+  }, [file?.path, kind, mtimeMs]);
 
   /** 目录属性惰性加载（未选中条目时的常驻视图）：
    *  轻量 IPC 只取 stat + 属主（毫秒级），构造 IFile 交给共享
@@ -586,9 +593,9 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
             ? renderEmpty('broken_image', t('preview.load_failed'))
             : (
               <img
-                key={file.path}
+                key={`${file.path}:${mtimeMs}`}
                 className="file-preview-media"
-                src={`preview://localhost${file.path}`}
+                src={`preview://localhost${file.path}?v=${mtimeMs}`}
                 alt={file.name}
                 onError={() => setMediaError(true)}
               />
@@ -600,9 +607,9 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
             ? renderEmpty('error', t('preview.load_failed'))
             : (
               <video
-                key={file.path}
+                key={`${file.path}:${mtimeMs}`}
                 className="file-preview-media"
-                src={`preview://localhost${file.path}`}
+                src={`preview://localhost${file.path}?v=${mtimeMs}`}
                 controls
                 preload="metadata"
                 onError={() => setMediaError(true)}
@@ -615,9 +622,9 @@ export const FilePreviewPanel: React.FC<FilePreviewPanelProps> = ({ file, multip
             ? renderEmpty('error', t('preview.load_failed'))
             : (
               <audio
-                key={file.path}
+                key={`${file.path}:${mtimeMs}`}
                 className="file-preview-audio"
-                src={`preview://localhost${file.path}`}
+                src={`preview://localhost${file.path}?v=${mtimeMs}`}
                 controls
                 preload="metadata"
                 onError={() => setMediaError(true)}

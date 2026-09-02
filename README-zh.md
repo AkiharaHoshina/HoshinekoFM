@@ -26,16 +26,16 @@ Hoshineko 文件管理器是一款基于 Material 3 设计语言、Electron 和 
 - **批量任务**：复制/移动/回收站/永久删除走任务管线（进度 toast、可取消、部分失败提示）；跨设备移动（EXDEV）自动回退复制+删除。
 - **批量重命名**：查找替换 / 前缀 / 后缀 / 序号四种模式，实时预览 + 逐条冲突检测。
 - **压缩归档**：右键创建 zip / tar.gz（`zip -r` / `tar -czf`），已存在的归档绝不覆盖。
-- **属性与权限**：查看位置、大小、修改时间、权限位（`drwxr-xr-x`）与属主，并可就地修改权限（3 位八进制 chmod）。
+- **属性与权限**：查看位置、大小、修改时间、权限位（`drwxr-xr-x`）与属主，并可就地修改权限（3 位八进制 chmod）。目录大小按需经 `du -sb` 计算——10 秒超时 + 全局单飞（切换目录即杀掉仍在跑的 du 并显示「无法获取」），也可在设置 → 行为中整体关闭（频繁遍历大目录对磁盘不好）。
 - **固定项**：仪表盘可固定文件与文件夹（支持拖拽排序），侧边栏可固定目录——支持文件管理器选择、目录右键菜单、拖动文件夹到固定按钮三种方式。
-- **内置文件选择器**：独立选择器窗口贯穿全应用——可选条目类型声明（文件/文件夹/全部）、文件类型过滤（底部下拉：「所有文件」+ 声明类型，标签由 MIME 描述体系生成）、初始目录、并发实例相互独立；亦可作为 **xdg-desktop-portal FileChooser 后端**——外部程序（GTK/Qt）经标准 portal 接口打开本选择器（OpenFile 含过滤器；SaveFile v1 不支持；需安装 portal 配置启用，见 docs/portal-filechooser.md）。
+- **内置文件选择器**：独立选择器窗口贯穿全应用——可选条目类型声明（文件/文件夹/全部）、文件类型过滤（底部下拉：「所有文件」+ 声明类型，标签由 MIME 描述体系生成）、初始目录、并发实例相互独立；亦可作为 **xdg-desktop-portal FileChooser 后端**——外部程序（GTK/Qt）经标准 portal 接口打开本选择器（OpenFile 含过滤器；SaveFile 保存对话框支持 current-name/accept-label；多文件 SaveFiles 不支持；需安装 portal 配置启用，见 docs/portal-filechooser.md）。
 - **仪表盘**：问候语、统一存储区（系统 `/`、主页、热插拔外接设备，列表项可点击跳转）、固定项、最近访问。
 - **主题系统**：12 个 Material 3 预设色盘、自定义调色盘（HCT）、壁纸取色（matugen + nativeImage 兜底）、导入 matugen 主题、系统主题（DMS）继承与黑暗主题开关（跟随系统/强制暗色/强制亮色，全窗口即时生效）。
-- **文件预览**：可选且常驻的侧面板（设置 → 行为，默认关闭）——在文件区右侧「挤压」出现；未选中条目时显示当前目录的只读属性，单选目录时显示该目录的只读属性（与右键属性对话框共用属性网格，权限只读）；单选文件时支持图片、音频、视频（mp4/webm/ogg/mkv，可拖动进度条）、PDF（pdf.js，前 5 页 + 超出时「全文共 N 页」说明）、归档内容列表（zip/tar/7z）、Markdown 渲染与文本/代码（512 KiB 上限）；分隔条拖动调整比例（20%–60%，持久化）；多选显示「无法预览」占位；与文件区一起随内置终端挤压。
+- **文件预览**：可选且常驻的侧面板（设置 → 行为，默认关闭）——在文件区右侧「挤压」出现；未选中条目时显示当前目录的只读属性，单选目录时显示该目录的只读属性（与右键属性对话框共用属性网格，权限只读）；单选文件时支持图片、音频、视频（mp4/webm/ogg/mkv，可拖动进度条）、PDF（pdf.js，前 5 页 + 超出时「全文共 N 页」说明）、归档内容列表（zip/tar/7z）、Markdown 渲染（本地相对图片按文档所在目录解析显示）与文本/代码（512 KiB 上限）；外部编辑保存后内容自动刷新；分隔条拖动调整比例（20%–60%，持久化）；多选显示「无法预览」占位；与文件区一起随内置终端挤压。
 - **界面缩放**：整页缩放 50%–200%，全窗口（含文件选择器）实时同步。
 - **自定义 M3 标题栏**（可选，默认跟随系统）：frameless 窗口 + 最小化/最大化还原/关闭三按钮 + 「v」窗口菜单 + 实时窗口标题（仪表盘 →「Hoshineko Nya~」、回收站或目录名/完整路径）同步至任务栏——平铺 WM（niri/hyprland/i3/sway）自动隐藏、常规 DE 显示、可手动覆盖；保留 F12 开发人员工具。
 - **智能右键菜单**：按条目类型（文件/目录/设备/回收站/背景）动态生成菜单项，适配触屏长按操作。
-- **选择与快捷键**：Ctrl/Shift 多选、Ctrl+A、橡皮筋框选（4 种模式 + 边缘自动滚动）、Delete/Shift+Delete/Ctrl+C/X/V、F5。
+- **选择与快捷键**：Ctrl/Shift 多选、Ctrl+A、橡皮筋框选（4 种模式 + 边缘自动滚动）、方向键选择导航（列表视图沿显示序移动、网格视图二维移动且列位钳制——边缘不环绕、越界自动滚动）、Delete/Shift+Delete/Ctrl+C/X/V、F5。
 - **国际化**：12 种语言，确定时应用并跨窗口同步。
 
 ## 从原项目的重构和更改
@@ -149,7 +149,7 @@ scheme-monochrome：单色/黑白灰调。
 
 ## 测试
 
-端到端测试位于 `scripts/e2e/`（18 套用例，无测试框架——Electron 自身驱动真实构建，`sendInputEvent` 模拟输入、`executeJavaScript` 断言）：
+端到端测试位于 `scripts/e2e/`（24 套用例，无测试框架——Electron 自身驱动真实构建，`sendInputEvent` 模拟输入、`executeJavaScript` 断言）：
 
 ```bash
 npm run e2e                # 先构建，再依次运行 scripts/e2e/*.test.cjs
@@ -190,7 +190,7 @@ systemctl --user restart xdg-desktop-portal.service
 
 （或直接运行仓库里的 `scripts/system-integration/install.sh`，效果相同，root 部分经 pkexec。）
 
-Firefox：`about:config` 将 `widget.use-xdg-desktop-portal.file-picker` 设为 `1`（部分版本为 `widget.use-xdg-desktop-portal`）——此步无法从设置自动完成。**限制（v1）**：仅实现 `OpenFile`——保存对话框（`SaveFile`）返回 NotSupported。详见 docs/portal-filechooser.md（含 gdbus 验证命令）。
+Firefox：`about:config` 将 `widget.use-xdg-desktop-portal.file-picker` 设为 `1`（部分版本为 `widget.use-xdg-desktop-portal`）——此步无法从设置自动完成。**限制**：仅实现单文件保存（`SaveFile`）——多文件保存（`SaveFiles`）返回 NotSupported。详见 docs/portal-filechooser.md（含 gdbus 验证命令）。
 
 ## 协议
 

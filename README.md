@@ -26,16 +26,16 @@ The Hoshineko file explorer is a modification and reconstruction of [bhimio1](ht
 - **Batch Operations**: copy/move/trash/delete via a job pipeline with progress toasts, cancellation, and partial-failure reporting; cross-device moves (EXDEV) fall back to copy+delete.
 - **Batch Rename**: find & replace / prefix / suffix / numbering modes with a live preview and per-entry conflict detection.
 - **Compression**: create zip / tar.gz archives from the context menu (`zip -r` / `tar -czf`); existing archives are never overwritten.
-- **Properties & Permissions**: view location, size, modification time, permissions (`drwxr-xr-x`) and owner; edit permissions in place (3-digit octal chmod).
+- **Properties & Permissions**: view location, size, modification time, permissions (`drwxr-xr-x`) and owner; edit permissions in place (3-digit octal chmod). Directory sizes are computed on demand via `du -sb` with a 10-second timeout and single-flight cancellation (switching away kills the running `du` and shows "size unavailable"), and can be turned off entirely in Settings → Behavior (frequent traversal is disk-intensive).
 - **Pinned Items**: pin files and folders to the dashboard (drag-to-reorder) and pin folders to the sidebar — via the system file picker, the folder context menu, or dragging a folder onto the pin button.
-- **Built-in File Picker**: a separate picker window used throughout the app — mode declaration (file/folder/items), file-type filters with a bottom dropdown ("All files" plus declared types, labels generated from the MIME description system), initial directory, and concurrently independent instances. Also available as an **xdg-desktop-portal FileChooser backend**, so external apps (GTK/Qt) can open it through the standard portal interface (OpenFile with filters; SaveFile unsupported in v1; opt-in via portal config — see docs/portal-filechooser.md).
+- **Built-in File Picker**: a separate picker window used throughout the app — mode declaration (file/folder/items), file-type filters with a bottom dropdown ("All files" plus declared types, labels generated from the MIME description system), initial directory, and concurrently independent instances. Also available as an **xdg-desktop-portal FileChooser backend**, so external apps (GTK/Qt) can open it through the standard portal interface (OpenFile with filters; SaveFile with current-name/accept-label; multi-file SaveFiles unsupported; opt-in via portal config — see docs/portal-filechooser.md).
 - **Dashboard**: greeting, a unified storage region (system `/`, home, and hot-plugged external devices as clickable list items), pinned items, and recent files.
 - **Theming**: theme color system with 12 Material 3 preset palettes, a custom color picker (HCT), wallpaper color extraction (matugen + nativeImage fallback), matugen theme import, DMS system-theme inheritance, and a dark-mode switch (follow system / force dark / force light, applied across all windows).
-- **File Preview**: optional, persistent side panel (Settings → Behavior, off by default) squeezed in on the right — shows the current directory's read-only properties when nothing is selected, and a selected folder's properties when a single folder is selected (shared properties grid with the context-menu dialog, permissions read-only); when a single file is selected: images, audio, videos (mp4/webm/ogg/mkv, with seeking), PDFs (pdf.js, first 5 pages with a "N pages total" notice), archive listings (zip/tar/7z), Markdown (rendered), and text/code (512 KiB cap); a draggable divider resizes the panel (20%–60%, persisted); multi-selection shows a "cannot preview" placeholder; the panel shares the terminal squeeze with the file list.
+- **File Preview**: optional, persistent side panel (Settings → Behavior, off by default) squeezed in on the right — shows the current directory's read-only properties when nothing is selected, and a selected folder's properties when a single folder is selected (shared properties grid with the context-menu dialog, permissions read-only); when a single file is selected: images, audio, videos (mp4/webm/ogg/mkv, with seeking), PDFs (pdf.js, first 5 pages with a "N pages total" notice), archive listings (zip/tar/7z), Markdown (rendered, with local relative images resolved against the document's directory), and text/code (512 KiB cap); previews refresh automatically when the file changes on disk (e.g. saved from an external editor); a draggable divider resizes the panel (20%–60%, persisted); multi-selection shows a "cannot preview" placeholder; the panel shares the terminal squeeze with the file list.
 - **UI Zoom**: whole-page zoom (50%–200%) synced across all windows, including the file picker.
 - **Custom M3 Title Bar** (optional, default follows the system): frameless window with minimize / maximize-restore / close buttons, a "v" window menu, and a live window title (dashboard → "Hoshineko Nya~", trash, or the directory name / full path) synced to the taskbar — hidden automatically on tiling WMs (niri/hyprland/i3/sway), shown on stacking DEs, with manual override; F12 devtools preserved.
 - **Smart Context Menu**: menu items generated dynamically per item type (files/folders/devices/trash/background), with touch long-press support.
-- **Selection & Shortcuts**: Ctrl/Shift multi-select, Ctrl+A, rubber-band selection (4 modes with edge auto-scroll), Delete/Shift+Delete/Ctrl+C/X/V, F5.
+- **Selection & Shortcuts**: Ctrl/Shift multi-select, Ctrl+A, rubber-band selection (4 modes with edge auto-scroll), arrow-key selection navigation (list view moves along the display order; grid view moves two-dimensionally with column clamping — no wrap at edges, auto-scrolls into view), Delete/Shift+Delete/Ctrl+C/X/V, F5.
 - **Internationalization**: 12 languages, apply-on-confirm with cross-window sync.
 
 ## Refactoring and modification of core functionalities from material-3-file-explorer project
@@ -149,7 +149,7 @@ Please switch to "Releases" page
 
 ## Testing
 
-End-to-end tests live in `scripts/e2e/` (18 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
+End-to-end tests live in `scripts/e2e/` (24 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
 
 ```bash
 npm run e2e                # builds first, then runs every scripts/e2e/*.test.cjs
@@ -190,7 +190,7 @@ systemctl --user restart xdg-desktop-portal.service
 
 (Or run `scripts/system-integration/install.sh` from the repository — same effect, root parts via pkexec.)
 
-Firefox: in `about:config` set `widget.use-xdg-desktop-portal.file-picker` to `1` (some versions use `widget.use-xdg-desktop-portal`) — this cannot be automated from the settings. **Limitation (v1)**: only `OpenFile` is implemented — save dialogs (`SaveFile`) return NotSupported. See docs/portal-filechooser.md for details and a gdbus verification command.
+Firefox: in `about:config` set `widget.use-xdg-desktop-portal.file-picker` to `1` (some versions use `widget.use-xdg-desktop-portal`) — this cannot be automated from the settings. **Limitation**: only single-file save (`SaveFile`) is implemented — multi-file save (`SaveFiles`) returns NotSupported. See docs/portal-filechooser.md for details and a gdbus verification command.
 
 ## License
 

@@ -1,23 +1,6 @@
 # 更新日志
 
-## v0.11.26 — 项目重命名彻底收尾（material-3 遗留清理）
-
-- **npm 包名**：package.json `name` 由 `material-3-file-manager` 改为 **`hoshineko-fm`**（v0.11.20 仅 `app.setName` 修正运行时前缀，包名一直是旧名，DMS 前缀已不出现但包身份未改）；`appId` 由 `com.material3.filemanager` 改为 `com.hoshineko.fm`
-- **PKGBUILD 删除**：旧上游（bhimio1/material-3-file-explorer）AUR 打包脚本，指向旧仓库与 Materials AppImage 名，已废弃
-- **electron/main.ts**：setName 注释不再提旧包名——name 现为 hoshineko-fm，setName 目的改为「npm 包名 → 品牌名 HoshinekoFM」（userData 旧路径写回逻辑不变）
-- **缓存/临时目录**：`~/.cache/material3/*` → `~/.cache/hoshineko-fm/*`（缩略图/拖拽图标，旧缓存废弃后自然重建）；tmp 下 generic/fallback 图标文件名同理
-- **文档**：AGENTS.md 产品名说明、可行性报告第十四节（撤销「不修改 name」决策点，补彻底改名实施记录）同步更新
-- package-lock.json 经 npm i 刷新同步 name/version
-
-### 迭代修复（搜索：部分目录无访问权限导致零结果）
-- **根因**：`system:search` 用 `execFileAsync('find', …)`——目录树中个别子目录无访问权限（如 /tmp 下 systemd 私有目录）时 find 仍输出可访问部分的匹配结果、但以退出码 1 结束，execFile 非零退出码整体抛错 → 已拿到的结果被丢弃返回空数组
-- **修复**：改用 `spawn` 手动收集 stdout（stderr 权限提示静默忽略、退出码不判失败），可访问部分的结果正常返回；新增 e2e 20：含 000 权限子目录的目录树，UI 搜索与 IPC 均返回可访问匹配项、权限目录内条目不出现
-
-### 迭代修复（已是默认且无恢复记录时「恢复」按钮消失）
-
-- **根因**：系统集成安装脚本直接写 `xdg-mime default HoshinekoFM.desktop inode/directory`，不经过设置按钮 → `prevDefaultFileManager`（localStorage）无记录；设置行渲染 `isDefault && !canRestore` 时返回 null——按钮整体消失；卸载系统集成同样不动 xdg-mime 关联，用户无法取消
-- **修复**：已是默认时「恢复为系统默认」按钮常驻——有记录还原原处理程序；无记录走新增 IPC `system:clear-dir-mime-handler`（用户级 mimeapps.list 两处（XDG 配置/本地数据）移除 [Default Applications] 的 HoshinekoFM.desktop 行与 [Added Associations] 对应项，回落系统级默认）；恢复后重新查询生效处理程序刷新状态（仍为本应用时保持已默认态并提示失败，避免误报成功）
-- e2e 16 增补：无记录状态按钮可见性与文案、清除关联生效、mimeapps.list 关联行移除（结束时还原原文件，净效果为零）
+## v0.11.27 — 方向键选择导航、目录大小计算并发控制与文件预览修复
 
 ### 方向键选择导航（文件浏览区上下左右 = 选择而非滚动）
 
@@ -40,7 +23,7 @@
   - 单次超过 10s 杀掉并以 `TIMEOUT` 返回；IPC 返回结构由裸数字改为 `{success, size|code}`（前端两处调用方同步更新）
   - 测试缝隙（环境变量，缺省无影响）：`HOSHINEKO_DU_TIMEOUT_MS` 覆盖超时阈值、`HOSHINEKO_DU_STALL_MS` 在 du 前 sleep（快速磁盘无法确定性制造「仍在运行」状态，e2e 22 用）
 - **前端**：PropertiesGrid 大小行新增「无法获取」（被杀/超时/失败）与「已禁用」两个状态；`computeDeleteTotalSize`（删除确认总大小）失败时返回 null 不阻塞删除
-- **设置开关**：新增「计算目录大小」（`settings.calculateDirSize`，默认开，设置 → 行为）——关闭后属性网格与删除确认都不再发起 du 遍历（频繁遍历大目录对磁盘不好）
+- **设置开关**：新增「计算目录大小」（`settings.calculateDirSize`，默认开，设置 → 行为，说明小字换行完整显示）——关闭后属性网格与删除确认都不再发起 du 遍历（频繁遍历大目录对磁盘不好）
 - e2e 22：成功/切换杀死/超时/失败四条 IPC 路径 + 设置关闭（不发起 du）+ 超时后「无法获取」展示；e2e 16/16b 定位设置行改为按文案匹配（新增开关会改变行下标）
 
 ### 迭代修复（Markdown 预览本地相对图片不显示）
@@ -54,6 +37,35 @@
 - **根因**：面板宽度经 ResizeObserver 连续变化（初次测量/窗口缩放/分隔条拖动）触发 PdfPage 多次重渲染，而上一轮仍在进行的 pdf.js render 任务未被取消——旧任务在 canvas 位图被重置（`canvas.width` 赋值清空并复位 context 变换）后继续绘制，产生黑底/上下翻转的坏页；第一页最先开始渲染，命中宽度收敛窗口的概率最高
 - **修复**（FilePreviewPanel `PdfPage`）：render 任务存入 ref——重渲染前与卸载清理时 `cancel()` 进行中的任务（pdf.js 同一 canvas 并发 render 不安全），新任务重新设置画布尺寸后完整重绘
 - 验证：真实应用 CDP 驱动打开 5 页 PDF → 6 次窗口缩放 + 重开预览 + 20 次快速随机缩放（150ms 间隔）压力测试，逐页采样像素无非黑帧
+
+### 迭代修复（文件预览内容变化不刷新）
+
+- **根因**：各预览加载 effect 只依赖 `file.path`——外部编辑保存后父级重列目录产生新 IFile（路径不变，只有 size/mtime 变），内容加载不会重跑；图片/视频/PDF 的 `preview://` URL 也不带缓存戳，浏览器直接命中缓存
+- **修复**（FilePreviewPanel）：
+  - 新增 `mtimeMs`（file.mtime 毫秒值）作为内容变更信号——文本/Markdown/PDF/归档加载 effect 的依赖，渲染期重置 key 也并入 mtime（状态复位 + mediaError 清除）
+  - 媒体（img/video/audio）与 PDF 的 URL 追加 `?v=${mtimeMs}` 缓存戳，媒体元素 key 并入 mtime 强制重建
+- e2e 24：外部改写 Markdown → 预览自动刷新（rev1→rev2→rev3 免重新选择）；外部替换图片 → src 缓存戳变化并重新加载
+
+- 版本号升至 `0.11.27`
+
+## v0.11.26 — 项目重命名彻底收尾（material-3 遗留清理）
+
+- **npm 包名**：package.json `name` 由 `material-3-file-manager` 改为 **`hoshineko-fm`**（v0.11.20 仅 `app.setName` 修正运行时前缀，包名一直是旧名，DMS 前缀已不出现但包身份未改）；`appId` 由 `com.material3.filemanager` 改为 `com.hoshineko.fm`
+- **PKGBUILD 删除**：旧上游（bhimio1/material-3-file-explorer）AUR 打包脚本，指向旧仓库与 Materials AppImage 名，已废弃
+- **electron/main.ts**：setName 注释不再提旧包名——name 现为 hoshineko-fm，setName 目的改为「npm 包名 → 品牌名 HoshinekoFM」（userData 旧路径写回逻辑不变）
+- **缓存/临时目录**：`~/.cache/material3/*` → `~/.cache/hoshineko-fm/*`（缩略图/拖拽图标，旧缓存废弃后自然重建）；tmp 下 generic/fallback 图标文件名同理
+- **文档**：AGENTS.md 产品名说明、可行性报告第十四节（撤销「不修改 name」决策点，补彻底改名实施记录）同步更新
+- package-lock.json 经 npm i 刷新同步 name/version
+
+### 迭代修复（搜索：部分目录无访问权限导致零结果）
+- **根因**：`system:search` 用 `execFileAsync('find', …)`——目录树中个别子目录无访问权限（如 /tmp 下 systemd 私有目录）时 find 仍输出可访问部分的匹配结果、但以退出码 1 结束，execFile 非零退出码整体抛错 → 已拿到的结果被丢弃返回空数组
+- **修复**：改用 `spawn` 手动收集 stdout（stderr 权限提示静默忽略、退出码不判失败），可访问部分的结果正常返回；新增 e2e 20：含 000 权限子目录的目录树，UI 搜索与 IPC 均返回可访问匹配项、权限目录内条目不出现
+
+### 迭代修复（已是默认且无恢复记录时「恢复」按钮消失）
+
+- **根因**：系统集成安装脚本直接写 `xdg-mime default HoshinekoFM.desktop inode/directory`，不经过设置按钮 → `prevDefaultFileManager`（localStorage）无记录；设置行渲染 `isDefault && !canRestore` 时返回 null——按钮整体消失；卸载系统集成同样不动 xdg-mime 关联，用户无法取消
+- **修复**：已是默认时「恢复为系统默认」按钮常驻——有记录还原原处理程序；无记录走新增 IPC `system:clear-dir-mime-handler`（用户级 mimeapps.list 两处（XDG 配置/本地数据）移除 [Default Applications] 的 HoshinekoFM.desktop 行与 [Added Associations] 对应项，回落系统级默认）；恢复后重新查询生效处理程序刷新状态（仍为本应用时保持已默认态并提示失败，避免误报成功）
+- e2e 16 增补：无记录状态按钮可见性与文案、清除关联生效、mimeapps.list 关联行移除（结束时还原原文件，净效果为零）
 
 - 版本号升至 `0.11.26`
 
