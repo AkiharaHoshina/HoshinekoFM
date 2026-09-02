@@ -6,7 +6,9 @@
 #     经 pkexec 授权，脚本以 --root 重入自身完成）；
 #   - 用户级部分：portals.conf preferred 项、用户级固定副本
 #     ~/.local/bin/HoshinekoFM（防原始 AppImage 被删）、桌面入口
-#     Exec 统一到固定路径、xdg-mime 关联、portal 服务重启。
+#     Exec 统一到固定路径、xdg-mime 关联、portal 服务重启、
+#     **清理旧的服务模式常驻进程**（--portal/--filemanager1，
+#     精确匹配不杀 GUI 窗口；HOSHINEKO_SKIP_SERVICE_KILL=1 跳过）。
 #
 # 用法：
 #   install.sh             # 用户级 + pkexec 重入 root 级（完整安装）
@@ -35,6 +37,25 @@ DESKTOP_FILE="$HOME/.local/share/applications/HoshinekoFM.desktop"
 # AppImage 魔数校验（偏移 8 起为 "AI"）：卸载时只移除本安装脚本写入的 AppImage 副本
 is_appimage() {
   [ -f "$1" ] && [ "$(dd if="$1" bs=1 skip=8 count=2 2>/dev/null)" = "AI" ]
+}
+
+# 清理旧的服务模式常驻进程（--portal / --filemanager1 形态，精确匹配
+# 服务参数、不杀 GUI 窗口）：旧常驻持单实例锁 + 总线名会让升级后的
+# 新版永远不生效——固定路径 Exec 已更新，杀掉后下次 D-Bus 激活即
+# spawn 新版。e2e/沙箱环境设 HOSHINEKO_SKIP_SERVICE_KILL=1 跳过
+# （避免测试进程误杀真实会话中的常驻服务）。
+kill_stale_services() {
+  echo "[user] 清理旧 portal/FileManager1 常驻进程"
+  if [ -n "${HOSHINEKO_SKIP_SERVICE_KILL:-}" ]; then
+    echo "[user] HOSHINEKO_SKIP_SERVICE_KILL 已设置，跳过 kill"
+    return
+  fi
+  if command -v pkill >/dev/null 2>&1; then
+    pkill -f 'HoshinekoFM.*--portal' 2>/dev/null || true
+    pkill -f 'HoshinekoFM.*--filemanager1' 2>/dev/null || true
+  else
+    echo "[warn] 缺少 pkill：旧常驻进程需手动清理" >&2
+  fi
 }
 
 root_install() {
@@ -109,6 +130,10 @@ user_install() {
     systemctl --user restart xdg-desktop-portal.service 2>/dev/null || true
     echo "[user] xdg-desktop-portal 服务已重启"
   fi
+
+  # 清理旧的服务模式常驻进程：不杀则升级后的新版（新 Exec/新二进制）
+  # 永远不会被 D-Bus 激活或应答请求
+  kill_stale_services
 }
 
 case "${1:-}" in

@@ -26,6 +26,10 @@
  * preview:// 协议、main.ts 顶层直接注册的 handler（theme:get-css、
  * theme:preview、app:get-startup-path、picker:get-config、fs:watch-dir
  * 等）均为主进程实现的手工复制——修改 main.ts 时须同步更新这里。
+ * **例外**：D-Bus 服务后端（portal FileChooser / FileManager1）已抽成
+ * electron/backends.ts 共享模块，main.ts 与 harness 走同一条接线
+ * （无手工副本，改坏注册接线 e2e 直接失败）；后端总线名用进程级
+ * 随机名隔离（见 E2E_PORTAL_BUS_NAME）。
  */
 const { app, BrowserWindow, protocol, ipcMain } = require('electron');
 const path = require('path');
@@ -84,6 +88,19 @@ const pickerConfigByWindow = new WeakMap();
 /** 每窗口目录监听（fs:watch-dir/unwatch-dir，与 main.ts 同步） */
 const watchListenersByWindow = new WeakMap();
 
+/**
+ * 后端总线名（进程级随机隔离）：每个测试文件是独立 Electron 进程，
+ * pid + 随机后缀保证互不抢名、残留进程不串扰。元素首字符须非数字
+ * （D-Bus 规范），故以 p/r 前缀。测试内请用 h.E2E_PORTAL_BUS_NAME /
+ * h.E2E_FM1_BUS_NAME 作代理目标，勿再硬编码固定名。
+ */
+const E2E_BUS_TAG = `p${process.pid}.r${Math.random().toString(36).slice(2, 8)}`;
+const E2E_PORTAL_BUS_NAME = `org.freedesktop.impl.portal.desktop.hoshineko.e2e.${E2E_BUS_TAG}`;
+const E2E_FM1_BUS_NAME = `org.freedesktop.FileManager1.hoshineko.e2e.${E2E_BUS_TAG}`;
+
+/** 本进程的后端注册结果 Promise（registerIpc 内启动，测试 await 断言） */
+let backendRegistrationPromise = null;
+
 function getWindows() {
   return Array.from(windows);
 }
@@ -133,14 +150,22 @@ function registerIpc() {
   require(path.join(DIST_ELECTRON, 'jobs.js')).initJobHandlers();
   require(path.join(DIST_ELECTRON, 'pty.js')).setupPtyHandlers();
 
-  // portal FileChooser 后端（与 main.ts 相同的接线；会话总线不可用时静默跳过）。
-  // 使用独立的 e2e 总线名：运行中的应用实例持有标准名时，测试互不抢名
-  require(path.join(DIST_ELECTRON, 'handlers', 'portalFileChooser.js'))
-    .setupPortalFileChooser(
-      (config, parent) => createTestWindow({ picker: true, pickerConfig: config, parent }),
-      { busName: 'org.freedesktop.impl.portal.desktop.hoshineko.e2e' },
-    )
-    .catch(() => { /* 后端注册失败不影响其余测试 */ });
+  // D-Bus 服务后端（portal FileChooser + FileManager1）：与 main.ts 共用
+  // 同一条接线（backends.js 编译产物），**不做手工副本**——改坏注册
+  // 接线 e2e 立即失败。总线名用进程级随机名（pid + 随机后缀）隔离：
+  // 残留 e2e 进程（watchdog kill/Ctrl-C 遗留）持旧名也不串扰、不误判。
+  backendRegistrationPromise = require(path.join(DIST_ELECTRON, 'backends.js')).registerServiceBackends({
+    createPicker: (config, parent) => createTestWindow({ picker: true, pickerConfig: config, parent }),
+    openWindow: (targetPath, opts) =>
+      createTestWindow({
+        argv: ['electron', targetPath],
+        startupSelect: opts && opts.selectFileName
+          ? { fileName: opts.selectFileName, openProperties: opts.openProperties }
+          : null,
+      }),
+    portalBusName: E2E_PORTAL_BUS_NAME,
+    fileManager1BusName: E2E_FM1_BUS_NAME,
+  });
 
   const { startWatching, stopWatching } = require(path.join(DIST_ELECTRON, 'fsWatcher.js'));
 
@@ -600,6 +625,12 @@ module.exports = {
   ROOT,
   DIST,
   DIST_ELECTRON,
+  /** 本进程 portal 后端总线名（进程级随机隔离，测试代理目标用） */
+  E2E_PORTAL_BUS_NAME,
+  /** 本进程 FileManager1 后端总线名（同上） */
+  E2E_FM1_BUS_NAME,
+  /** await 本进程后端注册结果（{ portal: boolean; fileManager1: boolean }） */
+  getBackendRegistration: () => backendRegistrationPromise,
   setupApp,
   createTestWindow,
   getWindows,

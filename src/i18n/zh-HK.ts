@@ -163,6 +163,7 @@ const zhHK = {
   'settings.system_integration_done': 'Portal 整合已安裝',
   'settings.install_integration': '安裝 Portal 整合',
   'settings.integration_installed': '系統整合安裝完成',
+  'settings.integration_backend_restart_hint': '舊嘅 portal/FileManager1 常駐程序已清理；本視窗嘅後端喺應用重啟後更新',
   'settings.integration_failed': '系統整合安裝失敗',
   'settings.uninstall_integration': '移除 Portal 整合',
   'settings.integration_uninstalled': '系統整合已移除',

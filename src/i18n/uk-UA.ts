@@ -202,6 +202,7 @@ const ukUA = {
   'settings.system_integration_done': 'Інтеграцію portal встановлено',
   'settings.install_integration': 'Встановити інтеграцію portal',
   'settings.integration_installed': 'Системну інтеграцію встановлено',
+  'settings.integration_backend_restart_hint': 'Старі резидентні процеси portal/FileManager1 зупинено; бекенд цього вікна оновиться після перезапуску застосунку',
   'settings.integration_failed': 'Не вдалося встановити системну інтеграцію',
   'settings.uninstall_integration': 'Видалити інтеграцію portal',
   'settings.integration_uninstalled': 'Системну інтеграцію видалено',

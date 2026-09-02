@@ -163,6 +163,7 @@ const zhCN = {
   'settings.system_integration_done': 'Portal 集成已安装',
   'settings.install_integration': '安装 Portal 集成',
   'settings.integration_installed': '系统集成安装完成',
+  'settings.integration_backend_restart_hint': '旧的 portal/FileManager1 常驻进程已清理；本窗口的后端在应用重启后更新',
   'settings.integration_failed': '系统集成安装失败',
   'settings.uninstall_integration': '卸载 Portal 集成',
   'settings.integration_uninstalled': '系统集成已卸载',

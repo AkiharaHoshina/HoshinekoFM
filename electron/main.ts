@@ -12,8 +12,7 @@ import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor } from '.
 import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers } from './handlers/theme';
 import { registerPickerHandlers, type PickerConfig } from './handlers/picker';
-import { setupPortalFileChooser } from './handlers/portalFileChooser';
-import { setupFileManager1 } from './handlers/fileManager1';
+import { registerServiceBackends } from './backends';
 import { initJobHandlers } from './jobs';
 
 /**
@@ -210,30 +209,44 @@ protocol.registerSchemesAsPrivileged([
 app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
 app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
 
+/** --portal 启动参数：仅注册 portal 后端服务（D-Bus 激活用，不创建主窗口） */
+const PORTAL_ONLY_MODE = process.argv.includes('--portal');
+/** --filemanager1 启动参数：仅注册 FileManager1 后端服务（同上） */
+const FM1_ONLY_MODE = process.argv.includes('--filemanager1');
+/** 服务模式（portal / filemanager1）：只注册 D-Bus 后端，不创建主窗口 */
+const SERVICE_ONLY_MODE = PORTAL_ONLY_MODE || FM1_ONLY_MODE;
+
 // ── 单实例锁：第二次启动复用已有后端，为其再开一个窗口 ──
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-} else {
-  app.on('second-instance', (_event, argv) => {
-    // 已有实例运行：打开新窗口（共享同一个后端）。
-    // 必须 await 新窗口实例后再 focus：新窗口由 niri 等 Wayland 合成器
-    // 映射到"当前活动工作区"，若误 focus 旧窗口会把视口拉回旧窗口的
-    // 工作区，新窗口随后也会开在那里（跨工作区回跳问题）。
-    const open = async () => {
-      const win = await createWindow(argv);
-      if (win.isDestroyed()) return;
-      if (win.isMinimized()) win.restore();
-      // 新窗口显示后由合成器按 open-focused 规则自动聚焦，
-      // 这里只在已显示时补一次 focus，绝不触碰其他窗口
-      if (win.isVisible()) win.focus();
-    };
-    if (app.isReady()) {
-      void open();
-    } else {
-      app.whenReady().then(() => void open());
-    }
-  });
+// 服务模式（--portal / --filemanager1）**不请求单实例锁**：服务形态靠
+// D-Bus 名字仲裁（requestName DO_NOT_QUEUE，失败即 exit(1)，见
+// whenReady）——若也持锁，升级后新服务进程会被旧常驻的锁挡在门外
+// （second-instance 把 argv 转发给旧进程 → 永远跑旧代码、新版本不生效）。
+// GUI 模式保持锁：多次启动共享同一后端多开窗口。
+if (!SERVICE_ONLY_MODE) {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    app.quit();
+  } else {
+    app.on('second-instance', (_event, argv) => {
+      // 已有实例运行：打开新窗口（共享同一个后端）。
+      // 必须 await 新窗口实例后再 focus：新窗口由 niri 等 Wayland 合成器
+      // 映射到"当前活动工作区"，若误 focus 旧窗口会把视口拉回旧窗口的
+      // 工作区，新窗口随后也会开在那里（跨工作区回跳问题）。
+      const open = async () => {
+        const win = await createWindow(argv);
+        if (win.isDestroyed()) return;
+        if (win.isMinimized()) win.restore();
+        // 新窗口显示后由合成器按 open-focused 规则自动聚焦，
+        // 这里只在已显示时补一次 focus，绝不触碰其他窗口
+        if (win.isVisible()) win.focus();
+      };
+      if (app.isReady()) {
+        void open();
+      } else {
+        app.whenReady().then(() => void open());
+      }
+    });
+  }
 }
 
 ipcMain.handle('theme:get-css', async () => {
@@ -358,13 +371,6 @@ registerPickerHandlers((config, parent) =>
 );
 initJobHandlers();
 
-/** --portal 启动参数：仅注册 portal 后端服务（D-Bus 激活用，不创建主窗口） */
-const PORTAL_ONLY_MODE = process.argv.includes('--portal');
-/** --filemanager1 启动参数：仅注册 FileManager1 后端服务（同上） */
-const FM1_ONLY_MODE = process.argv.includes('--filemanager1');
-/** 服务模式（portal / filemanager1）：只注册 D-Bus 后端，不创建主窗口 */
-const SERVICE_ONLY_MODE = PORTAL_ONLY_MODE || FM1_ONLY_MODE;
-
 /**
  * 解析单段 Range 请求头（`bytes=a-b` / `bytes=a-` / `bytes=-b`）。
  *
@@ -478,21 +484,30 @@ app.whenReady().then(() => {
     });
   });
 
-  // portal FileChooser 后端（与内部选择器共用同一窗口工厂）：
-  // 会话总线不可用/名称被占用时静默跳过
-  void setupPortalFileChooser((config, parent) =>
-    createWindow(process.argv, { picker: true, pickerConfig: config, parent }),
-  ).catch(() => { /* 后端注册失败不影响主功能 */ });
-
-  // FileManager1 后端（第三方程序「在文件管理器中显示」等标准入口）：
-  // 名称被其他文件管理器占用时静默降级
-  void setupFileManager1((targetPath, opts) =>
-    createWindow(['hoshinekofm', targetPath], {
-      startupSelect: opts?.selectFileName
-        ? { fileName: opts.selectFileName, openProperties: opts?.openProperties }
-        : undefined,
-    }),
-  ).catch(() => { /* 后端注册失败不影响主功能 */ });
+  // D-Bus 服务后端统一接线（portal FileChooser + FileManager1，经
+  // backends.ts 共享模块——与 e2e harness 同一条代码路径）：
+  // 注册失败原因已由各 setup 输出 console.error（含占名者 owner），
+  // 返回值上浮到这里决定服务模式的退出码。
+  void registerServiceBackends({
+    createPicker: (config, parent) =>
+      createWindow(process.argv, { picker: true, pickerConfig: config, parent }),
+    openWindow: (targetPath, opts) =>
+      createWindow(['hoshinekofm', targetPath], {
+        startupSelect: opts?.selectFileName
+          ? { fileName: opts.selectFileName, openProperties: opts?.openProperties }
+          : undefined,
+      }),
+  }).then(({ portal, fileManager1 }) => {
+    // 服务模式：注册失败 → 非零退出（dbus-daemon 把激活失败报告给
+    // 调用方），杜绝「无窗口、无服务、永不退出」的空转常驻进程。
+    if (SERVICE_ONLY_MODE) {
+      const failed = (PORTAL_ONLY_MODE && !portal) || (FM1_ONLY_MODE && !fileManager1);
+      if (failed) {
+        console.error('[backend] 服务模式后端注册失败，进程退出（exit 1）');
+        app.exit(1);
+      }
+    }
+  });
 
   if (!SERVICE_ONLY_MODE) {
     createWindow();
@@ -509,7 +524,8 @@ app.on('window-all-closed', () => {
   // 请求（尤其冷激活的首次请求）随机失败（前端收到的错误为
   // UnknownMethod）。服务模式保持常驻：选择器/保存器窗口关闭后
   // 进程留存（与 gtk/gnome 的 portal 后端同为常驻服务），
-  // 由下一次激活复用或会话结束回收。
+  // 由下一次激活复用或会话结束回收。注册失败的空转常驻已在
+  // whenReady 内以 exit(1) 处理，不会走到这里。
   if (process.platform !== 'darwin' && !SERVICE_ONLY_MODE) {
     app.quit();
   }

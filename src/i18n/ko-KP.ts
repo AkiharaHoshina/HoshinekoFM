@@ -164,6 +164,7 @@ const koKP = {
   'settings.system_integration_done': 'Portal 통합 설치됨',
   'settings.install_integration': 'Portal 통합 설치',
   'settings.integration_installed': '시스템 통합 설치 완료',
+  'settings.integration_backend_restart_hint': '기존 portal/FileManager1 상주 프로세스를 종료했습니다. 이 창의 백엔드는 앱 재시작 후 업데이트됩니다',
   'settings.integration_failed': '시스템 통합 설치 실패',
   'settings.uninstall_integration': 'Portal 통합 제거',
   'settings.integration_uninstalled': '시스템 통합 제거됨',

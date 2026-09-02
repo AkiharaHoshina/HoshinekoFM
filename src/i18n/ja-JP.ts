@@ -163,6 +163,7 @@ const jaJP = {
   'settings.system_integration_done': 'Portal 統合はインストール済み',
   'settings.install_integration': 'Portal 統合をインストール',
   'settings.integration_installed': 'システム統合のインストールが完了しました',
+  'settings.integration_backend_restart_hint': '古い portal/FileManager1 常駐プロセスを終了しました。このウィンドウのバックエンドはアプリ再起動後に更新されます',
   'settings.integration_failed': 'システム統合のインストールに失敗しました',
   'settings.uninstall_integration': 'Portal 統合をアンインストール',
   'settings.integration_uninstalled': 'システム統合をアンインストールしました',

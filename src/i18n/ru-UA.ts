@@ -205,6 +205,7 @@ const ruUA = {
   'settings.system_integration_done': 'Интеграция portal установлена',
   'settings.install_integration': 'Установить интеграцию portal',
   'settings.integration_installed': 'Системная интеграция установлена',
+  'settings.integration_backend_restart_hint': 'Старые резидентные процессы portal/FileManager1 остановлены; бэкенд этого окна обновится после перезапуска приложения',
   'settings.integration_failed': 'Не удалось установить системную интеграцию',
   'settings.uninstall_integration': 'Удалить интеграцию portal',
   'settings.integration_uninstalled': 'Системная интеграция удалена',

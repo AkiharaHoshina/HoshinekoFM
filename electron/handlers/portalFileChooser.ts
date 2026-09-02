@@ -202,10 +202,29 @@ function mapSaveOptions(options: Record<string, unknown>): PickerConfig {
 type OpenResult = [number, Record<string, dbus.Variant>];
 
 /**
+ * 查询总线名当前所有者（注册失败诊断用；dbus-daemon 缺失/无主返回 null）。
+ *
+ * @param bus - 会话总线连接（requestName 失败后仍可查询）
+ * @param name - 总线名
+ * @returns 唯一连接名（如 :1.42）或 null
+ */
+async function queryNameOwner(bus: dbus.MessageBus, name: string): Promise<string | null> {
+  try {
+    const proxy = await bus.getProxyObject('org.freedesktop.DBus', '/org/freedesktop/DBus');
+    const iface = proxy.getInterface('org.freedesktop.DBus');
+    const owner: unknown = await iface.GetNameOwner(name);
+    return typeof owner === 'string' && owner ? owner : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 注册 portal FileChooser 后端（**xdg-desktop-portal ≥ 1.19 新协议**：
  * OpenFile 直接返回 `(u, a{sv})`——响应码 + 结果字典，无 Request 对象
  * 往返、无 Response 信号）。
- * 会话总线不可用、总线名被占用（多实例）时静默跳过并返回 false。
+ * 会话总线不可用、总线名被占用（多实例）时返回 false 并输出
+ * console.error（含占名者 owner，便于 5 秒内定位冲突）。
  *
  * @param opts.busName - 总线名覆盖（e2e 测试用独立名称避免与运行中的
  *   应用实例抢名；缺省用标准名 PORTAL_BUS_NAME）
@@ -218,17 +237,25 @@ export async function setupPortalFileChooser(
   let bus: dbus.MessageBus;
   try {
     bus = dbus.sessionBus();
-  } catch {
+  } catch (e) {
+    console.error(`[portal] 会话总线不可用，portal FileChooser 后端未注册：${(e as Error)?.message ?? e}`);
     return false;
   }
   try {
     // RequestNameReply.PrimaryOwner = 1（dbus-next 未导出该枚举，按 D-Bus 规范常量比对）
     const reply = await bus.requestName(busName, dbus.NameFlag.DO_NOT_QUEUE);
     if (reply !== 1) {
+      const owner = await queryNameOwner(bus, busName);
+      console.error(
+        `[portal] 总线名 ${busName} 注册失败：已被占用${owner ? `（owner: ${owner}）` : ''}。` +
+        '占名者可能是旧常驻服务进程（--portal）或另一实例——若刚升级/重装，' +
+        '请确认旧进程已退出（或重跑系统集成安装以清理旧常驻）。',
+      );
       bus.disconnect();
       return false;
     }
-  } catch {
+  } catch (e) {
+    console.error(`[portal] 总线名 ${busName} 注册异常：${(e as Error)?.message ?? e}`);
     bus.disconnect();
     return false;
   }

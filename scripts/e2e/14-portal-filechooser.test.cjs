@@ -5,12 +5,15 @@
  * - filters 用 Firefox 实际形态：带字符类的 glob（*.[jJ][pP][gG]）与
  *   匹配全部的 `*`（应被跳过）；名称直接作 id/label；
  * - 取消返回 [1, {}]。
+ * 总线名用 harness 的进程级随机名（不与其他实例/残留进程抢名）；
+ * 后端就绪 = **本进程**注册结果（registerServiceBackends 返回值），
+ * 不用 GetNameOwner 轮询（残留进程持名会误判 ready）。
  * 无会话总线时打印 SKIP 跳过（不判失败）。
  */
 const h = require('./harness.cjs');
 const path = require('path');
 
-const BUS_NAME = 'org.freedesktop.impl.portal.desktop.hoshineko.e2e';
+const BUS_NAME = h.E2E_PORTAL_BUS_NAME;
 const FC_PATH = '/org/freedesktop/portal/desktop';
 const FC_IFACE = 'org.freedesktop.impl.portal.FileChooser';
 
@@ -28,27 +31,17 @@ const FC_IFACE = 'org.freedesktop.impl.portal.FileChooser';
   }
 
   await h.run('14 portal FileChooser 后端（D-Bus）', async () => {
+    // 本进程后端注册结果：失败（无总线/名冲突）直接判失败，不靠
+    // GetNameOwner 轮询（那只能证明名字有主，不证明主是本进程）
+    const reg = await h.getBackendRegistration();
+    h.assert.strictEqual(reg.portal, true, '本进程 portal 后端注册应成功');
+
     const dir = h.tempDir();
     h.makeFileTree(dir, { 'a.JPG': 'x', 'b.txt': 'y' });
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
 
     const bus = dbus.sessionBus();
-
-    // 等待后端总线名就绪
-    const nameReady = await (async () => {
-      const start = Date.now();
-      while (Date.now() - start < 8000) {
-        try {
-          const dbusProxy = await bus.getProxyObject('org.freedesktop.DBus', '/org/freedesktop/DBus');
-          const owner = await dbusProxy.getInterface('org.freedesktop.DBus').GetNameOwner(BUS_NAME);
-          if (owner) return true;
-        } catch { /* 尚未注册：重试 */ }
-        await h.sleep(200);
-      }
-      return false;
-    })();
-    h.assert.ok(nameReady, '后端总线名应已注册');
 
     const fc = await bus.getProxyObject(BUS_NAME, FC_PATH);
     const fcIface = fc.getInterface(FC_IFACE);

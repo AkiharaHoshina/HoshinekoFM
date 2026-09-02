@@ -6,7 +6,9 @@
 #   - 用户级部分：移除 portals.conf 中 preferred=hoshineko 项
 #     （文件无剩余内容时一并删除）、移除用户级固定副本
 #     ~/.local/bin/HoshinekoFM（仅 AppImage 形态）、桌面入口 Exec
-#     恢复为当前运行路径、xdg-desktop-portal 服务重启。
+#     恢复为当前运行路径、xdg-desktop-portal 服务重启、
+#     **清理服务模式常驻进程**（--portal/--filemanager1，卸载后不再
+#     继续持名应答；HOSHINEKO_SKIP_SERVICE_KILL=1 跳过）。
 #
 # 用法：
 #   uninstall.sh             # 用户级 + pkexec 重入 root 级（完整卸载）
@@ -31,6 +33,23 @@ DESKTOP_FILE="$HOME/.local/share/applications/HoshinekoFM.desktop"
 # AppImage 魔数校验（偏移 8 起为 "AI"）：只移除本安装脚本写入的 AppImage 副本
 is_appimage() {
   [ -f "$1" ] && [ "$(dd if="$1" bs=1 skip=8 count=2 2>/dev/null)" = "AI" ]
+}
+
+# 清理服务模式常驻进程（--portal / --filemanager1 形态，精确匹配
+# 服务参数、不杀 GUI 窗口）：卸载后常驻进程不再继续持总线名应答。
+# e2e/沙箱环境设 HOSHINEKO_SKIP_SERVICE_KILL=1 跳过。
+kill_stale_services() {
+  echo "[user] 清理 portal/FileManager1 常驻进程"
+  if [ -n "${HOSHINEKO_SKIP_SERVICE_KILL:-}" ]; then
+    echo "[user] HOSHINEKO_SKIP_SERVICE_KILL 已设置，跳过 kill"
+    return
+  fi
+  if command -v pkill >/dev/null 2>&1; then
+    pkill -f 'HoshinekoFM.*--portal' 2>/dev/null || true
+    pkill -f 'HoshinekoFM.*--filemanager1' 2>/dev/null || true
+  else
+    echo "[warn] 缺少 pkill：常驻进程需手动清理" >&2
+  fi
 }
 
 root_uninstall() {
@@ -99,6 +118,9 @@ user_uninstall() {
     systemctl --user restart xdg-desktop-portal.service 2>/dev/null || true
     echo "[user] xdg-desktop-portal 服务已重启"
   fi
+
+  # 清理服务模式常驻进程：卸载后不再继续持名应答
+  kill_stale_services
 }
 
 case "${1:-}" in

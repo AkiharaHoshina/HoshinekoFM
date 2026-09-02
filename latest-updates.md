@@ -1,5 +1,55 @@
 # 更新日志
 
+## v0.11.30 — portal 后端冲突可观测性、升级接管与 e2e 盲区修复
+
+### 背景（9 月 2 日实录：e2e 全绿但功能完全无效）
+
+- 运行中的打包版 portal 常驻服务持单实例锁 + 总线名——升级后新版本进程
+  要么被 D-Bus 拒于门外（名字被占，永不激活）、要么被 second-instance
+  转发给旧进程（GUI 启动跑旧代码）；注册失败还完全静默（无日志、无
+  退出码、无 UI 状态），只能 `busctl --user list` 手动排查
+- e2e 14 用 `GetNameOwner` 轮询判「就绪」——只证明名字有主、不证明主是
+  本进程；harness 里后端接线是 main.ts 的手工副本，改坏 main.ts 的
+  注册逻辑 e2e 依然全绿（结构性盲区）
+
+### 可观测性（冲突/失败 5 秒内定位）
+
+- `setupPortalFileChooser` / `setupFileManager1` 失败路径全部输出
+  `console.error`：区分「会话总线不可用」与「总线名被占用」（后者查询
+  `GetNameOwner` 打印占名者唯一连接名 + 提示旧常驻可能持锁劫持）
+- `main.ts` 不再吞返回值：后端注册经共享模块 `electron/backends.ts`
+  上浮结果——**服务模式（--portal / --filemanager1）注册失败即
+  `app.exit(1)`**（dbus-daemon 把激活失败报告给调用方），杜绝
+  「无窗口、无服务、永不退出」的空转常驻
+
+### 服务模式跳过单实例锁（根治劫持）
+
+- `--portal` / `--filemanager1` 服务形态**不请求单实例锁**，只靠 D-Bus
+  名字仲裁（DO_NOT_QUEUE，失败即非零退出）；GUI 模式保持单实例锁
+  （多窗口共享后端语义不变）
+
+### 安装/卸载清理旧常驻（升级后新版能接管）
+
+- `install.sh` / `uninstall.sh` 用户级流程新增旧常驻清理：精确匹配
+  `--portal` / `--filemanager1` 服务形态（`pkill -f 'HoshinekoFM.*--portal'`
+  等，不杀 GUI 窗口）；固定路径 Exec 已更新 → 杀掉后下次 D-Bus 激活
+  即 spawn 新版；卸载后常驻不再持名应答
+- e2e/沙箱环境经 `HOSHINEKO_SKIP_SERVICE_KILL=1` 跳过真实 kill
+  （输出保留清理标记行可断言代码路径）
+- UI 层安装成功后追加提示 toast：「旧的 portal/FileManager1 常驻进程
+  已清理；本窗口的后端在应用重启后更新」（GUI 自身也占名）
+
+### e2e 盲区修复
+
+- **后端接线抽成共享模块** `electron/backends.ts`（`registerServiceBackends`）：
+  main.ts 与 harness 同一条代码路径，改坏注册接线 e2e 直接失败
+- **总线名进程级随机隔离**：`…hoshineko.e2e.p<pid>.r<随机>`——残留
+  e2e 进程（watchdog kill / Ctrl-C 遗留）持旧名不串扰、不误判
+- **e2e 14/17 只断言本进程注册状态**：await `registerServiceBackends`
+  返回值（portal/fileManager1 布尔），不再 GetNameOwner 轮询；
+  e2e 17 不再因真实应用占标准 FileManager1 名而跳过
+- e2e 18 增补：安装/卸载输出含常驻清理标记且沙箱跳过真实 kill
+
 ## v0.11.27 — 方向键选择导航、目录大小计算并发控制与文件预览修复
 
 ### 方向键选择导航（文件浏览区上下左右 = 选择而非滚动）

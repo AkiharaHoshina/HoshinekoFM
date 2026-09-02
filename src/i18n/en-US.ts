@@ -174,6 +174,7 @@ const enUS = {
   'settings.system_integration_done': 'Portal integration installed',
   'settings.install_integration': 'Install portal integration',
   'settings.integration_installed': 'System integration installed',
+  'settings.integration_backend_restart_hint': 'Old portal/FileManager1 service processes have been cleaned up; this window\'s backend updates after the app restarts',
   'settings.integration_failed': 'System integration installation failed',
   'settings.uninstall_integration': 'Uninstall portal integration',
   'settings.integration_uninstalled': 'System integration uninstalled',

@@ -16,6 +16,11 @@ const path = require('path');
   await h.setupApp();
 
   await h.run('18 系统集成一键安装/卸载（用户级 + 状态）', async () => {
+    // 沙箱环境禁止真实 kill：install/uninstall 会 pkill 会话中真实的
+    // 常驻服务（--portal/--filemanager1），测试必须经环境变量跳过
+    // （输出仍包含清理标记行，可断言该代码路径被执行）
+    const prevSkipKill = process.env.HOSHINEKO_SKIP_SERVICE_KILL;
+    process.env.HOSHINEKO_SKIP_SERVICE_KILL = '1';
     const dir = h.tempDir();
     h.makeFileTree(dir, { 'a.txt': 'x' });
     const win = await h.createTestWindow({ argv: ['electron', dir] });
@@ -55,6 +60,14 @@ const path = require('path');
     h.assert.ok(fs.existsSync(confPath), 'portals.conf 应已写入');
     const conf1 = fs.readFileSync(confPath, 'utf-8');
     h.assert.ok(conf1.includes('org.freedesktop.impl.portal.FileChooser=hoshineko'), '应包含 preferred 项');
+    h.assert.ok(
+      r1.stdout.includes('[user] 清理旧 portal/FileManager1 常驻进程'),
+      '安装应执行旧常驻进程清理路径',
+    );
+    h.assert.ok(
+      r1.stdout.includes('HOSHINEKO_SKIP_SERVICE_KILL 已设置'),
+      '沙箱环境应跳过真实 kill',
+    );
 
     // 幂等：二次运行不重复追加
     const r2 = run(scriptPath);
@@ -66,6 +79,10 @@ const path = require('path');
     const u1 = run(uninstallPath);
     h.assert.strictEqual(u1.status, 0, `卸载应成功：${u1.stderr}`);
     h.assert.strictEqual(fs.existsSync(confPath), false, 'portals.conf 无剩余内容应删除');
+    h.assert.ok(
+      u1.stdout.includes('[user] 清理 portal/FileManager1 常驻进程'),
+      '卸载应执行常驻进程清理路径',
+    );
 
     // 卸载幂等：再次卸载仍成功
     const u2 = run(uninstallPath);
@@ -219,6 +236,8 @@ const path = require('path');
       process.env.HOME = prevHome;
     }
     h.assert.strictEqual(countLeaked(), leakedBefore, '执行后不应残留 hoshineko-integration-* 临时目录');
+    if (prevSkipKill === undefined) delete process.env.HOSHINEKO_SKIP_SERVICE_KILL;
+    else process.env.HOSHINEKO_SKIP_SERVICE_KILL = prevSkipKill;
   });
 
   h.finish();

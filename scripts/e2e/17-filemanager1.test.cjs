@@ -2,12 +2,14 @@
  * e2e 17：org.freedesktop.FileManager1 D-Bus 接口（第三方程序调用）。
  * 模拟外部程序：OpenFolders 开窗口、ShowItems 开目录并选中条目、
  * ShowItemProperties 弹属性对话框；非法 URI 忽略。
- * 总线名被占用（如运行中的应用实例已注册）或无法获取时 SKIP。
+ * 后端由 harness 经 backends.js 注册（与 main.ts 同一条接线），
+ * 总线名用进程级随机名——不抢真实应用/残留进程的标准名，不误判。
+ * 无会话总线时 SKIP。
  */
 const h = require('./harness.cjs');
 const path = require('path');
 
-const BUS_NAME = 'org.freedesktop.FileManager1';
+const BUS_NAME = h.E2E_FM1_BUS_NAME;
 const FM1_PATH = '/org/freedesktop/FileManager1';
 const FM1_IFACE = 'org.freedesktop.FileManager1';
 
@@ -25,20 +27,10 @@ const FM1_IFACE = 'org.freedesktop.FileManager1';
   }
 
   await h.run('17 FileManager1 D-Bus 接口', async () => {
-    // 测试进程注册 FileManager1（打开窗口经 harness 工厂 + 定位提示）
-    const setup = require(path.join(h.DIST_ELECTRON, 'handlers', 'fileManager1.js'));
-    const registered = await setup.setupFileManager1((targetPath, opts) =>
-      h.createTestWindow({
-        argv: ['electron', targetPath],
-        startupSelect: opts?.selectFileName
-          ? { fileName: opts.selectFileName, openProperties: opts?.openProperties }
-          : null,
-      }),
-    );
-    if (!registered) {
-      console.log('  - 17 跳过（总线名被占用）');
-      return;
-    }
+    // 本进程后端注册结果（失败 = 无总线/名冲突，直接判失败；
+    // 不靠 GetNameOwner 轮询——残留进程持名会误判 ready）
+    const reg = await h.getBackendRegistration();
+    h.assert.strictEqual(reg.fileManager1, true, '本进程 FileManager1 后端注册应成功');
 
     const dirA = h.tempDir();
     h.makeFileTree(dirA, { 'a.txt': 'x' });

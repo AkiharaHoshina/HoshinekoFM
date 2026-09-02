@@ -572,6 +572,10 @@ function AppContent() {
       const res = await window.electron?.installSystemIntegration();
       if (res?.success) {
         showToast(t("settings.integration_installed"), "success");
+        // 安装脚本已杀掉旧的服务模式常驻（--portal/--filemanager1）；
+        // 本窗口自身注册的后端仍是旧代码，重启后（或 D-Bus 按需激活
+        // 新固定路径副本）才以新版本应答 portal/FileManager1 请求。
+        showToast(t("settings.integration_backend_restart_hint"), "info");
         const status = await window.electron?.getSystemIntegrationStatus();
         if (status) setIntegrationStatus(status);
       } else {
