@@ -957,7 +957,12 @@ function AppContent() {
           label: t("context_menu.open"),
           icon: "open_in_new",
           action: () => {
-            openFile(item.path);
+            // 目录内部打开（与双击同款导航）；文件走外部应用打开
+            if (item.isDirectory) {
+              handleSidebarNavigate(item.path);
+            } else {
+              openFile(item.path);
+            }
             closeContextMenu();
           },
         },
