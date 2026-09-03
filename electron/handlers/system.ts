@@ -7,6 +7,13 @@ import { promisify } from 'util';
 import dbus from 'dbus-next';
 import { getMountMap, invalidateMountMapCache, getExecError } from '../shared';
 import { getThumbnailCacheInfo, clearThumbnailCache, detectMime } from '../fsUtils';
+import { PORTAL_BUS_NAME, PORTAL_FILE_CHOOSER_PATH, PORTAL_FILE_CHOOSER_IFACE } from './portalFileChooser';
+import { FILE_MANAGER1_NAME, FILE_MANAGER1_PATH, FILE_MANAGER1_IFACE } from './fileManager1';
+import {
+  queryBackendConflict,
+  type BackendConflictInfo,
+  type BackendKind,
+} from './backendInfo';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -841,6 +848,78 @@ function detectWindowManager(): WindowManagerResult {
   return { kind: 'stacking', source: 'fallback' };
 }
 
+// ── 后端总线名冲突诊断（方案 B：运行时版本探测）──
+// 注册总线名失败（被占用）时探测占名者版本，识别「旧版常驻仍在
+// 应答」/「僵尸占名无响应」两类升级接管问题（探测逻辑见 backendInfo.ts）。
+
+/** 冲突探测缓存：首次发起后复用（注册只发生一次，探测结果稳定） */
+let backendConflictsPromise: Promise<BackendConflictInfo[]> | null = null;
+
+/** 各后端的探测目标（总线名 / 对象路径 / 接口名，与后端注册参数一致） */
+const BACKEND_PROBE_TARGETS: Record<BackendKind, {
+  busName: string;
+  objectPath: string;
+  ifaceName: string;
+}> = {
+  portal: {
+    busName: PORTAL_BUS_NAME,
+    objectPath: PORTAL_FILE_CHOOSER_PATH,
+    ifaceName: PORTAL_FILE_CHOOSER_IFACE,
+  },
+  fileManager1: {
+    busName: FILE_MANAGER1_NAME,
+    objectPath: FILE_MANAGER1_PATH,
+    ifaceName: FILE_MANAGER1_IFACE,
+  },
+};
+
+/**
+ * 探测全部指定后端并生成报告（并行，单探测最长 3s 超时，
+ * 见 BACKEND_CONFLICT_QUERY_TIMEOUT_MS）。探测不冲突（名字已释放）
+ * 的后端不进报告。
+ *
+ * @param kinds - 注册失败的后端类型
+ * @returns 冲突报告（未诊断出的条目被过滤）
+ */
+async function probeBackendConflicts(kinds: BackendKind[]): Promise<BackendConflictInfo[]> {
+  const results = await Promise.all(kinds.map(async (kind) => {
+    const target = BACKEND_PROBE_TARGETS[kind];
+    const probe = await queryBackendConflict(target.busName, target.objectPath, target.ifaceName);
+    return probe ? { backend: kind, busName: target.busName, ...probe } : null;
+  }));
+  return results.filter((r): r is BackendConflictInfo => r !== null);
+}
+
+/**
+ * 启动后端总线名冲突探测（幂等：并发调用共享同一 Promise，结果缓存）。
+ * 注册失败后由 main.ts 调用（GUI 模式）；探测完成后每个冲突输出
+ * console.error（含占名者版本与状态，便于终端定位）。
+ *
+ * @param kinds - 注册失败的后端类型
+ * @returns 冲突报告（渲染进程经 system:get-backend-conflicts 获取）
+ */
+export function startBackendConflictQuery(kinds: BackendKind[]): Promise<BackendConflictInfo[]> {
+  if (!backendConflictsPromise) {
+    backendConflictsPromise = probeBackendConflicts(kinds).then((report) => {
+      for (const conflict of report) {
+        console.error(
+          `[backend-conflict] ${conflict.backend} 总线名 ${conflict.busName} 被占用：` +
+          `state=${conflict.state}` +
+          `${conflict.remoteVersion ? ` remoteVersion=${conflict.remoteVersion}` : ''}` +
+          ` appVersion=${conflict.appVersion}` +
+          (conflict.state === 'outdated' || conflict.state === 'noVersion'
+            ? '（旧版常驻仍在应答，建议卸载重装以接管）'
+            : conflict.state === 'unresponsive'
+              ? '（占名者无响应，疑似残留进程，建议重装或重启会话总线）'
+              : ''),
+        );
+      }
+      return report;
+    });
+  }
+  return backendConflictsPromise;
+}
+
 export function registerSystemHandlers() {
   /** 窗口管理器类型检测（自定义标题栏跟随系统模式） */
   ipcMain.handle('system:detect-window-manager', () => detectWindowManager());
@@ -958,6 +1037,14 @@ export function registerSystemHandlers() {
       portalsConf,
     };
   });
+
+  /**
+   * 后端总线名冲突报告（注册失败时由 main.ts 发起探测；未发起/无冲突
+   * 返回空数组）。设置页「系统集成」据此提示「旧版常驻/无响应」状态。
+   */
+  ipcMain.handle('system:get-backend-conflicts', () =>
+    backendConflictsPromise ?? Promise.resolve([] as BackendConflictInfo[]),
+  );
 
   /**
    * 运行系统集成脚本（install.sh / uninstall.sh）并收集输出。

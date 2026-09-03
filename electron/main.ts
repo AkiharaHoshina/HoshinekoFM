@@ -8,7 +8,8 @@ import { setupPtyHandlers, killAllPty } from './pty';
 import { getThumbnail, detectMime, THUMB_QUEUE_DROPPED } from './fsUtils';
 import { startWatching, stopWatching, stopAllWatching } from './fsWatcher';
 import { registerFsHandlers } from './handlers/fs';
-import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor } from './handlers/system';
+import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor, startBackendConflictQuery } from './handlers/system';
+import type { BackendKind } from './handlers/backendInfo';
 import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers, startColorSchemeWatcher, stopColorSchemeWatcher } from './handlers/theme';
 import { registerPickerHandlers, type PickerConfig, type PinnedDirEntry, type PickerViewPrefs } from './handlers/picker';
@@ -823,6 +824,16 @@ app.whenReady().then(() => {
       // 实时继承：监听 GUI userData 下的快照文件变化，广播到
       // 打开中的选择器/保存器窗口（见 startSnapshotWatcher 注释）
       startSnapshotWatcher();
+    } else {
+      // GUI 模式：后端名被占用（旧版常驻/僵尸占名）时启动冲突探测，
+      // 渲染进程经 system:get-backend-conflicts 取报告提示用户
+      // （旧版常驻 → 卸载重装；无响应 → 重装/重启会话总线）。
+      const failedKinds: BackendKind[] = [];
+      if (!portal) failedKinds.push('portal');
+      if (!fileManager1) failedKinds.push('fileManager1');
+      if (failedKinds.length > 0) {
+        void startBackendConflictQuery(failedKinds);
+      }
     }
   });
 

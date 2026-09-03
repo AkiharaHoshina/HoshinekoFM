@@ -1,6 +1,7 @@
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import dbus from 'dbus-next';
 import { openPickerWindow, type PickerConfig, type PickerFilter } from './picker';
+import { BACKEND_VERSION_PROPERTY } from './backendInfo';
 
 /**
  * xdg-desktop-portal FileChooser 后端（二期）。
@@ -25,8 +26,13 @@ import { openPickerWindow, type PickerConfig, type PickerFilter } from './picker
 
 /** 总线名（与 packaging/portals/hoshineko.portal 的 DBusName 一致） */
 export const PORTAL_BUS_NAME = 'org.freedesktop.impl.portal.desktop.hoshineko';
-const FILE_CHOOSER_PATH = '/org/freedesktop/portal/desktop';
-const FILE_CHOOSER_IFACE = 'org.freedesktop.impl.portal.FileChooser';
+/** 后端对象路径（impl FileChooser 协议约定） */
+export const PORTAL_FILE_CHOOSER_PATH = '/org/freedesktop/portal/desktop';
+/** 后端接口名（impl FileChooser 协议约定） */
+export const PORTAL_FILE_CHOOSER_IFACE = 'org.freedesktop.impl.portal.FileChooser';
+
+const FILE_CHOOSER_PATH = PORTAL_FILE_CHOOSER_PATH;
+const FILE_CHOOSER_IFACE = PORTAL_FILE_CHOOSER_IFACE;
 
 const { Interface } = dbus.interface;
 
@@ -269,6 +275,15 @@ export async function setupPortalFileChooser(
       this.createPickerRef = createPickerRef;
     }
 
+    /**
+     * 后端构建版本（只读属性，供总线名冲突探测使用，见 backendInfo.ts）：
+     * 注册失败时新实例经 Properties.Get 读取占名者的版本与本进程比较，
+     * 识别「旧版常驻仍在应答」的升级接管问题。portal 协议本身无此字段。
+     */
+    get [BACKEND_VERSION_PROPERTY](): string {
+      return app.getVersion();
+    }
+
     /** 打开选择器并等待结果；取消/关窗 → [1, {}] */
     private async pick(config: PickerConfig): Promise<OpenResult> {
       const result = await openPickerWindow(config, undefined, this.createPickerRef);
@@ -308,6 +323,9 @@ export async function setupPortalFileChooser(
     }
   }
   FileChooserBackend.configureMembers({
+    properties: {
+      [BACKEND_VERSION_PROPERTY]: { signature: 's', access: 'read' },
+    },
     methods: {
       OpenFile: { inSignature: 'osssa{sv}', outSignature: 'ua{sv}' },
       SaveFile: { inSignature: 'osssa{sv}', outSignature: 'ua{sv}' },

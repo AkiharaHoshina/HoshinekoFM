@@ -22,6 +22,7 @@ import { ThemeColorDialog } from "./components/ThemeColorDialog";
 import { TerminalPanel, DEFAULT_TERMINAL_HEIGHT } from "./components/TerminalPanel";
 import { TitleBar } from "./components/TitleBar";
 import type { IFile, GvfsVolume } from "./types/files";
+import type { BackendConflictInfo } from "./types/electron";
 import { Dialog } from "./components/Dialog";
 import { Button } from "./components/Button";
 import { OutlinedTextField } from "./components/md";
@@ -555,6 +556,15 @@ function AppContent() {
   } | null>(null);
   const [integrationBusy, setIntegrationBusy] = useState(false);
 
+  /**
+   * 后端总线名冲突报告（portal / FileManager1 注册失败诊断：
+   * 旧版常驻 → 提示卸载重装；无响应 → 提示重装/重启会话总线；
+   * null = 尚未查询）。
+   */
+  const [backendConflicts, setBackendConflicts] = useState<BackendConflictInfo[] | null>(null);
+  /** 启动时冲突提示只弹一次（后续在设置页常驻展示） */
+  const conflictToastShownRef = useRef(false);
+
   /** 缩略图缓存占用（设置页「缩略图缓存」行副标题；null = 尚未查询） */
   const [thumbCacheInfo, setThumbCacheInfo] = useState<{
     fileCount: number;
@@ -602,10 +612,50 @@ function AppContent() {
         if (!cancelled && res) setIntegrationStatus(res);
       })
       .catch(() => { /* 查询失败保持现状 */ });
+    // 同步刷新后端总线名冲突报告（注册失败诊断，设置页展示）
+    void window.electron
+      ?.getBackendConflicts()
+      .then((res) => {
+        if (!cancelled && Array.isArray(res)) setBackendConflicts(res);
+      })
+      .catch(() => { /* 查询失败保持现状 */ });
     return () => {
       cancelled = true;
     };
   }, [settingsDialogOpen]);
+
+  /**
+   * 启动时查询后端总线名冲突（注册失败诊断）：portal 后端被旧版常驻
+   * 或无响应占名时弹一次警告 toast，提示卸载重装（同版本常驻属正常，
+   * 不提示）。结果同时供设置页「系统集成」行常驻展示。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void window.electron
+      ?.getBackendConflicts()
+      .then((res) => {
+        if (cancelled || !Array.isArray(res)) return;
+        setBackendConflicts(res);
+        if (conflictToastShownRef.current) return;
+        const portalConflict = res.find(
+          (c) => c.backend === "portal" &&
+            (c.state === "outdated" || c.state === "noVersion" || c.state === "unresponsive"),
+        );
+        if (!portalConflict) return;
+        conflictToastShownRef.current = true;
+        const message =
+          portalConflict.state === "outdated"
+            ? t("settings.backend_conflict_outdated", portalConflict.remoteVersion ?? "")
+            : portalConflict.state === "noVersion"
+              ? t("settings.backend_conflict_no_version")
+              : t("settings.backend_conflict_unresponsive");
+        showToast(message, "warning");
+      })
+      .catch(() => { /* 查询失败静默：设置页仍可查看 */ });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /** 设置对话框打开时刷新缩略图缓存占用（异步回填） */
   useEffect(() => {
@@ -1797,6 +1847,7 @@ function AppContent() {
             integrationBusy={integrationBusy}
             onInstallIntegration={() => void handleInstallIntegration()}
             onUninstallIntegration={() => void handleUninstallIntegration()}
+            backendConflicts={backendConflicts}
             thumbCacheInfo={thumbCacheInfo}
             thumbCacheBusy={thumbCacheBusy}
             onClearThumbCache={() => void handleClearThumbCache()}

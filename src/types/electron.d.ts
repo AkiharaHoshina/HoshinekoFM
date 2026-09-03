@@ -11,6 +11,24 @@ export interface IDrive {
     usb: boolean;
 }
 
+/**
+ * 后端总线名冲突诊断（portal / FileManager1 注册失败时的探测结果，
+ * 主进程 backendInfo.ts 生成）：
+ * - state 'outdated'：占名者版本与本进程不同（旧版常驻，建议卸载重装）；
+ * - state 'noVersion'：占名者无版本属性（更旧的构建，或他应用占 fm1 名）；
+ * - state 'unresponsive'：占名者无响应（僵尸占名，建议重装/重启会话总线）；
+ * - state 'sameVersion'：同版本另一实例（正常常驻，无需处理）。
+ */
+export interface BackendConflictInfo {
+  backend: 'portal' | 'fileManager1';
+  busName: string;
+  state: 'sameVersion' | 'outdated' | 'noVersion' | 'unresponsive';
+  /** 占名者版本号（state 为 sameVersion/outdated 时有值） */
+  remoteVersion?: string;
+  /** 本进程版本号 */
+  appVersion: string;
+}
+
 /** Parameters for starting a batch job on the main process. */
 export interface StartJobParams {
   type: 'trash' | 'copy' | 'move' | 'delete';
@@ -263,6 +281,11 @@ export interface IElectronAPI {
       portalService: boolean;
       portalsConf: boolean;
     }>;
+    /**
+     * 后端总线名冲突报告（注册失败诊断）。无冲突（或尚未发起探测）
+     * 返回空数组；设置页「系统集成」据此提示「旧版常驻/无响应」。
+     */
+    getBackendConflicts: () => Promise<BackendConflictInfo[]>;
     /** 自定义标题栏窗口控制（frameless 窗口） */
     minimizeWindow: () => Promise<void>;
     toggleMaximizeWindow: () => Promise<boolean>;

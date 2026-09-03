@@ -1,6 +1,7 @@
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import dbus from 'dbus-next';
 import path from 'path';
+import { BACKEND_VERSION_PROPERTY } from './backendInfo';
 
 /**
  * org.freedesktop.FileManager1 D-Bus 接口（二期）：
@@ -23,8 +24,13 @@ import path from 'path';
  */
 
 export const FILE_MANAGER1_NAME = 'org.freedesktop.FileManager1';
-const FM1_PATH = '/org/freedesktop/FileManager1';
-const FM1_IFACE = 'org.freedesktop.FileManager1';
+/** 后端对象路径（FileManager1 协议约定） */
+export const FILE_MANAGER1_PATH = '/org/freedesktop/FileManager1';
+/** 后端接口名（FileManager1 协议约定） */
+export const FILE_MANAGER1_IFACE = 'org.freedesktop.FileManager1';
+
+const FM1_PATH = FILE_MANAGER1_PATH;
+const FM1_IFACE = FILE_MANAGER1_IFACE;
 
 const { Interface } = dbus.interface;
 
@@ -118,6 +124,16 @@ export async function setupFileManager1(
       this.openWindowRef = openWindowRef;
     }
 
+    /**
+     * 后端构建版本（只读属性，供总线名冲突探测使用，见 backendInfo.ts）：
+     * 注册失败时新实例经 Properties.Get 读取占名者的版本与本进程比较，
+     * 识别「旧版常驻仍在应答」的升级接管问题。其他文件管理器占名时
+     * 无此属性（调用方据此与「旧版本应用」区分）。
+     */
+    get [BACKEND_VERSION_PROPERTY](): string {
+      return app.getVersion();
+    }
+
     /** 每个文件夹开一个窗口（URI 白名单校验） */
     private openEach(uris: string[], opts?: FileManager1WindowOptions) {
       for (const uri of uris) {
@@ -160,6 +176,9 @@ export async function setupFileManager1(
     }
   }
   FileManager1Interface.configureMembers({
+    properties: {
+      [BACKEND_VERSION_PROPERTY]: { signature: 's', access: 'read' },
+    },
     methods: {
       OpenFolders: { inSignature: 'as', outSignature: '' },
       ShowFolders: { inSignature: 'ass', outSignature: '' },

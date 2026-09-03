@@ -122,6 +122,8 @@ contextBridge.exposeInMainWorld('electron', {
   /** 系统集成一键卸载（install.sh 的逆操作，经 pkexec 授权移除 root 级文件） */
   uninstallSystemIntegration: (userOnly?: boolean) => ipcRenderer.invoke('system:uninstall-system-integration', userOnly ?? false),
   getSystemIntegrationStatus: () => ipcRenderer.invoke('system:get-system-integration-status'),
+  /** 后端总线名冲突报告（注册失败诊断：旧版常驻/僵尸占名；无冲突为空数组） */
+  getBackendConflicts: () => ipcRenderer.invoke('system:get-backend-conflicts'),
   /** 自定义标题栏窗口控制 */
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggle-maximize'),

@@ -4,6 +4,7 @@ import { Button } from "./Button";
 import { Icon } from "./Icon";
 import { Switch, Slider, Divider, OutlinedSelect, SelectOption } from "./md";
 import { t, getLanguageOptions, type Locale } from '../i18n';
+import type { BackendConflictInfo } from '../types/electron';
 import "./SettingsDialog.css";
 
 interface SettingsDialogProps {
@@ -51,6 +52,8 @@ interface SettingsDialogProps {
   integrationBusy: boolean;
   onInstallIntegration: () => void;
   onUninstallIntegration: () => void;
+  /** 后端总线名冲突报告（注册失败诊断：旧版常驻/无响应；null = 未查询） */
+  backendConflicts: BackendConflictInfo[] | null;
   /** 缩略图缓存占用（null = 尚未查询，副标题显示「缓存为空」兜底） */
   thumbCacheInfo: { fileCount: number; totalBytes: number } | null;
   thumbCacheBusy: boolean;
@@ -104,6 +107,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   integrationBusy,
   onInstallIntegration,
   onUninstallIntegration,
+  backendConflicts,
   thumbCacheInfo,
   thumbCacheBusy,
   onClearThumbCache,
@@ -130,6 +134,22 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       integrationStatus.portalService &&
       integrationStatus.portalsConf,
   );
+
+  /**
+   * portal 后端总线名冲突提示（注册失败诊断）：旧版常驻 → 建议卸载重装；
+   * 无版本属性（更旧构建）→ 同上；无响应（僵尸占名）→ 建议重装或
+   * 重启会话总线。同版本常驻属正常，不提示。
+   */
+  const portalConflict = backendConflicts?.find(
+    (c) => c.backend === "portal" && c.state !== "sameVersion",
+  ) ?? null;
+  const portalConflictText = portalConflict
+    ? portalConflict.state === "outdated"
+      ? t("settings.backend_conflict_outdated", portalConflict.remoteVersion ?? "")
+      : portalConflict.state === "noVersion"
+        ? t("settings.backend_conflict_no_version")
+        : t("settings.backend_conflict_unresponsive")
+    : null;
 
   /** 字节数 → 人类可读大小（缩略图缓存副标题用） */
   const formatBytes = (bytes: number): string => {
@@ -506,7 +526,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
           </div>
 
           {/* 系统集成一键安装/卸载：portal 配置 + D-Bus 激活文件（需授权）；
-              已安装时按钮变为卸载，避免重复安装的误导性失败提示 */}
+              已安装时按钮变为卸载，避免重复安装的误导性失败提示。
+              后端名冲突（旧版常驻/无响应）时副标题改为冲突提示 */}
           <div className="settings-row">
             <div className="settings-row__start">
               <Icon name="widgets" />
@@ -515,9 +536,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                   {t("settings.system_integration")}
                 </div>
                 <div className="settings-row__sub settings-row__sub--wrap">
-                  {isIntegrationInstalled
-                    ? t("settings.system_integration_done")
-                    : t("settings.system_integration_desc")}
+                  {portalConflictText
+                    ?? (isIntegrationInstalled
+                      ? t("settings.system_integration_done")
+                      : t("settings.system_integration_desc"))}
                 </div>
               </div>
             </div>
