@@ -94,6 +94,8 @@ const FAKE_IFACE = 'org.hoshineko.e2e.Conflict';
     const free = await queryBackendConflict(`org.hoshineko.e2e.conflict.free.p${process.pid}`, FAKE_PATH, FAKE_IFACE);
     h.assert.strictEqual(free, null, '名字无主应返回 null');
 
+    // 显式断开假后端总线（历史：usocket 收尾竞态曾使此步偶发退出挂起，
+    // 移除 usocket 后 dbus-next 走 net.Socket，收尾无竞态）
     oldBus.disconnect();
     plainBus.disconnect();
   });

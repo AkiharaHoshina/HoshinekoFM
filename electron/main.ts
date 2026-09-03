@@ -8,7 +8,7 @@ import { setupPtyHandlers, killAllPty } from './pty';
 import { getThumbnail, detectMime, THUMB_QUEUE_DROPPED } from './fsUtils';
 import { startWatching, stopWatching, stopAllWatching } from './fsWatcher';
 import { registerFsHandlers } from './handlers/fs';
-import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor, startBackendConflictQuery } from './handlers/system';
+import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor, startBackendConflictQuery, resetBackendConflictCache } from './handlers/system';
 import type { BackendKind } from './handlers/backendInfo';
 import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers, startColorSchemeWatcher, stopColorSchemeWatcher } from './handlers/theme';
@@ -635,8 +635,57 @@ ipcMain.handle('app:set-picker-view-prefs', async (_event, input: unknown) => {
   }
 });
 
+// ── D-Bus 服务后端注册（可重复调用：会话总线重启后重新注册恢复）──
+
+/** 后端注册工厂：portal 选择器窗口 + FileManager1 导航窗口（与 e2e
+ *  harness 同一条 backends.ts 接线） */
+const registerBackends = () =>
+  registerServiceBackends({
+    createPicker: (config, parent) =>
+      createWindow(process.argv, { picker: true, pickerConfig: config, parent }),
+    openWindow: (targetPath, opts) =>
+      createWindow(['hoshinekofm', targetPath], {
+        startupSelect: opts?.selectFileName
+          ? { fileName: opts.selectFileName, openProperties: opts?.openProperties }
+          : undefined,
+      }),
+  });
+
+/**
+ * 后端注册结果处理：服务模式注册失败 → 非零退出（dbus-daemon 把激活
+ * 失败报告给调用方），杜绝「无窗口、无服务、永不退出」的空转常驻进程；
+ * GUI 模式注册失败 → 启动总线名冲突探测（旧版常驻/僵尸占名 → 提示）。
+ */
+const handleBackendsResult = ({ portal, fileManager1 }: { portal: boolean; fileManager1: boolean }) => {
+  if (SERVICE_ONLY_MODE) {
+    const failed = (PORTAL_ONLY_MODE && !portal) || (FM1_ONLY_MODE && !fileManager1);
+    if (failed) {
+      console.error('[backend] 服务模式后端注册失败，进程退出（exit 1）');
+      app.exit(1);
+    }
+    // 实时继承：监听 GUI userData 下的快照文件变化，广播到
+    // 打开中的选择器/保存器窗口（见 startSnapshotWatcher 注释）
+    startSnapshotWatcher();
+  } else {
+    // GUI 模式：后端名被占用（旧版常驻/僵尸占名）时启动冲突探测，
+    // 渲染进程经 system:get-backend-conflicts 取报告提示用户
+    // （旧版常驻 → 卸载重装；无响应 → 重装/重启会话总线）。
+    const failedKinds: BackendKind[] = [];
+    if (!portal) failedKinds.push('portal');
+    if (!fileManager1) failedKinds.push('fileManager1');
+    if (failedKinds.length > 0) {
+      void startBackendConflictQuery(failedKinds);
+    }
+  }
+};
+
 registerFsHandlers();
-registerSystemHandlers();
+// 会话总线重启（设置页按钮）后：作废冲突探测缓存并重新注册后端——
+// 僵尸占名随总线重建消失，注册恢复成功；仍失败则重新探测给出新报告
+registerSystemHandlers(() => {
+  resetBackendConflictCache();
+  void registerBackends().then(handleBackendsResult);
+});
 registerWindowHandlers(getWindows);
 registerThemeHandlers();
 registerPickerHandlers((config, parent) =>
@@ -802,40 +851,8 @@ app.whenReady().then(() => {
   // D-Bus 服务后端统一接线（portal FileChooser + FileManager1，经
   // backends.ts 共享模块——与 e2e harness 同一条代码路径）：
   // 注册失败原因已由各 setup 输出 console.error（含占名者 owner），
-  // 返回值上浮到这里决定服务模式的退出码。
-  void registerServiceBackends({
-    createPicker: (config, parent) =>
-      createWindow(process.argv, { picker: true, pickerConfig: config, parent }),
-    openWindow: (targetPath, opts) =>
-      createWindow(['hoshinekofm', targetPath], {
-        startupSelect: opts?.selectFileName
-          ? { fileName: opts.selectFileName, openProperties: opts?.openProperties }
-          : undefined,
-      }),
-  }).then(({ portal, fileManager1 }) => {
-    // 服务模式：注册失败 → 非零退出（dbus-daemon 把激活失败报告给
-    // 调用方），杜绝「无窗口、无服务、永不退出」的空转常驻进程。
-    if (SERVICE_ONLY_MODE) {
-      const failed = (PORTAL_ONLY_MODE && !portal) || (FM1_ONLY_MODE && !fileManager1);
-      if (failed) {
-        console.error('[backend] 服务模式后端注册失败，进程退出（exit 1）');
-        app.exit(1);
-      }
-      // 实时继承：监听 GUI userData 下的快照文件变化，广播到
-      // 打开中的选择器/保存器窗口（见 startSnapshotWatcher 注释）
-      startSnapshotWatcher();
-    } else {
-      // GUI 模式：后端名被占用（旧版常驻/僵尸占名）时启动冲突探测，
-      // 渲染进程经 system:get-backend-conflicts 取报告提示用户
-      // （旧版常驻 → 卸载重装；无响应 → 重装/重启会话总线）。
-      const failedKinds: BackendKind[] = [];
-      if (!portal) failedKinds.push('portal');
-      if (!fileManager1) failedKinds.push('fileManager1');
-      if (failedKinds.length > 0) {
-        void startBackendConflictQuery(failedKinds);
-      }
-    }
-  });
+  // 返回值上浮到 handleBackendsResult 决定服务模式退出码。
+  void registerBackends().then(handleBackendsResult);
 
   if (!SERVICE_ONLY_MODE) {
     createWindow();

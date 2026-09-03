@@ -2276,9 +2276,6 @@ packages:
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
 
-  usocket@0.3.0:
-    resolution: {integrity: sha512-V/H02RNiaOCJZuPoKont/y12VJaImC6C5xW7OzPFjYu9qnig0yv9hyp9E7Wqjm6d8yZuZouH3NAfDATVMgh2SQ==}
-
   utf8-byte-length@1.0.5:
     resolution: {integrity: sha512-Xn0w3MtiQ6zoz2vFyUVruaCL53O/DwUvkEeOvj+uulMm0BkUGYWmBYVyElqZaSLhY6ZD0ulfU3aBra2aVT4xfA==}
 
@@ -3445,8 +3442,6 @@ snapshots:
       long: 4.0.0
       safe-buffer: 5.2.1
       xml2js: 0.4.23
-    optionalDependencies:
-      usocket: 0.3.0
 
   debug@4.4.3:
     dependencies:
@@ -4815,13 +4810,6 @@ snapshots:
   uri-js@4.4.1:
     dependencies:
       punycode: 2.3.1
-
-  usocket@0.3.0:
-    dependencies:
-      bindings: 1.5.0
-      nan: 2.28.0
-      node-gyp: 7.1.2
-    optional: true
 
   utf8-byte-length@1.0.5: {}
 

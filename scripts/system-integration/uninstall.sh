@@ -113,9 +113,12 @@ user_uninstall() {
     echo "[user] portals.conf 不存在，跳过"
   fi
 
-  # 重启 portal 服务（配置移除生效）
+  # 重启 portal 服务（配置移除生效）。--no-block：systemctl 只入队立即
+  # 返回——portal 单元卡在 activating（会话总线被僵尸占名拖死）时阻塞式
+  # restart 会永久挂起，导致卸载流程永不返回、应用侧按钮一直忙碌禁用；
+  # timeout 作双保险。
   if command -v systemctl >/dev/null 2>&1; then
-    systemctl --user restart xdg-desktop-portal.service 2>/dev/null || true
+    timeout 20 systemctl --user --no-block restart xdg-desktop-portal.service 2>/dev/null || true
     echo "[user] xdg-desktop-portal 服务已重启"
   fi
 

@@ -286,6 +286,17 @@ export interface IElectronAPI {
      * 返回空数组；设置页「系统集成」据此提示「旧版常驻/无响应」。
      */
     getBackendConflicts: () => Promise<BackendConflictInfo[]>;
+    /**
+     * 重启会话总线（清除僵尸占名：已死进程泄漏的总线连接随总线重建
+     * 释放）。成功后主进程延迟重新注册 D-Bus 后端并作废冲突报告。
+     * service = 实际重启的服务名（dbus-broker.service / dbus.service）。
+     */
+    restartSessionBus: () => Promise<{
+      success: boolean;
+      service?: string;
+      output?: string;
+      error?: string;
+    }>;
     /** 自定义标题栏窗口控制（frameless 窗口） */
     minimizeWindow: () => Promise<void>;
     toggleMaximizeWindow: () => Promise<boolean>;

@@ -124,6 +124,8 @@ contextBridge.exposeInMainWorld('electron', {
   getSystemIntegrationStatus: () => ipcRenderer.invoke('system:get-system-integration-status'),
   /** 后端总线名冲突报告（注册失败诊断：旧版常驻/僵尸占名；无冲突为空数组） */
   getBackendConflicts: () => ipcRenderer.invoke('system:get-backend-conflicts'),
+  /** 重启会话总线（清除僵尸占名；成功后主进程自动重新注册后端） */
+  restartSessionBus: () => ipcRenderer.invoke('system:restart-session-bus'),
   /** 自定义标题栏窗口控制 */
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggle-maximize'),

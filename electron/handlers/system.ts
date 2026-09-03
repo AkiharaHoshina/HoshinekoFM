@@ -920,7 +920,21 @@ export function startBackendConflictQuery(kinds: BackendKind[]): Promise<Backend
   return backendConflictsPromise;
 }
 
-export function registerSystemHandlers() {
+/**
+ * 作废冲突探测缓存（会话总线重启后调用）：占名状态已随总线重建改变，
+ * 下一次 startBackendConflictQuery 重新探测、渲染进程重新获取报告。
+ */
+export function resetBackendConflictCache(): void {
+  backendConflictsPromise = null;
+}
+
+/**
+ * 注册 system 相关 IPC handler。
+ *
+ * @param onSessionBusRestarted - 会话总线重启成功后的回调（main.ts 注入：
+ *   重新注册 D-Bus 服务后端并作废冲突探测缓存；e2e harness 不注入）
+ */
+export function registerSystemHandlers(onSessionBusRestarted?: () => void) {
   /** 窗口管理器类型检测（自定义标题栏跟随系统模式） */
   ipcMain.handle('system:detect-window-manager', () => detectWindowManager());
 
@@ -1047,6 +1061,42 @@ export function registerSystemHandlers() {
   );
 
   /**
+   * 重启会话总线（清除僵尸占名）：
+   * 会话总线名被已死进程泄漏的连接占有时（unresponsive 冲突态），无
+   * 进程级手段可释放——只能重建会话总线。按发行版实现依次尝试
+   * dbus-broker.service / dbus.service（用户级 systemctl restart）。
+   *
+   * 注意：总线重启会断开**所有**应用的会话 D-Bus 连接（包括本应用
+   * 自身的后端连接）——后端已挂 error 监听防崩溃，成功后经
+   * onSessionBusRestarted 回调延迟重新注册（main.ts 注入）。
+   * 单次尝试 30s 超时（systemctl 在异常总线状态下可能挂起）。
+   *
+   * @returns success 与所用服务名；失败附 stderr 摘要
+   */
+  ipcMain.handle('system:restart-session-bus', async () => {
+    const candidates = ['dbus-broker.service', 'dbus.service'];
+    let lastError = '';
+    for (const service of candidates) {
+      try {
+        const { stdout, stderr } = await execFileAsync(
+          'systemctl', ['--user', 'restart', service], { timeout: 30_000 },
+        );
+        console.log(`[system] 会话总线已重启（${service}）：${stdout.trim()}${stderr.trim() ? ` stderr: ${stderr.trim()}` : ''}`);
+        // 总线重建需要数秒：延迟回调让 main.ts 重新注册后端、
+        // 作废冲突缓存（见 resetBackendConflictCache）
+        setTimeout(() => {
+          onSessionBusRestarted?.();
+        }, 2500);
+        return { success: true, service, output: stdout.trim() };
+      } catch (e) {
+        lastError = getExecError(e).message;
+        console.error(`[system] 重启会话总线失败（${service}）：${lastError}`);
+      }
+    }
+    return { success: false, error: lastError };
+  });
+
+  /**
    * 运行系统集成脚本（install.sh / uninstall.sh）并收集输出。
    * 打包版脚本与 packaging 配置经 asarUnpack 解包到
    * `resources/app.asar.unpacked`（spawn 不能执行 asar 内文件，
@@ -1058,6 +1108,8 @@ export function registerSystemHandlers() {
    *
    * @param scriptName - scripts/system-integration 下的脚本文件名
    * @param args - 传给脚本的参数（[] = 完整执行含 pkexec 重入）
+   * @returns 执行结果；code：NO_SCRIPT / SCRIPT_FAILED / SCRIPT_TIMEOUT
+   *   （10 分钟硬超时兜底——脚本内系统命令挂起时强制终止并返回）
    */
   const runIntegrationScript = async (
     scriptName: string,
@@ -1100,21 +1152,58 @@ export function registerSystemHandlers() {
     /** 清理临时目录（脚本执行结束后调用，IPC 返回前保证完成） */
     const cleanup = () =>
       fs.rm(runDir, { recursive: true, force: true }).catch(() => { /* 清理失败忽略 */ });
+    // 脚本级硬超时兜底：会话总线/portal 单元状态异常时脚本内的系统命令
+    // （如 systemctl restart）可能挂起，导致 IPC 永不返回、设置页按钮一直
+    // 忙碌禁用。10 分钟足够覆盖 pkexec 交互授权耗时。
+    const SCRIPT_TIMEOUT_MS = 10 * 60 * 1000;
     return new Promise((resolve) => {
+      // detached：独立进程组——超时时 kill(-pid) 连带杀掉脚本内的
+      // pkexec/systemctl 子进程，且不会误伤应用自身进程组
       const child = spawn(scriptPath, args, {
         env: { ...process.env, HOSHINEKO_PACKAGING_DIR: packagingDir },
+        detached: true,
       });
+      let settled = false;
       let output = '';
       let error = '';
+      const settle = (result: {
+        success: boolean;
+        code?: 'NO_SCRIPT' | 'SCRIPT_FAILED' | 'SCRIPT_TIMEOUT';
+        output: string;
+        error: string;
+      }) => {
+        if (settled) return;
+        settled = true;
+        void cleanup().finally(() => resolve(result));
+      };
+      const killTimer = setTimeout(() => {
+        // 超时：杀进程组（脚本内的 pkexec/systemctl 子进程一并清理）
+        try {
+          if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          child.kill('SIGKILL');
+        }
+        settle({
+          success: false,
+          code: 'SCRIPT_TIMEOUT',
+          output,
+          error: `${error}\n[超时] ${scriptName} 执行超过 ${SCRIPT_TIMEOUT_MS / 60000} 分钟，已强制终止`,
+        });
+      }, SCRIPT_TIMEOUT_MS);
       child.stdout.on('data', (d) => (output += String(d)));
       child.stderr.on('data', (d) => (error += String(d)));
       child.on('error', (e) => {
-        void cleanup().finally(() => resolve({ success: false, output, error: e.message }));
+        clearTimeout(killTimer);
+        settle({ success: false, output, error: e.message });
       });
       child.on('close', (code) => {
-        void cleanup().finally(() =>
-          resolve({ success: code === 0, code: code === 0 ? undefined : 'SCRIPT_FAILED', output, error }),
-        );
+        clearTimeout(killTimer);
+        settle({
+          success: code === 0,
+          code: code === 0 ? undefined : 'SCRIPT_FAILED',
+          output,
+          error,
+        });
       });
     });
   };

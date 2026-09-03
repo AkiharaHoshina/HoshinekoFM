@@ -564,6 +564,8 @@ function AppContent() {
   const [backendConflicts, setBackendConflicts] = useState<BackendConflictInfo[] | null>(null);
   /** 启动时冲突提示只弹一次（后续在设置页常驻展示） */
   const conflictToastShownRef = useRef(false);
+  /** 重启会话总线进行中（设置页按钮禁用 + 防重入） */
+  const [sessionBusBusy, setSessionBusBusy] = useState(false);
 
   /** 缩略图缓存占用（设置页「缩略图缓存」行副标题；null = 尚未查询） */
   const [thumbCacheInfo, setThumbCacheInfo] = useState<{
@@ -753,6 +755,43 @@ function AppContent() {
       setIntegrationBusy(false);
     }
   }, [integrationBusy]);
+
+  /**
+   * 重启会话总线（清除僵尸占名）：先确认（会断开所有应用的会话
+   * D-Bus 连接，属破坏性操作），成功后主进程延迟重新注册后端——
+   * 数秒后刷新冲突报告与安装状态，冲突提示随注册恢复自动消失。
+   */
+  const handleRestartSessionBus = useCallback(async () => {
+    if (sessionBusBusy) return;
+    const ok = await confirm(
+      t("settings.session_bus_restart_confirm_title"),
+      t("settings.session_bus_restart_confirm_message"),
+    );
+    if (!ok) return;
+    setSessionBusBusy(true);
+    try {
+      const res = await window.electron?.restartSessionBus();
+      if (res?.success) {
+        showToast(t("settings.session_bus_restarted"), "success");
+        // 总线重建 + 后端重新注册需要数秒：延迟刷新冲突报告与状态
+        setTimeout(() => {
+          void window.electron?.getBackendConflicts()
+            .then((conflicts) => {
+              if (Array.isArray(conflicts)) setBackendConflicts(conflicts);
+            })
+            .catch(() => { /* 刷新失败保持现状 */ });
+        }, 4000);
+      } else {
+        const detail = (res?.error || '').trim().split('\n').pop() || '';
+        showToast(
+          detail ? `${t("settings.session_bus_restart_failed")}：${detail.slice(-160)}` : t("settings.session_bus_restart_failed"),
+          "error",
+        );
+      }
+    } finally {
+      setSessionBusBusy(false);
+    }
+  }, [sessionBusBusy, confirm]);
 
   /** 设为默认文件管理器：记录原处理程序 → 安装桌面入口 + xdg-mime default */
   const handleSetDefaultFm = useCallback(async () => {
@@ -1848,6 +1887,8 @@ function AppContent() {
             onInstallIntegration={() => void handleInstallIntegration()}
             onUninstallIntegration={() => void handleUninstallIntegration()}
             backendConflicts={backendConflicts}
+            sessionBusBusy={sessionBusBusy}
+            onRestartSessionBus={() => void handleRestartSessionBus()}
             thumbCacheInfo={thumbCacheInfo}
             thumbCacheBusy={thumbCacheBusy}
             onClearThumbCache={() => void handleClearThumbCache()}

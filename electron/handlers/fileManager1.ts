@@ -97,6 +97,12 @@ export async function setupFileManager1(
     console.error(`[fm1] 会话总线不可用，FileManager1 后端未注册：${(e as Error)?.message ?? e}`);
     return false;
   }
+  // 会话总线重启（设置页「重启会话总线」）会断开既有连接：无监听器时
+  // dbus-next 的 'error' 事件会直接抛出导致主进程崩溃。挂空监听仅记录，
+  // 后续由 main.ts 的重新注册恢复后端（旧连接作废、名字由新连接重取）。
+  bus.on('error', (e) => {
+    console.error(`[fm1] 会话总线连接错误（总线可能已重启，等待重新注册）：${(e as Error)?.message ?? e}`);
+  });
   try {
     // RequestNameReply.PrimaryOwner = 1（按 D-Bus 规范常量比对）
     const reply = await bus.requestName(busName, dbus.NameFlag.DO_NOT_QUEUE);
