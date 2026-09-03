@@ -1,5 +1,23 @@
 # 更新日志
 
+## v0.11.31 — 主题「跟随系统」明暗检测与选择器/保存器固定目录
+
+- **主题「跟随系统」修复**：跟随系统此前把 `nativeTheme.themeSource`
+  设为 `'system'` 交给 Chromium 判定——它在 Linux 上不读 XDG appearance
+  portal 的 `color-scheme`（DMS 只写 gsettings，Chromium 看不见），
+  DMS 暗色环境下应用被判成亮色，与主题对话框预览（走后端检测链）不一致。
+  修复（`electron/handlers/theme.ts`、`src/App.tsx`）：跟随系统统一走
+  后端检测链（DMS→gsettings→KDE→fallback 暗色）并把结果显式落
+  `dark`/`light`；主进程新增系统明暗监听（`gsettings monitor
+  color-scheme` 即时 + 30s 定时兜底重检），变化时广播
+  `theme:system-scheme-changed`，跟随系统模式下所有窗口实时同步
+- **选择器/保存器侧边栏固定目录**：GUI 渲染进程经 `app:set-pinned-dirs`
+  上报固定项，主进程原子落盘快照到 GUI userData 的 `sidebar-pinned.json`
+  （服务模式 userData 隔离读不到 GUI localStorage），服务模式
+  （`--portal`/`--filemanager1`）常驻进程创建选择器/保存器窗口时从快照
+  注入 `pinnedDirs`；`picker:open` 调用方传入该字段被白名单忽略（不可
+  伪造固定项）。e2e 32 覆盖选择器与 portal SaveFile 两条链路
+
 ## v0.11.30 — 无后缀可执行文件的打开修复
 
 - **现象**：双击/右键打开无后缀的可执行文件（ELF/脚本）不执行，而是

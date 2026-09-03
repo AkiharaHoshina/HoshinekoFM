@@ -74,9 +74,17 @@ export interface IElectronAPI {
     /**
      * 设置应用级明暗来源（Electron nativeTheme.themeSource，全局立即生效）：
      * 'dark'/'light' 强制模式（prefers-color-scheme 随之变化，现有主题
-     * CSS 无需改动即切换）；'system' 恢复跟随操作系统。
+     * CSS 无需改动即切换）；'system' 保留兼容但渲染侧不再使用——
+     * 「跟随系统」改由 detectColorScheme 检测链显式落 dark/light
+     * （Chromium 在 Linux 上不读 appearance portal 的 color-scheme，
+     * 'system' 会把 DMS 暗色环境判成亮色）。
      */
     setThemeSource: (source: 'dark' | 'light' | 'system') => Promise<void>;
+    /**
+     * 订阅系统明暗变化（跟随系统模式下主进程广播：gsettings monitor
+     * 即时 + 定时兜底重检）。返回取消订阅函数。
+     */
+    onSystemSchemeChanged: (callback: (mode: 'dark' | 'light') => void) => () => void;
     /** 探测当前壁纸图片路径，失败返回 null */
     findWallpaper: () => Promise<string | null>;
     /** 用 matugen 从壁纸图片生成 M3 颜色方案 CSS；matugen 缺失时 fallback=true 且只返回种子色 */

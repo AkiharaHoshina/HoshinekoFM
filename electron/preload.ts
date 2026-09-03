@@ -22,6 +22,14 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('theme:preview-end', handler);
     return () => ipcRenderer.removeListener('theme:preview-end', handler);
   },
+  /** 订阅系统明暗变化（跟随系统模式下主进程检测链变化时广播） */
+  onSystemSchemeChanged: (callback: (mode: 'dark' | 'light') => void) => {
+    const handler = (_: Electron.IpcRendererEvent, mode: unknown) => {
+      if (mode === 'dark' || mode === 'light') callback(mode);
+    };
+    ipcRenderer.on('theme:system-scheme-changed', handler);
+    return () => ipcRenderer.removeListener('theme:system-scheme-changed', handler);
+  },
   listDir: (path: string) => ipcRenderer.invoke('fs:list-dir', path),
   getParentPath: (path: string) => ipcRenderer.invoke('fs:get-parent', path),
   getHomePath: () => ipcRenderer.invoke('fs:get-home'),

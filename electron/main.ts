@@ -10,7 +10,7 @@ import { startWatching, stopWatching, stopAllWatching } from './fsWatcher';
 import { registerFsHandlers } from './handlers/fs';
 import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor } from './handlers/system';
 import { registerWindowHandlers } from './handlers/window';
-import { registerThemeHandlers } from './handlers/theme';
+import { registerThemeHandlers, startColorSchemeWatcher, stopColorSchemeWatcher } from './handlers/theme';
 import { registerPickerHandlers, type PickerConfig, type PinnedDirEntry } from './handlers/picker';
 import { registerServiceBackends } from './backends';
 import { initJobHandlers } from './jobs';
@@ -604,6 +604,9 @@ app.whenReady().then(() => {
 
   if (!SERVICE_ONLY_MODE) {
     createWindow();
+    // 跟随系统模式的实时更新源：监听系统明暗变化（gsettings monitor +
+    // 定时兜底），广播到所有窗口。服务模式无窗口订阅，不启动。
+    startColorSchemeWatcher(getWindows);
   }
   setupUdisks2Monitor(getWindows);
   setupGvfsMonitor(getWindows);
@@ -643,6 +646,8 @@ app.on('before-quit', (event) => {
   if (storageFlushDone) return;
   event.preventDefault();
   storageFlushDone = true;
+  // 清理系统明暗监听子进程（gsettings monitor）与定时器
+  stopColorSchemeWatcher();
   // flushStorageData 同步把未落盘的 DOM Storage 写盘（void API，无 Promise）
   for (const win of windows) {
     if (!win.isDestroyed()) win.webContents.session.flushStorageData();

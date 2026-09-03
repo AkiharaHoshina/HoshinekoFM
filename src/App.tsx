@@ -788,9 +788,28 @@ function AppContent() {
   );
 
   useEffect(() => {
-    void window.electron?.setThemeSource(
-      darkMode === null ? "system" : darkMode ? "dark" : "light",
-    );
+    if (darkMode !== null) {
+      void window.electron?.setThemeSource(darkMode ? "dark" : "light");
+      return;
+    }
+    // 跟随系统：统一走后端检测链（DMS/gsettings/KDE → fallback 暗色），
+    // 而不是 nativeTheme 的 'system'——Chromium 在 Linux 上不读 XDG
+    // appearance portal 的 color-scheme（DMS 只写 gsettings，Chromium
+    // 看不见），'system' 会把 DMS 暗色环境判成亮色，与主题对话框的
+    // 预览（同一检测链）不一致。检测结果显式落 dark/light；
+    // 系统明暗切换时主进程经 onSystemSchemeChanged 广播，这里订阅更新。
+    let disposed = false;
+    const apply = (mode: "dark" | "light") => {
+      if (!disposed) void window.electron?.setThemeSource(mode);
+    };
+    void window.electron?.detectColorScheme()
+      .then((r) => apply(r.mode === "dark" ? "dark" : "light"))
+      .catch(() => apply("dark"));
+    const off = window.electron?.onSystemSchemeChanged?.(apply);
+    return () => {
+      disposed = true;
+      off?.();
+    };
   }, [darkMode]);
   /** 主题颜色二级对话框开关 */
   const [themeColorOpen, setThemeColorOpen] = useState(false);

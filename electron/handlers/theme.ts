@@ -1,8 +1,8 @@
-import { ipcMain, nativeImage, nativeTheme } from 'electron';
+import { ipcMain, nativeImage, nativeTheme, type BrowserWindow } from 'electron';
 import path from 'path';
 import os from 'os';
 import { promises as fs } from 'fs';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { getExecError } from '../shared';
 
@@ -466,7 +466,11 @@ export function registerThemeHandlers() {
    * - 'dark' / 'light'：强制全应用（所有窗口、文件选择器）该模式，
    *   渲染进程的 prefers-color-scheme 立即随之变化，现有全部主题
    *   CSS（暗 :root + 亮 @media）无需改动即正确切换；
-   * - 'system'：恢复跟随操作系统。
+   * - 'system'：**保留兼容但渲染侧不再使用**——Chromium 在 Linux 上
+   *   不读 XDG appearance portal 的 color-scheme（DMS 只写 gsettings，
+   *   Chromium 看不见），'system' 会把 DMS 暗色环境判成亮色。
+   *   「跟随系统」改由渲染侧经 detectColorScheme 检测链显式落
+   *   dark/light（见 App.tsx 与 startColorSchemeWatcher）。
    * nativeTheme 为全局状态：任窗口调用即对所有窗口即时生效，
    * 无需逐窗口广播。
    */
@@ -483,4 +487,83 @@ export function registerThemeHandlers() {
   ipcMain.handle('theme:gen-wallpaper', (_event, imagePath: string, type: string, contrast: number) =>
     genWallpaperTheme(imagePath, type, contrast),
   );
+}
+
+/** gsettings monitor 子进程（DMS/GNOME 即时响应；缺失/退出时为 null） */
+let schemeMonitor: ReturnType<typeof spawn> | null = null;
+/** 定时重检兜底句柄（KDE 等无 gsettings monitor 的环境） */
+let schemePollTimer: ReturnType<typeof setInterval> | null = null;
+/** 重检去抖句柄（monitor 连发变化时合并为一次） */
+let schemeRecheckDebounce: ReturnType<typeof setTimeout> | null = null;
+/** 最近一次广播的模式（变化才广播，避免无意义风暴） */
+let lastSchemeBroadcast: 'dark' | 'light' | null = null;
+
+/** 重检系统明暗并广播变化（与上次相同则不广播） */
+async function recheckAndBroadcastScheme(getWindows: () => BrowserWindow[]): Promise<void> {
+  let mode: 'dark' | 'light';
+  try {
+    mode = (await detectColorScheme()).mode;
+  } catch {
+    return; // 检测失败：保持现状，等下一次重检
+  }
+  if (lastSchemeBroadcast === mode) return;
+  lastSchemeBroadcast = mode;
+  for (const win of getWindows()) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('theme:system-scheme-changed', mode);
+    }
+  }
+}
+
+/**
+ * 启动系统明暗监听（「跟随系统」模式的实时更新源，仅 GUI 模式调用）。
+ *
+ * 背景：跟随系统不再用 nativeTheme 的 'system'（见 theme:set-source
+ * 注释），改由检测链显式落值——本监听器保证系统明暗切换时应用即时
+ * 跟随，双通道互补：
+ * - `gsettings monitor color-scheme`（DMS/GNOME 即时，300ms 去抖）；
+ * - 30s 定时重检兜底（KDE 等无 gsettings monitor 的环境）。
+ * 检测结果变化时广播 theme:system-scheme-changed 到所有窗口，
+ * 渲染侧在 darkMode === null（跟随系统）时订阅并重新落值。
+ *
+ * @param getWindows - 返回当前所有窗口（广播用）
+ */
+export function startColorSchemeWatcher(getWindows: () => BrowserWindow[]): void {
+  if (schemePollTimer) return; // 已启动（幂等）
+  try {
+    schemeMonitor = spawn('gsettings', ['monitor', 'org.gnome.desktop.interface', 'color-scheme'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    schemeMonitor.on('error', () => { schemeMonitor = null; });
+    schemeMonitor.on('exit', () => { schemeMonitor = null; });
+    const scheduleRecheck = () => {
+      if (schemeRecheckDebounce) clearTimeout(schemeRecheckDebounce);
+      schemeRecheckDebounce = setTimeout(() => {
+        schemeRecheckDebounce = null;
+        void recheckAndBroadcastScheme(getWindows);
+      }, 300);
+    };
+    schemeMonitor.stdout?.on('data', scheduleRecheck);
+    schemeMonitor.stderr?.on('data', () => { /* monitor 报错由轮询兜底 */ });
+  } catch {
+    schemeMonitor = null; // 无 gsettings：仅靠定时重检
+  }
+  schemePollTimer = setInterval(() => { void recheckAndBroadcastScheme(getWindows); }, 30_000);
+}
+
+/** 停止系统明暗监听（退出前清理子进程与定时器） */
+export function stopColorSchemeWatcher(): void {
+  if (schemeMonitor) {
+    schemeMonitor.kill();
+    schemeMonitor = null;
+  }
+  if (schemePollTimer) {
+    clearInterval(schemePollTimer);
+    schemePollTimer = null;
+  }
+  if (schemeRecheckDebounce) {
+    clearTimeout(schemeRecheckDebounce);
+    schemeRecheckDebounce = null;
+  }
+  lastSchemeBroadcast = null;
 }
