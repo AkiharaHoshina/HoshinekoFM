@@ -122,6 +122,10 @@ function resolveTargetKey(x: number, y: number): string | null {
   if (tab?.dataset.tabId) return 'tab:' + tab.dataset.tabId;
   const item = el.closest('.file-list-item') as HTMLElement | null;
   if (item?.dataset.path) return 'item:' + item.dataset.path;
+  // 内置终端：文件路径粘贴目标（必须先于通用的 data-drop-target 检查，
+  // 否则会被归类为文件列表背景）
+  const terminal = el.closest('[data-drop-target="terminal"]') as HTMLElement | null;
+  if (terminal) return 'terminal:';
   // 文件浏览区（含空回收站占位等 FileList 未铺满的区域）整体视为背景目标
   const fileList = el.closest('[data-drop-target], .file-list-container') as HTMLElement | null;
   if (fileList) return 'bg:filelist';

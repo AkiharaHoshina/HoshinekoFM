@@ -6,6 +6,9 @@ import { t } from '../i18n';
 import { showToast } from '../utils/toast';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
+import { useDrag } from '../contexts/DragContext';
+import { extractDropPaths } from '../utils/dragDrop';
+import { shouldSuppressDrop } from '../utils/nativeDragTracker';
 
 /** 右键菜单位置（null 表示关闭） */
 interface TerminalMenuPos {
@@ -41,6 +44,18 @@ function stripAnsi(text: string): string {
 }
 /* eslint-enable no-control-regex */
 
+/**
+ * 路径含空白字符或单引号时用单引号包裹并转义内部单引号（shell 安全），
+ * 供文件区域拖放到终端时在光标位置粘贴完整路径使用。
+ * 无特殊字符的路径原样返回，保持粘贴内容简洁。
+ *
+ * @param path - 要粘贴的绝对路径
+ */
+function shellQuotePath(path: string): string {
+  if (!/[\s']/.test(path)) return path;
+  return `'${path.replace(/'/g, "'\\''")}'`;
+}
+
 export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdRequest }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -50,10 +65,39 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdR
   /** 组件卸载标志：spawnPty 的异步回调据此跳过已卸载窗口的写入 */
   const disposedRef = useRef(false);
 
+  /** 本窗口内部拖拽状态（文件区域 → 终端的路径粘贴来源） */
+  const { getDragState } = useDrag();
+
   /** 当前是否有选区（决定右键菜单是否显示「复制」） */
   const [hasSelection, setHasSelection] = useState(false);
   /** 右键菜单位置 */
   const [menuPos, setMenuPos] = useState<TerminalMenuPos | null>(null);
+
+  /**
+   * 拖放目标：把文件区域（或其他窗口/应用）拖入的条目完整路径粘贴到
+   * 终端**光标位置**。与文件列表落点同一套判定管线：
+   * - 幻影 drop-back（本窗口发起拖拽会话期间的真实 drop）静默忽略；
+   * - 路径优先取本窗口 DragContext（同窗口内部拖拽），否则从
+   *   dataTransfer 提取（跨窗口/外部应用）；
+   * - 含空格/引号的路径单引号包裹转义，多路径空格分隔一次粘贴。
+   */
+  const handleTerminalDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (shouldSuppressDrop()) return;
+
+    const dragState = getDragState();
+    let paths: string[];
+    if (dragState && dragState.files.length > 0) {
+      paths = dragState.files.map((f) => f.path);
+    } else {
+      paths = extractDropPaths(e.dataTransfer);
+    }
+    if (paths.length === 0) return;
+
+    const text = paths.map(shellQuotePath).join(' ');
+    terminalRef.current?.paste(text);
+    terminalRef.current?.focus();
+  }, [getDragState]);
 
   /**
    * 完整日志缓冲：自本终端会话启动以来收到的全部 PTY 输出。
@@ -314,6 +358,15 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdR
         zIndex: 10 // 提高层级，防止点击事件穿透到下方的文件列表背景上
       }} 
       ref={containerRef} 
+      // 拖放目标标记：nativeDragTracker 兜底判定（Wayland 落回源窗口
+      // 不派发 drop）据此把终端识别为可放置目标，合成 drop 交回本组件
+      data-drop-target="terminal"
+      // 允许放置：原生拖拽期间 dragover 到达时声明 copy 语义
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }}
+      onDrop={handleTerminalDrop}
       // 在鼠标按下阶段截击，阻止事件向上传播给文件浏览器背景，从而保住焦点
       onMouseDown={(e) => {
         e.stopPropagation();

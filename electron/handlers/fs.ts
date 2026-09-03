@@ -18,8 +18,12 @@ const ARCHIVE_LIST_MAX_ENTRIES = 5000;
 /** 目录大小计算（du -sb）超时：超过即杀掉并返回 TIMEOUT */
 const DU_TIMEOUT_MS = 10_000;
 
-/** 当前活跃的 du 子进程（全局同一时刻只允许一个） */
-let activeDu: ChildProcess | null = null;
+/**
+ * 当前活跃的 du 子进程（全局同一时刻只允许一个）。
+ * requestId 为渲染进程可选的请求标识（团体属性对话框生成，用于
+ * 关闭对话框时定向取消统计——避免误杀其他窗口刚发起的 du）。
+ */
+let activeDu: { child: ChildProcess; requestId?: string } | null = null;
 
 /** system:get-directory-size 的返回结构 */
 type DirSizeResult =
@@ -1431,11 +1435,11 @@ export function registerFsHandlers() {
   //   几十毫秒就完成，无法确定性制造「仍在运行」状态来测超时/切换
   //   杀死路径（e2e 22 使用）。sleep 后 exec du（sh 被 SIGKILL 时若已
   //   exec 则杀到的是 du 本身，未 exec 则 du 不会启动，均无孤儿进程）。
-  ipcMain.handle('system:get-directory-size', async (_, dirPath: string) => {
+  ipcMain.handle('system:get-directory-size', async (_, dirPath: string, requestId?: string) => {
     // 目录切换：先杀掉上一个仍在跑的 du（旧结果已无意义）
     if (activeDu) {
       try {
-        activeDu.kill('SIGKILL');
+        activeDu.child.kill('SIGKILL');
       } catch {
         // 子进程已退出
       }
@@ -1449,7 +1453,7 @@ export function registerFsHandlers() {
       const child = stallMs > 0
         ? spawn('sh', ['-c', `sleep ${stallMs / 1000}; exec du -sb "$1"`, 'sh', dirPath], { stdio: ['ignore', 'pipe', 'ignore'] })
         : spawn('du', ['-sb', dirPath], { stdio: ['ignore', 'pipe', 'ignore'] });
-      activeDu = child;
+      activeDu = { child, requestId };
 
       let out = '';
       let settled = false;
@@ -1457,7 +1461,7 @@ export function registerFsHandlers() {
       const finish = (r: DirSizeResult) => {
         if (settled) return;
         settled = true;
-        if (activeDu === child) activeDu = null;
+        if (activeDu?.child === child) activeDu = null;
         resolve(r);
       };
 
@@ -1491,5 +1495,22 @@ export function registerFsHandlers() {
     });
 
     return result;
+  });
+
+  /**
+   * 取消目录大小统计：团体属性对话框关闭时调用，杀掉其仍在跑的 du
+   * （残留统计进程）。仅当活跃 du 的 requestId 匹配时才杀——调用方
+   * 未携带 requestId 时无条件杀（兼容语义，供无标识的全局清理使用），
+   * 避免误杀其他窗口刚发起、requestId 不同的 du。
+   */
+  ipcMain.on('system:cancel-directory-size', (_event, requestId: unknown) => {
+    if (!activeDu) return;
+    if (requestId != null && activeDu.requestId !== requestId) return;
+    try {
+      activeDu.child.kill('SIGKILL');
+    } catch {
+      // 子进程已退出
+    }
+    activeDu = null;
   });
 }

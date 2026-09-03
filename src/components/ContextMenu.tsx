@@ -88,9 +88,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
    * 用 mousedown 而非 click：右键与拖拽不产生 click 事件，旧菜单在右键
    * 按下时就关闭，随后 contextmenu 事件再打开新菜单，不会两个菜单并存。
    *
+   * 监听用**捕获阶段**（capture=true）：document 捕获先于 React 根容器
+   * 派发，目标元素内的 stopPropagation（如内置终端的 onMouseDown 为保住
+   * xterm 焦点而阻断冒泡）拦不住捕获监听——点击/右键终端也能正常关闭
+   * 文件区域的旧菜单。
+   *
    * 监听必须**延迟到下一次宏任务再挂**：打开手势（contextmenu / click）是
    * 离散事件，React 会在事件分发中途同步 flush 重渲染与被动 effect——
-   * 若监听立即生效，同一个打开事件会继续冒泡到 document，被自家监听器
+   * 若监听立即生效，同一个打开事件会继续传播到 document，被自家监听器
    * 判为「点击外部」而立刻关闭（未 stopPropagation 的入口，如仪表盘
    * 背景右键的刷新菜单，会表现为菜单一闪即没）。
    */
@@ -109,13 +114,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
     };
     document.addEventListener('keydown', handleKey);
     const timer = setTimeout(() => {
-      document.addEventListener('mousedown', handleOutside);
-      document.addEventListener('contextmenu', handleOutside);
+      document.addEventListener('mousedown', handleOutside, true);
+      document.addEventListener('contextmenu', handleOutside, true);
     }, 0);
     return () => {
       clearTimeout(timer);
-      document.removeEventListener('mousedown', handleOutside);
-      document.removeEventListener('contextmenu', handleOutside);
+      document.removeEventListener('mousedown', handleOutside, true);
+      document.removeEventListener('contextmenu', handleOutside, true);
       document.removeEventListener('keydown', handleKey);
     };
   }, []);

@@ -122,6 +122,8 @@ const zhCN = {
   'properties.directory': '文件夹',
   'properties.size_unavailable': '大小无法获取',
   'properties.size_disabled': '已禁用',
+  'properties.n_items': (n: number) => `${n} 个项目`,
+  'properties.files_and_folders': '文件和文件夹',
 
   // ── 打开方式弹窗 ──
   'open_with.title': '打开方式',

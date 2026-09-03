@@ -122,6 +122,8 @@ const zhCT = {
   'properties.directory': '資料夾',
   'properties.size_unavailable': '大小無法取得',
   'properties.size_disabled': '已停用',
+  'properties.n_items': (n: number) => `${n} 個項目`,
+  'properties.files_and_folders': '檔案和資料夾',
 
   // ── 打開方式彈窗 ──
   'open_with.title': '打開方式',

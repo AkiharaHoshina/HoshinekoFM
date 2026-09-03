@@ -123,6 +123,8 @@ const koKP = {
   'properties.directory': '디렉토리',
   'properties.size_unavailable': '크기를 가져올 수 없음',
   'properties.size_disabled': '사용 안 함',
+  'properties.n_items': (n: number) => `${n}개 항목`,
+  'properties.files_and_folders': '파일 및 폴더',
 
   // ── 다른 앱으로 열기 팝업 ──
   'open_with.title': '다른 프로그램으로 열기',

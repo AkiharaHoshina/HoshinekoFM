@@ -133,6 +133,8 @@ const enUS = {
   'properties.directory': 'Directory',             //不知所谓
   'properties.size_unavailable': 'Size unavailable',
   'properties.size_disabled': 'Disabled',
+  'properties.n_items': (n: number) => `${n} items`,
+  'properties.files_and_folders': 'Files and folders',
 
   // ── 打开方式弹窗 ──
   'open_with.title': 'Open with...',

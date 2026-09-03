@@ -161,6 +161,8 @@ const ukUA = {
   'properties.directory': 'Каталог',
   'properties.size_unavailable': 'Розмір недоступний',
   'properties.size_disabled': 'Вимкнено',
+  'properties.n_items': (n: number) => `${n} елементів`,
+  'properties.files_and_folders': 'Файли та папки',
 
   // ── 打开方式弹窗 ──
   'open_with.title': 'Відкрити за допомогою...',

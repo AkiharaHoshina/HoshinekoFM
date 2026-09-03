@@ -302,11 +302,17 @@ export interface IElectronAPI {
      * 并发策略：同一时刻只允许一个 du——新请求到达（目录切换）会杀掉旧
      * du（旧请求以 KILLED 返回）；单次超过 10s 杀掉并返回 TIMEOUT。
      * 失败返回 `{ success: false, code }`，调用方显示「无法获取」。
+     * requestId 可选：团体属性对话框生成并透传，供关闭时定向取消。
      */
-    getDirectorySize: (path: string) => Promise<
+    getDirectorySize: (path: string, requestId?: string) => Promise<
       | { success: true; size: number }
       | { success: false; code: 'TIMEOUT' | 'KILLED' | 'FAILED' }
     >;
+    /**
+     * 取消目录大小统计：杀掉仍在跑的 du（团体属性对话框关闭时调用，
+     * 防止残留统计进程继续占用 CPU/IO）。requestId 定向匹配活跃 du。
+     */
+    cancelDirectorySize: (requestId?: string) => void;
     setIcon: (iconType: string) => Promise<void>;
     /**
      * 界面缩放：设置本窗口的整页缩放（zoom factor，范围 0.5–2.0）。

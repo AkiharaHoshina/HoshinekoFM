@@ -176,6 +176,8 @@ function AppContent() {
 
   const [propertiesDialogOpen, setPropertiesDialogOpen] = useState(false);
   const [propertiesFile, setPropertiesFile] = useState<IFile | null>(null);
+  /** 团体属性模式：多选条目集合（长度 > 1 时展示团体摘要与大小总和） */
+  const [propertiesGroup, setPropertiesGroup] = useState<IFile[] | null>(null);
 
   // ── 原生拖拽兜底判定：Wayland 落回源窗口不派发 drop，由 tracker 合成 ──
   useEffect(() => {
@@ -989,10 +991,16 @@ function AppContent() {
     setOpenWithFile(file);
   }, []);
 
-  const handlePropertiesFile = useCallback((file: IFile) => {
+  /** 打开属性对话框：单条（file + group=null）或团体（file=null + 多选集合） */
+  const openPropertiesDialog = useCallback((file: IFile | null, group: IFile[] | null) => {
     setPropertiesFile(file);
+    setPropertiesGroup(group);
     setPropertiesDialogOpen(true);
   }, []);
+
+  const handlePropertiesFile = useCallback((file: IFile) => {
+    openPropertiesDialog(file, null);
+  }, [openPropertiesDialog]);
 
   const handleCopy = (files: IFile[]) => {
     copy(files);
@@ -1053,8 +1061,7 @@ function AppContent() {
             label: t("context_menu.properties"),
             icon: "info",
             action: () => {
-              setPropertiesFile(item);
-              setPropertiesDialogOpen(true);
+              openPropertiesDialog(item, null);
               closeContextMenu();
             },
           },
@@ -1286,8 +1293,13 @@ function AppContent() {
           label: t("context_menu.properties"),
           icon: "info",
           action: () => {
-            setPropertiesFile(item);
-            setPropertiesDialogOpen(true);
+            // 多选（含右键命中已选中项时的完整选中集）→ 团体属性；
+            // 单选 → 单条目属性
+            if (selectedFiles.length > 1) {
+              openPropertiesDialog(null, selectedFiles);
+            } else {
+              openPropertiesDialog(item, null);
+            }
             closeContextMenu();
           },
         },
@@ -1713,6 +1725,7 @@ function AppContent() {
             open={propertiesDialogOpen}
             onClose={() => setPropertiesDialogOpen(false)}
             file={propertiesFile}
+            group={propertiesGroup ?? undefined}
             onPermissionsChanged={refreshActiveTab}
           />
 

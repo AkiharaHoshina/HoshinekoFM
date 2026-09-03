@@ -122,6 +122,8 @@ const jaJP = {
   'properties.directory': 'フォルダー',
   'properties.size_unavailable': 'サイズを取得できません',
   'properties.size_disabled': '無効',
+  'properties.n_items': (n: number) => `${n} 個の項目`,
+  'properties.files_and_folders': 'ファイルとフォルダー',
 
   // ── 打开方式弹窗 ──
   'open_with.title': 'プログラムから開く',

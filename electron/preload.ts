@@ -167,7 +167,9 @@ contextBridge.exposeInMainWorld('electron', {
   /** 界面缩放：设置本窗口 zoom factor（0.5–2.0），跨窗口同步由 storage 事件驱动各窗口自行调用 */
   setUiZoom: (factor: number) => ipcRenderer.invoke('window:set-zoom', factor),
   search: (dir: string, query: string, options?: { type?: 'f' | 'd'; minSize?: string; maxSize?: string }) => ipcRenderer.invoke('system:search', dir, query, options),
-  getDirectorySize: (path: string) => ipcRenderer.invoke('system:get-directory-size', path),
+  getDirectorySize: (path: string, requestId?: string) => ipcRenderer.invoke('system:get-directory-size', path, requestId),
+  /** 取消目录大小统计（团体属性对话框关闭时杀残留 du；requestId 定向匹配） */
+  cancelDirectorySize: (requestId?: string) => ipcRenderer.send('system:cancel-directory-size', requestId),
   getDrives: () => ipcRenderer.invoke('system:get-drives'),
   getAllDevices: () => ipcRenderer.invoke('system:get-all-devices'),
   getGvfsVolumes: () => ipcRenderer.invoke('system:get-gvfs-volumes'),

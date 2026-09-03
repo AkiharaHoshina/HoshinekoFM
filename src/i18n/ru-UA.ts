@@ -164,6 +164,8 @@ const ruUA = {
   'properties.directory': 'Каталог',
   'properties.size_unavailable': 'Размер недоступен',
   'properties.size_disabled': 'Отключено',
+  'properties.n_items': (n: number) => `${n} элементов`,
+  'properties.files_and_folders': 'Файлы и папки',
 
   // ── 打开方式弹窗 ──
   'open_with.title': 'Открыть с помощью...',
