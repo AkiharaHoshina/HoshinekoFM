@@ -560,27 +560,26 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             )}
           </div>
 
-          {/* 僵尸占名（unresponsive）：唯一有效的清除手段是重建会话总线
-              （已死进程泄漏的总线连接随总线重启释放）——提供一键入口；
-              其他冲突态（旧版常驻）走卸载重装即可 */}
-          {portalConflict?.state === 'unresponsive' && (
-            <div className="settings-row">
-              <div className="settings-row__start">
-                <Icon name="sync" />
-                <div className="settings-row__label-col">
-                  <div className="settings-row__label">
-                    {t("settings.restart_session_bus")}
-                  </div>
-                  <div className="settings-row__sub settings-row__sub--wrap">
-                    {t("settings.restart_session_bus_desc")}
-                  </div>
+          {/* 重启会话总线（常驻入口）：unresponsive（僵尸占名）冲突态下
+              是唯一有效的清除手段（已死进程泄漏的总线连接随总线重启
+              释放），成功经主进程回调自动重新注册后端；无冲突时也保留
+              入口，作总线异常时的手动恢复手段 */}
+          <div className="settings-row">
+            <div className="settings-row__start">
+              <Icon name="sync" />
+              <div className="settings-row__label-col">
+                <div className="settings-row__label">
+                  {t("settings.restart_session_bus")}
+                </div>
+                <div className="settings-row__sub settings-row__sub--wrap">
+                  {t("settings.restart_session_bus_desc")}
                 </div>
               </div>
-              <Button variant="outlined" disabled={sessionBusBusy} onClick={onRestartSessionBus}>
-                {t("settings.restart_session_bus")}
-              </Button>
             </div>
-          )}
+            <Button variant="outlined" disabled={sessionBusBusy} onClick={onRestartSessionBus}>
+              {t("settings.restart_session_bus")}
+            </Button>
+          </div>
 
           {/* 缩略图缓存：占用展示 + 一键清除。浏览缓存目录已不再递归
               生成缓存（fsUtils 递归防护），此处提供手动清理入口 */}

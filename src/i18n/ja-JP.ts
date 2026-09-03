@@ -172,6 +172,7 @@ const jaJP = {
   'settings.backend_conflict_outdated': (version: string) => `旧バージョンのバックエンド（バージョン ${version}）が引き続き portal リクエストに応答しています：アップグレード前に起動した常駐プロセスが終了していません。システム統合をアンインストールして再インストールしてください`,
   'settings.backend_conflict_no_version': 'バージョン情報のない旧バックエンドが引き続き portal リクエストに応答しています：バージョン検出対応より前のビルドです。システム統合をアンインストールして再インストールしてください',
   'settings.backend_conflict_unresponsive': 'バックエンドの名前保持者が応答しません：そのプロセスは終了またはクラッシュしましたが、バス接続が解放されていません（ゾンビ名）——通常はバックエンドプロセスの異常クラッシュの残骸です。セッションバスを再起動して解消してください',
+  'settings.backend_conflict_alert_title': 'Portal バックエンドの競合を検出',
   'settings.restart_session_bus': 'セッションバスを再起動',
   'settings.restart_session_bus_desc': 'ゾンビ名を解消するためセッションバスを再構築します；すべてのアプリのセッション D-Bus 接続が一時的に切断され、本アプリのバックエンドは自動的に再登録されます',
   'settings.session_bus_restarted': 'セッションバスを再起動しました。バックエンドを再登録しました',

@@ -183,6 +183,7 @@ const enUS = {
   'settings.backend_conflict_outdated': (version: string) => `An outdated backend (version ${version}) is still answering portal requests: a stale resident process from before the upgrade is still running. Uninstall and reinstall the system integration to take over`,
   'settings.backend_conflict_no_version': 'An outdated backend without version info is still answering portal requests: it predates version detection support. Uninstall and reinstall the system integration to take over',
   'settings.backend_conflict_unresponsive': 'The backend name holder is not responding: its process has exited or crashed, but the bus connection was never released (zombie name) — usually left behind by an abnormal backend crash. Restart the session bus to clear it',
+  'settings.backend_conflict_alert_title': 'Portal backend conflict detected',
   'settings.restart_session_bus': 'Restart session bus',
   'settings.restart_session_bus_desc': 'Rebuilds the session bus to clear zombie names; briefly disconnects every app from the session D-Bus, this app re-registers its backend automatically',
   'settings.session_bus_restarted': 'Session bus restarted, backend re-registered',

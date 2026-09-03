@@ -173,6 +173,7 @@ const zhAC = {
   'settings.backend_conflict_outdated': (version: string) => `检测到旧版后端（版本 ${version}）仍在应答 portal 请求：升级后旧版常驻进程未退出。请卸载并重装系统集成以接管`,
   'settings.backend_conflict_no_version': '检测到无版本信息的旧版后端仍在应答 portal 请求：其构建早于版本探测支持。请卸载并重装系统集成以接管',
   'settings.backend_conflict_unresponsive': '后端占名者无响应：其进程已退出或崩溃，但总线连接未释放（僵尸占名）——通常由后端进程异常崩溃遗留。请重启会话总线清除',
+  'settings.backend_conflict_alert_title': '检测到 Portal 后端冲突',
   'settings.restart_session_bus': '重启会话总线',
   'settings.restart_session_bus_desc': '重建会话总线以清除僵尸占名；会短暂断开所有应用的会话 D-Bus 连接，本应用后端将自动重新注册',
   'settings.session_bus_restarted': '会话总线已重启，后端已重新注册',

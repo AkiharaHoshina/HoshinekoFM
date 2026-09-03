@@ -173,6 +173,7 @@ const koCN = {
   'settings.backend_conflict_outdated': (version: string) => `이전 버전 백엔드(버전 ${version})가 계속 portal 요청에 응답하고 있습니다: 업그레이드 전 상주 프로세스가 종료되지 않았습니다. 시스템 통합을 제거 후 다시 설치하세요`,
   'settings.backend_conflict_no_version': '버전 정보가 없는 이전 백엔드가 계속 portal 요청에 응답하고 있습니다: 버전 감지 지원 이전 빌드입니다. 시스템 통합을 제거 후 다시 설치하세요',
   'settings.backend_conflict_unresponsive': '백엔드 이름 보유자가 응답하지 않습니다: 프로세스가 종료되거나 충돌했지만 버스 연결이 해제되지 않았습니다(좀비 이름)——일반적으로 백엔드 프로세스의 비정상 충돌이 남긴 것입니다. 세션 버스를 재시작하여 해소하세요',
+  'settings.backend_conflict_alert_title': 'Portal 백엔드 충돌 감지',
   'settings.restart_session_bus': '세션 버스 재시작',
   'settings.restart_session_bus_desc': '좀비 이름을 해소하기 위해 세션 버스를 재구축합니다; 모든 앱의 세션 D-Bus 연결이 잠시 끊기며, 본 앱 백엔드는 자동으로 다시 등록됩니다',
   'settings.session_bus_restarted': '세션 버스가 재시작되었습니다. 백엔드를 다시 등록했습니다',

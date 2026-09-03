@@ -172,6 +172,7 @@ const zhTW = {
   'settings.backend_conflict_outdated': (version: string) => `偵測到舊版後端（版本 ${version}）仍在回應 portal 請求：升級後舊版常駐程序未退出。請解除安裝並重裝系統整合以接管`,
   'settings.backend_conflict_no_version': '偵測到無版本資訊的舊版後端仍在回應 portal 請求：其建置早於版本偵測支援。請解除安裝並重裝系統整合以接管',
   'settings.backend_conflict_unresponsive': '後端佔名者無回應：其程序已退出或崩潰，但匯流排連線未釋放（殭屍佔名）——通常由後端程序異常崩潰遺留。請重新啟動工作階段匯流排清除',
+  'settings.backend_conflict_alert_title': '偵測到 Portal 後端衝突',
   'settings.restart_session_bus': '重新啟動工作階段匯流排',
   'settings.restart_session_bus_desc': '重建工作階段匯流排以清除殭屍佔名；會短暫斷開所有應用的工作階段 D-Bus 連線，本應用後端將自動重新註冊',
   'settings.session_bus_restarted': '工作階段匯流排已重新啟動，後端已重新註冊',

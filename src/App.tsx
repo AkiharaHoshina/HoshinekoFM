@@ -51,6 +51,7 @@ import { CompressDialog, type CompressFormat } from "./components/CompressDialog
 import { BatchRenameDialog } from "./components/BatchRenameDialog";
 import { ConflictDialog } from "./components/ConflictDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { AlertDialog } from "./components/AlertDialog";
 import { DragActionDialog } from "./components/DragActionDialog";
 import {
   generateSafeName,
@@ -562,8 +563,35 @@ function AppContent() {
    * null = 尚未查询）。
    */
   const [backendConflicts, setBackendConflicts] = useState<BackendConflictInfo[] | null>(null);
-  /** 启动时冲突提示只弹一次（后续在设置页常驻展示） */
-  const conflictToastShownRef = useRef(false);
+  /** portal 冲突警告弹窗只弹一次（后续详情常驻设置页「系统集成」行副标题） */
+  const conflictAlertShownRef = useRef(false);
+  /** portal 冲突警告弹窗（带遮罩强制用户知晓；null = 无弹窗） */
+  const [conflictAlert, setConflictAlert] = useState<{
+    state: 'outdated' | 'noVersion' | 'unresponsive';
+    remoteVersion: string | null;
+  } | null>(null);
+
+  /**
+   * portal 后端冲突 → 弹窗警告（每次会话只弹一次）：
+   * 冲突意味着 portal 文件选择器/保存器被旧版或僵尸后端劫持，属
+   * 「文件打开方式错乱」级别故障，toast 易被忽略——用带遮罩的对话框
+   * 强制用户知晓；弹过一次后详情仍常驻设置页「系统集成」行副标题。
+   * 启动查询与设置打开时的刷新共用此入口（守卫防重复弹窗）。
+   */
+  const maybeAlertPortalConflict = useCallback((conflicts: BackendConflictInfo[]) => {
+    if (conflictAlertShownRef.current) return;
+    const portalConflict = conflicts.find(
+      (c) => c.backend === "portal" &&
+        (c.state === "outdated" || c.state === "noVersion" || c.state === "unresponsive"),
+    );
+    if (!portalConflict) return;
+    conflictAlertShownRef.current = true;
+    // find 回调的过滤条件不缩窄返回类型：手动断言弹窗所需的三态
+    setConflictAlert({
+      state: portalConflict.state as 'outdated' | 'noVersion' | 'unresponsive',
+      remoteVersion: portalConflict.remoteVersion ?? null,
+    });
+  }, []);
   /** 重启会话总线进行中（设置页按钮禁用 + 防重入） */
   const [sessionBusBusy, setSessionBusBusy] = useState(false);
 
@@ -618,18 +646,20 @@ function AppContent() {
     void window.electron
       ?.getBackendConflicts()
       .then((res) => {
-        if (!cancelled && Array.isArray(res)) setBackendConflicts(res);
+        if (!cancelled || !Array.isArray(res)) return;
+        setBackendConflicts(res);
+        maybeAlertPortalConflict(res);
       })
       .catch(() => { /* 查询失败保持现状 */ });
     return () => {
       cancelled = true;
     };
-  }, [settingsDialogOpen]);
+  }, [settingsDialogOpen, maybeAlertPortalConflict]);
 
   /**
    * 启动时查询后端总线名冲突（注册失败诊断）：portal 后端被旧版常驻
-   * 或无响应占名时弹一次警告 toast，提示卸载重装（同版本常驻属正常，
-   * 不提示）。结果同时供设置页「系统集成」行常驻展示。
+   * 或无响应占名时弹一次警告对话框（带遮罩，见 maybeAlertPortalConflict；
+   * 同版本常驻属正常，不弹）。结果同时供设置页「系统集成」行常驻展示。
    */
   useEffect(() => {
     let cancelled = false;
@@ -638,26 +668,13 @@ function AppContent() {
       .then((res) => {
         if (cancelled || !Array.isArray(res)) return;
         setBackendConflicts(res);
-        if (conflictToastShownRef.current) return;
-        const portalConflict = res.find(
-          (c) => c.backend === "portal" &&
-            (c.state === "outdated" || c.state === "noVersion" || c.state === "unresponsive"),
-        );
-        if (!portalConflict) return;
-        conflictToastShownRef.current = true;
-        const message =
-          portalConflict.state === "outdated"
-            ? t("settings.backend_conflict_outdated", portalConflict.remoteVersion ?? "")
-            : portalConflict.state === "noVersion"
-              ? t("settings.backend_conflict_no_version")
-              : t("settings.backend_conflict_unresponsive");
-        showToast(message, "warning");
+        maybeAlertPortalConflict(res);
       })
       .catch(() => { /* 查询失败静默：设置页仍可查看 */ });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [maybeAlertPortalConflict]);
 
   /** 设置对话框打开时刷新缩略图缓存占用（异步回填） */
   useEffect(() => {
@@ -1824,6 +1841,24 @@ function AppContent() {
             message={confirmDialog?.message ?? ""}
             onConfirm={handleConfirm}
             onCancel={handleCancel}
+          />
+
+          {/* portal 后端冲突警告弹窗（带遮罩）：toast 替代——冲突属
+              「portal 文件选择器被劫持」级故障，需用户明确知晓；
+              每次会话只弹一次，详情常驻设置页 */}
+          <AlertDialog
+            open={!!conflictAlert}
+            title={t("settings.backend_conflict_alert_title")}
+            message={
+              conflictAlert
+                ? conflictAlert.state === "outdated"
+                  ? t("settings.backend_conflict_outdated", conflictAlert.remoteVersion ?? "")
+                  : conflictAlert.state === "noVersion"
+                    ? t("settings.backend_conflict_no_version")
+                    : t("settings.backend_conflict_unresponsive")
+                : ""
+            }
+            onClose={() => setConflictAlert(null)}
           />
 
           <DragActionDialog
