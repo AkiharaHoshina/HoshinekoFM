@@ -149,7 +149,7 @@ Please switch to "Releases" page
 
 ## Testing
 
-End-to-end tests live in `scripts/e2e/` (33 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
+End-to-end tests live in `scripts/e2e/` (35 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
 
 ```bash
 npm run e2e                # builds first, then runs every scripts/e2e/*.test.cjs

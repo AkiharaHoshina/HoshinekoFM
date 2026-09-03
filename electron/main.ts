@@ -2,7 +2,7 @@ import { app, BrowserWindow, Menu, protocol, net, ipcMain, shell, type WebConten
 import path from 'path';
 import url from 'url';
 import os from 'os';
-import { promises as fs, createReadStream } from 'fs';
+import { promises as fs, createReadStream, watch, type FSWatcher } from 'fs';
 import { Readable } from 'stream';
 import { setupPtyHandlers, killAllPty } from './pty';
 import { getThumbnail, detectMime, THUMB_QUEUE_DROPPED } from './fsUtils';
@@ -11,7 +11,7 @@ import { registerFsHandlers } from './handlers/fs';
 import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor } from './handlers/system';
 import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers, startColorSchemeWatcher, stopColorSchemeWatcher } from './handlers/theme';
-import { registerPickerHandlers, type PickerConfig, type PinnedDirEntry } from './handlers/picker';
+import { registerPickerHandlers, type PickerConfig, type PinnedDirEntry, type PickerViewPrefs } from './handlers/picker';
 import { registerServiceBackends } from './backends';
 import { initJobHandlers } from './jobs';
 
@@ -59,6 +59,130 @@ const PINNED_SNAPSHOT_FILE = path.join(LEGACY_USER_DATA_DIR, 'sidebar-pinned.jso
 
 /** 固定项快照内存缓存（GUI 模式由 IPC 上报保持最新；服务模式首次读取后缓存） */
 let pinnedSnapshotCache: PinnedDirEntry[] | null = null;
+
+/**
+ * 选择器显示偏好快照文件：与固定项快照同一机制（GUI 经 IPC 上报、
+ * 主进程原子落盘到 GUI userData），供服务模式常驻进程的选择器/
+ * 保存器窗口注入——其 userData 隔离读不到 GUI 的 localStorage，
+ * 视图模式（网格/列表）等只读偏好会永远停留在默认值。
+ */
+const PICKER_PREFS_SNAPSHOT_FILE = path.join(LEGACY_USER_DATA_DIR, 'picker-prefs.json');
+
+/** 选择器偏好快照内存缓存（GUI 模式由 IPC 上报保持最新；服务模式现读文件） */
+let pickerViewPrefsSnapshotCache: PickerViewPrefs | null = null;
+
+/**
+ * 校验选择器显示偏好快照（来源可能是快照文件，可能被手改/损坏）：
+ * 任一字段非法则整体丢弃（返回 null，不注入）——快照由本应用 GUI
+ * 写入，损坏意味着不该信任。iconSize 钳制到 [16, 128]。
+ */
+function sanitizePickerViewPrefs(input: unknown): PickerViewPrefs | null {
+  const it = (input ?? {}) as Record<string, unknown>;
+  if (typeof it.viewMode !== 'string' || (it.viewMode !== 'grid' && it.viewMode !== 'list')) return null;
+  if (typeof it.iconSize !== 'number' || !Number.isFinite(it.iconSize)) return null;
+  if (typeof it.showHiddenFiles !== 'boolean') return null;
+  if (typeof it.filledIcons !== 'boolean') return null;
+  if (typeof it.marqueeEnabled !== 'boolean') return null;
+  return {
+    viewMode: it.viewMode,
+    iconSize: Math.min(128, Math.max(16, Math.round(it.iconSize))),
+    showHiddenFiles: it.showHiddenFiles,
+    filledIcons: it.filledIcons,
+    marqueeEnabled: it.marqueeEnabled,
+  };
+}
+
+/**
+ * 读取选择器显示偏好快照（服务模式选择器窗口注入用）：
+ * - GUI 模式下缓存由 `app:set-picker-view-prefs` 保持最新，命中缓存直接返回；
+ * - 服务模式下缓存恒为 null，**每次调用现读文件**——GUI 改动
+ *   视图模式后常驻进程下次弹选择器立即看到，无需重启。
+ *   读取失败/文件不存在时返回 null（不注入，前端回退 localStorage 默认）。
+ */
+async function loadPickerViewPrefsSnapshot(): Promise<PickerViewPrefs | null> {
+  if (pickerViewPrefsSnapshotCache !== null) return pickerViewPrefsSnapshotCache;
+  try {
+    const raw = await fs.readFile(PICKER_PREFS_SNAPSHOT_FILE, 'utf-8');
+    return sanitizePickerViewPrefs(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 快照文件实时监听（仅服务模式）：GUI 改动固定项/选择器偏好后，
+ * 常驻进程经 fs.watch（inotify，目录级——GUI 是 tmp+rename 原子写，
+ * 文件级 watch 在 rename 后失联）监听到变化，**按内容对比过滤**后
+ * 立即广播到所有打开中的选择器/保存器窗口——实时继承，不再只在
+ * 创建时读取一次。GUI userData 目录里 LevelDB 等文件会频繁触发
+ * watcher，内容不变则不广播（两文件各只有几百字节，毫秒级）。
+ * 独立生命周期：不受 window-all-closed 的 stopAllWatching 影响
+ * （服务模式窗口全关后进程常驻，监听必须存活），退出时停止。
+ */
+let snapshotWatcher: FSWatcher | null = null;
+let snapshotWatchTimer: ReturnType<typeof setTimeout> | null = null;
+/** 上次广播的原始内容（按内容对比，避免 LevelDB 噪声引发无意义广播） */
+let lastPinnedSnapshotRaw: string | null = null;
+let lastPrefsSnapshotRaw: string | null = null;
+
+function startSnapshotWatcher(): void {
+  if (snapshotWatcher) return;
+  const broadcast = async () => {
+    try {
+      const [pinnedRaw, prefsRaw] = await Promise.all([
+        fs.readFile(PINNED_SNAPSHOT_FILE, 'utf-8').catch(() => null),
+        fs.readFile(PICKER_PREFS_SNAPSHOT_FILE, 'utf-8').catch(() => null),
+      ]);
+      if (pinnedRaw !== null && pinnedRaw !== lastPinnedSnapshotRaw) {
+        lastPinnedSnapshotRaw = pinnedRaw;
+        const dirs = sanitizePinnedDirs(JSON.parse(pinnedRaw));
+        for (const win of getWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('picker:pinned-dirs-changed', dirs);
+        }
+      }
+      if (prefsRaw !== null && prefsRaw !== lastPrefsSnapshotRaw) {
+        lastPrefsSnapshotRaw = prefsRaw;
+        const prefs = sanitizePickerViewPrefs(JSON.parse(prefsRaw));
+        for (const win of getWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('picker:view-prefs-changed', prefs);
+        }
+      }
+    } catch {
+      /* 瞬时读失败/解析失败：保持现状，等下一次事件 */
+    }
+  };
+  try {
+    // 目录可能尚不存在（GUI 从未运行）：先建目录再 watch
+    fs.mkdir(LEGACY_USER_DATA_DIR, { recursive: true })
+      .then(() => {
+        snapshotWatcher = watch(LEGACY_USER_DATA_DIR, () => {
+          if (snapshotWatchTimer) clearTimeout(snapshotWatchTimer);
+          snapshotWatchTimer = setTimeout(() => {
+            snapshotWatchTimer = null;
+            void broadcast();
+          }, 300);
+        });
+        snapshotWatcher.on('error', () => {
+          snapshotWatcher?.close();
+          snapshotWatcher = null;
+          // 5s 后重试（GUI 重启/目录重建等场景恢复实时继承）
+          setTimeout(() => startSnapshotWatcher(), 5000);
+        });
+      })
+      .catch(() => { /* mkdir 失败：无实时继承，创建时读取仍兜底 */ });
+  } catch {
+    snapshotWatcher = null;
+  }
+}
+
+function stopSnapshotWatcher(): void {
+  if (snapshotWatchTimer) {
+    clearTimeout(snapshotWatchTimer);
+    snapshotWatchTimer = null;
+  }
+  snapshotWatcher?.close();
+  snapshotWatcher = null;
+}
 
 /**
  * 校验固定项数组（来源可能是 localStorage 快照文件，可能被手改/损坏）：
@@ -152,14 +276,21 @@ async function createWindow(
   } = {},
 ): Promise<BrowserWindow> {
   const isPicker = options.picker === true;
-  // 服务模式选择器：userData 隔离读不到 GUI 的 localStorage（侧边栏固定项），
-  // 主进程从 GUI userData 的快照文件补齐 pinnedDirs 注入配置。
+  // 服务模式选择器：userData 隔离读不到 GUI 的 localStorage（侧边栏
+  // 固定项、视图模式等），主进程从 GUI userData 的快照文件补齐注入。
   // GUI 模式不做注入——选择器窗口与主窗口共享 session，FilePicker 直接
   // 读 localStorage（含 storage 事件实时同步），行为保持不变。
   if (isPicker && options.pickerConfig && SERVICE_ONLY_MODE) {
-    const pinned = await loadPinnedSnapshot();
-    if (pinned.length > 0) {
-      options.pickerConfig = { ...options.pickerConfig, pinnedDirs: pinned };
+    const [pinned, viewPrefs] = await Promise.all([
+      loadPinnedSnapshot(),
+      loadPickerViewPrefsSnapshot(),
+    ]);
+    if (pinned.length > 0 || viewPrefs) {
+      options.pickerConfig = {
+        ...options.pickerConfig,
+        ...(pinned.length > 0 ? { pinnedDirs: pinned } : {}),
+        ...(viewPrefs ? { viewPrefs } : {}),
+      };
     }
   }
   const win = new BrowserWindow({
@@ -279,7 +410,7 @@ protocol.registerSchemesAsPrivileged([
 app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
 app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
 
-/** 诊断日志开关（HOSHINEKO_DEBUG_LOG=1 时启用；复现缩略图卡顿用） */
+/** 诊断日志开关（HOSHINEKO_DEBUG_LOG=1 时启用；复现缩略图卡顿用，事后移除） */
 const DEBUG_LOG = process.env.HOSHINEKO_DEBUG_LOG === '1';
 /** 诊断日志起点（相对时间戳，便于对比事件顺序） */
 const DEBUG_T0 = Date.now();
@@ -488,6 +619,21 @@ ipcMain.handle('app:set-pinned-dirs', async (_event, input: unknown) => {
   }
 });
 
+// GUI 渲染进程上报选择器显示偏好（视图模式等）：更新内存缓存 +
+// 原子落盘快照，供服务模式常驻进程的选择器/保存器窗口注入。
+ipcMain.handle('app:set-picker-view-prefs', async (_event, input: unknown) => {
+  const prefs = sanitizePickerViewPrefs(input);
+  pickerViewPrefsSnapshotCache = prefs;
+  const tmp = `${PICKER_PREFS_SNAPSHOT_FILE}.tmp`;
+  try {
+    await fs.mkdir(LEGACY_USER_DATA_DIR, { recursive: true });
+    await fs.writeFile(tmp, JSON.stringify(prefs ?? {}), 'utf-8');
+    await fs.rename(tmp, PICKER_PREFS_SNAPSHOT_FILE);
+  } catch {
+    await fs.rm(tmp, { force: true }).catch(() => {});
+  }
+});
+
 registerFsHandlers();
 registerSystemHandlers();
 registerWindowHandlers(getWindows);
@@ -674,6 +820,9 @@ app.whenReady().then(() => {
         console.error('[backend] 服务模式后端注册失败，进程退出（exit 1）');
         app.exit(1);
       }
+      // 实时继承：监听 GUI userData 下的快照文件变化，广播到
+      // 打开中的选择器/保存器窗口（见 startSnapshotWatcher 注释）
+      startSnapshotWatcher();
     }
   });
 
@@ -723,6 +872,8 @@ app.on('before-quit', (event) => {
   storageFlushDone = true;
   // 清理系统明暗监听子进程（gsettings monitor）与定时器
   stopColorSchemeWatcher();
+  // 清理快照文件实时监听（服务模式）
+  stopSnapshotWatcher();
   // flushStorageData 同步把未落盘的 DOM Storage 写盘（void API，无 Promise）
   for (const win of windows) {
     if (!win.isDestroyed()) win.webContents.session.flushStorageData();

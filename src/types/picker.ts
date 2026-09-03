@@ -40,6 +40,24 @@ export interface PinnedDirEntry {
   isDir: boolean;
 }
 
+/**
+ * 选择器窗口的显示偏好（主进程注入，服务模式从快照补齐）。
+ * 只含选择器**只读**跟随主窗口的字段——排序/分组在选择器内可调
+ * （写入常驻进程自己的 localStorage 并持久），故不在快照内。
+ */
+export interface PickerViewPrefs {
+  /** 视图模式（网格/列表） */
+  viewMode: 'grid' | 'list';
+  /** 网格图标大小（像素） */
+  iconSize: number;
+  /** 显示隐藏文件 */
+  showHiddenFiles: boolean;
+  /** 实心图标 */
+  filledIcons: boolean;
+  /** 跑马灯标题滚动 */
+  marqueeEnabled: boolean;
+}
+
 /** 选择器窗口配置（picker:get-config 的返回值，普通窗口为 null） */
 export interface PickerConfig {
   /**
@@ -63,6 +81,12 @@ export interface PickerConfig {
    * 被主进程白名单校验忽略——固定项来源唯一，不可由第三方伪造。
    */
   pinnedDirs?: PinnedDirEntry[];
+  /**
+   * 选择器显示偏好（内部注入：服务模式选择器窗口从 GUI 快照补齐，
+   * 供视图模式/图标大小等只读偏好跟随主窗口）。调用方经
+   * picker:open 传入的该字段被白名单校验忽略。
+   */
+  viewPrefs?: PickerViewPrefs;
 }
 
 /** picker:open 的选项（渲染进程入口） */

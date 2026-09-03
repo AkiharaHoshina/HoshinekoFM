@@ -30,6 +30,38 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('theme:system-scheme-changed', handler);
     return () => ipcRenderer.removeListener('theme:system-scheme-changed', handler);
   },
+  /** 订阅固定项快照变化（服务模式常驻进程广播，打开中的选择器/保存器实时跟随） */
+  onPickerPinnedDirsChanged: (callback: (dirs: Array<{ name: string; path: string; isDir: boolean }>) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, dirs: unknown) => {
+      if (Array.isArray(dirs)) {
+        callback(dirs as Array<{ name: string; path: string; isDir: boolean }>);
+      }
+    };
+    ipcRenderer.on('picker:pinned-dirs-changed', handler);
+    return () => ipcRenderer.removeListener('picker:pinned-dirs-changed', handler);
+  },
+  /** 订阅选择器显示偏好变化（服务模式常驻进程广播；null = 快照被清，回落注入值/默认） */
+  onPickerViewPrefsChanged: (callback: (prefs: {
+    viewMode: 'grid' | 'list';
+    iconSize: number;
+    showHiddenFiles: boolean;
+    filledIcons: boolean;
+    marqueeEnabled: boolean;
+  } | null) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, prefs: unknown) => {
+      if (prefs === null || typeof prefs === 'object') {
+        callback(prefs as {
+          viewMode: 'grid' | 'list';
+          iconSize: number;
+          showHiddenFiles: boolean;
+          filledIcons: boolean;
+          marqueeEnabled: boolean;
+        } | null);
+      }
+    };
+    ipcRenderer.on('picker:view-prefs-changed', handler);
+    return () => ipcRenderer.removeListener('picker:view-prefs-changed', handler);
+  },
   listDir: (path: string) => ipcRenderer.invoke('fs:list-dir', path),
   getParentPath: (path: string) => ipcRenderer.invoke('fs:get-parent', path),
   getHomePath: () => ipcRenderer.invoke('fs:get-home'),
@@ -70,6 +102,8 @@ contextBridge.exposeInMainWorld('electron', {
   resolvePicker: (paths: string[] | null) => ipcRenderer.invoke('picker:resolve', paths),
   /** 上报侧边栏固定项（主进程落盘快照，供服务模式选择器窗口显示固定目录） */
   setPinnedDirs: (pinnedDirs: unknown) => ipcRenderer.invoke('app:set-pinned-dirs', pinnedDirs),
+  /** 上报选择器显示偏好（主进程落盘快照，供服务模式选择器窗口跟随视图模式等只读设置） */
+  setPickerViewPrefs: (prefs: unknown) => ipcRenderer.invoke('app:set-picker-view-prefs', prefs),
   readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path),
   readPreviewText: (path: string) => ipcRenderer.invoke('fs:read-preview-text', path),
   listArchive: (path: string, requestId?: string) => ipcRenderer.invoke('fs:list-archive', path, requestId),

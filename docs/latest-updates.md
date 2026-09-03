@@ -75,6 +75,32 @@
   （width 1，绝不回退原图）+ abort 撤出排队项不生成 + 300 张目录真实
   窗口滚动扫掠风暴（滚动期间零请求、窗口存活、停下后可见行正常生成）。
 
+## v0.11.31 — 选择器/保存器视图模式跟随主窗口（注入 + 实时继承）
+
+- **现象**：服务模式（`--portal`/`--filemanager1` 常驻进程）弹出的选择器/
+  保存器永远显示网格视图，主窗口切到列表也不跟随；且只在创建时读一次
+  快照，窗口打开后 GUI 改动不再生效。
+- **根因**：常驻进程的 userData 与 GUI 隔离，选择器读不到 GUI 的
+  localStorage，视图模式停留在默认值 `grid`（与固定项同源的隔离问题）；
+  两个进程之间没有通信信道。
+- **修复**（`electron/main.ts`、`src/App.tsx`、`src/components/FilePicker.tsx`）：
+  - **创建时注入**：GUI 渲染进程经 `app:set-picker-view-prefs` 上报只读
+    显示偏好（视图模式/图标大小/隐藏文件/实心图标/跑马灯），主进程原子
+    落盘快照 `picker-prefs.json`（与 `sidebar-pinned.json` 同一机制）；
+    服务模式创建选择器/保存器窗口时注入 `viewPrefs`，前端优先取注入值、
+    GUI 模式回落共享 session 的 localStorage。排序/分组不在快照内——
+    选择器内可调并自行持久。调用方传入的 `viewPrefs` 被白名单忽略。
+  - **实时继承**：常驻进程 `fs.watch` 监听 GUI userData 目录（目录级——
+    tmp+rename 原子写会让文件级 watch 失联；300ms 防抖 + 内容对比过滤
+    LevelDB 噪声），快照变化即广播 `picker:view-prefs-changed` /
+    `picker:pinned-dirs-changed` 到所有打开中的选择器/保存器窗口——
+    打开中即可实时切换视图模式、固定目录即时增删，无需重开窗口。
+    独立生命周期（服务模式窗口全关后进程常驻、监听存活），退出时清理。
+- e2e 33：选择器（picker:open）与保存器（portal SaveFile）两条链路
+  注入断言 + 列表/网格 DOM 渲染断言 + **打开中实时切换断言**（切网格、
+  新增固定目录，不重开窗口即生效）；e2e 26 设置段同步改为经
+  `setPickerViewPrefs` 上报列表模式（GUI 等价行为）。
+
 ## v0.11.31 — 主题「跟随系统」明暗检测与选择器/保存器固定目录
 
 - **主题「跟随系统」修复**：跟随系统此前把 `nativeTheme.themeSource`

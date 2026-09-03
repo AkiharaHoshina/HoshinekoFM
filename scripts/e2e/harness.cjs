@@ -90,6 +90,9 @@ const watchListenersByWindow = new WeakMap();
 /** 固定项快照缓存与文件（与 main.ts 的 app:set-pinned-dirs / loadPinnedSnapshot 同步） */
 let pinnedSnapshotCache = null;
 const pinnedSnapshotFile = () => path.join(app.getPath('userData'), 'sidebar-pinned.json');
+/** 选择器显示偏好快照缓存与文件（与 main.ts 的 app:set-picker-view-prefs 同步） */
+let pickerViewPrefsCache = null;
+const pickerViewPrefsFile = () => path.join(app.getPath('userData'), 'picker-prefs.json');
 
 /**
  * 后端总线名（进程级随机隔离）：每个测试文件是独立 Electron 进程，
@@ -272,6 +275,44 @@ function registerIpc() {
     } catch {
       /* 写快照失败：仅影响固定项注入，不阻塞测试 */
     }
+    // 模拟 main.ts 服务模式的快照实时监听（startSnapshotWatcher）：
+    // GUI 改动即广播到所有窗口（打开中的选择器/保存器实时跟随）
+    for (const w of windows) {
+      if (!w.isDestroyed()) w.webContents.send('picker:pinned-dirs-changed', dirs);
+    }
+  });
+
+  // 与 main.ts 的 app:set-picker-view-prefs 同步：GUI 渲染进程上报
+  // 选择器只读显示偏好（视图模式等），内存缓存 + 原子落盘快照
+  ipcMain.handle('app:set-picker-view-prefs', async (_event, input) => {
+    const it = (input ?? {}) || {};
+    const valid =
+      (it.viewMode === 'grid' || it.viewMode === 'list') &&
+      typeof it.iconSize === 'number' &&
+      typeof it.showHiddenFiles === 'boolean' &&
+      typeof it.filledIcons === 'boolean' &&
+      typeof it.marqueeEnabled === 'boolean';
+    pickerViewPrefsCache = valid
+      ? {
+          viewMode: it.viewMode,
+          iconSize: Math.min(128, Math.max(16, Math.round(it.iconSize))),
+          showHiddenFiles: it.showHiddenFiles,
+          filledIcons: it.filledIcons,
+          marqueeEnabled: it.marqueeEnabled,
+        }
+      : null;
+    try {
+      const tmp = `${pickerViewPrefsFile()}.tmp`;
+      await fs.promises.writeFile(tmp, JSON.stringify(pickerViewPrefsCache ?? {}), 'utf-8');
+      await fs.promises.rename(tmp, pickerViewPrefsFile());
+    } catch {
+      /* 写快照失败：仅影响偏好注入，不阻塞测试 */
+    }
+    // 模拟 main.ts 服务模式的快照实时监听（startSnapshotWatcher）：
+    // GUI 改动即广播到所有窗口（打开中的选择器/保存器实时跟随）
+    for (const w of windows) {
+      if (!w.isDestroyed()) w.webContents.send('picker:view-prefs-changed', pickerViewPrefsCache);
+    }
   });
 }
 
@@ -401,8 +442,8 @@ async function createTestWindow({ argv = [], picker = false, pickerConfig = null
   if (startupPath) startupPathByWindow.set(win, startupPath);
   if (startupSelect) startupSelectByWindow.set(win, startupSelect);
   if (picker && pickerConfig) {
-    // 与 main.ts 服务模式注入同步：选择器窗口补上固定项快照
-    // （userData 隔离下 localStorage 读不到 GUI 固定项）
+    // 与 main.ts 服务模式注入同步：选择器窗口补上固定项与显示偏好快照
+    // （userData 隔离下 localStorage 读不到 GUI 固定项/偏好）
     if (pinnedSnapshotCache === null) {
       try {
         const raw = await fs.promises.readFile(pinnedSnapshotFile(), 'utf-8');
@@ -411,8 +452,19 @@ async function createTestWindow({ argv = [], picker = false, pickerConfig = null
         pinnedSnapshotCache = [];
       }
     }
+    if (pickerViewPrefsCache === null) {
+      try {
+        const raw = await fs.promises.readFile(pickerViewPrefsFile(), 'utf-8');
+        pickerViewPrefsCache = JSON.parse(raw);
+      } catch {
+        pickerViewPrefsCache = null;
+      }
+    }
     if (pinnedSnapshotCache.length > 0) {
       pickerConfig = { ...pickerConfig, pinnedDirs: pinnedSnapshotCache };
+    }
+    if (pickerViewPrefsCache) {
+      pickerConfig = { ...pickerConfig, viewPrefs: pickerViewPrefsCache };
     }
     pickerConfigByWindow.set(win, pickerConfig);
   }

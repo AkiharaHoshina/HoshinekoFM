@@ -19,11 +19,17 @@ const path = require('path');
 
     // 打开 items 模式选择器（目录与文件均可选）。
     // 选择器与主窗口共享 localStorage 排序/视图偏好——前置用例可能改动，
-    // 先复位为名称升序 + 列表视图（保证显示序可预期）
+    // 先复位为名称升序 + 列表视图（保证显示序可预期）。
+    // 视图模式另经 viewPrefs 快照注入（GUI 列表模式的等价上报），
+    // 服务模式下选择器读不到主窗口 localStorage，仅写 localStorage 不够。
     await h.js(win, `localStorage.setItem('settings.sortBy', JSON.stringify('name'));
       localStorage.setItem('settings.sortOrder', JSON.stringify('asc'));
       localStorage.setItem('settings.viewMode', JSON.stringify('list'));
       localStorage.setItem('settings.groupingEnabled', JSON.stringify(false)); 'ok'`);
+    await h.js(win, `window.electron.setPickerViewPrefs({
+      viewMode: 'list', iconSize: 64, showHiddenFiles: true,
+      filledIcons: false, marqueeEnabled: true,
+    }); 'ok'`);
     await h.js(win, `window.__p1 = window.electron.openPicker({
       mode: 'items',
       initialPath: ${JSON.stringify(dir)},

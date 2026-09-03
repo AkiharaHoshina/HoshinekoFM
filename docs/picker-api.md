@@ -30,6 +30,7 @@ resolvePicker: (paths: string[] | null) => Promise<void>;
 | `defaultFileName` | `string`? | 保存模式默认文件名（portal `current_name`/`current_file`；纯文件名，主进程已剔除路径分隔符与控制字符） |
 | `acceptLabel` | `string`? | 保存模式确定按钮文案覆盖（portal `accept_label`；缺省用 i18n「确定」） |
 | `pinnedDirs` | `PinnedDirEntry[]`? | **仅主进程注入**：侧边栏固定目录（`{ name, path, isDir }`）。服务模式（`--portal`/`--filemanager1` 常驻进程）的 userData 与 GUI 隔离、读不到 GUI 的 localStorage，主进程从 GUI userData 下的 `sidebar-pinned.json` 快照补齐此字段；调用方经 `picker:open` 传入的该字段被白名单校验忽略（不可伪造固定项） |
+| `viewPrefs` | `PickerViewPrefs`? | **仅主进程注入**：选择器只读显示偏好（`viewMode` 网格/列表、`iconSize`、`showHiddenFiles`、`filledIcons`、`marqueeEnabled`）。服务模式从 GUI userData 下的 `picker-prefs.json` 快照补齐——不注入则视图模式永远停留在默认网格；调用方传入一律丢弃。排序/分组不在其中（选择器内可调并自行持久）。**实时跟随**：服务模式常驻进程监听快照变化，经 `onPickerViewPrefsChanged` / `onPickerPinnedDirsChanged` 广播，打开中的选择器窗口即时更新 |
 
 ```ts
 interface PickerFilter {
@@ -118,4 +119,4 @@ const picked = await window.electron.openPicker({
 - v0.11.15：`picker:open` 的 mode 声明补全 `items` 类型与文档；`PickerConfig` 注释明确"第三方接入时声明可选条目类型"的接口语义；新增本文档。
 - v0.11.19：`PickerConfig` 扩展 `filters` / `initialPath` / `defaultFilterId`；主进程白名单校验与 `resolvedMime` 解析；底部类型下拉（所有文件常驻 + 各类型，切换清除失效选中）；并发语义文档化；类型抽至 `src/types/picker.ts` 三端同源。
 - v0.11.24/25：`save` 保存模式（portal SaveFile：`defaultFileName`/`acceptLabel`，文件名输入框取代类型下拉、隐藏回收站）与 `patterns`（portal glob 转大小写不敏感正则，内部 IPC 不使用）。
-- v0.11.31：`PickerConfig` 增加主进程注入的 `pinnedDirs`（固定项快照，服务模式选择器/保存器显示侧边栏固定目录；调用方传入一律忽略）。
+- v0.11.31：`PickerConfig` 增加主进程注入的 `pinnedDirs`（固定项快照，服务模式选择器/保存器显示侧边栏固定目录；调用方传入一律忽略）与 `viewPrefs`（只读显示偏好快照，服务模式选择器/保存器跟随主窗口视图模式等）。

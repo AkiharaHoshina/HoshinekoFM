@@ -1,5 +1,5 @@
 import type { IFile, AllDevice, GvfsVolume } from './files';
-import type { PickerConfig, PinnedDirEntry } from './picker';
+import type { PickerConfig, PinnedDirEntry, PickerViewPrefs } from './picker';
 
 export interface IDrive {
     name: string;
@@ -85,6 +85,16 @@ export interface IElectronAPI {
      * 即时 + 定时兜底重检）。返回取消订阅函数。
      */
     onSystemSchemeChanged: (callback: (mode: 'dark' | 'light') => void) => () => void;
+    /**
+     * 订阅固定项快照变化（服务模式常驻进程监听 GUI 快照文件后广播，
+     * 打开中的选择器/保存器实时跟随）。返回取消订阅函数。
+     */
+    onPickerPinnedDirsChanged: (callback: (dirs: PinnedDirEntry[]) => void) => () => void;
+    /**
+     * 订阅选择器显示偏好变化（服务模式常驻进程广播；
+     * null = 快照被清，回落注入值/本地默认）。返回取消订阅函数。
+     */
+    onPickerViewPrefsChanged: (callback: (prefs: PickerViewPrefs | null) => void) => () => void;
     /** 探测当前壁纸图片路径，失败返回 null */
     findWallpaper: () => Promise<string | null>;
     /** 用 matugen 从壁纸图片生成 M3 颜色方案 CSS；matugen 缺失时 fallback=true 且只返回种子色 */
@@ -151,6 +161,8 @@ export interface IElectronAPI {
     resolvePicker: (paths: string[] | null) => Promise<void>;
     /** 上报侧边栏固定项（主进程落盘快照，供服务模式选择器窗口显示固定目录） */
     setPinnedDirs: (pinnedDirs: PinnedDirEntry[]) => Promise<void>;
+    /** 上报选择器显示偏好（主进程落盘快照，供服务模式选择器窗口跟随视图模式等只读设置） */
+    setPickerViewPrefs: (prefs: PickerViewPrefs) => Promise<void>;
     readFile: (path: string) => Promise<string | null>;
     /**
      * 读取文本预览内容（预览面板用）。大小上限 512 KiB：

@@ -475,6 +475,24 @@ function AppContent() {
   );
 
   /**
+   * 选择器显示偏好上报主进程（含首次挂载）：与固定项同一快照机制，
+   * 服务模式常驻进程的选择器/保存器窗口从快照注入视图模式（网格/
+   * 列表）等**只读**偏好——其 userData 隔离读不到本窗口的 localStorage，
+   * 不注入的话选择器永远停留在默认网格视图。
+   */
+  useEffect(() => {
+    void window.electron.setPickerViewPrefs({
+      viewMode,
+      iconSize,
+      showHiddenFiles,
+      filledIcons,
+      marqueeEnabled,
+    }).catch(() => {
+      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
+    });
+  }, [viewMode, iconSize, showHiddenFiles, filledIcons, marqueeEnabled]);
+
+  /**
    * 界面缩放（整页缩放，百分比）。持久化于 settings.uiScale，
    * 变更时经 IPC 应用本窗口 zoom factor，跨窗口 storage 同步。
    */

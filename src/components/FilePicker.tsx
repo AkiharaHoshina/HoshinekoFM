@@ -23,7 +23,7 @@ import { registerKeyboardZone, focusNextKeyboardZone, trackKeyboardZoneFocus } f
 import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, computeShiftArrowRange, type ListItem } from './FileList/utils';
 import type { IFile, AllDevice, GvfsVolume } from '../types/files';
 import type { ThemeConfig } from '../types/theme';
-import type { PickerConfig, PickerFilter } from '../types/picker';
+import type { PickerConfig, PickerFilter, PickerViewPrefs } from '../types/picker';
 import { getMimeDisplayName } from '../utils/mimeTypes';
 import './FilePicker.css';
 
@@ -95,19 +95,55 @@ const FilePicker: React.FC = () => {
   const [gvfsMenu, setGvfsMenu] = useState<{ x: number; y: number; volume: GvfsVolume } | null>(null);
 
   // 与主界面共享同一批设置键（排序/分组为读写：选择器内可调节并双向同步）
-  const [showHiddenFiles] = useLocalStorage<boolean>('settings.showHiddenFiles', true);
-  const [iconSize] = useLocalStorage<number>('settings.iconSize', 64);
-  const [viewMode] = useLocalStorage<'grid' | 'list'>('settings.viewMode', 'grid');
-  const [filledIcons] = useLocalStorage<boolean>('settings.filledIcons', false);
-  const [marqueeEnabled] = useLocalStorage<boolean>('settings.marqueeEnabled', true);
+  const [localShowHiddenFiles] = useLocalStorage<boolean>('settings.showHiddenFiles', true);
+  const [localIconSize] = useLocalStorage<number>('settings.iconSize', 64);
+  const [localViewMode] = useLocalStorage<'grid' | 'list'>('settings.viewMode', 'grid');
+  const [localFilledIcons] = useLocalStorage<boolean>('settings.filledIcons', false);
+  const [localMarqueeEnabled] = useLocalStorage<boolean>('settings.marqueeEnabled', true);
   const [localPinnedDirs] = useLocalStorage<SidebarPinnedItem[]>('sidebar.pinned', []);
   /**
-   * 侧边栏固定目录数据源：优先取主进程注入的 config.pinnedDirs
-   * （服务模式选择器 userData 隔离，localStorage 读不到 GUI 固定项，
-   * 由主进程从快照文件补齐）；GUI 模式无注入，回落共享 session 的
-   * localStorage（含 storage 事件实时同步）。
+   * 服务模式实时广播状态（undefined = 尚无广播）：
+   * 常驻进程监听 GUI 快照文件，变化即经
+   * onPickerViewPrefsChanged / onPickerPinnedDirsChanged 推送——
+   * 打开中的选择器/保存器实时跟随 GUI，不再只在创建时继承。
    */
-  const pinnedDirs: SidebarPinnedItem[] = config?.pinnedDirs ?? localPinnedDirs;
+  const [liveViewPrefs, setLiveViewPrefs] = useState<PickerViewPrefs | null | undefined>(undefined);
+  const [livePinnedDirs, setLivePinnedDirs] = useState<SidebarPinnedItem[] | undefined>(undefined);
+
+  useEffect(() => {
+    const offPrefs = window.electron?.onPickerViewPrefsChanged?.((prefs) => {
+      setLiveViewPrefs(prefs);
+    });
+    const offPinned = window.electron?.onPickerPinnedDirsChanged?.((dirs) => {
+      setLivePinnedDirs(dirs);
+    });
+    return () => {
+      offPrefs?.();
+      offPinned?.();
+    };
+  }, []);
+
+  /**
+   * 只读显示偏好数据源：优先取实时广播（服务模式）与主进程注入的
+   * config.viewPrefs（服务模式创建时从快照补齐——否则视图模式永远
+   * 停在默认网格）；GUI 模式两者皆无，回落共享 session 的 localStorage
+   * （含 storage 事件实时同步）。排序/分组为选择器内可调项，保持
+   * localStorage 读写（常驻进程内自行持久）。
+   */
+  const viewPrefs: PickerViewPrefs | undefined = liveViewPrefs === undefined
+    ? config?.viewPrefs
+    : (liveViewPrefs ?? undefined);
+  const showHiddenFiles = viewPrefs?.showHiddenFiles ?? localShowHiddenFiles;
+  const iconSize = viewPrefs?.iconSize ?? localIconSize;
+  const viewMode = viewPrefs?.viewMode ?? localViewMode;
+  const filledIcons = viewPrefs?.filledIcons ?? localFilledIcons;
+  const marqueeEnabled = viewPrefs?.marqueeEnabled ?? localMarqueeEnabled;
+  /**
+   * 侧边栏固定目录数据源：优先取实时广播与主进程注入的
+   * config.pinnedDirs（服务模式从快照补齐）；GUI 模式回落共享
+   * session 的 localStorage（含 storage 事件实时同步）。
+   */
+  const pinnedDirs: SidebarPinnedItem[] = livePinnedDirs ?? config?.pinnedDirs ?? localPinnedDirs;
   const [sortBy, setSortBy] = useLocalStorage<'name' | 'size' | 'date'>('settings.sortBy', 'name');
   const [sortOrder, setSortOrder] = useLocalStorage<'asc' | 'desc'>('settings.sortOrder', 'asc');
   const [groupingEnabled, setGroupingEnabled] = useLocalStorage<boolean>('settings.groupingEnabled', true);

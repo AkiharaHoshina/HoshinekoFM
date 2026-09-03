@@ -38,6 +38,24 @@ export interface PinnedDirEntry {
 }
 
 /**
+ * 选择器窗口的显示偏好（与 src/types/picker.ts 的 PickerViewPrefs 同源）。
+ * 只含选择器**只读**跟随主窗口的字段——排序/分组在选择器内可调
+ * （写入常驻进程自己的 localStorage 并持久），故不在快照内。
+ */
+export interface PickerViewPrefs {
+  /** 视图模式（网格/列表） */
+  viewMode: 'grid' | 'list';
+  /** 网格图标大小（像素） */
+  iconSize: number;
+  /** 显示隐藏文件 */
+  showHiddenFiles: boolean;
+  /** 实心图标 */
+  filledIcons: boolean;
+  /** 跑马灯标题滚动 */
+  marqueeEnabled: boolean;
+}
+
+/**
  * 选择器配置（picker:open 的声明 / picker:get-config 的返回）。
  * 字段与 `src/types/picker.ts` 的 PickerConfig 一一对应——前端类型
  * 文档同源，修改时须同步。
@@ -62,6 +80,13 @@ export interface PickerConfig {
    * 该字段，第三方无法伪造固定项。
    */
   pinnedDirs?: PinnedDirEntry[];
+  /**
+   * 选择器显示偏好。**仅主进程注入**（服务模式从 GUI 的
+   * picker-prefs.json 快照补齐——常驻进程 userData 隔离，读不到
+   * GUI 的 localStorage，默认值下选择器永远显示网格视图）。
+   * 调用方传入该字段一律丢弃（白名单不包含）。
+   */
+  viewPrefs?: PickerViewPrefs;
 }
 
 /** 合法的选择模式白名单（防止任意值进入配置） */
