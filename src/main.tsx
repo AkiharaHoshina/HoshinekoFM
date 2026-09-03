@@ -32,6 +32,32 @@ function applyInitialUiZoom() {
 
 applyInitialUiZoom();
 
+// 诊断用（仅 dev 构建）：长任务监视器 + 帧间隔监视器，捕捉渲染主线程卡顿时刻
+if (import.meta.env.DEV) {
+  try {
+    const obs = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.duration > 100) {
+          console.log(`[perf] longtask ${entry.duration.toFixed(0)}ms @${performance.now().toFixed(0)}`);
+        }
+      }
+    });
+    obs.observe({ entryTypes: ['longtask'] });
+  } catch {
+    // longtask 不可用时静默（不影响功能）
+  }
+  let lastFrame = performance.now();
+  const frameCheck = (t: number) => {
+    const gap = t - lastFrame;
+    if (gap > 100) {
+      console.log(`[perf] frame-gap ${gap.toFixed(0)}ms @${t.toFixed(0)}`);
+    }
+    lastFrame = t;
+    requestAnimationFrame(frameCheck);
+  };
+  requestAnimationFrame(frameCheck);
+}
+
 // 选择器窗口：主进程以 ?mode=picker 加载本页，渲染文件选择器而非主界面
 const isPickerWindow = new URLSearchParams(window.location.search).get('mode') === 'picker';
 

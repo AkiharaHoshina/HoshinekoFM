@@ -1,5 +1,5 @@
 import { promises as fs } from 'fs';
-import { writeFileSync, existsSync, mkdirSync } from 'fs';
+import { writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { execFile } from 'child_process';
@@ -11,12 +11,19 @@ const execFileAsync = promisify(execFile);
 
 // ── MIME detection by magic bytes ──────────────────────────────────
 
-// Read first 16 bytes of a file and return them as a Buffer
+// Read first N bytes of a file and return them as a Buffer
 async function readHead(filePath: string, bytes = 16): Promise<Buffer | null> {
   try {
     const fd = await fs.open(filePath, 'r');
     const buf = Buffer.alloc(bytes);
-    await fd.read(buf, 0, bytes, 0);
+    // 循环读满：大块 read 不保证一次返回全部字节，尾部补零会破坏
+    // 解析（JPEG SOF 扫描依赖完整段头）
+    let offset = 0;
+    while (offset < bytes) {
+      const { bytesRead } = await fd.read(buf, offset, bytes - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
     await fd.close();
     return buf;
   } catch {
@@ -30,6 +37,87 @@ function bufStartsWith(buf: Buffer, pattern: number[]): boolean {
   }
   return true;
 }
+
+/**
+ * 从文件头（不解码）读取图片像素尺寸：PNG IHDR / GIF 逻辑屏幕 /
+ * JPEG SOF / BMP DIB / WebP VP8(X|L)。返回 null 表示无法解析。
+ * 用途：主进程同步 nativeImage 解码前的**像素数护栏**——文件字节数
+ * 无法反映解码成本（450MP PNG 仅 6MB），只有像素数才能拦住巨图。
+ */
+async function probeImageDimensions(filePath: string): Promise<{ w: number; h: number } | null> {
+  const head = await readHead(filePath, 65536);
+  if (!head || head.length < 24) return null;
+  // PNG：IHDR 宽高位于固定偏移 16/20（大端）
+  if (bufStartsWith(head, [0x89, 0x50, 0x4E, 0x47])) {
+    const w = head.readUInt32BE(16);
+    const h = head.readUInt32BE(20);
+    return w > 0 && h > 0 ? { w, h } : null;
+  }
+  // GIF：逻辑屏幕宽高位于偏移 6/8（小端）
+  if (bufStartsWith(head, [0x47, 0x49, 0x46])) {
+    const w = head.readUInt16LE(6);
+    const h = head.readUInt16LE(8);
+    return w > 0 && h > 0 ? { w, h } : null;
+  }
+  // BMP：DIB 头宽高位于偏移 18/22（小端，有符号高度）
+  if (bufStartsWith(head, [0x42, 0x4D])) {
+    const w = head.readInt32LE(18);
+    const h = Math.abs(head.readInt32LE(22));
+    return w > 0 && h > 0 ? { w, h } : null;
+  }
+  // WebP：VP8X 画布（偏移 24/27，3 字节小端 +1）或 VP8L（21/24，14 位 +1）
+  if (bufStartsWith(head, [0x52, 0x49, 0x46, 0x46]) && bufStartsWith(head.subarray(8, 12), [0x57, 0x45, 0x42, 0x50])) {
+    if (bufStartsWith(head.subarray(12, 16), [0x56, 0x50, 0x38, 0x58]) && head.length >= 30) {
+      const w = 1 + (head[24] | (head[25] << 8) | (head[26] << 16));
+      const h = 1 + (head[27] | (head[28] << 8) | (head[29] << 16));
+      return w > 0 && h > 0 ? { w, h } : null;
+    }
+    if (bufStartsWith(head.subarray(12, 16), [0x56, 0x50, 0x38, 0x4C]) && head.length >= 25) {
+      const bits = head.readUInt32LE(21);
+      const w = (bits & 0x3fff) + 1;
+      const h = ((bits >> 14) & 0x3fff) + 1;
+      return w > 0 && h > 0 ? { w, h } : null;
+    }
+    // 有损 VP8（关键帧）：帧头位于 26，宽高为 16 位小端（掩 0x3fff）
+    if (bufStartsWith(head.subarray(12, 16), [0x56, 0x50, 0x38, 0x20]) && head.length >= 30) {
+      const w = head.readUInt16LE(26) & 0x3fff;
+      const h = head.readUInt16LE(28) & 0x3fff;
+      return w > 0 && h > 0 ? { w, h } : null;
+    }
+    return null;
+  }
+  // JPEG：扫描 SOF0–SOF15（C0–CF 除 C4/C8/CC）标记
+  if (bufStartsWith(head, [0xFF, 0xD8])) {
+    let off = 2;
+    while (off + 9 < head.length) {
+      if (head[off] !== 0xFF) return null; // 段对齐破坏
+      let marker = head[off];
+      while (marker === 0xFF) {
+        off++;
+        marker = head[off];
+      }
+      if (marker === 0xD9 || marker === 0xDA) return null; // EOI/SOS：SOF 已过
+      const len = head.readUInt16BE(off + 1);
+      if (len < 2) return null;
+      if (
+        (marker >= 0xC0 && marker <= 0xC3) ||
+        (marker >= 0xC5 && marker <= 0xC7) ||
+        (marker >= 0xC9 && marker <= 0xCB) ||
+        (marker >= 0xCD && marker <= 0xCF)
+      ) {
+        const h = head.readUInt16BE(off + 3);
+        const w = head.readUInt16BE(off + 5);
+        return w > 0 && h > 0 ? { w, h } : null;
+      }
+      off += 2 + len;
+    }
+    return null;
+  }
+  return null;
+}
+
+/** nativeImage 回退的像素数上限（≈36MP）：超限的主进程同步解码会卡死 UI */
+const NATIVE_IMAGE_MAX_PIXELS = 36_000_000;
 
 /** Fast MIME detection by reading file magic bytes. Returns null on failure (caller may fall back to `file` command). */
 export async function detectMimeByMagic(filePath: string): Promise<string | null> {
@@ -408,21 +496,85 @@ export async function detectMimeBatch(filePaths: string[]): Promise<Map<string, 
 const APP_CACHE_DIR = path.join(os.homedir(), '.cache', 'hoshineko-fm');
 const THUMB_CACHE_DIR = path.join(APP_CACHE_DIR, 'thumbnails');
 
+/**
+ * ImageMagick 磁盘像素缓存目录：**必须落在真实磁盘**而非 /tmp tmpfs。
+ * 巨图（450MP 等）+ `-limit memory/map 128MiB` 强制走磁盘像素缓存，
+ * 单张约 1–2GB；6 并发时 /tmp tmpfs 配额耗尽，convert 报「超出磁盘
+ * 配额」失败 → 回退到主进程同步 nativeImage 解码 → 卡死 UI 数秒。
+ * 目录懒创建（幂等），clearThumbnailCache 一并清理。
+ */
+const IM_TMP_DIR = path.join(APP_CACHE_DIR, 'im-tmp');
+let imTmpDirReady = false;
+
+/** 创建 ImageMagick 磁盘像素缓存目录（进程内一次；清缓存后重置） */
+function ensureImTmpDir(): void {
+  if (imTmpDirReady) return;
+  if (!existsSync(IM_TMP_DIR)) {
+    mkdirSync(IM_TMP_DIR, { recursive: true });
+  }
+  imTmpDirReady = true;
+}
+
 /** p 是否位于 dir 内部（不含 dir 自身；相对路径不逃逸） */
 function isPathInside(dir: string, p: string): boolean {
   const rel = path.relative(dir, p);
   return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
+/** 缩略图目录就绪标记：目录创建是幂等操作，进程内只做一次——
+ *  每个请求一次 existsSync 的同步 stat 在滚动风暴（每秒数百请求）
+ *  下会阻塞主进程事件循环，波及所有 IPC（点击/hover/滚动定位）。
+ *  clearThumbnailCache 删除目录后会重置此标记以重建目录。 */
+let thumbCacheDirReady = false;
+
 function ensureThumbCacheDir(): void {
+  if (thumbCacheDirReady) return;
   if (!existsSync(THUMB_CACHE_DIR)) {
     mkdirSync(THUMB_CACHE_DIR, { recursive: true });
   }
+  thumbCacheDirReady = true;
 }
 
-function thumbCacheKey(key: string): string {
+function thumbCacheKey(key: string, ext: 'png' | 'jpg'): string {
   const hash = crypto.createHash('md5').update(key).digest('hex');
-  return path.join(THUMB_CACHE_DIR, `${hash}.png`);
+  return path.join(THUMB_CACHE_DIR, `${hash}.${ext}`);
+}
+
+/**
+ * 缓存命中内存 LRU：cacheKeyBase → 缓存文件路径。
+ * 命中后直接返回，跳过每请求 2 次 existsSync 同步 stat（来回滚动时
+ * 主进程事件循环不被磁盘 stat 阻塞）。只记录确认存在的命中条目。
+ */
+const thumbHitCache = new Map<string, string>();
+/** LRU 上限：超出后淘汰最久未命中的条目（Map 插入序 = 命中序） */
+const THUMB_HIT_CACHE_MAX = 10_000;
+
+/** 记录（或刷新）缓存命中条目；生成成功后也经此写入 */
+function rememberThumbHit(key: string, cachePath: string): void {
+  thumbHitCache.delete(key);
+  thumbHitCache.set(key, cachePath);
+  if (thumbHitCache.size > THUMB_HIT_CACHE_MAX) {
+    const oldest = thumbHitCache.keys().next().value;
+    if (oldest !== undefined) thumbHitCache.delete(oldest);
+  }
+}
+
+/**
+ * 队列淘汰哨兵：缩略图**未生成**（队列满被淘汰 / 请求已被渲染侧取消），
+ * 协议层应回退占位图而非原图——原图回退会让渲染进程并发解码几十张
+ * 全尺寸大图（24MP ≈ 96MB/张解码位图），直接 OOM 崩溃。
+ * 与 `null` 区分：null = 生成失败（真·非图片/解码失败，回退原图合理）。
+ */
+export const THUMB_QUEUE_DROPPED = '__hoshineko_thumb_queue_dropped__';
+
+/** 诊断日志开关（HOSHINEKO_DEBUG_LOG=1 时启用；复现缩略图卡顿用，事后移除） */
+const DEBUG_LOG = process.env.HOSHINEKO_DEBUG_LOG === '1';
+/** 诊断日志起点（相对时间戳，便于对比事件顺序） */
+const DEBUG_T0 = Date.now();
+/** 诊断日志输出：仅调试开关开启时打印，带相对毫秒时间戳 */
+function dlog(...args: unknown[]): void {
+  if (!DEBUG_LOG) return;
+  console.log(`[thumb-dbg +${Date.now() - DEBUG_T0}ms]`, ...args);
 }
 
 /**
@@ -434,33 +586,205 @@ function thumbCacheKey(key: string): string {
  * 否则打开缩略图目录浏览时，会为每个缩略图再生成一份缩略图，
  * 文件数在几分钟内从个位数滚雪球到数千（递归膨胀 + IO 卡顿）。
  *
+ * **批量保护**（v0.11.31）：冷缓存首次打开大图片目录时，可见条目
+ * 会同时发起几十上百个请求，每个请求 spawn 一个 ImageMagick
+ * `convert`（完整解码、峰值内存数百 MB）——瞬间 fork 风暴导致系统
+ * 卡顿甚至 OOM 崩溃。因此未命中缓存的生成走**全局队列**：
+ * - 并发上限 THUMB_MAX_CONCURRENT（可经 HOSHINEKO_THUMB_CONCURRENCY
+ *   覆盖，e2e 用）；
+ * - **世代优先 + 世代内 FIFO**：请求携带 `epoch`（渲染侧在排序/
+ *   目录变化时 +1，经 `media://<path>?v=<epoch>` 传入）——新世代的
+ *   请求整体插到旧世代之前（排序切换后从视觉第一个缩略图重新开始
+ *   加载），同世代内按到达序 = DOM 序 = 上→下；去重命中的请求携带
+ *   更高世代时提升既有排队条目的优先级（生成中的不打断）；
+ * - in-flight 去重：同一文件同尺寸的并发请求共享同一个 Promise；
+ * - 队列长度上限 THUMB_MAX_QUEUE：超出淘汰最陈旧（队尾 = 最低世代，
+ *   resolve null，协议层回退以原文件服务，优雅降级）。
+ * 命中缓存/缓存目录直通的请求不占队列（毫秒级）。
+ *
+ * **提速**（v0.11.31）：
+ * - JPEG 源加 `-define jpeg:size` 按目标分辨率解码（DCT 降采样，
+ *   不完整解码 12MP 原图，解码提速约 5–10 倍），输出 `-quality 80`
+ *   的 .jpg 缩略图（编码更快、缓存体积约 10 倍小）；
+ * - 非 JPEG 源输出 PNG 并降编码级别（png:compression-level=1，
+ *   提速约 3 倍，文件略大），透明图片无黑底风险。
+ *
  * Strategy:
  *   1. If ImageMagick `convert` is available, use it (fast, subprocess).
  *   2. Otherwise fall back to Electron's `nativeImage`.
  *
  * @param cropToSquare — when true, center-crop to a square (for drag icons).
+ * @param epoch — 缩略图世代（排序/目录变化时 +1，见「批量保护」注释）。
+ * @param signal — 渲染侧请求取消信号（行卸载即 abort）：未开始的排队
+ *   项直接撤出队列，convert 槽位只留给真正可见的文件；已开始的
+ *   不打断（继续写缓存，滚回来即命中）。可省略（如拖拽图标用）。
  */
-export async function getThumbnail(filePath: string, maxSize: number, cropToSquare = false): Promise<string | null> {
+/**
+ * 缩略图缓存命中探测的到达序链：探测改为异步 stat 后（见 getThumbnail），
+ * 并发请求的 stat 完成顺序可能偏离到达顺序——此链按到达序串行推进，
+ * 保证 scheduleThumbnailGeneration 的入队顺序与请求到达序一致
+ * （队列 FIFO/世代优先语义依赖它，e2e 34 断言首屏顶部优先生成）。
+ * stat 本身异步执行，不阻塞主进程事件循环。
+ */
+let thumbStatChain: Promise<unknown> = Promise.resolve();
+
+/**
+ * 缩略图缓存命中探测（异步）：探测 png/jpg 两个候选缓存文件。
+ * 不用 existsSync——同步磁盘 stat 在滚动进入新区域时每秒数百次，
+ * 全部堆积在主进程事件循环上（冷缓存 + convert IO 风暴下 dcache
+ * 命中率低，单次可达毫秒级），卡死所有 IPC 与协议响应。
+ */
+function probeThumbCacheHit(cachePng: string, cacheJpg: string): Promise<string | null> {
+  const probeAt = Date.now();
+  const probe = (async () => {
+    const [pngOk, jpgOk] = await Promise.all([
+      fs.stat(cachePng).then(() => true, () => false),
+      fs.stat(cacheJpg).then(() => true, () => false),
+    ]);
+    dlog('probe done', path.basename(cachePng), `hit=${pngOk || jpgOk}`, `${Date.now() - probeAt}ms`);
+    return pngOk ? cachePng : jpgOk ? cacheJpg : null;
+  })();
+  // 到达序链：本请求的探测等前一个请求的探测结束后才提交（结果不回传）
+  const chained = thumbStatChain.then(() => probe);
+  thumbStatChain = chained.catch(() => undefined);
+  return chained;
+}
+
+export function getThumbnail(
+  filePath: string,
+  maxSize: number,
+  cropToSquare = false,
+  epoch = 0,
+  signal?: AbortSignal,
+): Promise<string | null> {
   // 缓存目录内的文件不参与缓存（防递归雪球），直接以原文件服务
-  if (isPathInside(APP_CACHE_DIR, filePath)) return filePath;
+  if (isPathInside(APP_CACHE_DIR, filePath)) return Promise.resolve(filePath);
 
+  const entryAt = Date.now();
+  dlog('getThumbnail', path.basename(filePath), `size=${maxSize}`, `epoch=${epoch}`, `signal=${signal ? 'y' : 'n'}`);
   ensureThumbCacheDir();
-  const cacheKey = cropToSquare ? `${filePath}@${maxSize}-square` : `${filePath}@${maxSize}`;
-  const cachePath = thumbCacheKey(cacheKey);
+  const cacheKeyBase = cropToSquare ? `${filePath}@${maxSize}-square` : `${filePath}@${maxSize}`;
+  // 内存 LRU 快路径优先：命中时零磁盘 stat
+  const memHit = thumbHitCache.get(cacheKeyBase);
+  if (memHit) {
+    dlog('memHit', path.basename(filePath), `${Date.now() - entryAt}ms`);
+    return Promise.resolve(memHit);
+  }
+  const cachePng = thumbCacheKey(cacheKeyBase, 'png');
+  const cacheJpg = thumbCacheKey(cacheKeyBase, 'jpg');
 
-  // Return cached thumbnail if it exists
-  if (existsSync(cachePath)) return cachePath;
+  // 异步探测命中（快路径不进队列）；命中写入 LRU
+  return probeThumbCacheHit(cachePng, cacheJpg).then((hit) => {
+    if (hit) {
+      dlog('diskHit', path.basename(filePath), `${Date.now() - entryAt}ms`);
+      rememberThumbHit(cacheKeyBase, hit);
+      return hit;
+    }
+    dlog('miss→queue', path.basename(filePath), `${Date.now() - entryAt}ms`);
+    return scheduleThumbnailGeneration(filePath, maxSize, cropToSquare, cacheKeyBase, cachePng, cacheJpg, epoch, signal);
+  });
+}
+
+/** 缩略图生成并发上限（ImageMagick 子进程数；环境变量可覆盖，e2e 用）。
+ *  6：jpeg:size 提示生效后单进程峰值内存约 20MB（24MP 照片），
+ *  6 并发 ≈ 120MB，远低于完整解码（297MB/进程，3 并发即近 1GB）——
+ *  解码并行度是几百张照片冷缓存的主要瓶颈（实测 24MP 单张约 40ms）。 */
+const THUMB_MAX_CONCURRENT = (() => {
+  const raw = Number(process.env.HOSHINEKO_THUMB_CONCURRENCY);
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 6;
+})();
+/** 等待队列上限：超出淘汰最陈旧（队尾 = 最低世代，其请求 resolve null，回退原文件服务） */
+const THUMB_MAX_QUEUE = 256;
+/** in-flight 去重表：cacheKey → Promise 与其当前世代（去重命中时提升） */
+const thumbInFlight = new Map<string, { promise: Promise<string | null>; epoch: number }>();
+/** 等待队列项：key 用于去重命中时重排；start 启动生成；drop 在淘汰时 resolve null */
+interface ThumbQueueEntry {
+  key: string;
+  epoch: number;
+  seq: number;
+  start: () => void;
+  drop: () => void;
+  /** 是否已开始生成（abort 信号只撤出未开始的排队项） */
+  started: boolean;
+}
+const thumbQueue: ThumbQueueEntry[] = [];
+/** 正在生成的数量（≤ THUMB_MAX_CONCURRENT） */
+let thumbActive = 0;
+/** 全局到达序号（同世代内 FIFO 依据） */
+let thumbSeq = 0;
+
+/** 取出队首任务直到并发满（队首 = 最高世代、同世代最早到达） */
+function pumpThumbQueue(): void {
+  while (thumbActive < THUMB_MAX_CONCURRENT && thumbQueue.length > 0) {
+    thumbQueue.shift()!.start();
+  }
+}
+
+/** 按「世代降序、同世代到达序升序」插入队列 */
+function insertThumbEntry(entry: ThumbQueueEntry): void {
+  let i = 0;
+  while (i < thumbQueue.length && thumbQueue[i].epoch > entry.epoch) i++;
+  while (i < thumbQueue.length && thumbQueue[i].epoch === entry.epoch && thumbQueue[i].seq < entry.seq) i++;
+  thumbQueue.splice(i, 0, entry);
+}
+
+/** 去重命中且新请求世代更高：提升既有排队条目的优先级（生成中的不打断） */
+function reprioritizeThumbEntry(key: string, epoch: number): void {
+  const idx = thumbQueue.findIndex((e) => e.key === key);
+  if (idx === -1) return; // 已在生成中
+  const entry = thumbQueue[idx];
+  entry.epoch = epoch;
+  entry.seq = ++thumbSeq;
+  thumbQueue.splice(idx, 1);
+  insertThumbEntry(entry);
+}
+
+/**
+ * 未命中缓存时的缩略图生成（getThumbnail 的慢路径主体）。
+ * 魔数校验非图片返回 null；ImageMagick 优先、nativeImage 兜底。
+ * JPEG 源按目标分辨率解码（jpeg:size 提示）并输出 q80 .jpg；
+ * 其余源输出 PNG（压缩级别 1）。
+ */
+async function generateThumbnailUncached(
+  filePath: string,
+  maxSize: number,
+  cropToSquare: boolean,
+  cachePng: string,
+  cacheJpg: string,
+): Promise<string | null> {
+  // e2e 钩子：HOSHINEKO_THUMB_STALL_MS 在生成前 sleep——1px 测试图
+  // 生成太快（约 10ms），观察不到队列顺序/世代优先，人为放慢
+  // （与 fs.ts 的 HOSHINEKO_DU_STALL_MS 同款测试钩子）
+  const stallMs = Number(process.env.HOSHINEKO_THUMB_STALL_MS) || 0;
+  if (stallMs > 0) await new Promise((r) => setTimeout(r, stallMs));
 
   // Verify file is an image by magic bytes
   const mime = await detectMimeByMagic(filePath);
   if (!mime || !mime.startsWith('image/')) return null;
 
+  const isJpeg = mime === 'image/jpeg';
+  const isGif = mime === 'image/gif';
+  const cachePath = isJpeg ? cacheJpg : cachePng;
+
   // Try ImageMagick `convert` first
   try {
+    const convertAt = Date.now();
+    // 注意：`-define jpeg:size` 必须放在**输入文件之前**才生效——
+    // ImageMagick 按参数顺序解析，输入之后的 define 在解码时已经错过
+    // （实测 24MP 照片：放在输入前 40ms/20MB，放在输入后 160ms/297MB，
+    // 提示完全失效）。它让 JPEG 源按目标分辨率解码（DCT 降采样），
+    // 内存占用降约 15 倍，是并发上限能安全提高的前提。
+    // `-limit` 是硬内存护栏：超限的巨图（大 PNG/多层文件等）强制
+    // ImageMagick 改用磁盘缓存而非继续吃内存——防 OOM，宁慢不崩。
+    // GIF 只解码第一帧（`[0]`）：动画帧全量解码的内存是单帧的数十倍。
     const args: string[] = [
-      filePath,
-      '-auto-orient',
+      '-limit', 'memory', '128MiB',
+      '-limit', 'map', '128MiB',
     ];
+    if (isJpeg) {
+      args.push('-define', `jpeg:size=${maxSize * 2}x${maxSize * 2}`);
+    }
+    args.push(isGif ? `${filePath}[0]` : filePath, '-auto-orient');
     if (cropToSquare) {
       args.push('-thumbnail', `${maxSize}x${maxSize}^`);
       args.push('-gravity', 'center');
@@ -468,24 +792,166 @@ export async function getThumbnail(filePath: string, maxSize: number, cropToSqua
     } else {
       args.push('-thumbnail', `${maxSize}x${maxSize}>`);
     }
-    args.push('-strip', 'png:' + cachePath);
-    await execFileAsync('convert', args);
+    args.push('-strip');
+    if (isJpeg) {
+      args.push('-quality', '80');
+      args.push('jpg:' + cachePath);
+    } else {
+      // 透明图片保持 PNG（防黑底），降编码级别提速
+      args.push('-define', 'png:compression-level=1');
+      args.push('png:' + cachePath);
+    }
+    dlog('convert-spawn', path.basename(filePath), `size=${maxSize}`);
+    ensureImTmpDir();
+    await execFileAsync('convert', args, {
+      timeout: 90_000,
+      // 像素缓存写真实磁盘（~/.cache/hoshineko-fm/im-tmp）而非 /tmp
+      // tmpfs：巨图 + 128MiB limit 强制磁盘缓存，/tmp 配额耗尽会让
+      // convert 失败并触发主进程同步 nativeImage 解码（卡死 UI）
+      env: { ...process.env, TMPDIR: IM_TMP_DIR, MAGICK_TMPDIR: IM_TMP_DIR },
+    });
+    dlog('convert-done', path.basename(filePath), `${Date.now() - convertAt}ms`);
     if (existsSync(cachePath)) return cachePath;
   } catch {
+    dlog('convert-FAILED', path.basename(filePath));
     // Fall through to nativeImage
   }
 
-  // Fallback to Electron's nativeImage
+  // Fallback to Electron's nativeImage（始终写 .png，下次查找会命中）。
+  // 护栏：nativeImage 在主进程**同步**全尺寸解码——文件字节数不可信
+  // （450MP PNG 压缩后仅 6MB），必须按**像素数**拦住巨图。已知尺寸的
+  // 巨图返回 THUMB_QUEUE_DROPPED（占位图，绝不回退原图：渲染进程解码
+  // 巨图会 OOM 崩溃）；尺寸未知（TIFF/PSD 等罕见格式）保持旧行为——
+  // nativeImage 尝试解码，空图再回退原图。
+  // 大文件（>25MB）同样直接放弃。
   try {
+    if (statSync(filePath).size > 25 * 1024 * 1024) return null;
+    const dims = await probeImageDimensions(filePath);
+    if (dims && dims.w * dims.h > NATIVE_IMAGE_MAX_PIXELS) {
+      dlog('nativeImage-skip-oversized', path.basename(filePath), `${dims.w}x${dims.h}`);
+      return THUMB_QUEUE_DROPPED;
+    }
     const { nativeImage } = await import('electron');
     const img = nativeImage.createFromPath(filePath);
     if (img.isEmpty()) return null;
     const resized = img.resize({ width: maxSize, height: maxSize });
-    writeFileSync(cachePath, resized.toPNG());
-    return cachePath;
+    writeFileSync(cachePng, resized.toPNG());
+    return cachePng;
   } catch {
     return null;
   }
+}
+
+/**
+ * 把未命中缓存的缩略图生成排入全局队列（并发上限 + 去重 + 世代优先）。
+ * 见 getThumbnail 的「批量保护」注释。
+ *
+ * 返回哨兵 THUMB_QUEUE_DROPPED 表示**未生成**（队列满被淘汰 / 请求被
+ * 取消）：调用方（media 协议层）必须回退占位图而非原图——原图回退会
+ * 让渲染进程解码全尺寸大图导致 OOM 崩溃。
+ *
+ * @param signal — 渲染侧取消信号：未开始的排队项直接撤出队列
+ *   （resolve 哨兵）；已开始的不打断（继续写缓存）。
+ */
+function scheduleThumbnailGeneration(
+  filePath: string,
+  maxSize: number,
+  cropToSquare: boolean,
+  cacheKeyBase: string,
+  cachePng: string,
+  cacheJpg: string,
+  epoch: number,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const existing = thumbInFlight.get(cacheKeyBase);
+  if (existing) {
+    // 同路径重叠请求（排序切换前后都可见的文件）：更高世代时
+    // 提升既有排队条目的优先级，生成中的不打断
+    if (epoch > existing.epoch) {
+      existing.epoch = epoch;
+      reprioritizeThumbEntry(cacheKeyBase, epoch);
+    }
+    dlog('dedupe-hit', path.basename(filePath), `epoch=${epoch}`, `queue=${thumbQueue.length}`, `active=${thumbActive}`);
+    return existing.promise;
+  }
+
+  const seq = ++thumbSeq;
+  const p = new Promise<string | null>((resolve) => {
+    let settled = false;
+    const settle = (v: string | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(v);
+    };
+    const entry: ThumbQueueEntry = {
+      key: cacheKeyBase,
+      epoch,
+      seq,
+      start: () => {
+        if (settled) return;
+        entry.started = true;
+        thumbActive++;
+        dlog('START', path.basename(filePath), `epoch=${entry.epoch}`, `queue=${thumbQueue.length}`, `active=${thumbActive}`);
+        void generateThumbnailUncached(filePath, maxSize, cropToSquare, cachePng, cacheJpg)
+          .then((v) => {
+            // 生成成功写入内存 LRU：后续请求零同步 stat
+            if (v && v !== THUMB_QUEUE_DROPPED) rememberThumbHit(cacheKeyBase, v);
+            settle(v);
+          })
+          .catch(() => settle(null))
+          .finally(() => {
+            thumbActive--;
+            dlog('DONE', path.basename(filePath), `active=${thumbActive}`, `queue=${thumbQueue.length}`);
+            pumpThumbQueue();
+          });
+      },
+      drop: () => {
+        const idx = thumbQueue.indexOf(entry);
+        if (idx !== -1) thumbQueue.splice(idx, 1);
+        dlog('DROP(queue-full)', path.basename(filePath), `queue=${thumbQueue.length}`);
+        settle(THUMB_QUEUE_DROPPED);
+      },
+      started: false,
+    };
+    // 渲染侧取消（行卸载）：未开始的排队项直接撤出——6 个 convert
+    // 槽位只留给可见文件；已开始的不打断（继续写缓存，滚回来即命中）
+    if (signal) {
+      const onAbort = () => {
+        if (!entry.started) {
+          const idx = thumbQueue.indexOf(entry);
+          if (idx !== -1) thumbQueue.splice(idx, 1);
+          dlog('ABORT(queued)', path.basename(filePath), `queue=${thumbQueue.length}`, `active=${thumbActive}`);
+          settle(THUMB_QUEUE_DROPPED);
+        } else {
+          dlog('ABORT(started, continue)', path.basename(filePath));
+        }
+      };
+      if (signal.aborted) {
+        onAbort();
+      } else {
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+    }
+    if (settled) return; // 入队前已被 abort：不再入队
+    if (thumbActive < THUMB_MAX_CONCURRENT) {
+      entry.start();
+    } else {
+      // 队列满：淘汰队尾（最低世代的最陈旧项），保留新世代可见项
+      if (thumbQueue.length >= THUMB_MAX_QUEUE) {
+        dlog('queue-full evict', path.basename(thumbQueue[thumbQueue.length - 1].key), `queue=${thumbQueue.length}`);
+        thumbQueue.pop()!.drop();
+      }
+      insertThumbEntry(entry);
+      dlog('ENQUEUE', path.basename(filePath), `epoch=${entry.epoch}`, `seq=${entry.seq}`, `queue=${thumbQueue.length}`, `active=${thumbActive}`);
+    }
+  });
+  thumbInFlight.set(cacheKeyBase, { promise: p, epoch });
+  // 去重表条目在生成结束后清理（p 只 resolve 不 reject）
+  p.then(
+    () => thumbInFlight.delete(cacheKeyBase),
+    () => thumbInFlight.delete(cacheKeyBase),
+  );
+  return p;
 }
 
 const DRAG_ICON_DIR = path.join(os.homedir(), '.cache', 'hoshineko-fm', 'drag-icons');
@@ -521,7 +987,16 @@ export async function clearThumbnailCache(): Promise<{ removedCount: number; fre
   try {
     await fs.rm(THUMB_CACHE_DIR, { recursive: true, force: true });
   } catch { /* 删除失败保持现状 */ }
+  // 目录被整删：重置就绪标记让 ensureThumbCacheDir 重建；
+  // 清空内存 LRU（路径已失效，否则清缓存后仍命中旧路径）
+  thumbCacheDirReady = false;
+  thumbHitCache.clear();
   ensureThumbCacheDir();
+  // ImageMagick 磁盘像素缓存一并清理（巨图残留可达 GB 级）
+  try {
+    await fs.rm(IM_TMP_DIR, { recursive: true, force: true });
+  } catch { /* 清理失败不影响主流程 */ }
+  imTmpDirReady = false;
   return { removedCount: before.fileCount, freedBytes: before.totalBytes };
 }
 

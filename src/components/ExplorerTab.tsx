@@ -947,8 +947,27 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     }
   }, []);
 
+  /**
+   * 悬停上报 rAF 合并：滚动时 Chromium 会合成 mouseenter/mouseleave
+   *（元素从静止光标下滑过），每行穿过光标触发 2 次 setHoveredFile →
+   * 2 次整个 ExplorerTab 重渲染（2000 行大组件 + 未 memo 的预览面板）。
+   * 每帧只落最后一次悬停值（last-wins），滚动风暴下渲染次数从
+   * 「2 × 行数」降为「每帧 1 次」。
+   */
+  const hoverRafRef = useRef<number | null>(null);
+  const hoverTargetRef = useRef<IFile | null>(null);
   const handleHoverFile = useCallback((file: IFile | null) => {
-    setHoveredFile(file);
+    hoverTargetRef.current = file;
+    if (hoverRafRef.current !== null) return;
+    hoverRafRef.current = requestAnimationFrame(() => {
+      hoverRafRef.current = null;
+      setHoveredFile(hoverTargetRef.current);
+    });
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (hoverRafRef.current !== null) cancelAnimationFrame(hoverRafRef.current);
+    };
   }, []);
 
   const selectionHint = useMemo(() => {

@@ -122,6 +122,29 @@ const FileListComponent: React.FC<FileListProps> = ({
   const [renameValue, setRenameValue] = useState("");
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
 
+  /**
+   * 缩略图世代：files 数组身份变化（目录切换/刷新/搜索/排序/分组——
+   * 排序与分组在父组件产生新的 sortedFiles 数组）时 +1，随
+   * `media://<path>?v=<世代>` 传给主进程缩略图队列——新世代的请求
+   * 整体压过旧视口的陈旧排队任务（世代间优先级，世代内 FIFO 上→下），
+   * 排序切换后从视觉第一个缩略图重新开始加载。缓存 key 不含世代，
+   * 同一路径的并发请求仍共享同一生成任务（去重时提升优先级）。
+   */
+  const [thumbEpoch, setThumbEpoch] = useState(1);
+  const lastFilesRef = useRef<IFile[] | null>(null);
+  /** 是否已渲染过非空列表（首个非空列表不 bump——其请求本身就是最新视口） */
+  const hasRenderedFilesRef = useRef(false);
+  useEffect(() => {
+    if (lastFilesRef.current === files) return;
+    lastFilesRef.current = files;
+    if (!hasRenderedFilesRef.current) {
+      if (files.length === 0) return; // 首次挂载空列表：无行可渲染，不 bump
+      hasRenderedFilesRef.current = true;
+      return; // 首个非空列表：当前视口请求即最新世代，跳过无意义 bump
+    }
+    setThumbEpoch((e) => e + 1);
+  }, [files]);
+
   /** 分组配置（渲染/滚动定位/布局快照三处同源）：
    *  groupByDir 时按父目录分组（组头 = 完整目录路径），否则语义分组 */
   const effectiveGrouping = groupByDir || groupingEnabled;
@@ -599,6 +622,7 @@ const FileListComponent: React.FC<FileListProps> = ({
             viewMode,
             columns,
             marqueeEnabled,
+            thumbEpoch,
             showPathTitle,
           };
 

@@ -5,7 +5,7 @@ import os from 'os';
 import { promises as fs, createReadStream } from 'fs';
 import { Readable } from 'stream';
 import { setupPtyHandlers, killAllPty } from './pty';
-import { getThumbnail, detectMime } from './fsUtils';
+import { getThumbnail, detectMime, THUMB_QUEUE_DROPPED } from './fsUtils';
 import { startWatching, stopWatching, stopAllWatching } from './fsWatcher';
 import { registerFsHandlers } from './handlers/fs';
 import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor } from './handlers/system';
@@ -187,6 +187,13 @@ async function createWindow(
   const wc = win.webContents;
   windows.add(win);
 
+  // 诊断用：渲染进程 console 转发到主进程 stdout（仅调试开关开启）
+  if (DEBUG_LOG) {
+    wc.on('console-message', (details) => {
+      console.log(`[renderer-dbg +${Date.now() - DEBUG_T0}ms] ${details.message}`);
+    });
+  }
+
   // F12 开发人员工具：应用菜单已移除（屏蔽 Alt 顶栏），Chromium 的
   // 菜单快捷键随之失效——在此手动补回 F12 开关 devtools
   wc.on('before-input-event', (event, input) => {
@@ -271,6 +278,32 @@ protocol.registerSchemesAsPrivileged([
 // Wayland & GPU Flags
 app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
 app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+
+/** 诊断日志开关（HOSHINEKO_DEBUG_LOG=1 时启用；复现缩略图卡顿用） */
+const DEBUG_LOG = process.env.HOSHINEKO_DEBUG_LOG === '1';
+/** 诊断日志起点（相对时间戳，便于对比事件顺序） */
+const DEBUG_T0 = Date.now();
+/** 诊断日志输出：仅调试开关开启时打印，带相对毫秒时间戳 */
+function dlog(...args: unknown[]): void {
+  if (!DEBUG_LOG) return;
+  console.log(`[main-dbg +${Date.now() - DEBUG_T0}ms]`, ...args);
+}
+
+/**
+ * 主进程事件循环滞后监视器：每 250ms 对比期望与实际间隔，
+ * 滞后 > 100ms 时打印（捕捉主进程被同步 IO/IPC 阻塞的时刻）。
+ */
+if (DEBUG_LOG) {
+  let lastTick = Date.now();
+  setInterval(() => {
+    const now = Date.now();
+    const lag = now - lastTick - 250;
+    if (lag > 100) {
+      console.log(`[main-dbg +${now - DEBUG_T0}ms] EVENT-LOOP-LAG ${lag}ms`);
+    }
+    lastTick = now;
+  }, 250);
+}
 
 /** --portal 启动参数：仅注册 portal 后端服务（D-Bus 激活用，不创建主窗口） */
 const PORTAL_ONLY_MODE = process.argv.includes('--portal');
@@ -500,15 +533,57 @@ function parseRangeHeader(header: string | null, size: number): { start: number;
 app.whenReady().then(() => {
   // 移除应用菜单：屏蔽 Alt 唤出顶栏（frameless 窗口 + 自定义标题栏）
   Menu.setApplicationMenu(null);
+  /**
+   * media:// 缩略图占位图：1×1 透明 PNG（内存常量，零 IO）。
+   * 用于两类回退：① 队列淘汰哨兵（缩略图未生成）——绝不回退原图，
+   * 渲染进程并发解码几十张全尺寸大图（24MP ≈ 96MB/张位图）会 OOM
+   * 崩溃；② 请求已被渲染侧取消（滚动中行卸载）——不再做任何 IO。
+   * 条目滚回视野重新挂载时会重新请求（此时队列已空，正常生成）。
+   */
+  const THUMB_PLACEHOLDER_PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    'base64',
+  );
+  const thumbPlaceholderResponse = () =>
+    new Response(THUMB_PLACEHOLDER_PNG, {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/png',
+        'Content-Length': String(THUMB_PLACEHOLDER_PNG.length),
+      },
+    });
   protocol.handle('media', async (request) => {
-    const filePath = request.url.slice('media://'.length);
-    const decodedPath = decodeURIComponent(filePath);
+    // URL 形态 `media://<绝对路径>[?v=<缩略图世代>&s=<目标尺寸>]`：
+    // 世代由渲染侧在排序/目录变化时 +1（FileList thumbEpoch），仅作队列
+    // 优先级；尺寸随文件区图标大小动态调整（Row 侧分桶 64–256）——
+    // 缓存 key 含尺寸，纯路径部分用于缓存与去重
+    const raw = request.url.slice('media://'.length);
+    const qIdx = raw.indexOf('?');
+    const decodedPath = decodeURIComponent(qIdx === -1 ? raw : raw.slice(0, qIdx));
+    const params = qIdx === -1 ? new URLSearchParams() : new URLSearchParams(raw.slice(qIdx + 1));
+    const epoch = Number(params.get('v')) || 0;
+    const sizeRaw = Number(params.get('s')) || 256;
+    const size = Math.min(512, Math.max(16, Math.round(sizeRaw)));
 
-    const thumbPath = await getThumbnail(decodedPath, 256);
+    const handlerAt = Date.now();
+    const thumbPath = await getThumbnail(decodedPath, size, false, epoch, request.signal);
+    const elapsed = Date.now() - handlerAt;
+    // 渲染侧已取消（滚动中行卸载）：占位图即可，不做多余 IO
+    if (request.signal.aborted) {
+      dlog('media done', path.basename(decodedPath), `aborted=1`, `${elapsed}ms`);
+      return thumbPlaceholderResponse();
+    }
+    // 队列淘汰哨兵：未生成 → 占位图（绝不回退原图，防 OOM 崩溃）
+    if (thumbPath === THUMB_QUEUE_DROPPED) {
+      dlog('media done', path.basename(decodedPath), `result=DROPPED`, `${elapsed}ms`);
+      return thumbPlaceholderResponse();
+    }
     if (thumbPath) {
+      dlog('media done', path.basename(decodedPath), `result=thumb`, `${elapsed}ms`);
       return net.fetch(url.pathToFileURL(thumbPath).toString());
     }
 
+    dlog('media done', path.basename(decodedPath), `result=ORIGINAL`, `${elapsed}ms`);
     return net.fetch(url.pathToFileURL(decodedPath).toString());
   });
 

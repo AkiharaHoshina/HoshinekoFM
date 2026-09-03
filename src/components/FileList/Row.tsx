@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RowComponentProps } from "react-window";
 import type { IFile } from "../../types/files";
 import { Icon } from "../Icon";
@@ -37,8 +37,59 @@ interface RowData {
   viewMode: "grid" | "list";
   columns: number;
   marqueeEnabled: boolean;
+  /** 缩略图世代（排序/目录变化时 +1）：URL 携带 `?v=` 让主进程优先生成新世代 */
+  thumbEpoch: number;
   /** 悬停标题显示完整路径（搜索结果跨目录展示，文件名不足以定位来源） */
   showPathTitle: boolean;
+}
+
+/**
+ * 缩略图生成尺寸：图标显示尺寸 × 2（HiDPI 清晰度预留），
+ * 分桶钳制到 [64, 256]——桶化避免图标大小滑条每动一格就重生成
+ * 整目录新尺寸缓存（缓存 key 含尺寸，各桶独立缓存）。
+ */
+function thumbSizeForIcon(iconSize: number): number {
+  const want = iconSize * 2;
+  for (const b of [64, 96, 128, 192, 256]) {
+    if (want <= b) return b;
+  }
+  return 256;
+}
+
+/**
+ * 缩略图请求延迟：行挂载后先显示占位背景，**滚动停止后**停留超过
+ * 该时长才发 media:// 请求。判定用全局滚动计数器（见 ensureScrollTracker）：
+ * 定时器到期时计数变化（期间发生过滚动）就重新计时——滚动期间零请求，
+ * 剧烈滚动时请求风暴与渲染侧解码风暴自然消失（配合主进程的队列淘汰
+ * 占位图回退，冷缓存滚动不再卡顿/崩溃）。
+ */
+const THUMB_REQUEST_DELAY_MS = 150;
+/**
+ * 占位 src：1×1 透明 GIF data URI——不发任何网络请求，img 元素
+ * 即刻存在（CSS 占位背景生效、e2e 选择器 .file-thumbnail 命中），
+ * 也用作「条目复用但新 src 尚未就绪」时的防错图兜底。
+ */
+const THUMB_PLACEHOLDER_SRC =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+/**
+ * 全局滚动计数：window 上 capture 阶段监听所有 scroll 事件（scroll
+ * 不冒泡但可捕获，react-window 内层滚动容器也能被捕获到）+1。
+ * 进程内单例（多 FileList/多标签共享）：任何滚动都会推迟所有行的
+ * 缩略图请求——保守但正确（滚动停止前请求都是浪费）。
+ */
+let scrollBump = 0;
+let scrollTrackerInstalled = false;
+function ensureScrollTracker(): void {
+  if (scrollTrackerInstalled) return;
+  scrollTrackerInstalled = true;
+  window.addEventListener(
+    'scroll',
+    () => {
+      scrollBump++;
+    },
+    { capture: true, passive: true },
+  );
 }
 
 function FileIconDisplay({
@@ -47,6 +98,7 @@ function FileIconDisplay({
   filledIcons,
   hasFailed,
   onImageError,
+  thumbEpoch,
 }: {
   file: IFile;
   iconSize: number;
@@ -54,13 +106,58 @@ function FileIconDisplay({
   hasFailed: boolean;
   /** 图片加载/解码失败时上报（父级记入 failedImages，回落为 broken_image 图标） */
   onImageError?: (path: string) => void;
+  /** 缩略图世代（排序/目录变化时 +1）：URL 携带 `?v=` 让主进程优先生成新世代 */
+  thumbEpoch?: number;
 }) {
   const isImg = file.mime?.startsWith("image/") ?? false;
+  /** 缩略图目标尺寸（随文件区图标大小动态调整，见 thumbSizeForIcon） */
+  const thumbSize = thumbSizeForIcon(iconSize);
   const isBrokenSymlink = file.symlinkTarget
     ? file.mime === "inode/symlink"
     : false;
   /** 图片文件但缩略图加载失败：显示 broken_image 图标而非损坏的原生缩略图 */
   const isBrokenImage = isImg && hasFailed;
+
+  /**
+   * 延迟请求的真实缩略图 src：挂载（或条目变化/世代变化）后延迟
+   * THUMB_REQUEST_DELAY_MS 才设置，且期间发生过任何滚动就重新计时
+   * （滚动停止后才发请求），卸载即取消。携带 path 用于条目复用防护
+   * ——react-window 按索引复用行实例，state 会残留，路径不匹配时回落
+   * 占位 src，防止旧条目的缩略图闪现在新条目上（同路径同尺寸的世代
+   * 变化则继续显示旧 src——视觉相同且无闪烁）。
+   */
+  const [thumbReq, setThumbReq] = useState<{ path: string; src: string } | null>(null);
+  useEffect(() => {
+    if (!isImg || hasFailed) return;
+    ensureScrollTracker();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let armedBump = scrollBump;
+    const fire = () => {
+      timer = null;
+      if (cancelled) return;
+      if (scrollBump !== armedBump) {
+        // 等待期间发生过滚动：重新计时，直到滚动真正停止
+        armedBump = scrollBump;
+        timer = setTimeout(fire, THUMB_REQUEST_DELAY_MS);
+        return;
+      }
+      if (import.meta.env.DEV) {
+        console.log(`[thumb-req] fire ${file.path} size=${thumbSize} epoch=${thumbEpoch ?? 0} @${performance.now().toFixed(0)}`);
+      }
+      setThumbReq({
+        path: file.path,
+        src: `media://${file.path}?v=${thumbEpoch ?? 0}&s=${thumbSize}`,
+      });
+    };
+    timer = setTimeout(fire, THUMB_REQUEST_DELAY_MS);
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [isImg, hasFailed, file.path, thumbEpoch, thumbSize]);
+  const thumbSrc =
+    thumbReq && thumbReq.path === file.path ? thumbReq.src : THUMB_PLACEHOLDER_SRC;
 
   return (
     <span
@@ -73,13 +170,23 @@ function FileIconDisplay({
     >
       {isImg && !hasFailed && (
         <img
-          src={`media://${file.path}`}
+          src={thumbSrc}
           alt={file.name}
           className="file-thumbnail"
           draggable={false}
           loading="lazy"
           decoding="async"
-          onError={() => onImageError?.(file.path)}
+          onLoad={
+            import.meta.env.DEV
+              ? () => console.log(`[thumb-load] ${file.path} @${performance.now().toFixed(0)}`)
+              : undefined
+          }
+          onError={() => {
+            if (import.meta.env.DEV) {
+              console.log(`[thumb-error] ${file.path} @${performance.now().toFixed(0)}`);
+            }
+            onImageError?.(file.path);
+          }}
           style={{
             width: `${iconSize}px`,
             height: `${iconSize}px`,
@@ -269,6 +376,7 @@ function ListRowItem({
         filledIcons={data.filledIcons}
         hasFailed={hasFailed}
         onImageError={data.onImageError}
+        thumbEpoch={data.thumbEpoch}
       />
       <FileNameDisplay
         file={file}
@@ -350,6 +458,7 @@ function GridRowItem({
         filledIcons={data.filledIcons}
         hasFailed={hasFailed}
         onImageError={data.onImageError}
+        thumbEpoch={data.thumbEpoch}
       />
       <FileNameDisplay
         file={file}

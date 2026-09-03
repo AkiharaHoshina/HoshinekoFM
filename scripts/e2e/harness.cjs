@@ -277,12 +277,34 @@ function registerIpc() {
 
 /** 注册 media/preview 协议（与 main.ts 的 handler 同步） */
 function registerProtocols() {
-  const { getThumbnail, detectMime } = require(path.join(DIST_ELECTRON, 'fsUtils.js'));
+  const { getThumbnail, detectMime, THUMB_QUEUE_DROPPED } = require(path.join(DIST_ELECTRON, 'fsUtils.js'));
+
+  // 与 main.ts 同步：1×1 透明 PNG 占位图（队列淘汰哨兵 / 请求已取消时回退）
+  const THUMB_PLACEHOLDER_PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    'base64',
+  );
 
   protocol.handle('media', async (request) => {
-    const filePath = request.url.slice('media://'.length);
-    const decodedPath = decodeURIComponent(filePath);
-    const thumbPath = await getThumbnail(decodedPath, 256);
+    // 与 main.ts media 协议同步：URL 形态 `media://<路径>[?v=<世代>&s=<尺寸>]`，
+    // 世代仅作缩略图队列优先级、尺寸随图标大小动态调整（缓存 key 含尺寸）
+    const raw = request.url.slice('media://'.length);
+    const qIdx = raw.indexOf('?');
+    const decodedPath = decodeURIComponent(qIdx === -1 ? raw : raw.slice(0, qIdx));
+    const params = qIdx === -1 ? new URLSearchParams() : new URLSearchParams(raw.slice(qIdx + 1));
+    const epoch = Number(params.get('v')) || 0;
+    const sizeRaw = Number(params.get('s')) || 256;
+    const size = Math.min(512, Math.max(16, Math.round(sizeRaw)));
+    const thumbPath = await getThumbnail(decodedPath, size, false, epoch, request.signal);
+    if (request.signal.aborted || thumbPath === THUMB_QUEUE_DROPPED) {
+      return new Response(THUMB_PLACEHOLDER_PNG, {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/png',
+          'Content-Length': String(THUMB_PLACEHOLDER_PNG.length),
+        },
+      });
+    }
     if (thumbPath) {
       const { net } = require('electron');
       const { pathToFileURL } = require('url');
