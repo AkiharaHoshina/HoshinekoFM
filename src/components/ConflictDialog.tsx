@@ -21,7 +21,9 @@ interface ConflictDialogProps {
   onCancel: () => void;
   title?: string;
   sourcePath?: string;
-  operation?: "move" | "copy";
+  /** copy/move：skip = 跳过冲突项；save：skip = 覆盖（保存器重名流程，
+   *  调用方把 'skip' 解释为「用原文件名覆盖」，radio 文案随之替换） */
+  operation?: "move" | "copy" | "save";
 }
 
 type Mode = 'skip' | 'auto-rename' | 'manual-rename';
@@ -80,7 +82,13 @@ export const ConflictDialog: React.FC<ConflictDialogProps> = ({
     if (mode === 'skip') {
       onConfirm({ action: 'skip' });
     } else if (mode === 'auto-rename') {
-      onConfirm({ action: 'auto-rename' });
+      // 附带上安全名映射：复制/移动流程据 renameMap 使用相同名字
+      // （与调用方自行 generateSafeName 结果一致）；保存器（save）流程
+      // 直接从这里取安全名回传
+      onConfirm({
+        action: 'auto-rename',
+        renames: new Map(conflicts.map((c, i) => [c.entry.name, safeNames[i]])),
+      });
     } else {
       const renames = new Map<string, string>();
       for (let i = 0; i < conflicts.length; i++) {
@@ -104,8 +112,16 @@ export const ConflictDialog: React.FC<ConflictDialogProps> = ({
     (operation
       ? operation === "copy"
         ? t('dialog.conflict.title_copy', conflicts.length)
-        : t('dialog.conflict.title_move', conflicts.length)
+        : operation === "save"
+          ? t('dialog.conflict.title_save', conflicts.length)
+          : t('dialog.conflict.title_move', conflicts.length)
       : t('dialog.conflict.title_fallback', conflicts.length));
+
+  /** skip 模式的 radio 文案：save 流程改为「覆盖」（重名 = 用原名替换） */
+  const skipLabel =
+    operation === "save"
+      ? t('dialog.conflict.overwrite')
+      : t('dialog.conflict.skip', conflicts.length);
 
   return (
     <Dialog
@@ -136,7 +152,11 @@ export const ConflictDialog: React.FC<ConflictDialogProps> = ({
               <div className="conflict-info-row">
                 <span className="conflict-info-label">{t('dialog.conflict.operation_label')}</span>
                 <span className="conflict-info-value">
-                  {operation === "copy" ? t('dialog.conflict.operation_copy') : t('dialog.conflict.operation_move')}
+                  {operation === "copy"
+                    ? t('dialog.conflict.operation_copy')
+                    : operation === "save"
+                      ? t('dialog.conflict.operation_save')
+                      : t('dialog.conflict.operation_move')}
                 </span>
               </div>
             )}
@@ -155,7 +175,7 @@ export const ConflictDialog: React.FC<ConflictDialogProps> = ({
             checked={mode === 'skip'}
             onChange={() => handleModeChange('skip')}
           />
-          <span>{t('dialog.conflict.skip')}</span>
+          <span>{skipLabel}</span>
         </label>
         <label className="conflict-radio">
           <Radio
@@ -178,10 +198,18 @@ export const ConflictDialog: React.FC<ConflictDialogProps> = ({
 
         {(mode === 'skip' || mode === 'auto-rename') && (
           <div className="conflict-file-list">
-            {visibleConflicts.map((c) => (
+            {visibleConflicts.map((c, i) => (
               <div key={c.entry.name} className="conflict-file-item">
                 <Icon name={c.isDir ? 'folder' : 'description'} />
                 <span className="conflict-file-name">{c.entry.name}</span>
+                {/* 自动重命名预览：仅显示原名会误导（实际落盘的是
+                    safeNames 生成的新名），追加「原名 → 新名」 */}
+                {mode === 'auto-rename' && (
+                  <>
+                    <span className="conflict-rename-arrow">→</span>
+                    <span className="conflict-rename-result">{safeNames[i]}</span>
+                  </>
+                )}
               </div>
             ))}
             {remaining > 0 && (

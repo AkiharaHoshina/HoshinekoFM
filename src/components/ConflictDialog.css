@@ -96,6 +96,19 @@
   white-space: nowrap;
 }
 
+/* 自动重命名预览：「原名 → 新名」——原名可收缩省略，新名高亮完整显示 */
+.conflict-rename-arrow {
+  flex: 0 0 auto;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.conflict-rename-result {
+  flex: 0 0 auto;
+  color: var(--md-sys-color-on-surface);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .conflict-file-more {
   font-size: 12px;
   color: var(--md-sys-color-on-surface-variant);

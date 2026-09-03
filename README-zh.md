@@ -28,7 +28,7 @@ Hoshineko 文件管理器是一款基于 Material 3 设计语言、Electron 和 
 - **压缩归档**：右键创建 zip / tar.gz（`zip -r` / `tar -czf`），已存在的归档绝不覆盖。
 - **属性与权限**：查看位置、大小、修改时间、权限位（`drwxr-xr-x`）与属主，并可就地修改权限（3 位八进制 chmod）。目录大小按需经 `du -sb` 计算——10 秒超时 + 全局单飞（切换目录即杀掉仍在跑的 du 并显示「无法获取」），也可在设置 → 行为中整体关闭（频繁遍历大目录对磁盘不好）。
 - **固定项**：仪表盘可固定文件与文件夹（支持拖拽排序），侧边栏可固定目录——支持文件管理器选择、目录右键菜单、拖动文件夹到固定按钮三种方式。
-- **内置文件选择器**：独立选择器窗口贯穿全应用——可选条目类型声明（文件/文件夹/全部/保存）、文件类型过滤（底部下拉：「所有文件」+ 声明类型，标签由 MIME 描述体系生成）、初始目录、并发实例相互独立；选择器/保存器侧边栏同样显示你固定的目录（服务模式下主进程从 GUI 的 `sidebar-pinned.json` 快照注入，因常驻进程的 userData 与 GUI 隔离）；亦可作为 **xdg-desktop-portal FileChooser 后端**——外部程序（GTK/Qt）经标准 portal 接口打开本选择器（OpenFile 含过滤器；SaveFile 保存对话框支持 current-name/accept-label；多文件 SaveFiles 不支持；需安装 portal 配置启用，见 docs/portal-filechooser.md）。
+- **内置文件选择器**：独立选择器窗口贯穿全应用——可选条目类型声明（文件/文件夹/全部/保存）、文件类型过滤（底部下拉：「所有文件」+ 声明类型，标签由 MIME 描述体系生成）、初始目录、并发实例相互独立；**保存模式重名冲突确认**——保存到已有同名条目时弹出覆盖/自动重命名/手动重命名对话框（自动重命名带「原名 → 新名」预览）；选择器/保存器侧边栏同样显示你固定的目录（服务模式下主进程从 GUI 的 `sidebar-pinned.json` 快照注入，因常驻进程的 userData 与 GUI 隔离）；亦可作为 **xdg-desktop-portal FileChooser 后端**——外部程序（GTK/Qt）经标准 portal 接口打开本选择器（OpenFile 含过滤器；SaveFile 保存对话框支持 current-name/accept-label 与重名冲突确认；多文件 SaveFiles 不支持；需安装 portal 配置启用，见 docs/portal-filechooser.md）。
 - **仪表盘**：问候语、统一存储区（系统 `/`、主页、热插拔外接设备，列表项可点击跳转）、固定项、最近访问。
 - **主题系统**：12 个 Material 3 预设色盘、自定义调色盘（HCT）、壁纸取色（matugen + nativeImage 兜底）、导入 matugen 主题、系统主题（DMS）继承与黑暗主题开关（跟随系统/强制暗色/强制亮色，全窗口即时生效）。
 - **文件预览**：可选且常驻的侧面板（设置 → 行为，默认关闭）——在文件区右侧「挤压」出现；未选中条目时显示当前目录的只读属性，单选目录时显示该目录的只读属性（与右键属性对话框共用属性网格，权限只读）；单选文件时支持图片、音频、视频（mp4/webm/ogg/mkv，可拖动进度条）、PDF（pdf.js，前 5 页 + 超出时「全文共 N 页」说明）、归档内容列表（zip/tar/7z）、Markdown 渲染（本地相对图片按文档所在目录解析显示）与文本/代码（512 KiB 上限）；外部编辑保存后内容自动刷新；分隔条拖动调整比例（20%–60%，持久化）；多选显示「无法预览」占位；与文件区一起随内置终端挤压。
@@ -149,7 +149,7 @@ scheme-monochrome：单色/黑白灰调。
 
 ## 测试
 
-端到端测试位于 `scripts/e2e/`（35 套用例，无测试框架——Electron 自身驱动真实构建，`sendInputEvent` 模拟输入、`executeJavaScript` 断言）：
+端到端测试位于 `scripts/e2e/`（38 套用例，无测试框架——Electron 自身驱动真实构建，`sendInputEvent` 模拟输入、`executeJavaScript` 断言）：
 
 ```bash
 npm run e2e                # 先构建，再依次运行 scripts/e2e/*.test.cjs
@@ -189,6 +189,8 @@ systemctl --user restart xdg-desktop-portal.service
 ```
 
 （或直接运行仓库里的 `scripts/system-integration/install.sh`，效果相同，root 部分经 pkexec。）
+
+**后端冲突诊断与恢复**：portal/FileManager1 后端注册失败时自动探测占名者版本——旧版常驻提示卸载重装、僵尸占名（进程已死但总线连接未释放）提示重启会话总线；冲突以带遮罩的弹窗提醒（每次会话一次），设置 → 行为 → 系统集成行常驻详情，且「重启会话总线」按钮常驻（`systemctl --user restart dbus-broker/dbus.service`，成功后自动重新注册后端）。
 
 Firefox：`about:config` 将 `widget.use-xdg-desktop-portal.file-picker` 设为 `1`（部分版本为 `widget.use-xdg-desktop-portal`）——此步无法从设置自动完成。**限制**：仅实现单文件保存（`SaveFile`）——多文件保存（`SaveFiles`）返回 NotSupported。详见 docs/portal-filechooser.md（含 gdbus 验证命令）。
 

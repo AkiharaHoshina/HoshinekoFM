@@ -18,6 +18,8 @@ import { DragProvider } from '../contexts/DragContext';
 import { TitleBar } from './TitleBar';
 import { showToast, shortPath } from '../utils/toast';
 import { sortFiles } from '../utils/fileSort';
+import { ConflictDialog } from './ConflictDialog';
+import type { ConflictResult } from '../utils/fileConflict';
 import { t, useLocale } from '../i18n';
 import { registerKeyboardZone, focusNextKeyboardZone, trackKeyboardZoneFocus } from '../utils/focusZones';
 import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, computeShiftArrowRange, type ListItem } from './FileList/utils';
@@ -85,6 +87,9 @@ const FilePicker: React.FC = () => {
     'md-icon-button, md-filled-icon-button, md-tonal-icon-button, md-outlined-icon-button';
   /** 保存模式：文件名输入框（初值 = 保存请求方声明的默认文件名） */
   const [fileName, setFileName] = useState('');
+  /** 保存模式：目标名与当前目录现有条目重名 → 弹冲突重命名对话框
+   *  （null = 无冲突；isDir = 重名对象是否为目录，影响安全名生成） */
+  const [saveConflict, setSaveConflict] = useState<{ name: string; isDir: boolean } | null>(null);
   /** 选择器窗口标题（标题栏 + document.title 同步） */
   const [pickerTitle, setPickerTitle] = useState('');
   /** 标题栏可见性（与主窗口同键/同逻辑） */
@@ -449,14 +454,39 @@ const FilePicker: React.FC = () => {
     [displayFiles, isSelectable, config],
   );
 
+  /**
+   * 保存模式确认：目标路径存在性检查（existsBatch 以真实文件系统为准，
+   * 列表可能处于搜索/过滤态）。存在 → 弹冲突重命名对话框（覆盖/自动/
+   * 手动重命名三选）；不存在或检查失败 → 直接回传（不阻塞保存流程）。
+   */
+  const checkSaveConflict = useCallback(
+    async (name: string) => {
+      const target = joinPath(currentPath, name);
+      try {
+        const existsMap = await window.electron.existsBatch([target]);
+        if (!existsMap[target]) {
+          void window.electron.resolvePicker([target]);
+          return;
+        }
+        // isDir 从当前列表补全（搜索态下找不到按文件处理，安全名后缀行为一致）
+        const existing = files.find((f) => f.name === name);
+        setSaveConflict({ name, isDir: existing?.isDirectory ?? false });
+      } catch {
+        void window.electron.resolvePicker([target]);
+      }
+    },
+    [currentPath, joinPath, files],
+  );
+
   /** 回传选中路径并关窗（窗口由主进程关闭）。
-   *  保存模式：回传「当前目录 + 文件名」（文件名为空时不可确定）。 */
+   *  保存模式：目标名与现有条目重名时先弹冲突重命名对话框，
+   *  否则回传「当前目录 + 文件名」（文件名为空时不可确定）。 */
   const confirm = useCallback(() => {
     if (!config) return;
     if (config.mode === 'save') {
       const name = fileName.trim();
       if (!name) return;
-      void window.electron.resolvePicker([joinPath(currentPath, name)]);
+      void checkSaveConflict(name);
       return;
     }
     if (selected.size === 0) return;
@@ -465,14 +495,15 @@ const FilePicker: React.FC = () => {
       .map((f) => f.path);
     if (paths.length === 0) return;
     void window.electron.resolvePicker(paths);
-  }, [config, fileName, currentPath, joinPath, selected, displayFiles, isSelectable]);
+  }, [config, fileName, checkSaveConflict, selected, displayFiles, isSelectable]);
 
   const cancel = useCallback(() => {
     void window.electron.resolvePicker(null);
   }, []);
 
   /** 双击/回车：目录进入；可选中的文件 = 选中并立即确定。
-   *  保存模式：目录进入；文件 = 填名并立即确定（对齐 GTK 保存对话框）。 */
+   *  保存模式：目录进入；文件 = 填名并立即确定（对齐 GTK 保存对话框，
+   *  重名同样先过冲突检查）。 */
   const handleNavigate = useCallback(
     (file: IFile) => {
       if (config?.mode === 'save') {
@@ -481,7 +512,7 @@ const FilePicker: React.FC = () => {
           return;
         }
         setFileName(file.name);
-        void window.electron.resolvePicker([joinPath(currentPath, file.name)]);
+        void checkSaveConflict(file.name);
         return;
       }
       if (file.isDirectory) {
@@ -495,7 +526,7 @@ const FilePicker: React.FC = () => {
         void window.electron.resolvePicker(paths);
       }
     },
-    [config, isSelectable, loadPath, currentPath, joinPath],
+    [config, isSelectable, loadPath, checkSaveConflict],
   );
 
   /**
@@ -983,6 +1014,42 @@ const FilePicker: React.FC = () => {
           y={gvfsMenu.y}
           items={gvfsMenuItems}
           onClose={() => setGvfsMenu(null)}
+        />
+      )}
+      {/* 保存模式重名冲突：与主窗口复制/移动同款 ConflictDialog
+          （operation="save" 时 skip 模式改标「覆盖」）。确认后
+          resolvePicker 只回传最终路径：覆盖 = 原名；自动/手动重命名 =
+          安全名/编辑名。取消/手动重命名留空 → 只关弹窗留在选择器 */}
+      {isSave && saveConflict && (
+        <ConflictDialog
+          conflicts={[
+            {
+              entry: {
+                path: joinPath(currentPath, saveConflict.name),
+                name: saveConflict.name,
+              },
+              destPath: joinPath(currentPath, saveConflict.name),
+              isDir: saveConflict.isDir,
+            },
+          ]}
+          destDir={currentPath}
+          existingNames={files.map((f) => f.name)}
+          operation="save"
+          sourcePath={currentPath}
+          onConfirm={(result: ConflictResult) => {
+            const conflictName = saveConflict.name;
+            if (result.action === 'skip') {
+              // 覆盖：按原文件名回传（portal 应用自行处理覆盖写入）
+              setSaveConflict(null);
+              void window.electron.resolvePicker([joinPath(currentPath, conflictName)]);
+              return;
+            }
+            const renamed = result.renames?.get(conflictName);
+            if (!renamed) return; // 手动重命名留空（= 取消此项）：弹窗保持等待输入
+            setSaveConflict(null);
+            void window.electron.resolvePicker([joinPath(currentPath, renamed)]);
+          }}
+          onCancel={() => setSaveConflict(null)}
         />
       )}
     </div>

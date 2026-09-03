@@ -1,5 +1,98 @@
 # 更新日志
 
+## v0.11.33 — 保存器重名冲突弹窗（覆盖/自动重命名/手动重命名）
+
+- **现象**：保存器（portal SaveFile）保存到已存在同名的目录条目时**直接
+  静默回传路径**——调用方覆盖写入，用户没有选择机会；即使弹冲突提示，
+  列表也只显示原名（如 `A`），实际落盘却是自动重命名结果（`A_2`），误导。
+- **修复**（`src/components/FilePicker.tsx`、`src/components/ConflictDialog.tsx`）：
+  - 保存模式确认（页脚按钮 / 文件名输入框 Enter / 双击文件）统一先
+    `checkSaveConflict`——`existsBatch` 以真实文件系统为准（列表可能处于
+    搜索/过滤态），目标存在则弹与复制/移动同款 `ConflictDialog`：
+    - **覆盖**：skip 模式改标「覆盖（替换现有文件）」，按原名回传；
+    - **自动重命名**：回传安全名（`A_2` 等，`generateSafeName`）；
+    - **手动重命名**：逐项编辑 + 实时冲突校验，留空 = 取消此项（弹窗
+      保持等待输入）；「取消」只关弹窗留在选择器。
+  - **自动重命名预览**：skip/自动重命名模式的文件列表由「仅显示原名」
+    改为「原名 → 新名」，新名高亮（`conflict-rename-result`），不再误导。
+  - 附带修复：`dialog.conflict.skip` 文案此前未传条目数（英文/俄文
+    显示 `undefined`）；自动重命名现在附带 `renames` 映射（复制/移动
+    流程行为不变，保存器直接取安全名回传）。
+- e2e 38：portal SaveFile 重名链路三条路径——自动重命名（含列表预览
+  断言）、覆盖（skip radio）、冲突弹窗取消后选择器保留；均不依赖真实
+  覆盖写入（只断言 resolvePicker 回传的 URI）。
+
+## v0.11.33 — portal 冲突警告弹窗 + 重启会话总线按钮常驻
+
+- **现象**：portal 后端被旧版常驻/僵尸占名时只有一条 warning toast——
+  易被忽略；「重启会话总线」（僵尸占名唯一有效的清除手段）按钮仅在
+  unresponsive 冲突态出现，无冲突时想手动恢复总线没有入口。
+- **修复**（`src/App.tsx`、`src/components/SettingsDialog.tsx`、
+  `src/components/AlertDialog.tsx`）：
+  - 新增 `AlertDialog`（backdrop 遮罩、单按钮）：portal 冲突
+    （outdated/noVersion/unresponsive）启动查询与设置打开刷新都经
+    `maybeAlertPortalConflict` **弹一次**带遮罩的警告对话框（ref 守卫
+    防重复），详情仍常驻设置页「系统集成」行副标题。
+  - 设置页「重启会话总线」行移除 unresponsive 条件，**常驻显示**
+    （无冲突时作为总线异常的手动恢复手段）。
+- i18n 12 语言补齐 `settings.backend_conflict_alert_title`。
+
+## v0.11.33 — 会话总线重启（僵尸占名一键清除，移除 usocket）
+
+- **背景**：后端进程异常崩溃会泄漏会话总线连接——总线名被「僵尸」占
+  有且无进程可杀（`unresponsive` 冲突态），此前只能注销重登或等总线
+  随会话结束，期间 portal 文件对话框完全不可用。
+- **修复**（`electron/handlers/system.ts`、`electron/main.ts`、
+  `electron/handlers/{portalFileChooser,fileManager1}.ts`）：
+  - `system:restart-session-bus` 依次尝试 `systemctl --user restart
+    dbus-broker.service` / `dbus.service`（30s 超时）；成功后经
+    `registerSystemHandlers(onSessionBusRestarted)` 回调延迟 2.5s
+    **重新注册 D-Bus 后端**并作废冲突探测缓存（`resetBackendConflictCache`）。
+  - portal/fm1 后端挂 `bus.on('error')` 空监听：总线重启断开连接时
+    dbus-next 的 error 事件无监听会直接抛出导致主进程崩溃——旧连接作废、
+    新连接重取名字。
+  - **移除 `usocket` 依赖**（dbus-next optional 依赖，FD 传递/abstract
+    套接字）：其原生 addon（2016 年代）在 Electron 43 下有 libuv 句柄
+    use-after-free——`bus.disconnect()` 偶发 SIGSEGV 或退出时主线程死循环
+    挂起，且泄漏总线连接 FD（**僵尸占名根因之一**）。移除后 dbus-next
+    回退 `net.Socket`（`unix:path=` 地址不受影响；abstract 地址的旧 X11
+    会话注册失败属已知取舍）。
+  - 集成脚本 systemctl restart 改 `--no-block` + `timeout 20` 双保险：
+    portal 单元卡在 activating（总线被僵尸占名拖死）时阻塞式 restart
+    永久挂起，安装/卸载流程永不返回、按钮一直忙碌禁用。
+- e2e 37：PATH 前置假 systemctl 测 IPC 契约（成败两条路径），**绝不
+  重启真实总线**。
+
+## v0.11.33 — 后端总线名冲突运行时版本探测（方案 B）
+
+- **现象**：portal/FileManager1 后端注册名失败（旧版常驻占名）时只有
+  一条 console 日志——GUI 用户看不到任何提示，portal 请求仍被旧版后端
+  应答（旧版行为差异静默生效）。
+- **修复**（`electron/handlers/backendInfo.ts`、`system.ts`、
+  `main.ts`）：
+  - 两个后端对象暴露只读 `Version` 属性；注册失败时
+    `startBackendConflictQuery` 探测占名者版本（方法调用 5s 超时）：
+    - `outdated`：版本不同 → 建议卸载重装系统集成；
+    - `noVersion`：无版本属性（更旧构建）→ 同上；
+    - `unresponsive`：无响应（僵尸占名）→ 建议重启会话总线（v0.11.33
+      的会话总线重启按钮）；
+    - `sameVersion`：同版本另一实例 → 正常常驻不提示。
+  - 渲染进程经 `system:get-backend-conflicts` 取报告在设置页与启动
+    toast 展示（v0.11.33 起 toast 改为带遮罩弹窗）。
+- e2e 36：假后端（同版本/旧版本/无版本/无主）四态探测断言；unresponsive
+  依赖不回复对端无法稳定伪造（超时路径本机人工验证）。
+
+## v0.11.33 — 团体属性/终端 DnD 路径粘贴/右键菜单关闭修复
+
+- **多选属性对话框**：标题与头部显示团体摘要（「N 个项目」+ 文件/文件夹/
+  文件和文件夹构成）+ 位置 + 大小总和（仅含已完成 du 的目录）；关闭时经
+  `cancelDirectorySize` 定向杀掉残留的目录大小计算，不再串到别的窗口。
+- **内置终端拖放粘贴**：把文件拖进终端在光标处粘贴**完整路径**（含空格/
+  引号路径自动单引号转义）；`nativeDragTracker` 识别终端为落点目标
+  （不再误判为文件区拖拽）。
+- **右键菜单关闭**：ContextMenu 的外部关闭监听改捕获阶段——终端
+  `stopPropagation` 不再阻止关闭旧的右键菜单。
+
 ## v0.11.31 — 缩略图生成队列化 + 顺序与提速
 
 - **现象**：大图片文件夹**无缓存首次打开**时卡顿很久甚至崩溃（OOM），
