@@ -1,8 +1,5 @@
-import { useRef, useLayoutEffect, useEffect } from "react";
+import { useRef, useEffect } from "react";
 import "./MarqueeText.css";
-
-const SPEED = 10;
-const GAP_EM = 2;
 
 interface MarqueeTextProps {
   children: string;
@@ -12,6 +9,16 @@ interface MarqueeTextProps {
   enabled?: boolean;
 }
 
+/**
+ * 文本溢出时跑马灯滚动的容器。
+ *
+ * 性能要点：溢出测量（scrollWidth）**不在 commit 阶段做**——原来的
+ * useLayoutEffect + ResizeObserver 初次回调会在每次行挂载时同步强制
+ * reflow（滚动中每帧挂载几十行 = layout thrash，滚动卡顿主因之一）。
+ * 现在统一经 rAF 批处理：同一帧内所有新挂载行的测量收敛为一次布局，
+ * 动画时长由 CSS calc 直接推导（Chromium 支持长度除法），JS 只写
+ * 一个 `--marquee-text-width` 变量，不再读 getComputedStyle。
+ */
 export function MarqueeText({
   children,
   title,
@@ -23,44 +30,35 @@ export function MarqueeText({
   const measureRef = useRef<HTMLSpanElement>(null);
   const scrollingRef = useRef(false);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!enabled) return;
     const container = containerRef.current;
     const measure = measureRef.current;
     if (!container || !measure) return;
 
-    const textWidth = measure.scrollWidth;
-    const fontSize = parseFloat(getComputedStyle(container).fontSize);
-    const gapPx = GAP_EM * fontSize;
-    const totalDistance = textWidth + gapPx;
-    const duration = totalDistance / SPEED;
-
-    container.style.setProperty("--marquee-text-width", `${textWidth}px`);
-    container.style.setProperty("--marquee-duration", `${duration}s`);
-  }, [children, enabled]);
-
-  useEffect(() => {
-    if (!enabled) {
-      scrollingRef.current = false;
-      return;
-    }
-
-    const container = containerRef.current;
-    const measure = measureRef.current;
-    if (!container || !measure) return;
-
-    const check = () => {
-      const isOverflowing = measure.scrollWidth > container.clientWidth;
+    let raf = 0;
+    const measureNow = () => {
+      raf = 0;
+      const textWidth = measure.scrollWidth;
+      container.style.setProperty("--marquee-text-width", `${textWidth}px`);
+      const isOverflowing = textWidth > container.clientWidth;
       if (isOverflowing !== scrollingRef.current) {
         scrollingRef.current = isOverflowing;
         container.classList.toggle("scrolling", isOverflowing);
       }
     };
+    raf = requestAnimationFrame(measureNow);
 
-    check();
-    const observer = new ResizeObserver(check);
+    // 容器宽度变化（窗口缩放/图标大小调整）时重测；读取同样经 rAF 延迟
+    const observer = new ResizeObserver(() => {
+      if (raf === 0) raf = requestAnimationFrame(measureNow);
+    });
     observer.observe(container);
-    return () => observer.disconnect();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
   }, [children, enabled]);
 
   if (!enabled) {

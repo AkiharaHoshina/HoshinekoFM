@@ -42,5 +42,7 @@
 
 .marquee-container.scrolling .marquee-inner {
   --marquee-distance: calc(var(--marquee-text-width, 0px) + 2em);
-  animation: marquee-scroll var(--marquee-duration) linear infinite;
+  /* 时长 = 距离 / 速度（10px/s）：CSS 长度除法直接推导，
+     避免 JS 读 getComputedStyle 换算字号（每行一次样式读取） */
+  animation: marquee-scroll calc((var(--marquee-text-width, 0px) + 2em) / 10px * 1s) linear infinite;
 }
