@@ -118,7 +118,7 @@ let terminalDetection: Promise<DetectedTerminal | null> | null = null;
  * 作为终端命令（与 $TERMINAL 处理一致），支持绝对路径。
  *
  * 配置文件存在时**优先于** $TERMINAL / xdg-terminal-exec 等全部
- * 系统检测链（bugs.md 遗留项「在自定义终端中打开」的实现方式——
+ * 系统检测链（docs/bugs.md 遗留项「在自定义终端中打开」的实现方式——
  * 读取程序外配置文件指定终端）。参数风格按命令 basename 查
  * {@link TERMINAL_SPECS}，未知终端回退通用 `-e` 风格。
  *

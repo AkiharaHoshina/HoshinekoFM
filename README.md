@@ -28,7 +28,7 @@ The Hoshineko file explorer is a modification and reconstruction of [bhimio1](ht
 - **Compression**: create zip / tar.gz archives from the context menu (`zip -r` / `tar -czf`); existing archives are never overwritten.
 - **Properties & Permissions**: view location, size, modification time, permissions (`drwxr-xr-x`) and owner; edit permissions in place (3-digit octal chmod). Directory sizes are computed on demand via `du -sb` with a 10-second timeout and single-flight cancellation (switching away kills the running `du` and shows "size unavailable"), and can be turned off entirely in Settings → Behavior (frequent traversal is disk-intensive).
 - **Pinned Items**: pin files and folders to the dashboard (drag-to-reorder) and pin folders to the sidebar — via the system file picker, the folder context menu, or dragging a folder onto the pin button.
-- **Built-in File Picker**: a separate picker window used throughout the app — mode declaration (file/folder/items), file-type filters with a bottom dropdown ("All files" plus declared types, labels generated from the MIME description system), initial directory, and concurrently independent instances. Also available as an **xdg-desktop-portal FileChooser backend**, so external apps (GTK/Qt) can open it through the standard portal interface (OpenFile with filters; SaveFile with current-name/accept-label; multi-file SaveFiles unsupported; opt-in via portal config — see docs/portal-filechooser.md).
+- **Built-in File Picker**: a separate picker window used throughout the app — mode declaration (file/folder/items/save), file-type filters with a bottom dropdown ("All files" plus declared types, labels generated from the MIME description system), initial directory, and concurrently independent instances. The picker/saver sidebar shows your pinned folders (in service mode the main process injects them from the GUI's `sidebar-pinned.json` snapshot, since the resident's userData is isolated). Also available as an **xdg-desktop-portal FileChooser backend**, so external apps (GTK/Qt) can open it through the standard portal interface (OpenFile with filters; SaveFile with current-name/accept-label; multi-file SaveFiles unsupported; opt-in via portal config — see docs/portal-filechooser.md).
 - **Dashboard**: greeting, a unified storage region (system `/`, home, and hot-plugged external devices as clickable list items), pinned items, and recent files.
 - **Theming**: theme color system with 12 Material 3 preset palettes, a custom color picker (HCT), wallpaper color extraction (matugen + nativeImage fallback), matugen theme import, DMS system-theme inheritance, and a dark-mode switch (follow system / force dark / force light, applied across all windows).
 - **File Preview**: optional, persistent side panel (Settings → Behavior, off by default) squeezed in on the right — shows the current directory's read-only properties when nothing is selected, and a selected folder's properties when a single folder is selected (shared properties grid with the context-menu dialog, permissions read-only); when a single file is selected: images, audio, videos (mp4/webm/ogg/mkv, with seeking), PDFs (pdf.js, first 5 pages with a "N pages total" notice), archive listings (zip/tar/7z), Markdown (rendered, with local relative images resolved against the document's directory), and text/code (512 KiB cap); previews refresh automatically when the file changes on disk (e.g. saved from an external editor); a draggable divider resizes the panel (20%–60%, persisted); multi-selection shows a "cannot preview" placeholder; the panel shares the terminal squeeze with the file list.
@@ -89,7 +89,7 @@ The theme color system lives in Settings → Appearance → Theme Colors. It gen
 
 ### Dark mode
 
-- **Follow system** (default) — detection chain: DMS (via the appearance portal) → GNOME → KDE, falling back to dark.
+- **Follow system** (default) — the app's own detection chain (DMS via the appearance portal → GNOME → KDE, falling back to dark) resolves the current mode and applies it explicitly through Electron `nativeTheme`. This matters because Chromium's `'system'` source does not read the portal's color-scheme on Linux (DMS only writes gsettings), so it would show light in a dark-DMS environment; the system scheme is also watched live (a `gsettings monitor` plus a 30-second re-detect fallback) so all windows follow changes instantly.
 - **Force dark / Force light** — applied through Electron `nativeTheme`, synced instantly across all windows (including the file picker).
 
 Changes apply on "Apply"/"OK" and are persisted in `settings.theme` (synced across windows).
@@ -149,7 +149,7 @@ Please switch to "Releases" page
 
 ## Testing
 
-End-to-end tests live in `scripts/e2e/` (27 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
+End-to-end tests live in `scripts/e2e/` (33 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
 
 ```bash
 npm run e2e                # builds first, then runs every scripts/e2e/*.test.cjs

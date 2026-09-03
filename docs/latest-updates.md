@@ -218,7 +218,7 @@
 
 ### Shift+方向键范围选择（一期：锚点/游标分离 + 网格矩形）
 
-- **需求**：Shift+方向键多选——列表沿显示序连续区间；网格以开始项与游标为对角线选矩形；UI 键盘导航另行评估（可行性报告第十八节，二期）
+- **需求**：Shift+方向键多选——列表沿显示序连续区间；网格以开始项与游标为对角线选矩形；UI 键盘导航另行评估（docs/可行性报告.md 第十八节，二期）
 - **修复核心缺陷（锚点/游标合一）**：`lastSelectedPath` 同时当锚点与游标导致按住 Shift 连按方向键范围不扩展——新增 `cursorPath` 状态分离游标：Shift+方向键游标前进、锚点固定，范围随之扩展/收缩；普通方向键单选并同步两者
 - **网格矩形**：`FileList/utils.ts` 新增 `computeShiftRange`——列表 = 扁平序 anchor↔cursor 连续区间；网格 = (row, col) 对角线的矩形（每行取列区间、按行长度钳制），分组头跳过（矩形**跨分类连续**，后续迭代修订）；鼠标 Shift+点击共用同一函数（顺带修复网格 Shift 点击的扁平锯齿语义）
 - **同步面**：点击/Ctrl 点击/框选（replace）/取消选中/换目录全部同步锚点与游标；无锚点时 Shift 退化单选
@@ -296,7 +296,7 @@
 - **PKGBUILD 删除**：旧上游（bhimio1/material-3-file-explorer）AUR 打包脚本，指向旧仓库与 Materials AppImage 名，已废弃
 - **electron/main.ts**：setName 注释不再提旧包名——name 现为 hoshineko-fm，setName 目的改为「npm 包名 → 品牌名 HoshinekoFM」（userData 旧路径写回逻辑不变）
 - **缓存/临时目录**：`~/.cache/material3/*` → `~/.cache/hoshineko-fm/*`（缩略图/拖拽图标，旧缓存废弃后自然重建）；tmp 下 generic/fallback 图标文件名同理
-- **文档**：AGENTS.md 产品名说明、可行性报告第十四节（撤销「不修改 name」决策点，补彻底改名实施记录）同步更新
+- **文档**：AGENTS.md 产品名说明、docs/可行性报告.md 第十四节（撤销「不修改 name」决策点，补彻底改名实施记录）同步更新
 - package-lock.json 经 npm i 刷新同步 name/version
 
 ### 迭代修复（搜索：部分目录无访问权限导致零结果）
@@ -315,7 +315,7 @@
 
 ### 保存对话框（portal SaveFile）
 
-- **可行性分析**：可行性报告第十七节（复用 openPickerWindow/picker:resolve 管线、SaveFile 签名已预声明、决策点 A/B——不创建文件/不做覆盖确认，仅返回 URI）
+- **可行性分析**：docs/可行性报告.md 第十七节（复用 openPickerWindow/picker:resolve 管线、SaveFile 签名已预声明、决策点 A/B——不创建文件/不做覆盖确认，仅返回 URI）
 - **后端**：`SaveFile` 实现——`current_name`→默认文件名、`current_file`（ay 字节数组，优先级更高）→编辑已有文件、`current_folder`（ay）→初始目录、`accept_label`→确定按钮文案；文件名清洗（basename + 剔控制字符 + 限长 255，防路径逃逸）；`SaveFiles` 保持 NotSupported
 - **保存模式 UI**（FilePicker `mode: 'save'`）：显示全部文件与目录（不套过滤器）；底部「文件类型」下拉换成等宽的 `md-outlined-text-field` 文件名输入框（预填 current_name）；按钮「取消/确定」（accept_label 可覆盖，空名禁用）；点文件填名、双击文件填名并确定、目录双击进入、输入框回车确定；结果 = 当前目录 + 文件名（根目录不重复斜杠）
 - **保存器细节**：侧边栏 Places 隐藏回收站（`Sidebar.hideTrash`，仅保存模式；选择模式保留——回收站不可作保存目标）
@@ -440,7 +440,7 @@
 - **标题栏设置确定时生效**：开关与「显示完整路径」改为设置对话框内本地预览（pending），点「完成」/关闭（退出 = 确定）时才应用——与语言、界面缩放一致；修复此前「更改即生效」（根因：App 与 useTitleBar 各持同键 useLocalStorage 实例不同步，状态改由 hook 独占持有）
 - **v 菜单对齐与图标等大**：`ContextMenuItem` 新增 `iconSize`，v 菜单三项字号与右侧按钮一致（18/22/22）；前导图标槽定宽 22px 居中（`span[slot="start"]`），不同字号下文字（headline）左对齐
 - **仪表盘滚动条贴边**：移除 `.dashboard-container` 的 `margin-right: 18px`（历史「滚动条间距」导致滚动条偏离边缘）——现在紧贴窗口右缘，预览面板开启时即预览区左缘
-- **应用名全面修正为 HoshinekoFM**：`productName`（构建产物 AppImage/可执行名/.desktop 命名）、`app.setDesktopName('HoshinekoFM.desktop')`（Wayland app_id，此前指向 materials.desktop 导致 DMS 显示 materials）、`index.html` 初始标题、packaging D-Bus 服务 Exec 路径、AGENTS/进度/可行性报告文档——DMS 任务栏前缀不再出现 material-3-file-manager 或 materials（npm 包名/appId/缓存目录等遗留项于 v0.11.26 收尾）
+- **应用名全面修正为 HoshinekoFM**：`productName`（构建产物 AppImage/可执行名/.desktop 命名）、`app.setDesktopName('HoshinekoFM.desktop')`（Wayland app_id，此前指向 materials.desktop 导致 DMS 显示 materials）、`index.html` 初始标题、packaging D-Bus 服务 Exec 路径、AGENTS/docs/进度.md/docs/可行性报告.md 文档——DMS 任务栏前缀不再出现 material-3-file-manager 或 materials（npm 包名/appId/缓存目录等遗留项于 v0.11.26 收尾）
 
 ### e2e
 
@@ -498,7 +498,7 @@
 
 - 收藏夹/书签：与仪表盘/侧边栏固定功能重合，不实施
 - 格式化无文件系统设备：高危操作交给专业磁盘工具，不实施
-- README「尚未实现」与进度.md 相应收敛（含 e2e 从待办移除）
+- README「尚未实现」与 docs/进度.md 相应收敛（含 e2e 从待办移除）
 
 - 版本号升至 `0.11.18`
 
@@ -587,7 +587,7 @@
 
 ### 自定义终端（程序外配置）
 
-- 读取 `~/.config/HoshinekoFM/terminal.conf`（`command = <终端>` 或裸命令，`#` 注释）覆盖默认终端——优先级高于 `$TERMINAL` / xdg-terminal-exec 等全部检测链（bugs.md 遗留项「在自定义终端中打开」的落地方式）
+- 读取 `~/.config/HoshinekoFM/terminal.conf`（`command = <终端>` 或裸命令，`#` 注释）覆盖默认终端——优先级高于 `$TERMINAL` / xdg-terminal-exec 等全部检测链（docs/bugs.md 遗留项「在自定义终端中打开」的落地方式）
 - 参数风格按命令 basename 查 `TERMINAL_SPECS`，未知终端回退通用 `-e`；文件缺失/解析失败/命令不存在时回退系统检测链
 
 ### 仪表盘固定项拖拽排序

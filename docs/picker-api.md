@@ -23,10 +23,12 @@ resolvePicker: (paths: string[] | null) => Promise<void>;
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `mode` | `'file' \| 'folder' \| 'files' \| 'items'` | 可选条目类型声明（见下表） |
-| `filters` | `PickerFilter[]`? | 文件类型过滤器；缺失/空数组 = 仅「所有文件」 |
+| `mode` | `'file' \| 'folder' \| 'files' \| 'items' \| 'save'` | 可选条目类型声明（见下表；`save` 为保存模式） |
+| `filters` | `PickerFilter[]`? | 文件类型过滤器；缺失/空数组 = 仅「所有文件」（保存模式忽略） |
 | `initialPath` | `string`? | 初始目录（绝对路径；缺省从家目录开始） |
 | `defaultFilterId` | `string`? | 默认选中的过滤器 id（缺省「所有文件」；id 不在 filters 中时回退所有文件） |
+| `defaultFileName` | `string`? | 保存模式默认文件名（portal `current_name`/`current_file`；纯文件名，主进程已剔除路径分隔符与控制字符） |
+| `acceptLabel` | `string`? | 保存模式确定按钮文案覆盖（portal `accept_label`；缺省用 i18n「确定」） |
 | `pinnedDirs` | `PinnedDirEntry[]`? | **仅主进程注入**：侧边栏固定目录（`{ name, path, isDir }`）。服务模式（`--portal`/`--filemanager1` 常驻进程）的 userData 与 GUI 隔离、读不到 GUI 的 localStorage，主进程从 GUI userData 下的 `sidebar-pinned.json` 快照补齐此字段；调用方经 `picker:open` 传入的该字段被白名单校验忽略（不可伪造固定项） |
 
 ```ts
@@ -35,6 +37,7 @@ interface PickerFilter {
   label?: string;      // 显示名；缺省由描述体系生成 i18n 名
   extensions: string[]; // '.ext' 形态（如 ['.docx', '.doc']）
   mimes?: string[];     // MIME（支持 'type/*' 通配；与 extensions 或关系）
+  patterns?: string[];  // 文件名正则源（锚定整文件名、大小写不敏感；portal 后端 glob 过滤器转来，内部 IPC 不使用）
   resolvedMime?: string; // 主进程解析出的首扩展名 MIME（仅用于缺省 label，不参与匹配）
 }
 ```
@@ -47,10 +50,12 @@ interface PickerFilter {
 | `folder` | 仅文件夹可选                       | 选择目录（如固定目录）     |
 | `files`  | 仅文件可选（`file` 的多选语义别名） | 与 `file` 行为一致         |
 | `items`  | **全部可选**——文件与文件夹皆可选   | 固定任意条目（文件或目录） |
+| `save`   | **保存模式**：显示全部文件与目录，底部类型下拉换成文件名输入框（初值 = `defaultFileName`），确定返回「当前目录 + 文件名」的完整路径 | portal SaveFile 保存对话框 |
 
 说明：
 
-- 四种模式均支持多选（点击 + 框选）。`file` 与 `files` 在当前实现中行为一致，二者并存是为了第三方程序语义表达清晰。
+- 前四种模式均支持多选（点击 + 框选）。`file` 与 `files` 在当前实现中行为一致，二者并存是为了第三方程序语义表达清晰。
+- 保存模式无选择语义：点击文件 = 把文件名填入输入框，双击文件 = 填名并立即确定，双击目录 = 进入；侧边栏隐藏回收站（回收站不可作保存目标）。
 - `mode` 之外的未知字段一律忽略（向前兼容）；已知字段非法时忽略该字段（`mode` 非法抛错）。
 
 ## 文件类型过滤器（filters）
@@ -87,7 +92,7 @@ const picked = await window.electron.openPicker({
 
 | 通道               | 方向       | 载荷                                                             | 返回                                   |
 | ------------------ | ---------- | ---------------------------------------------------------------- | -------------------------------------- |
-| `picker:open`      | 渲染 → 主 | `PickerConfig`（mode 必填，filters/initialPath/defaultFilterId 可选） | `Promise<string[] \| null>`            |
+| `picker:open`      | 渲染 → 主 | `PickerConfig`（mode 必填，其余字段可选） | `Promise<string[] \| null>`            |
 | `picker:get-config`| 渲染 → 主 | 无（按窗口区分）                                                 | 该窗口的 `PickerConfig`；普通窗口为 `null` |
 | `picker:resolve`   | 渲染 → 主 | `string[]`（选中路径）或 `null`（取消）                           | 无；主进程 resolve 请求方并关窗        |
 
@@ -112,4 +117,5 @@ const picked = await window.electron.openPicker({
 
 - v0.11.15：`picker:open` 的 mode 声明补全 `items` 类型与文档；`PickerConfig` 注释明确"第三方接入时声明可选条目类型"的接口语义；新增本文档。
 - v0.11.19：`PickerConfig` 扩展 `filters` / `initialPath` / `defaultFilterId`；主进程白名单校验与 `resolvedMime` 解析；底部类型下拉（所有文件常驻 + 各类型，切换清除失效选中）；并发语义文档化；类型抽至 `src/types/picker.ts` 三端同源。
+- v0.11.24/25：`save` 保存模式（portal SaveFile：`defaultFileName`/`acceptLabel`，文件名输入框取代类型下拉、隐藏回收站）与 `patterns`（portal glob 转大小写不敏感正则，内部 IPC 不使用）。
 - v0.11.31：`PickerConfig` 增加主进程注入的 `pinnedDirs`（固定项快照，服务模式选择器/保存器显示侧边栏固定目录；调用方传入一律忽略）。

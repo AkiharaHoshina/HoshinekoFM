@@ -26,6 +26,8 @@ Hoshineko 的内置文件选择器可作为 **xdg-desktop-portal 的 FileChooser
 
 保存模式界面：显示全部文件与目录，底部「文件类型」下拉换成等宽的文件名输入框；点文件 = 填名、双击文件 = 填名并确定、目录双击进入；确定返回 `file://<当前目录>/<文件名>`。
 
+选择器/保存器窗口的侧边栏同样显示 GUI 里固定的目录（v0.11.31 起）：常驻进程的 userData 与 GUI 隔离、读不到 GUI 的 localStorage，主进程创建窗口时从 GUI userData 下的 `sidebar-pinned.json` 快照注入（GUI 每次改动固定项即原子落盘，常驻进程现读现用，无需重启）。
+
 结果按 portal 约定回传 `file://` URI（`uris`）+ `choices`。
 
 ## 限制（v1）
