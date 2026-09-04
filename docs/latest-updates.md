@@ -1,5 +1,13 @@
 # 更新日志
 
+## v0.11.33 — 侧边栏/标签页栏分界线
+
+- **新增**（`src/index.css`）：
+  - Places 与文件区之间的竖向分界线：`.main-content` 左边缘 1px
+    `--md-sys-color-outline-variant`（自上而下贯穿整个内容区高度）；
+  - 标签页栏下方的横向分界线：`.tab-header-bar` 底部同色 1px（从
+    Places 分界线处延伸至窗口最右）。
+
 ## v0.11.33 — 侧边栏设备胶囊统一高度
 
 - **现象**：places 栏设备条目（U 盘分区等）胶囊高 48px，与其他胶囊

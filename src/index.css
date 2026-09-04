@@ -154,6 +154,8 @@ html {
      左上不再切圆角：圆角会在标签页顶部与 Places 顶部之间
      留下缺口（缝），去圆角后两者顶部平齐 */
   background: var(--md-sys-color-surface-container-low);
+  /* Places 与文件区之间的分界线（左边缘自上而下） */
+  border-left: 1px solid var(--md-sys-color-outline-variant);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -171,6 +173,8 @@ html {
   flex-direction: column;
   /* 与文件浏览区同色：补上标签页与文件区之间的接缝 */
   background: var(--md-sys-color-surface-container-low);
+  /* 标签页栏下方的分界线（从 Places 分界线处到最右） */
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .empty-state {
