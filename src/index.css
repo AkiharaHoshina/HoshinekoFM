@@ -181,10 +181,10 @@ html {
   height: auto;
   display: flex;
   flex-direction: column;
-  /* 标签页栏区域与 Places 同色（见 :root 的 --hoshineko-places-bg）：
-     内部 .tab-bar 背景透明透出此色；无底部分界线——颜色区底线与
+  /* 与文件浏览区同色：补上标签页与文件区之间的接缝
+     （内部 .tab-bar 背景透明透出此色）；无底部分界线——颜色区底线与
      标签胶囊底线对齐（TabBar 高度按此对齐调整） */
-  background: var(--hoshineko-places-bg);
+  background: var(--md-sys-color-surface-container-low);
 }
 
 .empty-state {

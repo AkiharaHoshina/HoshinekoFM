@@ -1,5 +1,12 @@
 # 更新日志
 
+## v0.11.33 — 标签页栏背景还原（仅配色撤回）
+
+- **调整**（`src/index.css`、`src/components/TabBar.css`）：撤回标签页栏
+  并入 Places 配色的部分——`.tab-header-bar` 背景还原为文件区同色
+  （surface-container-low）；高度对齐（颜色区底线 = 标签胶囊底线）、
+  底部分界线取消、首标签左缘对齐均保留。
+
 ## v0.11.33 — 标签页栏并入 Places 配色区域（取消分界线）
 
 - **调整**（`src/index.css`、`src/components/TabBar.css`）：取消标签页栏
