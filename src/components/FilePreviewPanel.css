@@ -13,6 +13,11 @@
   padding: 12px;
   background: var(--md-sys-color-surface-container-lowest);
   border-left: 1px solid var(--md-sys-color-outline-variant);
+  /* 顶部边界线（仅覆盖预览区顶部）：预览区顶到文件区顶部时视觉上
+     被切断，加线收边；左上角圆角与内置终端同款（24px）——直角衔接
+     文件区顶部过于突兀，圆角后露出的角落与文件浏览区背景同色自然过渡 */
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 24px 0 0 0;
   overflow: hidden;
 }
 
