@@ -191,6 +191,14 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取
   searchOptionsRef.current = searchOptions;
 
+  /**
+   * 搜索分类生效态（三处同源：分类开关强制锁定、按目录聚簇排序、
+   * 分组渲染）：搜索中 + 「搜索结果按所在目录分类」开启，且不在回收站
+   * ——回收站搜索是按名称过滤虚拟目录，条目所在目录统一为 Trash/files，
+   * 无按目录分类语义，不做分组锁定与聚簇（否则开关被锁且组头误导）。
+   */
+  const searchGroupActive = searchActive && searchGroupByDir && currentPath !== 'trash://';
+
   const handleSearch = useCallback(async (query: string, options: { type?: 'f' | 'd'; minSize?: string; maxSize?: string } = {}) => {
     setSearchActive(true);
     setSearchQuery(query);
@@ -219,12 +227,17 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       if (window.electron && window.electron.search) {
         const results = await window.electron.search(currentPath, query, options);
         setFiles(results);
+      } else {
+        throw new Error(t('error.unknown'));
       }
       clearToast();
     } catch (e) {
       clearToast();
       console.error(e);
       showToast(t('error.search_failed', (e as Error)?.message || String(e) || t('error.unknown')), 'error');
+      // 搜索失败/后端不可用：复位搜索态并重载当前目录，恢复到普通
+      // 浏览视图——否则文件区仍是旧内容，右上角分类开关却被搜索态锁定
+      await loadPathRef.current?.(currentPath);
     }
   }, [currentPath]);
 
@@ -711,11 +724,11 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   // 偏好经 settings.sortBy / settings.sortOrder / settings.groupingEnabled 同步）
   // 搜索分类开启时按同目录聚簇排序（sortFilesByDir），组内仍按配置排序
   const sortedFiles = useMemo(() => {
-    if (searchActive && searchGroupByDir) {
+    if (searchGroupActive) {
       return sortFilesByDir(files, { showHiddenFiles, sortBy, sortOrder, groupingEnabled });
     }
     return sortFiles(files, { showHiddenFiles, sortBy, sortOrder, groupingEnabled });
-  }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled, searchActive, searchGroupByDir]);
+  }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled, searchGroupActive]);
     // Selection State
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   /** Shift 范围选择的锚点（方向键/鼠标 Shift 范围从它起算，范围变化时不动） */
@@ -1719,7 +1732,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               sortBy={sortBy}
               sortOrder={sortOrder}
               groupingEnabled={groupingEnabled}
-              groupingForced={searchActive && searchGroupByDir}
+              groupingForced={searchGroupActive}
               onSortByChange={onSortByChange}
               onSortOrderChange={onSortOrderChange}
               onGroupingToggle={onGroupingToggle}
@@ -2004,7 +2017,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                   scrollToPath={keyboardScrollPath}
                   layoutRef={fileListLayoutRef}
                   showPathTitle={searchActive}
-                  groupByDir={searchActive && searchGroupByDir}
+                  groupByDir={searchGroupActive}
                 />
               </div>
 

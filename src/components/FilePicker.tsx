@@ -19,7 +19,7 @@ import { useTitleBar } from '../hooks/useTitleBar';
 import { DragProvider } from '../contexts/DragContext';
 import { TitleBar } from './TitleBar';
 import { showToast, shortPath } from '../utils/toast';
-import { sortFiles } from '../utils/fileSort';
+import { sortFiles, sortFilesByDir } from '../utils/fileSort';
 import { ConflictDialog } from './ConflictDialog';
 import type { ConflictResult } from '../utils/fileConflict';
 import { t, useLocale, getLocale, setLocale, getLanguageOptions, type Locale } from '../i18n';
@@ -359,10 +359,18 @@ const FilePicker: React.FC = () => {
     return filter.extensions.length > 0 ? `*${filter.extensions[0]}` : filter.id;
   }, []);
 
-  /** 过滤 + 分组 + 排序（与主窗口共享同一份逻辑与偏好键，完全同步） */
+  /**
+   * 过滤 + 分组 + 排序（与主窗口共享同一份逻辑与偏好键，完全同步）。
+   * 搜索分类生效（搜索中 + searchGroupByDir 开启）时按同目录聚簇排序
+   * （sortFilesByDir），保证 FileList 的 groupByDir 组头按相邻条目正确
+   * 切分——否则同目录条目被全局排序打散、组头重复出现。
+   */
   const sortedFiles = useMemo(() => {
+    if (searchActive && searchGroupByDir) {
+      return sortFilesByDir(files, { showHiddenFiles, sortBy, sortOrder, groupingEnabled });
+    }
     return sortFiles(files, { showHiddenFiles, sortBy, sortOrder, groupingEnabled });
-  }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled]);
+  }, [files, showHiddenFiles, sortBy, sortOrder, groupingEnabled, searchActive, searchGroupByDir]);
 
   /**
    * 展示列表：选中具体过滤类型时**只显示**该类型的文件与全部目录
@@ -467,6 +475,11 @@ const FilePicker: React.FC = () => {
         t('error.search_failed', (e as Error)?.message || String(e) || t('error.unknown')),
         'error',
       );
+      // 搜索失败：复位搜索态并重载当前目录，恢复到普通浏览视图——
+      // 否则文件区仍是旧内容，右上角分类开关却被搜索态锁定
+      setSearchActive(false);
+      setSearchQuery('');
+      void loadPath(currentPath);
     }
   }, [currentPath, loadPath]);
 
