@@ -331,64 +331,68 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
         }
       >
         <div className="theme-color-content">
-          {/* 预览卡：颜色草稿与明暗草稿经 previewOverrideStyle 内联覆盖
-              整套变量，仅预览卡即时跟随草稿；应用其余部分与所有窗口
-              仍在确定/应用后才切换 */}
-          <div className="theme-color-preview" style={previewOverrideStyle}>
-            <div className="theme-color-preview-top">
-              <div className="theme-color-preview-title">{t('theme.preview')}</div>
-              <div className="theme-color-preview-pill">M3</div>
-            </div>
-            <div className="theme-color-preview-body">
-              <div className="theme-color-preview-card">
-                <div className="theme-color-preview-card-line" />
-                <div className="theme-color-preview-card-line" />
+          {/* 固定区（sticky）：预览卡 + 明暗开关——滚动其余设置时始终
+              可见（明暗开关直接控制预览卡显示，一并固定） */}
+          <div className="theme-color-fixed">
+            {/* 预览卡：颜色草稿与明暗草稿经 previewOverrideStyle 内联覆盖
+                整套变量，仅预览卡即时跟随草稿；应用其余部分与所有窗口
+                仍在确定/应用后才切换 */}
+            <div className="theme-color-preview" style={previewOverrideStyle}>
+              <div className="theme-color-preview-top">
+                <div className="theme-color-preview-title">{t('theme.preview')}</div>
+                <div className="theme-color-preview-pill">M3</div>
               </div>
-              <div className="theme-color-preview-btn" />
+              <div className="theme-color-preview-body">
+                <div className="theme-color-preview-card">
+                  <div className="theme-color-preview-card-line" />
+                  <div className="theme-color-preview-card-line" />
+                </div>
+                <div className="theme-color-preview-btn" />
+              </div>
+            </div>
+
+            {/* 黑暗主题开关：默认跟随系统；切换只改草稿（预览卡即时
+                跟随），确定/应用才全局生效。复位按钮常驻在开关左侧
+                （跟随模式下禁用置灰），开关位置在任何模式下都不变，
+                反复切换/复位不会落点漂移。 */}
+            <div className="theme-dark-row">
+              <div className="theme-dark-text">
+                <span className="theme-dark-title">{t('theme.dark_mode')}</span>
+                {/* 副标题占位常驻：显式模式下为空，行高不变 */}
+                <span className="theme-dark-sub">
+                  {pendingDarkMode === null && detectedScheme
+                    ? `${t('theme.follow_system')}（${t(`theme.source_${detectedScheme.source}`)}）`
+                    : ''}
+                </span>
+              </div>
+              <Button
+                variant="text"
+                className="theme-dark-reset"
+                disabled={pendingDarkMode === null}
+                onClick={resetDarkMode}
+                title={t('theme.follow_system')}
+              >
+                {t('theme.follow_system')}
+              </Button>
+              <div
+                className="theme-dark-switch-area"
+                role="switch"
+                aria-checked={effectiveDark}
+                tabIndex={0}
+                onClick={handleDarkSwitchToggle}
+                onKeyDown={(e) => {
+                  if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault();
+                    handleDarkSwitchToggle();
+                  }
+                }}
+              >
+                <Switch ref={darkSwitchRef} selected={effectiveDark} />
+              </div>
             </div>
           </div>
 
-          {/* 黑暗主题开关：默认跟随系统；切换只改草稿（预览卡即时
-              跟随），确定/应用才全局生效。复位按钮常驻在开关左侧
-              （跟随模式下禁用置灰），开关位置在任何模式下都不变，
-              反复切换/复位不会落点漂移。 */}
-          <div className="theme-dark-row">
-            <div className="theme-dark-text">
-              <span className="theme-dark-title">{t('theme.dark_mode')}</span>
-              {/* 副标题占位常驻：显式模式下为空，行高不变 */}
-              <span className="theme-dark-sub">
-                {pendingDarkMode === null && detectedScheme
-                  ? `${t('theme.follow_system')}（${t(`theme.source_${detectedScheme.source}`)}）`
-                  : ''}
-              </span>
-            </div>
-            <Button
-              variant="text"
-              className="theme-dark-reset"
-              disabled={pendingDarkMode === null}
-              onClick={resetDarkMode}
-              title={t('theme.follow_system')}
-            >
-              {t('theme.follow_system')}
-            </Button>
-            <div
-              className="theme-dark-switch-area"
-              role="switch"
-              aria-checked={effectiveDark}
-              tabIndex={0}
-              onClick={handleDarkSwitchToggle}
-              onKeyDown={(e) => {
-                if (e.key === ' ' || e.key === 'Enter') {
-                  e.preventDefault();
-                  handleDarkSwitchToggle();
-                }
-              }}
-            >
-              <Switch ref={darkSwitchRef} selected={effectiveDark} />
-            </div>
-          </div>
-
-          {/* 预设色盘 */}
+          {/* 可滚动区：预设色盘 */}
           <div className="theme-color-section">
             <div className="theme-color-section-header">{t('theme.presets')}</div>
             <div className="theme-color-preset-grid">

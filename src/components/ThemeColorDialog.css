@@ -1,9 +1,26 @@
 .theme-color-content {
   min-width: 520px;
-  padding: 4px 0;
+  /* 顶部间距交给固定区（sticky 层自身 padding），底部保留 4px 与原布局一致 */
+  padding: 0 0 4px;
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+/* ── 固定区（sticky）：预览卡 + 明暗开关，滚动其余设置时钉在对话框顶部 ──
+ * 滚动容器是 md-dialog shadow 内的 .scroller；slotted 内容在 flat tree
+ * 中做 sticky 定位，滚出时吸附在 scroller 顶部（headline 之下，该处为
+ * 直角边、非对话框圆角，无需圆角适配）。不透明背景与对话框表面同色，
+ * 遮住从下方滚过的内容；sticky 保留布局占位，后续内容在其下方正常排布。 */
+.theme-color-fixed {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 4px 0 16px;
+  background: var(--md-sys-color-surface-container-high);
 }
 
 /* ── 预览卡 ── */
