@@ -149,7 +149,7 @@ Please switch to "Releases" page
 
 ## Testing
 
-End-to-end tests live in `scripts/e2e/` (38 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
+End-to-end tests live in `scripts/e2e/` (39 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
 
 ```bash
 npm run e2e                # builds first, then runs every scripts/e2e/*.test.cjs
@@ -177,7 +177,7 @@ sudo install -m 644 packaging/dbus/org.freedesktop.FileManager1.service /usr/sha
 
 ### File dialogs via xdg-desktop-portal (external apps)
 
-HoshinekoFM can serve as the `org.freedesktop.impl.portal.FileChooser` backend, so GTK/Qt apps' open dialogs use the built-in picker. The easiest way is the one-click installer in Settings → Behavior → "System integration" → "Install portal integration" (asks for authorization via pkexec). It installs the portal config, both D-Bus activation files, writes the preferred-backend entry (`portals.conf`) and restarts the portal service. Alternatively, do it manually:
+HoshinekoFM can serve as the `org.freedesktop.impl.portal.FileChooser` backend, so GTK/Qt apps' open dialogs use the built-in picker. The easiest way is the one-click installer in Settings → Behavior → "System integration" → "Install portal integration" (asks for authorization via pkexec). It installs the portal config, both D-Bus activation files, the version marker file (`hoshineko.version`), writes the preferred-backend entry (`portals.conf`) and restarts the portal service. Alternatively, do it manually:
 
 ```bash
 sudo install -m 644 packaging/portals/hoshineko.portal /usr/share/xdg-desktop-portal/portals/
@@ -191,6 +191,8 @@ systemctl --user restart xdg-desktop-portal.service
 (Or run `scripts/system-integration/install.sh` from the repository — same effect, root parts via pkexec.)
 
 **Backend conflict diagnosis & recovery**: when portal/FileManager1 backend registration fails, the name holder is probed for its version — an outdated resident suggests uninstall+reinstall, a zombie name (process dead but bus connection unreleased) suggests restarting the session bus; conflicts are surfaced in a backdrop-masked popup (once per session) with persistent details in the Settings → Behavior → System Integration row, and a permanently visible "Restart session bus" button (`systemctl --user restart dbus-broker/dbus.service`, backends re-register automatically on success).
+
+**Portal version check**: the installer writes a version marker (`hoshineko.version`) next to the portal config. At startup the app compares it with its own version — on a mismatch (e.g. after an AppImage upgrade) a backdrop-masked popup offers **Cancel** or **Reinstall now** (one-click reinstall: `scripts/system-integration/reinstall.sh` runs uninstall + install behind a single pkexec prompt, then asks you to restart the app). The popup is skipped when the portal isn't installed at all or the version marker is missing (leftover from an incomplete/older-flow install). In development builds the dialog is single-button and shows the portal runtime diagnostics instead (in packaged builds, press PgDn in the popup to reveal the same diagnostics). Results of install/uninstall/reinstall/session-bus-restart are reported in backdrop-masked dialogs rather than toasts.
 
 Firefox: in `about:config` set `widget.use-xdg-desktop-portal.file-picker` to `1` (some versions use `widget.use-xdg-desktop-portal`) — this cannot be automated from the settings. **Limitation**: only single-file save (`SaveFile`) is implemented — multi-file save (`SaveFiles`) returns NotSupported. See docs/portal-filechooser.md for details and a gdbus verification command.
 

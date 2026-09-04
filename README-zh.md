@@ -149,7 +149,7 @@ scheme-monochrome：单色/黑白灰调。
 
 ## 测试
 
-端到端测试位于 `scripts/e2e/`（38 套用例，无测试框架——Electron 自身驱动真实构建，`sendInputEvent` 模拟输入、`executeJavaScript` 断言）：
+端到端测试位于 `scripts/e2e/`（39 套用例，无测试框架——Electron 自身驱动真实构建，`sendInputEvent` 模拟输入、`executeJavaScript` 断言）：
 
 ```bash
 npm run e2e                # 先构建，再依次运行 scripts/e2e/*.test.cjs
@@ -177,7 +177,7 @@ sudo install -m 644 packaging/dbus/org.freedesktop.FileManager1.service /usr/sha
 
 ### 文件对话框经 xdg-desktop-portal（外部程序）
 
-HoshinekoFM 可作为 `org.freedesktop.impl.portal.FileChooser` 后端——GTK/Qt 应用的「打开」对话框由内置选择器响应。最简方式：设置 → 行为 →「系统集成」→「安装 Portal 集成」一键完成（经 pkexec 授权），自动安装 portal 配置、两个 D-Bus 激活文件、写入 preferred 项（portals.conf）并重启 portal 服务。也可手动执行：
+HoshinekoFM 可作为 `org.freedesktop.impl.portal.FileChooser` 后端——GTK/Qt 应用的「打开」对话框由内置选择器响应。最简方式：设置 → 行为 →「系统集成」→「安装 Portal 集成」一键完成（经 pkexec 授权），自动安装 portal 配置、两个 D-Bus 激活文件、版本号文件（`hoshineko.version`）、写入 preferred 项（portals.conf）并重启 portal 服务。也可手动执行：
 
 ```bash
 sudo install -m 644 packaging/portals/hoshineko.portal /usr/share/xdg-desktop-portal/portals/
@@ -191,6 +191,8 @@ systemctl --user restart xdg-desktop-portal.service
 （或直接运行仓库里的 `scripts/system-integration/install.sh`，效果相同，root 部分经 pkexec。）
 
 **后端冲突诊断与恢复**：portal/FileManager1 后端注册失败时自动探测占名者版本——旧版常驻提示卸载重装、僵尸占名（进程已死但总线连接未释放）提示重启会话总线；冲突以带遮罩的弹窗提醒（每次会话一次），设置 → 行为 → 系统集成行常驻详情，且「重启会话总线」按钮常驻（`systemctl --user restart dbus-broker/dbus.service`，成功后自动重新注册后端）。
+
+**Portal 版本检查**：安装脚本会在 portal 配置旁写入版本号文件（`hoshineko.version`）。启动时应用把它与自身版本对比——不一致（如升级 AppImage 后）弹带遮罩弹窗，提供**取消**或**一键重装**（`scripts/system-integration/reinstall.sh` 把卸载 + 安装合并为单次 pkexec 授权，完成后提示重启应用）。portal 未安装、或版本号文件缺失（旧流程残留/不完整安装）时不弹。开发版弹窗为单按钮并展示 portal 运行时诊断详情（打包版弹窗内按 PgDn 可查看同一份详情）。安装/卸载/重装/重启会话总线等 portal 相关操作结果以带遮罩对话框而非 toast 报告。
 
 Firefox：`about:config` 将 `widget.use-xdg-desktop-portal.file-picker` 设为 `1`（部分版本为 `widget.use-xdg-desktop-portal`）——此步无法从设置自动完成。**限制**：仅实现单文件保存（`SaveFile`）——多文件保存（`SaveFiles`）返回 NotSupported。详见 docs/portal-filechooser.md（含 gdbus 验证命令）。
 

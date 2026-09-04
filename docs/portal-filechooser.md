@@ -40,13 +40,19 @@ Hoshineko 的内置文件选择器可作为 **xdg-desktop-portal 的 FileChooser
 ## 后端冲突诊断与恢复（v0.11.33 起）
 
 - **冲突探测**：portal / FileManager1 后端对象暴露只读 `Version` 属性；注册总线名失败时探测占名者版本——`outdated`（旧版常驻，建议卸载重装系统集成）/ `noVersion`（更旧构建）/ `unresponsive`（僵尸占名：进程已死但总线连接未释放）/ `sameVersion`（同版本另一实例，正常）。
-- **提示**：冲突以带遮罩的警告弹窗提示（每次会话一次），详情常驻设置页「系统集成」行副标题。
+- **提示**：冲突以带遮罩的警告弹窗提示（每次会话一次），详情常驻设置页「系统集成」行副标题。**版本不一致时抑制冲突弹窗**——只弹版本弹窗（重装一并解决旧版占名冲突，两个遮罩弹窗不叠层）。
 - **重启会话总线**：设置页「重启会话总线」按钮**常驻**——`systemctl --user restart dbus-broker.service` / `dbus.service`（30s 超时），成功后自动重新注册后端并刷新冲突报告；僵尸占名唯一有效的清除手段（已死进程的总线连接随总线重建释放）。
 - **usocket 已移除**（v0.11.33）：dbus-next 的 optional 依赖 usocket（2016 年代原生 addon）在 Electron 43 下有 libuv 句柄 use-after-free（断开偶发 SIGSEGV / 退出挂起）且泄漏总线连接 FD——僵尸占名根因之一；移除后 dbus-next 回退 `net.Socket`，`unix:path=` 会话总线地址不受影响。
 
+## 版本检查与一键重装（v0.11.33 起）
+
+- **版本号文件**：安装时 root 级把当前版本写入 `<portal目录>/hoshineko.version`（`HOSHINEKO_PORTALS_DIR` 可覆盖目录；卸载时一并移除）。
+- **启动检查**：应用启动时读取该文件并与当前版本比对——不一致弹 `PortalVersionDialog`（每次会话一次、取消不记忆每次启动弹）：打包版**取消 / 一键重装**（`system:reinstall-system-integration` 跑 `scripts/system-integration/reinstall.sh`——source install.sh/uninstall.sh 复用函数，卸载 + 安装合并为**单次 pkexec 授权**，完成后提示重启应用）；开发版仅取消 + portal 运行时诊断详情（打包版弹窗内按 PgDn 查看同一份详情）。
+- **不弹的场景**：portal 未安装；版本号文件缺失（旧流程残留/不完整安装——曾有用户部分安装后误弹）。
+
 ## 安装
 
-1. **一键安装（推荐）**：设置 → 行为 →「系统集成」→「安装 Portal 集成」（经 pkexec 授权）——自动完成下述全部步骤并重启 portal 服务；或直接运行 `scripts/system-integration/install.sh`。
+1. **一键安装（推荐）**：设置 → 行为 →「系统集成」→「安装 Portal 集成」（经 pkexec 授权）——自动完成下述全部步骤、写入版本号文件并重启 portal 服务；或直接运行 `scripts/system-integration/install.sh`。
 
    一键安装还包含以下「应用自身安装」步骤（保证 D-Bus 激活有真实可执行体，并让默认打开不依赖原始 AppImage 的位置）：
 
@@ -95,7 +101,7 @@ Hoshineko 的内置文件选择器可作为 **xdg-desktop-portal 的 FileChooser
 
 ## 卸载
 
-1. **一键卸载（推荐）**：设置 → 行为 →「系统集成」→「卸载 Portal 集成」（已安装时按钮自动变为卸载；经 pkexec 授权移除 root 级文件）；或直接运行 `scripts/system-integration/uninstall.sh`。
+1. **一键卸载（推荐）**：设置 → 行为 →「系统集成」→「卸载 Portal 集成」（已安装时按钮自动变为卸载；经 pkexec 授权移除 root 级文件与版本号文件）；或直接运行 `scripts/system-integration/uninstall.sh`。**重装**用 `scripts/system-integration/reinstall.sh`（卸载 + 安装单次 pkexec，版本弹窗「一键重装」的执行体）。
 
    一键卸载同时移除安装时写入的应用副本（`/usr/local/bin/HoshinekoFM` 与 `~/.local/bin/HoshinekoFM`，仅移除 AppImage 形态、不动发行版自装的 ELF），并把桌面入口 `Exec` 恢复为当前 AppImage 运行路径（无 AppImage 环境时告警提示手动检查）。
 
@@ -103,6 +109,7 @@ Hoshineko 的内置文件选择器可作为 **xdg-desktop-portal 的 FileChooser
 
    ```bash
    sudo rm -f /usr/share/xdg-desktop-portal/portals/hoshineko.portal
+   sudo rm -f /usr/share/xdg-desktop-portal/portals/hoshineko.version
    sudo rm -f /usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.hoshineko.service
    # FileManager1 为通用总线名，确认内容属于本应用后再删：
    # sudo rm -f /usr/share/dbus-1/services/org.freedesktop.FileManager1.service
@@ -117,7 +124,7 @@ Hoshineko 的内置文件选择器可作为 **xdg-desktop-portal 的 FileChooser
 
 ## 注意
 
-- **升级 AppImage 后必须重跑「安装 Portal 集成」**：D-Bus 服务激活文件指向 `/usr/local/bin/HoshinekoFM`（安装时从当前 AppImage 复制的副本）。应用**未运行时**外部应用的对话框由该副本响应——不更新的话会带着旧版本功能（例如旧版保存对话框返回 NotSupported）。
+- **升级 AppImage 后无需手动重跑安装**：D-Bus 服务激活文件指向 `/usr/local/bin/HoshinekoFM`（安装时从当前 AppImage 复制的副本），应用**未运行时**外部应用的对话框由该副本响应——升级后首次启动会检测到版本号文件不一致并弹「一键重装」弹窗（打包版；开发版显示运行时诊断详情），按提示重装即可更新副本与 portal 配置；不重装则带着旧版本功能（例如旧版保存对话框返回 NotSupported）。
 - **服务模式常驻**：`--portal`/`--filemanager1` 激活的进程在窗口全部关闭后保持存活（与 gtk/gnome 的 portal 后端同为常驻服务），避免每次请求冷启动与「注册后即退出」的激活竞态；不弹主窗口。
 - 多实例：后端以 DO_NOT_QUEUE 注册总线名，已有一个实例持有时后续实例静默跳过（不会抢名）。
 - 无会话总线（无桌面环境）时自动跳过，不影响应用正常使用。

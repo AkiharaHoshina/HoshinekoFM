@@ -1,5 +1,41 @@
 # 更新日志
 
+## v0.11.33 — portal 版本不一致检测 + 一键重装（版本号文件 / 启动弹窗 / reinstall.sh）
+
+- **背景**：升级 AppImage 后，portal 目录里的 `hoshineko.portal` 与
+  `/usr/local/bin/HoshinekoFM` 仍是旧版安装时写入的——D-Bus 激活拿到的
+  还是旧代码（旧版保存对话框等行为差异静默生效），此前只能靠文档提醒
+  手动重装，无任何应用内提示。
+- **版本号文件**（`install.sh` root 级）：安装 portal 时把当前版本写入
+  `<portal目录>/hoshineko.version`（值 = `app.getVersion()`，经
+  `runIntegrationScript` 注入 `HOSHINEKO_VERSION` 并显式透传 pkexec）；
+  卸载时一并移除。`HOSHINEKO_PORTALS_DIR` 可覆盖 portal 目录（沙箱/e2e 用）。
+- **启动版本检查**（`electron/handlers/system.ts` `system:get-portal-runtime-info`
+  + `src/components/PortalVersionDialog.tsx`）：
+  - portal 已安装（`hoshineko.portal` 存在）且版本号文件与当前版本不一致
+    → 弹 `PortalVersionDialog`（每次会话一次，取消不记忆、每次启动弹）；
+  - **版本号文件缺失不弹**（视为旧流程残留/不完整安装——曾有用户部分
+    安装后误弹）；
+  - 打包版弹窗双按钮：**取消**（什么都不做）/ **一键重装**（卸载 + 安装
+    新版 portal，正文含重启生效提示）；开发版弹窗仅取消 + **portal 运行时
+    诊断详情**（版本对比/安装状态/后端注册结果/冲突报告）；打包版弹窗内
+    按 **PgDn** 切换开发详情（调试入口）。
+- **reinstall.sh**（新增，`scripts/system-integration/`）：一键重装执行体——
+  source install.sh/uninstall.sh 复用函数（两脚本主入口加 `BASH_SOURCE`
+  守卫可被 source），卸载 + 安装合并为**单次 pkexec 授权**（分别跑两脚本
+  会弹两次密码框）；root 级先卸载后安装原子完成；遵守全部沙箱环境变量。
+  `runIntegrationScript` 跑 reinstall.sh 时把两个依赖脚本一并复制到临时
+  目录（此前只复制目标脚本 → source 行「没有那个文件或目录」失败）。
+- **portal 相关操作结果 toast → 带遮罩 AlertDialog**（`portalNotice`）：
+  系统集成安装/卸载、一键重装、会话总线重启的成功与失败都弹对话框
+  （错误细节截尾 400 字符进正文）——portal 故障属需用户明确知晓级别，
+  toast 易被忽略；默认文件管理器/缩略图缓存等非 portal 项仍走 toast。
+- **冲突弹窗抑制**：版本不一致时只弹版本弹窗（`portalVersionMismatchRef`
+  抑制冲突弹窗——重装一并解决旧版占名冲突，两个遮罩弹窗不叠层）。
+- e2e 39：版本检查链路（未安装不弹 / 版本文件缺失不弹 / 不一致弹开发
+  详情 + 取消关闭 / PgDn 无副作用）+ reinstall IPC（回归 source 依赖复制
+  bug）+ reinstall.sh 脚本形态（--user-only 幂等 / 假 pkexec EXIT trap 回归）。
+
 ## v0.11.33 — 保存器重名冲突弹窗（覆盖/自动重命名/手动重命名）
 
 - **现象**：保存器（portal SaveFile）保存到已存在同名的目录条目时**直接
