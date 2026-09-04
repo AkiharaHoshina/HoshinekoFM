@@ -39,8 +39,9 @@ export interface PinnedDirEntry {
 
 /**
  * 选择器窗口的显示偏好（与 src/types/picker.ts 的 PickerViewPrefs 同源）。
- * 只含选择器**只读**跟随主窗口的字段——排序/分组在选择器内可调
- * （写入常驻进程自己的 localStorage 并持久），故不在快照内。
+ * 立即同步组：视图模式、图标大小、隐藏文件、实心图标、跑马灯、分类、
+ * 排序——GUI 变化即经快照+广播同步到服务模式选择器/保存器
+ * （同步规则见 同步规则.md）。
  */
 export interface PickerViewPrefs {
   /** 视图模式（网格/列表） */
@@ -53,6 +54,22 @@ export interface PickerViewPrefs {
   filledIcons: boolean;
   /** 跑马灯标题滚动 */
   marqueeEnabled: boolean;
+  /** 排序字段（名称/大小/日期） */
+  sortBy: 'name' | 'size' | 'date';
+  /** 排序方向（升序/降序） */
+  sortOrder: 'asc' | 'desc';
+  /** 语义分组（文件夹/媒体/文档等分类显示） */
+  groupingEnabled: boolean;
+}
+
+/**
+ * 选择器设置快照（与 src/types/picker.ts 的 PickerSettings 同源）。
+ * 确认时同步组：设置对话框里开关的个性化设置（如搜索分类）——
+ * 在主窗口设置按下确定/退出时同步（同步规则见 同步规则.md）。
+ */
+export interface PickerSettings {
+  /** 搜索结果按所在目录分组 */
+  searchGroupByDir: boolean;
 }
 
 /**
@@ -113,6 +130,12 @@ export interface PickerConfig {
    * 默认主题）。调用方传入该字段一律丢弃（白名单不包含）。
    */
   theme?: PickerThemeSnapshot;
+  /**
+   * 选择器设置快照（确认时同步组，如搜索分类）。**仅主进程注入**
+   * （服务模式从 GUI 的 picker-settings.json 快照补齐）。调用方传入
+   * 该字段一律丢弃（白名单不包含）。
+   */
+  settings?: PickerSettings;
 }
 
 /** 合法的选择模式白名单（防止任意值进入配置） */

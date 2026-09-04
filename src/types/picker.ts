@@ -56,6 +56,22 @@ export interface PickerViewPrefs {
   filledIcons: boolean;
   /** 跑马灯标题滚动 */
   marqueeEnabled: boolean;
+  /** 排序字段（名称/大小/日期）——文件区个性化，随主窗口立即同步 */
+  sortBy: 'name' | 'size' | 'date';
+  /** 排序方向（升序/降序） */
+  sortOrder: 'asc' | 'desc';
+  /** 语义分组（分类与否）——文件区个性化，随主窗口立即同步 */
+  groupingEnabled: boolean;
+}
+
+/**
+ * 选择器设置快照（主进程注入，服务模式从 GUI 的 picker-settings.json
+ * 补齐）。确认时同步组：设置对话框里开关的个性化设置（如搜索分类），
+ * 在主窗口设置按下确定/退出时同步（见 同步规则.md）。
+ */
+export interface PickerSettings {
+  /** 搜索结果按所在目录分组 */
+  searchGroupByDir: boolean;
 }
 
 /**
@@ -114,6 +130,12 @@ export interface PickerConfig {
    * 白名单校验忽略。
    */
   theme?: PickerThemeSnapshot;
+  /**
+   * 选择器设置快照（内部注入：服务模式选择器/保存器窗口从 GUI 快照
+   * 补齐，确认时同步组如搜索分类——设置确认后才同步）。调用方经
+   * picker:open 传入的该字段被白名单校验忽略。
+   */
+  settings?: PickerSettings;
 }
 
 /** picker:open 的选项（渲染进程入口） */

@@ -28,6 +28,7 @@ const path = require('path');
     await h.js(win, `window.electron.setPickerViewPrefs({
       viewMode: 'list', iconSize: 64, showHiddenFiles: true,
       filledIcons: false, marqueeEnabled: true,
+      sortBy: 'name', sortOrder: 'asc', groupingEnabled: true,
     })`);
 
     // 内置选择器（picker:open）：配置应注入显示偏好，文件区渲染列表模式
@@ -58,6 +59,7 @@ const path = require('path');
     await h.js(win, `window.electron.setPickerViewPrefs({
       viewMode: 'grid', iconSize: 64, showHiddenFiles: true,
       filledIcons: false, marqueeEnabled: true,
+      sortBy: 'name', sortOrder: 'asc', groupingEnabled: true,
     })`);
     await h.waitFor(picker, `!!document.querySelector('.file-list-item')?.classList.contains('file-grid-item')`);
     h.assert.strictEqual(
@@ -90,6 +92,7 @@ const path = require('path');
     await h.js(win, `window.electron.setPickerViewPrefs({
       viewMode: 'grid', iconSize: 64, showHiddenFiles: true,
       filledIcons: false, marqueeEnabled: true,
+      sortBy: 'name', sortOrder: 'asc', groupingEnabled: true,
     })`);
     await h.js(win, `window.electron.openPicker({ mode: 'items' }).catch(() => null); true`);
     let gridPicker = null;
@@ -138,6 +141,7 @@ const path = require('path');
     await h.js(win, `window.electron.setPickerViewPrefs({
       viewMode: 'list', iconSize: 64, showHiddenFiles: true,
       filledIcons: false, marqueeEnabled: true,
+      sortBy: 'name', sortOrder: 'asc', groupingEnabled: true,
     })`);
     const savePromise = fcIface.SaveFile(
       '/org/freedesktop/portal/desktop/request/e2e/33',

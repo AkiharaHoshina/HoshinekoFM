@@ -93,9 +93,22 @@ const pinnedSnapshotFile = () => path.join(app.getPath('userData'), 'sidebar-pin
 /** 选择器显示偏好快照缓存与文件（与 main.ts 的 app:set-picker-view-prefs 同步） */
 let pickerViewPrefsCache = null;
 const pickerViewPrefsFile = () => path.join(app.getPath('userData'), 'picker-prefs.json');
+/** 选择器设置快照缓存与文件（与 main.ts 的 app:set-picker-settings 同步，确认时同步组） */
+let pickerSettingsCache = null;
+const pickerSettingsFile = () => path.join(app.getPath('userData'), 'picker-settings.json');
 /** 主题快照缓存与文件（与 main.ts 的 app:set-theme-snapshot / loadThemeSnapshot 同步） */
 let themeSnapshotCache = null;
 const themeSnapshotFile = () => path.join(app.getPath('userData'), 'theme-snapshot.json');
+
+/**
+ * 校验选择器设置快照（与 main.ts sanitizePickerSettings 同步）：
+ * 任一字段非法则整体丢弃返回 null（不注入）。
+ */
+function sanitizePickerSettings(input) {
+  const it = (input ?? {}) || {};
+  if (typeof it.searchGroupByDir !== 'boolean') return null;
+  return { searchGroupByDir: it.searchGroupByDir };
+}
 
 /**
  * 校验主题快照（与 main.ts sanitizeThemeSnapshot 同步）：任一字段非法
@@ -309,7 +322,8 @@ function registerIpc() {
   });
 
   // 与 main.ts 的 app:set-picker-view-prefs 同步：GUI 渲染进程上报
-  // 选择器只读显示偏好（视图模式等），内存缓存 + 原子落盘快照
+  // 选择器只读显示偏好（视图模式/分类/排序等，立即同步组），
+  // 内存缓存 + 原子落盘快照
   ipcMain.handle('app:set-picker-view-prefs', async (_event, input) => {
     const it = (input ?? {}) || {};
     const valid =
@@ -317,7 +331,10 @@ function registerIpc() {
       typeof it.iconSize === 'number' &&
       typeof it.showHiddenFiles === 'boolean' &&
       typeof it.filledIcons === 'boolean' &&
-      typeof it.marqueeEnabled === 'boolean';
+      typeof it.marqueeEnabled === 'boolean' &&
+      (it.sortBy === 'name' || it.sortBy === 'size' || it.sortBy === 'date') &&
+      (it.sortOrder === 'asc' || it.sortOrder === 'desc') &&
+      typeof it.groupingEnabled === 'boolean';
     pickerViewPrefsCache = valid
       ? {
           viewMode: it.viewMode,
@@ -325,6 +342,9 @@ function registerIpc() {
           showHiddenFiles: it.showHiddenFiles,
           filledIcons: it.filledIcons,
           marqueeEnabled: it.marqueeEnabled,
+          sortBy: it.sortBy,
+          sortOrder: it.sortOrder,
+          groupingEnabled: it.groupingEnabled,
         }
       : null;
     try {
@@ -356,6 +376,24 @@ function registerIpc() {
     // 模拟 main.ts 服务模式的快照实时监听（startSnapshotWatcher）
     for (const w of windows) {
       if (!w.isDestroyed()) w.webContents.send('picker:theme-changed', themeSnapshotCache);
+    }
+  });
+
+  // 与 main.ts 的 app:set-picker-settings 同步：GUI 渲染进程在设置
+  // 按下确定/退出时上报选择器设置（确认时同步组，如搜索分类），
+  // 内存缓存 + 原子落盘快照，供选择器窗口注入，并广播实时跟随
+  ipcMain.handle('app:set-picker-settings', async (_event, input) => {
+    pickerSettingsCache = sanitizePickerSettings(input);
+    try {
+      const tmp = `${pickerSettingsFile()}.tmp`;
+      await fs.promises.writeFile(tmp, JSON.stringify(pickerSettingsCache ?? {}), 'utf-8');
+      await fs.promises.rename(tmp, pickerSettingsFile());
+    } catch {
+      /* 写快照失败：仅影响设置注入，不阻塞测试 */
+    }
+    // 模拟 main.ts 服务模式的快照实时监听（startSnapshotWatcher）
+    for (const w of windows) {
+      if (!w.isDestroyed()) w.webContents.send('picker:settings-changed', pickerSettingsCache);
     }
   });
 }
@@ -512,6 +550,14 @@ async function createTestWindow({ argv = [], picker = false, pickerConfig = null
         themeSnapshotCache = null;
       }
     }
+    if (pickerSettingsCache === null) {
+      try {
+        const raw = await fs.promises.readFile(pickerSettingsFile(), 'utf-8');
+        pickerSettingsCache = sanitizePickerSettings(JSON.parse(raw));
+      } catch {
+        pickerSettingsCache = null;
+      }
+    }
     if (pinnedSnapshotCache.length > 0) {
       pickerConfig = { ...pickerConfig, pinnedDirs: pinnedSnapshotCache };
     }
@@ -520,6 +566,9 @@ async function createTestWindow({ argv = [], picker = false, pickerConfig = null
     }
     if (themeSnapshotCache) {
       pickerConfig = { ...pickerConfig, theme: themeSnapshotCache };
+    }
+    if (pickerSettingsCache) {
+      pickerConfig = { ...pickerConfig, settings: pickerSettingsCache };
     }
     pickerConfigByWindow.set(win, pickerConfig);
   }

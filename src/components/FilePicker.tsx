@@ -25,7 +25,7 @@ import { registerKeyboardZone, focusNextKeyboardZone, trackKeyboardZoneFocus } f
 import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, computeShiftArrowRange, type ListItem } from './FileList/utils';
 import type { IFile, AllDevice, GvfsVolume } from '../types/files';
 import type { ThemeConfig } from '../types/theme';
-import type { PickerConfig, PickerFilter, PickerViewPrefs, PickerThemeSnapshot } from '../types/picker';
+import type { PickerConfig, PickerFilter, PickerViewPrefs, PickerThemeSnapshot, PickerSettings } from '../types/picker';
 import { getMimeDisplayName } from '../utils/mimeTypes';
 import './FilePicker.css';
 
@@ -67,6 +67,8 @@ const FilePicker: React.FC = () => {
   const [config, setConfig] = useState<PickerConfig | null>(null);
   const [currentPath, setCurrentPath] = useState('');
   const [files, setFiles] = useState<IFile[]>([]);
+  /** 搜索态：搜索结果显示时按目录分组（settings.searchGroupByDir） */
+  const [searchActive, setSearchActive] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
   /** 键盘游标（focus）：与主窗口同语义——Shift+方向键游标前进锚点固定 */
@@ -116,6 +118,7 @@ const FilePicker: React.FC = () => {
   const [liveViewPrefs, setLiveViewPrefs] = useState<PickerViewPrefs | null | undefined>(undefined);
   const [livePinnedDirs, setLivePinnedDirs] = useState<SidebarPinnedItem[] | undefined>(undefined);
   const [liveTheme, setLiveTheme] = useState<PickerThemeSnapshot | null | undefined>(undefined);
+  const [liveSettings, setLiveSettings] = useState<PickerSettings | null | undefined>(undefined);
 
   useEffect(() => {
     const offPrefs = window.electron?.onPickerViewPrefsChanged?.((prefs) => {
@@ -127,10 +130,14 @@ const FilePicker: React.FC = () => {
     const offTheme = window.electron?.onPickerThemeChanged?.((theme) => {
       setLiveTheme(theme);
     });
+    const offSettings = window.electron?.onPickerSettingsChanged?.((settings) => {
+      setLiveSettings(settings);
+    });
     return () => {
       offPrefs?.();
       offPinned?.();
       offTheme?.();
+      offSettings?.();
     };
   }, []);
 
@@ -138,8 +145,9 @@ const FilePicker: React.FC = () => {
    * 只读显示偏好数据源：优先取实时广播（服务模式）与主进程注入的
    * config.viewPrefs（服务模式创建时从快照补齐——否则视图模式永远
    * 停在默认网格）；GUI 模式两者皆无，回落共享 session 的 localStorage
-   * （含 storage 事件实时同步）。排序/分组为选择器内可调项，保持
-   * localStorage 读写（常驻进程内自行持久）。
+   * （含 storage 事件实时同步）。分类/排序随主窗口立即同步（立即
+   * 同步组，见 同步规则.md）：注入值存在时优先生效——选择器内的
+   * 调整写本地 localStorage，下一次主窗口变化即覆盖。
    */
   const viewPrefs: PickerViewPrefs | undefined = liveViewPrefs === undefined
     ? config?.viewPrefs
@@ -149,15 +157,29 @@ const FilePicker: React.FC = () => {
   const viewMode = viewPrefs?.viewMode ?? localViewMode;
   const filledIcons = viewPrefs?.filledIcons ?? localFilledIcons;
   const marqueeEnabled = viewPrefs?.marqueeEnabled ?? localMarqueeEnabled;
+  const [localSortBy, setLocalSortBy] = useLocalStorage<'name' | 'size' | 'date'>('settings.sortBy', 'name');
+  const [localSortOrder, setLocalSortOrder] = useLocalStorage<'asc' | 'desc'>('settings.sortOrder', 'asc');
+  const [localGroupingEnabled, setLocalGroupingEnabled] = useLocalStorage<boolean>('settings.groupingEnabled', true);
+  /** 有效分类/排序：注入（主窗口快照）优先，GUI 模式回落共享 localStorage */
+  const sortBy = viewPrefs?.sortBy ?? localSortBy;
+  const sortOrder = viewPrefs?.sortOrder ?? localSortOrder;
+  const groupingEnabled = viewPrefs?.groupingEnabled ?? localGroupingEnabled;
+  /**
+   * 选择器设置（确认时同步组）：优先取实时广播与主进程注入的
+   * config.settings（服务模式从快照补齐）；GUI 模式回落默认
+   * （settings.searchGroupByDir 由主窗口经 storage 事件保持——
+   * 选择器自身无该设置项）。
+   */
+  const pickerSettings: PickerSettings | undefined = liveSettings === undefined
+    ? config?.settings
+    : (liveSettings ?? undefined);
+  const searchGroupByDir = pickerSettings?.searchGroupByDir ?? false;
   /**
    * 侧边栏固定目录数据源：优先取实时广播与主进程注入的
    * config.pinnedDirs（服务模式从快照补齐）；GUI 模式回落共享
    * session 的 localStorage（含 storage 事件实时同步）。
    */
   const pinnedDirs: SidebarPinnedItem[] = livePinnedDirs ?? config?.pinnedDirs ?? localPinnedDirs;
-  const [sortBy, setSortBy] = useLocalStorage<'name' | 'size' | 'date'>('settings.sortBy', 'name');
-  const [sortOrder, setSortOrder] = useLocalStorage<'asc' | 'desc'>('settings.sortOrder', 'asc');
-  const [groupingEnabled, setGroupingEnabled] = useLocalStorage<boolean>('settings.groupingEnabled', true);
   // 与主窗口同键订阅：主题设置保存后经 storage 事件到达，选择器窗口立即重应用
   const [localThemeConfig] = useLocalStorage<ThemeConfig | null>('settings.theme', null);
   /**
@@ -317,6 +339,7 @@ const FilePicker: React.FC = () => {
   /** 进入目录：清空选中与搜索状态；回收站虚拟目录走 listTrash */
   const loadPath = useCallback(async (path: string) => {
     try {
+      setSearchActive(false);
       if (path === 'trash://') {
         const data = await FileSystemService.listTrash();
         setFiles(data);
@@ -371,9 +394,11 @@ const FilePicker: React.FC = () => {
     void init();
   }, [loadPath]);
 
-  /** Omnibar 搜索（与主界面一致：直接替换列表） */
+  /** Omnibar 搜索（与主界面一致：直接替换列表；searchActive 驱动
+   *  搜索结果的按目录分组（确认时同步组 settings.searchGroupByDir）） */
   const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) {
+      setSearchActive(false);
       void loadPath(currentPath);
       return;
     }
@@ -381,6 +406,7 @@ const FilePicker: React.FC = () => {
       const results = await window.electron.search(currentPath, query);
       setFiles(results);
       setSelected(new Set());
+      setSearchActive(true);
     } catch (e) {
       showToast(
         t('error.search_failed', (e as Error)?.message || String(e) || t('error.unknown')),
@@ -945,9 +971,9 @@ const FilePicker: React.FC = () => {
                 sortBy={sortBy}
                 sortOrder={sortOrder}
                 groupingEnabled={groupingEnabled}
-                onSortByChange={setSortBy}
-                onSortOrderChange={setSortOrder}
-                onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}
+                onSortByChange={setLocalSortBy}
+                onSortOrderChange={setLocalSortOrder}
+                onGroupingToggle={() => setLocalGroupingEnabled(!groupingEnabled)}
               />
             </div>
           </div>
@@ -979,6 +1005,8 @@ const FilePicker: React.FC = () => {
               disableNativeDrag
               scrollToPath={keyboardScrollPath}
               layoutRef={fileListLayoutRef}
+              showPathTitle={searchActive}
+              groupByDir={searchActive && searchGroupByDir}
             />
           </div>
         </main>

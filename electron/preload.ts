@@ -45,6 +45,18 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('picker:theme-changed', handler);
     return () => ipcRenderer.removeListener('picker:theme-changed', handler);
   },
+  /** 订阅选择器设置快照变化（确认时同步组；null = 快照被清，回落注入值/默认） */
+  onPickerSettingsChanged: (callback: (settings: {
+    searchGroupByDir: boolean;
+  } | null) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, settings: unknown) => {
+      if (settings === null || typeof settings === 'object') {
+        callback(settings as { searchGroupByDir: boolean } | null);
+      }
+    };
+    ipcRenderer.on('picker:settings-changed', handler);
+    return () => ipcRenderer.removeListener('picker:settings-changed', handler);
+  },
   /** 订阅选择器显示偏好变化（服务模式常驻进程广播；null = 快照被清，回落注入值/默认） */
   onPickerViewPrefsChanged: (callback: (prefs: {
     viewMode: 'grid' | 'list';
@@ -112,6 +124,9 @@ contextBridge.exposeInMainWorld('electron', {
   /** 上报主题快照（settings.theme 配置 + settings.darkMode）：落盘供服务模式选择器/保存器注入 */
   setThemeSnapshot: (config: unknown, darkMode: boolean | null) =>
     ipcRenderer.invoke('app:set-theme-snapshot', { config, darkMode }),
+  /** 上报选择器设置快照（确认时同步组，如搜索分类）：设置确认时落盘 */
+  setPickerSettings: (settings: { searchGroupByDir: boolean }) =>
+    ipcRenderer.invoke('app:set-picker-settings', settings),
   readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path),
   readPreviewText: (path: string) => ipcRenderer.invoke('fs:read-preview-text', path),
   listArchive: (path: string, requestId?: string) => ipcRenderer.invoke('fs:list-archive', path, requestId),

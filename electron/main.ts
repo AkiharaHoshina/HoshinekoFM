@@ -12,7 +12,7 @@ import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor, startBac
 import type { BackendKind } from './handlers/backendInfo';
 import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers, startColorSchemeWatcher, stopColorSchemeWatcher } from './handlers/theme';
-import { registerPickerHandlers, type PickerConfig, type PinnedDirEntry, type PickerViewPrefs, type PickerThemeSnapshot } from './handlers/picker';
+import { registerPickerHandlers, type PickerConfig, type PinnedDirEntry, type PickerViewPrefs, type PickerThemeSnapshot, type PickerSettings } from './handlers/picker';
 import { registerServiceBackends } from './backends';
 import { initJobHandlers } from './jobs';
 
@@ -71,6 +71,41 @@ const PICKER_PREFS_SNAPSHOT_FILE = path.join(LEGACY_USER_DATA_DIR, 'picker-prefs
 
 /** 选择器偏好快照内存缓存（GUI 模式由 IPC 上报保持最新；服务模式现读文件） */
 let pickerViewPrefsSnapshotCache: PickerViewPrefs | null = null;
+
+/**
+ * 选择器设置快照文件（确认时同步组）：设置对话框里开关的个性化设置
+ * （如搜索分类），在主窗口设置按下确定/退出时经 IPC 上报落盘，
+ * 供服务模式常驻进程的选择器/保存器窗口注入（见 同步规则.md）。
+ */
+const PICKER_SETTINGS_SNAPSHOT_FILE = path.join(LEGACY_USER_DATA_DIR, 'picker-settings.json');
+
+/** 选择器设置快照内存缓存（GUI 模式由 IPC 上报保持最新；服务模式现读文件） */
+let pickerSettingsSnapshotCache: PickerSettings | null = null;
+
+/**
+ * 校验选择器设置快照：任一字段非法则整体丢弃（返回 null，不注入）。
+ */
+function sanitizePickerSettings(input: unknown): PickerSettings | null {
+  const it = (input ?? {}) as Record<string, unknown>;
+  if (typeof it.searchGroupByDir !== 'boolean') return null;
+  return { searchGroupByDir: it.searchGroupByDir };
+}
+
+/**
+ * 读取选择器设置快照（服务模式选择器窗口注入用）：
+ * - GUI 模式下缓存由 `app:set-picker-settings` 保持最新，命中缓存直接返回；
+ * - 服务模式下缓存恒为 null，**每次调用现读文件**——GUI 确认设置后
+ *   常驻进程下次弹选择器立即看到，无需重启。
+ */
+async function loadPickerSettingsSnapshot(): Promise<PickerSettings | null> {
+  if (pickerSettingsSnapshotCache !== null) return pickerSettingsSnapshotCache;
+  try {
+    const raw = await fs.readFile(PICKER_SETTINGS_SNAPSHOT_FILE, 'utf-8');
+    return sanitizePickerSettings(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 主题快照文件：与固定项/选择器偏好快照同一机制（GUI 经 IPC 上报、
@@ -135,6 +170,8 @@ async function loadThemeSnapshot(): Promise<PickerThemeSnapshot | null> {
  * 校验选择器显示偏好快照（来源可能是快照文件，可能被手改/损坏）：
  * 任一字段非法则整体丢弃（返回 null，不注入）——快照由本应用 GUI
  * 写入，损坏意味着不该信任。iconSize 钳制到 [16, 128]。
+ * 立即同步组：视图模式/图标大小/隐藏文件/实心图标/跑马灯 +
+ * 分类/排序（文件区个性化，随主窗口立即同步，见 同步规则.md）。
  */
 function sanitizePickerViewPrefs(input: unknown): PickerViewPrefs | null {
   const it = (input ?? {}) as Record<string, unknown>;
@@ -143,12 +180,18 @@ function sanitizePickerViewPrefs(input: unknown): PickerViewPrefs | null {
   if (typeof it.showHiddenFiles !== 'boolean') return null;
   if (typeof it.filledIcons !== 'boolean') return null;
   if (typeof it.marqueeEnabled !== 'boolean') return null;
+  if (typeof it.sortBy !== 'string' || !['name', 'size', 'date'].includes(it.sortBy)) return null;
+  if (typeof it.sortOrder !== 'string' || (it.sortOrder !== 'asc' && it.sortOrder !== 'desc')) return null;
+  if (typeof it.groupingEnabled !== 'boolean') return null;
   return {
-    viewMode: it.viewMode,
+    viewMode: it.viewMode as PickerViewPrefs['viewMode'],
     iconSize: Math.min(128, Math.max(16, Math.round(it.iconSize))),
     showHiddenFiles: it.showHiddenFiles,
     filledIcons: it.filledIcons,
     marqueeEnabled: it.marqueeEnabled,
+    sortBy: it.sortBy as PickerViewPrefs['sortBy'],
+    sortOrder: it.sortOrder as PickerViewPrefs['sortOrder'],
+    groupingEnabled: it.groupingEnabled,
   };
 }
 
@@ -185,15 +228,17 @@ let snapshotWatchTimer: ReturnType<typeof setTimeout> | null = null;
 let lastPinnedSnapshotRaw: string | null = null;
 let lastPrefsSnapshotRaw: string | null = null;
 let lastThemeSnapshotRaw: string | null = null;
+let lastSettingsSnapshotRaw: string | null = null;
 
 function startSnapshotWatcher(): void {
   if (snapshotWatcher) return;
   const broadcast = async () => {
     try {
-      const [pinnedRaw, prefsRaw, themeRaw] = await Promise.all([
+      const [pinnedRaw, prefsRaw, themeRaw, settingsRaw] = await Promise.all([
         fs.readFile(PINNED_SNAPSHOT_FILE, 'utf-8').catch(() => null),
         fs.readFile(PICKER_PREFS_SNAPSHOT_FILE, 'utf-8').catch(() => null),
         fs.readFile(THEME_SNAPSHOT_FILE, 'utf-8').catch(() => null),
+        fs.readFile(PICKER_SETTINGS_SNAPSHOT_FILE, 'utf-8').catch(() => null),
       ]);
       if (pinnedRaw !== null && pinnedRaw !== lastPinnedSnapshotRaw) {
         lastPinnedSnapshotRaw = pinnedRaw;
@@ -214,6 +259,13 @@ function startSnapshotWatcher(): void {
         const theme = sanitizeThemeSnapshot(JSON.parse(themeRaw));
         for (const win of getWindows()) {
           if (!win.isDestroyed()) win.webContents.send('picker:theme-changed', theme);
+        }
+      }
+      if (settingsRaw !== null && settingsRaw !== lastSettingsSnapshotRaw) {
+        lastSettingsSnapshotRaw = settingsRaw;
+        const settings = sanitizePickerSettings(JSON.parse(settingsRaw));
+        for (const win of getWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('picker:settings-changed', settings);
         }
       }
     } catch {
@@ -350,17 +402,19 @@ async function createWindow(
   // GUI 模式不做注入——选择器窗口与主窗口共享 session，FilePicker 直接
   // 读 localStorage（含 storage 事件实时同步），行为保持不变。
   if (isPicker && options.pickerConfig && SERVICE_ONLY_MODE) {
-    const [pinned, viewPrefs, theme] = await Promise.all([
+    const [pinned, viewPrefs, theme, settings] = await Promise.all([
       loadPinnedSnapshot(),
       loadPickerViewPrefsSnapshot(),
       loadThemeSnapshot(),
+      loadPickerSettingsSnapshot(),
     ]);
-    if (pinned.length > 0 || viewPrefs || theme) {
+    if (pinned.length > 0 || viewPrefs || theme || settings) {
       options.pickerConfig = {
         ...options.pickerConfig,
         ...(pinned.length > 0 ? { pinnedDirs: pinned } : {}),
         ...(viewPrefs ? { viewPrefs } : {}),
         ...(theme ? { theme } : {}),
+        ...(settings ? { settings } : {}),
       };
     }
   }
@@ -695,6 +749,22 @@ ipcMain.handle('app:set-theme-snapshot', async (_event, input: unknown) => {
     await fs.mkdir(LEGACY_USER_DATA_DIR, { recursive: true });
     await fs.writeFile(tmp, JSON.stringify(theme ?? {}), 'utf-8');
     await fs.rename(tmp, THEME_SNAPSHOT_FILE);
+  } catch {
+    await fs.rm(tmp, { force: true }).catch(() => {});
+  }
+});
+
+// GUI 渲染进程上报选择器设置快照（确认时同步组，如搜索分类）：
+// 设置对话框按下确定/退出时调用，更新内存缓存 + 原子落盘快照，
+// 供服务模式常驻进程的选择器/保存器窗口注入（见 同步规则.md）。
+ipcMain.handle('app:set-picker-settings', async (_event, input: unknown) => {
+  const settings = sanitizePickerSettings(input);
+  pickerSettingsSnapshotCache = settings;
+  const tmp = `${PICKER_SETTINGS_SNAPSHOT_FILE}.tmp`;
+  try {
+    await fs.mkdir(LEGACY_USER_DATA_DIR, { recursive: true });
+    await fs.writeFile(tmp, JSON.stringify(settings ?? {}), 'utf-8');
+    await fs.rename(tmp, PICKER_SETTINGS_SNAPSHOT_FILE);
   } catch {
     await fs.rm(tmp, { force: true }).catch(() => {});
   }

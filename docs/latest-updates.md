@@ -1,5 +1,27 @@
 # 更新日志
 
+## v0.11.33 — 选择器同步规则（立即同步组 + 确认时同步组）
+
+- **规则**（新增 `同步规则.md`，项目根目录）：
+  - **立即同步组**：视图模式（网格/列表，设置内但例外立即）、图标大小、
+    隐藏文件、实心图标、跑马灯、**分类与否、排序方式**——主窗口一变即
+    经快照 + 广播同步到服务模式选择器/保存器；
+  - **确认时同步组**：设置对话框里开关的个性化设置（如搜索分类），
+    主窗口设置按下确定/退出时才同步。
+- **实现**：
+  - `picker-prefs.json`（viewPrefs）扩展 sortBy/sortOrder/groupingEnabled
+    ——App.tsx 立即上报；FilePicker 注入值优先（主窗口为权威，选择器内
+    本地调整在下一次主窗口变化时被覆盖；GUI 模式回落共享 localStorage）；
+  - 新增 `picker-settings.json` 快照 + `app:set-picker-settings` IPC +
+    `pickerConfig.settings` 注入 + `picker:settings-changed` 广播——
+    App.tsx 在设置关闭（退出=确定）与挂载时上报；
+  - FilePicker 搜索态新增 `searchActive`，搜索结果按注入的
+    searchGroupByDir 分组（`groupByDir`，组头 = 目录路径）；
+  - sanitize 扩展与 harness 手工副本同步。
+- e2e 41：立即组（分类/排序注入 + 实时广播出现分组头）+ 确认时组
+  （settings 注入 + 搜索分类渲染）；e2e 26/33 同步改为全字段上报
+  （真实 App 挂载即上报默认 viewPrefs，localStorage 预置已失效）。
+
 ## v0.11.33 — 预览区/统计区/终端层级调整
 
 - **调整**（`src/components/FilePreviewPanel.css`、

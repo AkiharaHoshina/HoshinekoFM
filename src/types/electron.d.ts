@@ -1,5 +1,5 @@
 import type { IFile, AllDevice, GvfsVolume } from './files';
-import type { PickerConfig, PinnedDirEntry, PickerViewPrefs, PickerThemeSnapshot } from './picker';
+import type { PickerConfig, PinnedDirEntry, PickerViewPrefs, PickerThemeSnapshot, PickerSettings } from './picker';
 import type { ThemeConfig } from './theme';
 
 export interface IDrive {
@@ -155,6 +155,12 @@ export interface IElectronAPI {
      * 返回取消订阅函数。
      */
     onPickerThemeChanged: (callback: (theme: PickerThemeSnapshot | null) => void) => () => void;
+    /**
+     * 订阅选择器设置快照变化（确认时同步组；服务模式常驻进程广播，
+     * 打开中的选择器/保存器实时跟随；null = 快照被清，回落注入值/
+     * 默认）。返回取消订阅函数。
+     */
+    onPickerSettingsChanged: (callback: (settings: PickerSettings | null) => void) => () => void;
     /** 探测当前壁纸图片路径，失败返回 null */
     findWallpaper: () => Promise<string | null>;
     /** 用 matugen 从壁纸图片生成 M3 颜色方案 CSS；matugen 缺失时 fallback=true 且只返回种子色 */
@@ -221,6 +227,12 @@ export interface IElectronAPI {
      * 保存器窗口注入（userData 隔离读不到 GUI 的 localStorage）。
      */
     setThemeSnapshot: (config: ThemeConfig | null, darkMode: boolean | null) => Promise<void>;
+    /**
+     * 上报选择器设置快照（确认时同步组，如搜索分类）：主窗口设置按下
+     * 确定/退出时调用，原子落盘到 GUI userData，供服务模式常驻进程的
+     * 选择器/保存器窗口注入（见 同步规则.md）。
+     */
+    setPickerSettings: (settings: PickerSettings) => Promise<void>;
     readFile: (path: string) => Promise<string | null>;
     /**
      * 读取文本预览内容（预览面板用）。大小上限 512 KiB：

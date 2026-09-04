@@ -29,6 +29,7 @@ const path = require('path');
     await h.js(win, `window.electron.setPickerViewPrefs({
       viewMode: 'list', iconSize: 64, showHiddenFiles: true,
       filledIcons: false, marqueeEnabled: true,
+      sortBy: 'name', sortOrder: 'asc', groupingEnabled: false,
     }); 'ok'`);
     await h.js(win, `window.__p1 = window.electron.openPicker({
       mode: 'items',

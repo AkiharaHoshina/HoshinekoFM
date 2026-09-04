@@ -482,8 +482,9 @@ function AppContent() {
   /**
    * 选择器显示偏好上报主进程（含首次挂载）：与固定项同一快照机制，
    * 服务模式常驻进程的选择器/保存器窗口从快照注入视图模式（网格/
-   * 列表）等**只读**偏好——其 userData 隔离读不到本窗口的 localStorage，
-   * 不注入的话选择器永远停留在默认网格视图。
+   * 列表）、图标大小、分类、排序等偏好——其 userData 隔离读不到
+   * 本窗口的 localStorage。立即同步组：任何变化即刻上报并经快照
+   * 监听广播到打开中的选择器/保存器（同步规则见 同步规则.md）。
    */
   useEffect(() => {
     void window.electron.setPickerViewPrefs({
@@ -492,10 +493,28 @@ function AppContent() {
       showHiddenFiles,
       filledIcons,
       marqueeEnabled,
+      sortBy,
+      sortOrder,
+      groupingEnabled,
     }).catch(() => {
       /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
     });
-  }, [viewMode, iconSize, showHiddenFiles, filledIcons, marqueeEnabled]);
+  }, [viewMode, iconSize, showHiddenFiles, filledIcons, marqueeEnabled, sortBy, sortOrder, groupingEnabled]);
+
+  /**
+   * 选择器设置快照上报（确认时同步组）：设置对话框里开关的个性化
+   * 设置（如搜索分类）在主窗口设置按下确定/退出时才同步到服务模式
+   * 选择器/保存器。settingsDialogOpen 关闭即视为确定（退出设置等于
+   * 确定，见 SettingsDialog）；初始挂载也上报一次（种子值）。
+   */
+  useEffect(() => {
+    if (settingsDialogOpen) return;
+    void window.electron.setPickerSettings({
+      searchGroupByDir,
+    }).catch(() => {
+      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
+    });
+  }, [settingsDialogOpen, searchGroupByDir]);
 
   /**
    * 界面缩放（整页缩放，百分比）。持久化于 settings.uiScale，
