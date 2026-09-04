@@ -15,6 +15,20 @@
   max-height 在 shadow `:host` 上，文档级普通规则压不过 shadow 规则，
   用 `md-dialog:has(.theme-color-fixed) { max-height: ... !important }`
   覆盖（`:has()` 限定仅主题颜色对话框），滚动区获得更多垂直空间。
+- **迭代（sticky 位移与分隔线）**：实测定位两个问题——
+  - **固定区随滚动先微动一次**：md-dialog shadow 给内容槽包装层
+    （Dialog 组件的 `div[slot=content]`）加 `padding-top: 8px`
+    （`.scrollable.has-headline` 规则），它是 sticky 固定区的直接父级
+    padding——固定区自然位置在滚动口下方 8px，滚动前 8px 先位移再吸附。
+    修复：`md-dialog:has(.theme-color-fixed) > div[slot="content"]
+    { padding: 0 !important }` 归零，间距改由内容层自管（固定区
+    `margin: 0 -24px` 扩进侧 padding 保证背景横向铺满遮住滚过内容）。
+  - **滚动后标题下出现横线但位置不对**：md-dialog 对带 headline 的
+    对话框滚动时在标题下画内置分隔线（show-top-divider，shadow 内部
+    无法定位/移除）——主题对话框改 `noHeadline`（Dialog 新增可选 prop，
+    标题移入固定区 `.theme-color-title`，M3 headline-small 样式），内置
+    线随 headline 消失，固定区底部自绘 1px 分隔线（outline-variant）
+    标出固定区/滚动区边界；标题随固定区始终可见。
 
 ## v0.11.33 — 主题颜色调整改为仅预览卡变色（确定才全局应用）
 

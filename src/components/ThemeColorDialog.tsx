@@ -315,6 +315,8 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
         title={t('theme.title')}
         open={open}
         onClose={handleCancel}
+        backdrop
+        noHeadline
         actions={
           <>
             <Button variant="text" onClick={handleCancel}>
@@ -331,9 +333,11 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
         }
       >
         <div className="theme-color-content">
-          {/* 固定区（sticky）：预览卡 + 明暗开关——滚动其余设置时始终
-              可见（明暗开关直接控制预览卡显示，一并固定） */}
+          {/* 固定区（sticky）：标题 + 预览卡 + 明暗开关——滚动其余设置时
+              始终可见（标题移入固定区：对话框无 headline 槽，md-dialog
+              滚动时不再在标题下画内置分隔线，分隔线由固定区底部自绘） */}
           <div className="theme-color-fixed">
+            <div className="theme-color-title">{t('theme.title')}</div>
             {/* 预览卡：颜色草稿与明暗草稿经 previewOverrideStyle 内联覆盖
                 整套变量，仅预览卡即时跟随草稿；应用其余部分与所有窗口
                 仍在确定/应用后才切换 */}

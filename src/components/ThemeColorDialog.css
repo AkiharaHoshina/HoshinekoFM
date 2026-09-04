@@ -1,17 +1,27 @@
+/* 主题颜色对话框内容槽包装层（Dialog 组件的 div[slot="content"]）：
+ * md-dialog shadow 规则会给 slotted 内容加 padding（scrollable+headline
+ * 时为 8px 顶 / 24px 侧 / 8px 底）——它是 sticky 固定区的直接父级 padding，
+ * 导致固定区随滚动先位移 8px 再吸附（「微动一次」）。归零改由内容层
+ * 自管间距（!important：压过 shadow 普通规则）。 */
+md-dialog:has(.theme-color-fixed) > div[slot="content"] {
+  padding: 0 !important;
+}
+
 .theme-color-content {
   min-width: 520px;
-  /* 顶部间距交给固定区（sticky 层自身 padding），底部保留 4px 与原布局一致 */
-  padding: 0 0 4px;
+  /* 顶部间距由固定区自管（padding-top 8px），两侧 24px 与原布局一致 */
+  padding: 0 24px 8px;
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
-/* ── 固定区（sticky）：预览卡 + 明暗开关，滚动其余设置时钉在对话框顶部 ──
+/* ── 固定区（sticky）：标题 + 预览卡 + 明暗开关，滚动其余设置时钉在对话框顶部 ──
  * 滚动容器是 md-dialog shadow 内的 .scroller；slotted 内容在 flat tree
- * 中做 sticky 定位，滚出时吸附在 scroller 顶部（headline 之下，该处为
- * 直角边、非对话框圆角，无需圆角适配）。不透明背景与对话框表面同色，
- * 遮住从下方滚过的内容；sticky 保留布局占位，后续内容在其下方正常排布。 */
+ * 中做 sticky 定位，滚出时吸附在 scroller 顶部。负外边距扩进内容层侧
+ * padding：固定区背景横向铺满、遮住从下方滚过的内容；sticky 保留布局
+ * 占位，后续内容在其下方正常排布。底部 1px 分隔线标出固定区与滚动区
+ * 的边界（替代 md-dialog 标题下的内置横线，本对话框无 headline 槽）。 */
 .theme-color-fixed {
   position: sticky;
   top: 0;
@@ -21,8 +31,18 @@
   /* 明暗开关与预览卡的间距收紧（20px → 10px），固定区整体更矮，
    * 垂直空间留给下方滚动区 */
   gap: 10px;
-  padding: 4px 0 16px;
+  margin: 0 -24px;
+  padding: 8px 24px 12px;
   background: var(--md-sys-color-surface-container-high);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+/* 固定区内的对话框标题（M3 headline-small，替代原 headline 槽） */
+.theme-color-title {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 400;
+  color: var(--md-sys-color-on-surface);
 }
 
 /* 主题颜色对话框整体略微加高（560px → 640px），滚动区获得更多垂直空间。

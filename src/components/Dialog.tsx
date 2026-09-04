@@ -163,6 +163,13 @@ interface DialogProps {
   /** 叠层遮罩：对话框叠在另一个对话框上时启用（如确认框盖在
    *  设置对话框上），在两层之间渲染一层原生 ::backdrop 遮罩 */
   backdrop?: boolean;
+  /**
+   * 不渲染标题槽（默认 false）：主题颜色对话框把标题移进 sticky 固定区
+   * ——md-dialog 对带 headline 的对话框在滚动时会在标题下显示内置
+   * 分隔线（show-top-divider，shadow 内部无法定位），移除 headline 后
+   * 该线消失，由内容层自绘固定区/滚动区分隔线。
+   */
+  noHeadline?: boolean;
 }
 
 /**
@@ -175,7 +182,7 @@ const DIALOG_GAP_MS = 250;
 
 let lastDialogClosedAt = 0;
 
-export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, actions, backdrop = false }) => {
+export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, actions, backdrop = false, noHeadline = false }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dialogRef = useRef<any>(null);
 
@@ -290,7 +297,7 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
       onCancel={onClose}
       onClose={onClose}
     >
-      <span slot="headline">{title}</span>
+      {!noHeadline && <span slot="headline">{title}</span>}
       <div slot="content">{children}</div>
       {actions && <div slot="actions">{actions}</div>}
     </MdDialog>
