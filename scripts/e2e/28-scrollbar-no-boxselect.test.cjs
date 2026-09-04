@@ -22,7 +22,7 @@ const h = require('./harness.cjs');
     h.makeFileTree(dir, entries);
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/f000.txt"]')`);
-    // 网格视图 + 图标 64px（v0.11.33 起首次使用默认列表 + 48px）：
+    // 网格视图 + 图标 64px（v0.11.34 起首次使用默认列表 + 48px）：
     // 本用例依赖网格行高与 react-window overscan——列表视图滚动后
     // 首条会被虚拟化卸载（DOM 选中消失），网格高行 + 3 行 overscan
     // 保证滚动 120px 后 f000 仍渲染

@@ -126,4 +126,4 @@ const picked = await window.electron.openPicker({
 - v0.11.24/25：`save` 保存模式（portal SaveFile：`defaultFileName`/`acceptLabel`，文件名输入框取代类型下拉、隐藏回收站）与 `patterns`（portal glob 转大小写不敏感正则，内部 IPC 不使用）。
 - v0.11.31：`PickerConfig` 增加主进程注入的 `pinnedDirs`（固定项快照，服务模式选择器/保存器显示侧边栏固定目录；调用方传入一律忽略）与 `viewPrefs`（只读显示偏好快照，服务模式选择器/保存器跟随主窗口视图模式等）。
 - v0.11.33：保存模式重名冲突——确认（页脚按钮/文件名输入框 Enter/双击文件）先经 `existsBatch` 检测目标是否存在，重名弹与复制/移动同款冲突对话框（覆盖 = 原名回传；自动重命名 = 安全名回传并显示「原名 → 新名」预览；手动重命名 = 编辑名回传，留空不解析）；`picker:resolve` 只回传最终落盘路径。
-- v0.11.33：同步规则（见 `同步规则.md`）——`viewPrefs` 扩展 sortBy/sortOrder/groupingEnabled（立即同步组）；新增 `settings` 注入（确认时同步组：`searchGroupByDir`/`showFullPathTitle`，后增 `locale`）；新增 `theme` 注入（主题快照）；选择器搜索对齐主窗口（结果计数/清除/类型/大小筛选器，同一条 `system:search`，结果按搜索分类分组）；GUI 模式回落共享 localStorage（打开时同步 + storage 事件实时跟随）；标题文本渲染期派生实时跟随语言。
+- v0.11.34：同步规则（见 `同步规则.md`）——`viewPrefs` 扩展 sortBy/sortOrder/groupingEnabled（立即同步组）；新增 `settings` 注入（确认时同步组：`searchGroupByDir`/`showFullPathTitle`，后增 `locale`）；新增 `theme` 注入（主题快照）；选择器搜索对齐主窗口（结果计数/清除/类型/大小筛选器，同一条 `system:search`，结果按搜索分类分组）；GUI 模式回落共享 localStorage（打开时同步 + storage 事件实时跟随）；标题文本渲染期派生实时跟随语言。

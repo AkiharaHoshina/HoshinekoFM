@@ -19,7 +19,7 @@ const h = require('./harness.cjs');
     h.makeFileTree(dir, { 'sub/inner.txt': 'i', 'a.txt': 'a', 'b.txt': 'b', 'c.txt': 'c' });
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 4`);
-    // 网格视图（v0.11.33 起首次使用默认列表——本用例的「↑ 跨分组头
+    // 网格视图（v0.11.34 起首次使用默认列表——本用例的「↑ 跨分组头
     // 回到 sub」依赖网格二维移动语义，列表视图 Up = 上一个）
     await h.js(
       win,

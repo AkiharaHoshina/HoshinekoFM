@@ -22,7 +22,7 @@ const h = require('./harness.cjs');
     const titleOf = (w) => h.js(w, `document.querySelector('.title-bar-title .marquee-container')?.title ?? null`);
 
     // 强制开启标题栏（本机 niri 跟随系统默认隐藏）→ 重载生效；
-    // 跑马灯默认关闭（v0.11.33 起首次使用默认关）：标题断言依赖
+    // 跑马灯默认关闭（v0.11.34 起首次使用默认关）：标题断言依赖
     // .marquee-container（禁用分支无该类），一并强制开启
     await h.js(win, `localStorage.setItem('settings.titleBar', 'true'); localStorage.setItem('settings.marqueeEnabled', 'true'); true`);
     win.webContents.reload();

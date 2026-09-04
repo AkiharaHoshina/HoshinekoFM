@@ -18,7 +18,7 @@ const h = require('./harness.cjs');
     h.makeFileTree(dir, { 'a.txt': 'x' });
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
-    // 场景一需要跑马灯开启（v0.11.33 起首次使用默认关）
+    // 场景一需要跑马灯开启（v0.11.34 起首次使用默认关）
     await h.js(win, `localStorage.setItem('settings.marqueeEnabled', JSON.stringify(true)); location.reload();`);
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
 
