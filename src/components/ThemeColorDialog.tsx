@@ -72,6 +72,15 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
    * 标题下，本对话框已用 noHeadline 移除，这里自绘于固定区底部）。
    */
   const [scrolled, setScrolled] = useState(false);
+  /**
+   * 是否已滚到滚动区最底部：底部横线（操作按钮上方的分隔线）在
+   * 非底部时显示、滚到底部时隐藏（`.theme-color-fixed--show-bottom`）。
+   * 内置底部分隔线的 isAtScrollBottom 判定在本对话框失效——内容高度
+   * 带亚像素（圆形色盘的 aspect-ratio 产生 0.125px 小数），滚到底时
+   * bottom anchor 仍在视口外亚像素距离，IntersectionObserver 恒不判定
+   * 相交；故内置线经 --md-divider-color 透明化，这里自绘并自行判定。
+   */
+  const [atBottom, setAtBottom] = useState(false);
   /** 当前打开周期的 scroller（Dialog 的 onScrollerReady 回调写入） */
   const scrollerRef = useRef<HTMLElement | null>(null);
   /** 最新的 scroll 处理器（供回调挂/摘监听，见 handleScrollerReady） */
@@ -79,7 +88,10 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
   useEffect(() => {
     onScrollRef.current = () => {
       const sc = scrollerRef.current;
-      if (sc) setScrolled(sc.scrollTop > 0);
+      if (!sc) return;
+      setScrolled(sc.scrollTop > 0);
+      // 1px 容差吸收亚像素取整误差
+      setAtBottom(sc.scrollHeight - sc.clientHeight - sc.scrollTop <= 1);
     };
   });
 
@@ -101,6 +113,7 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
   useEffect(() => {
     if (!open) {
       setScrolled(false); // eslint-disable-line react-hooks/set-state-in-effect -- 关闭时复位滚动态
+      setAtBottom(false);
       scrollerRef.current = null;
     }
   }, [open]);
@@ -377,7 +390,7 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
               始终可见（标题移入固定区：对话框无 headline 槽，md-dialog
               滚动时不再在标题下画内置分隔线；分隔线由固定区底部自绘，
               仅滚动后显示，见 --scrolled 类） */}
-          <div className={`theme-color-fixed${scrolled ? ' theme-color-fixed--scrolled' : ''}`}>
+          <div className={`theme-color-fixed${scrolled ? ' theme-color-fixed--scrolled' : ''}${!atBottom ? ' theme-color-fixed--show-bottom' : ''}`}>
             <div className="theme-color-title">{t('theme.title')}</div>
             {/* 预览卡：颜色草稿与明暗草稿经 previewOverrideStyle 内联覆盖
                 整套变量，仅预览卡即时跟随草稿；应用其余部分与所有窗口

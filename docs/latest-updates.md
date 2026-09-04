@@ -25,6 +25,14 @@
   到**当前打开周期**的 shadow `.scroller`（md-dialog 每次打开重挂载全新
    元素，自行定位会拿到已替换的旧元素），组件挂 scroll 监听写入
    `--scrolled` 类。
+- **迭代（滚到底隐藏底部横线）**：md-dialog 内置底部分隔线的
+  isAtScrollBottom 判定在本对话框失效——内容高度带亚像素（圆形色盘
+  aspect-ratio 产生 0.125px 小数），滚到底时 bottom anchor 仍在视口外
+  亚像素距离、IntersectionObserver 恒不判相交，底线恒显示。修复：内置
+  线经 `--md-divider-color: transparent`（自定义属性继承穿透 shadow）
+  透明化，改为自绘——`md-dialog:has(.theme-color-fixed--show-bottom)
+  > div[slot="actions"] { border-top: 1px }`，非底部显示、滚到底隐藏
+  （--show-bottom 类由组件按 scrollTop 判定写入，1px 容差吸收取整误差）。
 - **迭代（sticky 位移与分隔线）**：实测定位两个问题——
   - **固定区随滚动先微动一次**：md-dialog shadow 给内容槽包装层
     （Dialog 组件的 `div[slot=content]`）加 `padding-top: 8px`

@@ -43,6 +43,20 @@ md-dialog:has(.theme-color-fixed) > div[slot="content"] {
   border-bottom-color: var(--md-sys-color-outline-variant);
 }
 
+/* 禁用 md-dialog 内置顶/底分隔线：md-divider 颜色经自定义属性继承
+ * 穿透 shadow（顶线已随 noHeadline 消失；底线改由下方自绘——内置
+ * isAtScrollBottom 判定在本对话框失效：内容高度带亚像素，滚到底时
+ * bottom anchor 仍在视口外 0.125px，底线恒不隐藏）。 */
+md-dialog:has(.theme-color-fixed) {
+  --md-divider-color: transparent;
+}
+
+/* 滚动区底部分隔线（操作按钮上方，与内置线同位）：非底部时显示，
+ * 滚到最底部时隐藏（--show-bottom 类由组件按滚动状态写入固定区）。 */
+md-dialog:has(.theme-color-fixed--show-bottom) > div[slot="actions"] {
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+
 /* 固定区内的对话框标题（M3 headline-small，替代原 headline 槽）。
  * margin-bottom 14px + 固定区 gap 10px = 标题文字底到预览 24px，
  * 与设置主页标题到首个控件的距离一致 */
