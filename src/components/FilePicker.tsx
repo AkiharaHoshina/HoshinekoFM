@@ -182,15 +182,33 @@ const FilePicker: React.FC = () => {
   /**
    * 明暗模式（服务模式注入/广播时）：nativeTheme 是进程级全局状态——
    * 常驻进程只服务选择器/保存器窗口，直接按其快照设置即可让所有
-   * 打开中的选择器跟随 GUI 明暗（null = 跟随系统回落 system）。
-   * GUI 模式无注入，跳过（主窗口已全局设置）。
+   * 打开中的选择器跟随 GUI 明暗。GUI 模式无注入，跳过（主窗口已全局
+   * 设置）。
+   * null（跟随系统）与主窗口同一条后端检测链显式落值（v0.11.31 的
+   * 修复路径）——不能走 nativeTheme 的 'system'：Chromium 在 Linux 上
+   * 不读 XDG appearance portal 的 color-scheme（DMS 暗色环境会误判为
+   * 亮色，保存器与主窗口明暗不一致），并订阅系统明暗变化广播
+   * （onSystemSchemeChanged）实时跟随。
    */
   const injectedDarkMode: boolean | null | undefined = injectedTheme?.darkMode;
   useEffect(() => {
     if (injectedDarkMode === undefined) return;
-    void window.electron?.setThemeSource(
-      injectedDarkMode === null ? 'system' : (injectedDarkMode ? 'dark' : 'light'),
-    );
+    if (injectedDarkMode !== null) {
+      void window.electron?.setThemeSource(injectedDarkMode ? 'dark' : 'light');
+      return;
+    }
+    let disposed = false;
+    const apply = (mode: 'dark' | 'light') => {
+      if (!disposed) void window.electron?.setThemeSource(mode);
+    };
+    void window.electron?.detectColorScheme()
+      .then((r) => apply(r.mode === 'dark' ? 'dark' : 'light'))
+      .catch(() => apply('dark'));
+    const off = window.electron?.onSystemSchemeChanged?.(apply);
+    return () => {
+      disposed = true;
+      off?.();
+    };
   }, [injectedDarkMode]);
 
   /**

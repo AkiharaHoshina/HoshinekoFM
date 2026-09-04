@@ -1,5 +1,21 @@
 # 更新日志
 
+## v0.11.33 — 保存器跟随系统明暗修复（与主窗口同一条检测链）
+
+- **现象**（DMS 暗色环境实测）：明暗主题选「跟随系统」时主窗口正确
+  跟随暗色，但保存器/选择器变成亮色——保存器注入 `darkMode=null` 时走
+  `nativeTheme.themeSource='system'`，正是主窗口 v0.11.31 修过的坑：
+  Chromium 在 Linux 上不读 XDG appearance portal 的 color-scheme（DMS
+  只写 gsettings，Chromium 看不见），暗色环境被判成亮色。
+- **修复**（`src/components/FilePicker.tsx`、`electron/main.ts`）：
+  - 保存器的「跟随系统」改与主窗口同一条路径：经 `theme:detect-color-scheme`
+    后端检测链（DMS→GNOME→KDE→fallback 暗色）显式落 dark/light，
+    并订阅 `theme:system-scheme-changed` 广播实时跟随系统明暗切换；
+  - `startColorSchemeWatcher`（gsettings monitor + 30s 定时兜底）改为
+    **服务模式也启动**——常驻进程的保存器/选择器注入 darkMode=null 时
+    需要系统明暗变化的实时广播（此前只在 GUI 模式启动；无窗口时广播
+    为空转，无副作用）。
+
 ## v0.11.33 — 确认主题后颜色同步到选择器/保存器（theme 快照注入）
 
 - **现象**：主题设置确认后，颜色没有同步到选择器和保存器——服务模式

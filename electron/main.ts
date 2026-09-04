@@ -921,10 +921,13 @@ app.whenReady().then(() => {
 
   if (!SERVICE_ONLY_MODE) {
     createWindow();
-    // 跟随系统模式的实时更新源：监听系统明暗变化（gsettings monitor +
-    // 定时兜底），广播到所有窗口。服务模式无窗口订阅，不启动。
-    startColorSchemeWatcher(getWindows);
   }
+  // 跟随系统模式的实时更新源：监听系统明暗变化（gsettings monitor +
+  // 定时兜底），广播到所有窗口——GUI 模式主窗口订阅；服务模式的
+  // 选择器/保存器窗口注入 darkMode=null（跟随系统）时同样订阅
+  // （见 FilePicker 的 onSystemSchemeChanged），故服务模式也须启动
+  // （无窗口时广播为空转，无副作用）。
+  startColorSchemeWatcher(getWindows);
   setupUdisks2Monitor(getWindows);
   setupGvfsMonitor(getWindows);
 });
