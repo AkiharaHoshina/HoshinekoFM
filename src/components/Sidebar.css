@@ -48,9 +48,10 @@
 
 /* 首节（位置）标题行与标签条垂直对齐：
    标题文字中心与标签页内文字中心平齐（32px），
-   列表起点（仪表盘轮廓上边）与标签页胶囊下边（52px）平齐 */
+   列表起点（仪表盘轮廓上边）与标签页胶囊下边平齐——
+   标签页栏下移 4px 后胶囊底边为 56px，同步 +4 */
 .sidebar > .sidebar-section:first-child .sidebar-title {
-    margin: 5.5px 0 9.5px 12px;
+    margin: 5.5px 0 13.5px 12px;
 }
 
 .sidebar-list {

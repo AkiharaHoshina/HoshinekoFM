@@ -1,5 +1,14 @@
 # 更新日志
 
+## v0.11.33 — 标签页栏分界线 + 整体下移
+
+- **调整**（`src/index.css`、`src/components/TabBar.css`、
+  `src/components/Sidebar.css`）：文件区与标签页栏区之间加分界线
+  （`.tab-header-bar` 底部 1px outline-variant）；标签页栏整体略微下移
+  ——`.tab-bar` 上 padding 8 → 12px（胶囊与分界线随之下移 4px，
+  胶囊底边 52 → 56）；侧边栏首节标题下边距同步 +4（9.5 → 13.5），
+  保持列表起点与标签胶囊底边平齐（实测 56 = 56）。
+
 ## v0.11.33 — 标签页栏背景还原（仅配色撤回）
 
 - **调整**（`src/index.css`、`src/components/TabBar.css`）：撤回标签页栏

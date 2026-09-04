@@ -182,9 +182,10 @@ html {
   display: flex;
   flex-direction: column;
   /* 与文件浏览区同色：补上标签页与文件区之间的接缝
-     （内部 .tab-bar 背景透明透出此色）；无底部分界线——颜色区底线与
-     标签胶囊底线对齐（TabBar 高度按此对齐调整） */
+     （内部 .tab-bar 背景透明透出此色）；底部分界线标出标签页栏区
+     与文件区的边界（分界线随标签页栏整体下移） */
   background: var(--md-sys-color-surface-container-low);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
 .empty-state {
