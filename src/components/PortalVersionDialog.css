@@ -1,0 +1,36 @@
+/* portal 版本不一致弹窗（与仓库其他对话框组件的平级 CSS 文件约定一致） */
+
+/* 用户版正文：版本说明 + 重启提示两段 */
+.portal-version-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.portal-version-message {
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.portal-version-hint {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--md-sys-color-on-surface-variant);
+  word-break: break-all;
+}
+
+/* 开发详情：等宽技术信息（版本对比 / 安装状态 / 注册结果 / 冲突报告） */
+.portal-version-details {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container-high);
+  border-radius: 8px;
+  user-select: text;
+}

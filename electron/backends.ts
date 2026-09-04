@@ -3,6 +3,19 @@ import { setupPortalFileChooser } from './handlers/portalFileChooser';
 import { setupFileManager1, type FileManager1WindowOptions } from './handlers/fileManager1';
 import type { PickerConfig } from './handlers/picker';
 
+/** 最近一次后端注册结果（供 system:get-portal-runtime-info 运行时
+ *  诊断展示；null = 尚未注册）。会话总线重启后的重新注册会更新此值。 */
+let lastRegistration: { portal: boolean; fileManager1: boolean } | null = null;
+
+/**
+ * 读取最近一次后端注册结果（portal 运行时诊断信息的一部分）。
+ *
+ * @returns 最近一次注册结果；尚未注册返回 null
+ */
+export function getLastBackendRegistration(): { portal: boolean; fileManager1: boolean } | null {
+  return lastRegistration;
+}
+
 /**
  * D-Bus 服务后端统一接线（portal FileChooser + FileManager1）。
  *
@@ -28,5 +41,6 @@ export async function registerServiceBackends(opts: {
     setupPortalFileChooser(opts.createPicker, { busName: opts.portalBusName }),
     setupFileManager1(opts.openWindow, { busName: opts.fileManager1BusName }),
   ]);
-  return { portal, fileManager1 };
+  lastRegistration = { portal, fileManager1 };
+  return lastRegistration;
 }

@@ -121,7 +121,11 @@ contextBridge.exposeInMainWorld('electron', {
   installSystemIntegration: (userOnly?: boolean) => ipcRenderer.invoke('system:install-system-integration', userOnly ?? false),
   /** 系统集成一键卸载（install.sh 的逆操作，经 pkexec 授权移除 root 级文件） */
   uninstallSystemIntegration: (userOnly?: boolean) => ipcRenderer.invoke('system:uninstall-system-integration', userOnly ?? false),
+  /** 系统集成一键重装（版本不一致弹窗「一键重装」：卸载+安装单次 pkexec） */
+  reinstallSystemIntegration: (userOnly?: boolean) => ipcRenderer.invoke('system:reinstall-system-integration', userOnly ?? false),
   getSystemIntegrationStatus: () => ipcRenderer.invoke('system:get-system-integration-status'),
+  /** portal 运行时诊断信息（版本对比 + 安装状态 + 后端注册结果 + 冲突报告） */
+  getPortalRuntimeInfo: () => ipcRenderer.invoke('system:get-portal-runtime-info'),
   /** 后端总线名冲突报告（注册失败诊断：旧版常驻/僵尸占名；无冲突为空数组） */
   getBackendConflicts: () => ipcRenderer.invoke('system:get-backend-conflicts'),
   /** 重启会话总线（清除僵尸占名；成功后主进程自动重新注册后端） */

@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import dbus from 'dbus-next';
 import { getMountMap, invalidateMountMapCache, getExecError } from '../shared';
 import { getThumbnailCacheInfo, clearThumbnailCache, detectMime } from '../fsUtils';
+import { getLastBackendRegistration } from '../backends';
 import { PORTAL_BUS_NAME, PORTAL_FILE_CHOOSER_PATH, PORTAL_FILE_CHOOSER_IFACE } from './portalFileChooser';
 import { FILE_MANAGER1_NAME, FILE_MANAGER1_PATH, FILE_MANAGER1_IFACE } from './fileManager1';
 import {
@@ -945,6 +946,11 @@ export function registerSystemHandlers(onSessionBusRestarted?: () => void) {
   const SYSTEM_BIN_PATH = '/usr/local/bin/HoshinekoFM';
   /** 用户级固定副本路径（install.sh 用户级部分安装，防原始 AppImage 被删） */
   const userBinPath = path.join(os.homedir(), '.local', 'bin', 'HoshinekoFM');
+  /** portal 配置目录（install.sh 同款覆盖：HOSHINEKO_PORTALS_DIR，测试沙箱用） */
+  const PORTALS_DIR = process.env.HOSHINEKO_PORTALS_DIR || '/usr/share/xdg-desktop-portal/portals';
+  /** 安装脚本写入的版本号文件（启动时与 app.getVersion() 比对，见
+   *  system:get-portal-runtime-info） */
+  const PORTAL_VERSION_FILE = path.join(PORTALS_DIR, 'hoshineko.version');
 
   /** 生成桌面入口内容：Exec 按环境选择——
    *  固定安装路径（系统级 /usr/local/bin/HoshinekoFM 优先，其次用户级
@@ -1024,7 +1030,12 @@ export function registerSystemHandlers(onSessionBusRestarted?: () => void) {
    * 是否存在（设置内显示安装状态）。portalsConf 为内容检测：文件里
    * 是否包含 preferred=hoshineko 项（仅存在文件不算已配置）。
    */
-  ipcMain.handle('system:get-system-integration-status', async () => {
+  const getIntegrationStatus = async (): Promise<{
+    portalConfig: boolean;
+    fileManager1Service: boolean;
+    portalService: boolean;
+    portalsConf: boolean;
+  }> => {
     const exists = async (p: string) => {
       try {
         await fs.access(p);
@@ -1045,12 +1056,14 @@ export function registerSystemHandlers(onSessionBusRestarted?: () => void) {
       portalsConf = false;
     }
     return {
-      portalConfig: await exists('/usr/share/xdg-desktop-portal/portals/hoshineko.portal'),
+      portalConfig: await exists(path.join(PORTALS_DIR, 'hoshineko.portal')),
       fileManager1Service: await exists('/usr/share/dbus-1/services/org.freedesktop.FileManager1.service'),
       portalService: await exists('/usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.hoshineko.service'),
       portalsConf,
     };
-  });
+  };
+
+  ipcMain.handle('system:get-system-integration-status', () => getIntegrationStatus());
 
   /**
    * 后端总线名冲突报告（注册失败时由 main.ts 发起探测；未发起/无冲突
@@ -1121,6 +1134,7 @@ export function registerSystemHandlers(onSessionBusRestarted?: () => void) {
       ? path.join(process.resourcesPath, 'app.asar.unpacked')
       : path.join(__dirname, '..', '..');
     const srcScript = path.join(baseDir, 'scripts', 'system-integration', scriptName);
+    const srcScriptDir = path.dirname(srcScript);
     const srcPackaging = path.join(baseDir, 'packaging');
     try {
       await fs.access(srcScript);
@@ -1137,6 +1151,14 @@ export function registerSystemHandlers(onSessionBusRestarted?: () => void) {
       // 源脚本自带执行位，fs.cp 默认保留源文件 mode（勿传 mode 选项：
       // Node 22 对 fs.cp 的 mode 校验会拒绝 0o755 这类完整权限值）
       await fs.cp(srcScript, path.join(runDir, scriptName));
+      // reinstall.sh 会 source 同目录的 install.sh / uninstall.sh 复用
+      // 函数（单次 pkexec 合并卸载+安装）：依赖脚本必须一并复制，
+      // 否则 source 行直接「没有那个文件或目录」失败
+      if (scriptName === 'reinstall.sh') {
+        for (const dep of ['install.sh', 'uninstall.sh']) {
+          await fs.cp(path.join(srcScriptDir, dep), path.join(runDir, dep));
+        }
+      }
       await fs.cp(srcPackaging, path.join(runDir, 'packaging'), { recursive: true });
     } catch (e) {
       void fs.rm(runDir, { recursive: true, force: true }).catch(() => { /* 清理失败忽略 */ });
@@ -1160,7 +1182,7 @@ export function registerSystemHandlers(onSessionBusRestarted?: () => void) {
       // detached：独立进程组——超时时 kill(-pid) 连带杀掉脚本内的
       // pkexec/systemctl 子进程，且不会误伤应用自身进程组
       const child = spawn(scriptPath, args, {
-        env: { ...process.env, HOSHINEKO_PACKAGING_DIR: packagingDir },
+        env: { ...process.env, HOSHINEKO_PACKAGING_DIR: packagingDir, HOSHINEKO_VERSION: app.getVersion() },
         detached: true,
       });
       let settled = false;
@@ -1228,6 +1250,51 @@ export function registerSystemHandlers(onSessionBusRestarted?: () => void) {
    */
   ipcMain.handle('system:uninstall-system-integration', async (_event, userOnly: unknown) => {
     return runIntegrationScript('uninstall.sh', userOnly === true ? ['--user-only'] : []);
+  });
+
+  /**
+   * 一键重装系统集成（版本不一致弹窗「一键重装」按钮的执行体）：
+   * reinstall.sh 把卸载 + 安装合并为单次 pkexec 授权（分别跑两个脚本
+   * 会各弹一次密码框；见 scripts/system-integration/reinstall.sh）。
+   *
+   * @param userOnly - 仅执行用户级部分（无 polkit 环境降级 / 测试用）
+   */
+  ipcMain.handle('system:reinstall-system-integration', async (_event, userOnly: unknown) => {
+    return runIntegrationScript('reinstall.sh', userOnly === true ? ['--user-only'] : []);
+  });
+
+  /**
+   * portal 运行时诊断信息（启动版本检查 + 开发模式详情弹窗用）：
+   * - 版本对比：安装脚本写入的 hoshineko.version vs app.getVersion()。
+   *   仅当版本号文件存在时才比较——文件缺失视为「portal 未被新版
+   *   安装流程安装过」（旧流程残留/不完整安装），不弹版本弹窗；
+   * - 集成状态：portal 配置/激活文件/portals.conf 存在性；
+   * - 后端注册结果：本进程最近一次 registerServiceBackends 的结果
+   *   （会话总线重启后的重新注册会更新）；
+   * - 冲突报告：总线名被占用时的诊断缓存（未发起探测返回空数组）。
+   */
+  ipcMain.handle('system:get-portal-runtime-info', async () => {
+    const integration = await getIntegrationStatus();
+    let installedVersion: string | null = null;
+    try {
+      const content = await fs.readFile(PORTAL_VERSION_FILE, 'utf-8');
+      installedVersion = content.trim() || null;
+    } catch { /* 版本文件不存在：旧流程安装/残留，不弹版本弹窗 */ }
+    const appVersion = app.getVersion();
+    const conflicts = await (backendConflictsPromise ?? Promise.resolve([] as BackendConflictInfo[]));
+    return {
+      isPackaged: app.isPackaged,
+      appVersion,
+      portalInstalled: integration.portalConfig,
+      installedVersion,
+      versionMismatch:
+        integration.portalConfig && installedVersion !== null && installedVersion !== appVersion,
+      portalsDir: PORTALS_DIR,
+      versionFilePath: PORTAL_VERSION_FILE,
+      integration,
+      registration: getLastBackendRegistration(),
+      conflicts,
+    };
   });
   /**
    * 设置 inode/directory 的默认处理程序（xdg-mime default，写用户级

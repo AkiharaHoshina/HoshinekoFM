@@ -127,6 +127,15 @@ async function setupApp() {
     ? process.env.HOSHINEKO_E2E_USER_DATA
     : fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-'));
   app.setPath('userData', userData);
+  // 沙箱 portal 配置目录：开发者机可能装有真实的 hoshineko.portal
+  // （且无版本文件），启动版本检查会弹「版本不一致」弹窗干扰用例——
+  // 默认指向不存在的沙箱目录（portalInstalled=false → 不弹）。需测
+  // 版本弹窗的用例须在 setupApp 前自行设置 HOSHINEKO_PORTALS_DIR。
+  // 注意：system.js 的 registerSystemHandlers 在 registerIpc 内读取该
+  // 环境变量，必须在首次 setupApp 前设置。
+  if (process.env.HOSHINEKO_PORTALS_DIR === undefined) {
+    process.env.HOSHINEKO_PORTALS_DIR = path.join(userData, 'e2e-portals');
+  }
   app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
   // 全局看门狗：任一环节挂起（如 Wayland 合成器竞态导致 whenReady 不落定）
   // 时强制退出，避免测试进程无限期静默挂住

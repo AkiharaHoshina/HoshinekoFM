@@ -20,13 +20,22 @@
 #   HOSHINEKO_APPIMAGE_STAGE - AppImage 暂存文件路径（AppImage 经 FUSE 挂载
 #                              运行，root 读不到挂载点内容：主入口以用户身份
 #                              先暂存到 /tmp，root 重入时从此复制安装）
+#   HOSHINEKO_VERSION        - 应用版本号（写入 portal 目录的 hoshineko.version，
+#                              供应用启动时检测「已安装 portal 版本 ≠ 当前
+#                              版本」并提示重装；pkexec 会消毒环境，重入时
+#                              须显式透传）
+#   HOSHINEKO_PORTALS_DIR    - portal 配置目录覆盖（默认 /usr/share/...；
+#                              测试沙箱用）
 #   APPIMAGE                 - AppImage 运行路径（用户级副本与桌面入口用；
 #                              pkexec 会消毒环境，重入时须显式透传）
+#
+# 本脚本可被 reinstall.sh source 复用函数（见 reinstall.sh）：主入口 case
+# 包裹在 BASH_SOURCE 守卫内，被 source 时不执行主流程。
 set -euo pipefail
 
 PKG_DIR="${HOSHINEKO_PACKAGING_DIR:?需要 HOSHINEKO_PACKAGING_DIR（packaging 目录路径）}"
 
-PORTALS_DIR="/usr/share/xdg-desktop-portal/portals"
+PORTALS_DIR="${HOSHINEKO_PORTALS_DIR:-/usr/share/xdg-desktop-portal/portals}"
 SERVICES_DIR="/usr/share/dbus-1/services"
 PORTALS_CONF="$HOME/.config/xdg-desktop-portal/portals.conf"
 # 固定安装路径（可经环境变量覆盖：测试沙箱 / 定制安装）
@@ -77,6 +86,17 @@ root_install() {
     echo "[root] 检测到已安装的 HoshinekoFM，跳过二进制安装"
   else
     echo "[warn] 无 AppImage 暂存文件（开发模式或非 AppImage 运行）：跳过二进制安装，D-Bus 激活可能不可用" >&2
+  fi
+
+  # 版本号文件：应用启动时读取并与当前版本比较，不一致则提示重装
+  # （见 electron/handlers/system.ts system:get-portal-runtime-info）。
+  # HOSHINEKO_VERSION 由应用侧 runIntegrationScript 注入；手动运行时
+  # 缺省则跳过写入（保留旧文件内容）。
+  if [ -n "${HOSHINEKO_VERSION:-}" ]; then
+    printf '%s\n' "$HOSHINEKO_VERSION" > "$PORTALS_DIR/hoshineko.version"
+    echo "[root] 版本号文件已写入 $PORTALS_DIR/hoshineko.version（$HOSHINEKO_VERSION）"
+  else
+    echo "[warn] 无 HOSHINEKO_VERSION：跳过版本号文件写入（手动运行 install.sh 时属正常）" >&2
   fi
   echo "[root] portal 配置与 D-Bus 激活文件已安装"
 }
@@ -139,6 +159,9 @@ user_install() {
   kill_stale_services
 }
 
+# 主入口守卫：被 reinstall.sh source 复用函数时（BASH_SOURCE[0] != $0）
+# 不执行主流程，仅暴露 root_install/user_install/kill_stale_services 等函数。
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 case "${1:-}" in
   --root)
     root_install
@@ -180,6 +203,8 @@ case "${1:-}" in
         fi
         pkexec env "HOSHINEKO_PACKAGING_DIR=$PKG_DIR" \
           "HOSHINEKO_APPIMAGE_STAGE=$stage" \
+          "HOSHINEKO_PORTALS_DIR=$PORTALS_DIR" \
+          "HOSHINEKO_VERSION=${HOSHINEKO_VERSION:-}" \
           "APPIMAGE=${APPIMAGE:-}" "$0" --root
       else
         echo "[warn] 缺少 pkexec：跳过 root 级安装（portal 配置/激活文件需手动安装，见 README 系统集成）" >&2
@@ -190,3 +215,4 @@ case "${1:-}" in
     user_install
     ;;
 esac
+fi

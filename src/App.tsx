@@ -22,7 +22,7 @@ import { ThemeColorDialog } from "./components/ThemeColorDialog";
 import { TerminalPanel, DEFAULT_TERMINAL_HEIGHT } from "./components/TerminalPanel";
 import { TitleBar } from "./components/TitleBar";
 import type { IFile, GvfsVolume } from "./types/files";
-import type { BackendConflictInfo } from "./types/electron";
+import type { BackendConflictInfo, PortalRuntimeInfo } from "./types/electron";
 import { Dialog } from "./components/Dialog";
 import { Button } from "./components/Button";
 import { OutlinedTextField } from "./components/md";
@@ -52,6 +52,7 @@ import { BatchRenameDialog } from "./components/BatchRenameDialog";
 import { ConflictDialog } from "./components/ConflictDialog";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { AlertDialog } from "./components/AlertDialog";
+import { PortalVersionDialog } from "./components/PortalVersionDialog";
 import { DragActionDialog } from "./components/DragActionDialog";
 import {
   generateSafeName,
@@ -572,6 +573,26 @@ function AppContent() {
   } | null>(null);
 
   /**
+   * portal 运行时诊断信息（启动版本检查结果；开发详情弹窗的数据源）。
+   * ref 供稳定回调（maybeAlertPortalConflict）读取，state 供渲染。
+   */
+  const [portalRuntimeInfo, setPortalRuntimeInfo] = useState<PortalRuntimeInfo | null>(null);
+  const portalRuntimeInfoRef = useRef<PortalRuntimeInfo | null>(null);
+  /** 版本不一致标记：确认不一致后抑制冲突弹窗（重装一并解决冲突） */
+  const portalVersionMismatchRef = useRef(false);
+  /** 版本不一致弹窗（每次会话只弹一次；null = 无弹窗） */
+  const [portalVersionDialog, setPortalVersionDialog] = useState<{ mode: 'user' | 'dev' } | null>(null);
+  const versionDialogShownRef = useRef(false);
+  /** 一键重装进行中（「一键重装」按钮禁用防重入） */
+  const [reinstallBusy, setReinstallBusy] = useState(false);
+  /**
+   * portal 相关操作的带遮罩结果弹窗（toast 替代：安装/卸载/重装/
+   * 会话总线重启的结果——portal 故障属需用户明确知晓级别，toast 易
+   * 被忽略；null = 无弹窗）。
+   */
+  const [portalNotice, setPortalNotice] = useState<{ title: string; message: string } | null>(null);
+
+  /**
    * portal 后端冲突 → 弹窗警告（每次会话只弹一次）：
    * 冲突意味着 portal 文件选择器/保存器被旧版或僵尸后端劫持，属
    * 「文件打开方式错乱」级别故障，toast 易被忽略——用带遮罩的对话框
@@ -580,6 +601,9 @@ function AppContent() {
    */
   const maybeAlertPortalConflict = useCallback((conflicts: BackendConflictInfo[]) => {
     if (conflictAlertShownRef.current) return;
+    // 版本不一致时抑制冲突弹窗：只弹版本弹窗（重装一并解决冲突，
+    // 两个遮罩对话框叠层会打架）。版本弹窗每会话先于冲突弹窗触发。
+    if (portalVersionMismatchRef.current) return;
     const portalConflict = conflicts.find(
       (c) => c.backend === "portal" &&
         (c.state === "outdated" || c.state === "noVersion" || c.state === "unresponsive"),
@@ -614,6 +638,51 @@ function AppContent() {
     }
     return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
   };
+
+  /**
+   * 打包版版本弹窗内按 PgDn → 切换为开发详情视图（portal 运行时诊断
+   * 信息，调试入口）。开发版初始弹窗即为详情视图；PgDn 不反向切换。
+   */
+  useEffect(() => {
+    if (!portalVersionDialog) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'PageDown') return;
+      setPortalVersionDialog((d) => (d && d.mode === 'user' ? { mode: 'dev' } : d));
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [portalVersionDialog]);
+
+  /**
+   * 版本不一致弹窗「一键重装」：reinstall.sh 卸载 + 安装合并为单次
+   * pkexec 授权。成功后关闭版本弹窗并弹结果弹窗（含重启生效提示）；
+   * 失败弹错误详情弹窗（版本弹窗保持打开，可重试）。
+   */
+  const handleReinstallIntegration = useCallback(async () => {
+    if (reinstallBusy) return;
+    setReinstallBusy(true);
+    try {
+      const res = await window.electron?.reinstallSystemIntegration();
+      if (res?.success) {
+        setPortalVersionDialog(null);
+        setPortalNotice({
+          title: t("settings.portal_version_reinstalled"),
+          message: t("settings.portal_version_restart_hint"),
+        });
+        // 版本号文件已更新为当前版本：作废不一致标记，后续冲突弹窗
+        // 恢复可弹（当前会话仍残留旧常驻时设置页可见详情）
+        portalVersionMismatchRef.current = false;
+      } else {
+        const detail = (res?.error || res?.output || '').trim().split('\n').pop() || '';
+        setPortalNotice({
+          title: t("settings.portal_version_reinstall_failed"),
+          message: detail ? detail.slice(-400) : t("settings.portal_version_reinstall_failed"),
+        });
+      }
+    } finally {
+      setReinstallBusy(false);
+    }
+  }, [reinstallBusy]);
 
   /** 设置对话框打开时刷新默认文件管理器状态（异步回填） */
   useEffect(() => {
@@ -657,14 +726,32 @@ function AppContent() {
   }, [settingsDialogOpen, maybeAlertPortalConflict]);
 
   /**
-   * 启动时查询后端总线名冲突（注册失败诊断）：portal 后端被旧版常驻
-   * 或无响应占名时弹一次警告对话框（带遮罩，见 maybeAlertPortalConflict；
-   * 同版本常驻属正常，不弹）。结果同时供设置页「系统集成」行常驻展示。
+   * 启动时检查已安装 portal 版本 + 查询后端总线名冲突（顺序执行）：
+   * 1. 版本号文件与当前版本不一致（或缺失）→ 弹「一键重装」版本弹窗
+   *    （打包版双按钮；开发版仅取消 + 运行时诊断详情，见
+   *    PortalVersionDialog）。仅 portal 配置已安装时才有此检查；
+   *    取消后下次启动仍会弹（版本文件不变）。
+   * 2. 冲突报告：版本不一致时抑制冲突弹窗（重装一并解决冲突，
+   *    见 maybeAlertPortalConflict）；一致时才按冲突状态弹警告。
+   *    报告同时供设置页「系统集成」行常驻展示。
    */
   useEffect(() => {
     let cancelled = false;
     void window.electron
-      ?.getBackendConflicts()
+      ?.getPortalRuntimeInfo()
+      .then((info) => {
+        if (cancelled || !info) return null;
+        portalRuntimeInfoRef.current = info;
+        setPortalRuntimeInfo(info);
+        if (info.portalInstalled && info.versionMismatch) {
+          portalVersionMismatchRef.current = true;
+          if (!versionDialogShownRef.current) {
+            versionDialogShownRef.current = true;
+            setPortalVersionDialog({ mode: info.isPackaged ? 'user' : 'dev' });
+          }
+        }
+        return window.electron?.getBackendConflicts();
+      })
       .then((res) => {
         if (cancelled || !Array.isArray(res)) return;
         setBackendConflicts(res);
@@ -731,20 +818,22 @@ function AppContent() {
     try {
       const res = await window.electron?.installSystemIntegration();
       if (res?.success) {
-        showToast(t("settings.integration_installed"), "success");
         // 安装脚本已杀掉旧的服务模式常驻（--portal/--filemanager1）；
         // 本窗口自身注册的后端仍是旧代码，重启后（或 D-Bus 按需激活
         // 新固定路径副本）才以新版本应答 portal/FileManager1 请求。
-        showToast(t("settings.integration_backend_restart_hint"), "info");
+        setPortalNotice({
+          title: t("settings.integration_installed"),
+          message: t("settings.integration_backend_restart_hint"),
+        });
         const status = await window.electron?.getSystemIntegrationStatus();
         if (status) setIntegrationStatus(status);
       } else {
         // 附脚本错误细节（stderr 优先，截尾），便于定位偶发失败
         const detail = (res?.error || res?.output || '').trim().split('\n').pop() || '';
-        showToast(
-          detail ? `${t("settings.integration_failed")}：${detail.slice(-160)}` : t("settings.integration_failed"),
-          "error",
-        );
+        setPortalNotice({
+          title: t("settings.integration_failed"),
+          message: detail ? detail.slice(-400) : t("settings.integration_failed"),
+        });
       }
     } finally {
       setIntegrationBusy(false);
@@ -758,15 +847,18 @@ function AppContent() {
     try {
       const res = await window.electron?.uninstallSystemIntegration();
       if (res?.success) {
-        showToast(t("settings.integration_uninstalled"), "success");
+        setPortalNotice({
+          title: t("settings.integration_uninstalled"),
+          message: t("settings.integration_backend_restart_hint"),
+        });
         const status = await window.electron?.getSystemIntegrationStatus();
         if (status) setIntegrationStatus(status);
       } else {
         const detail = (res?.error || res?.output || '').trim().split('\n').pop() || '';
-        showToast(
-          detail ? `${t("settings.integration_uninstall_failed")}：${detail.slice(-160)}` : t("settings.integration_uninstall_failed"),
-          "error",
-        );
+        setPortalNotice({
+          title: t("settings.integration_uninstall_failed"),
+          message: detail ? detail.slice(-400) : t("settings.integration_uninstall_failed"),
+        });
       }
     } finally {
       setIntegrationBusy(false);
@@ -789,7 +881,11 @@ function AppContent() {
     try {
       const res = await window.electron?.restartSessionBus();
       if (res?.success) {
-        showToast(t("settings.session_bus_restarted"), "success");
+        // 会话总线重建后主进程自动重新注册后端（数秒），无需重启应用
+        setPortalNotice({
+          title: t("settings.session_bus_restarted"),
+          message: "",
+        });
         // 总线重建 + 后端重新注册需要数秒：延迟刷新冲突报告与状态
         setTimeout(() => {
           void window.electron?.getBackendConflicts()
@@ -800,10 +896,10 @@ function AppContent() {
         }, 4000);
       } else {
         const detail = (res?.error || '').trim().split('\n').pop() || '';
-        showToast(
-          detail ? `${t("settings.session_bus_restart_failed")}：${detail.slice(-160)}` : t("settings.session_bus_restart_failed"),
-          "error",
-        );
+        setPortalNotice({
+          title: t("settings.session_bus_restart_failed"),
+          message: detail ? detail.slice(-400) : t("settings.session_bus_restart_failed"),
+        });
       }
     } finally {
       setSessionBusBusy(false);
@@ -1859,6 +1955,26 @@ function AppContent() {
                 : ""
             }
             onClose={() => setConflictAlert(null)}
+          />
+
+          {/* portal 版本不一致弹窗：打包版取消/一键重装（PgDn 切换开发
+              详情）；开发版仅取消 + 运行时诊断详情 */}
+          <PortalVersionDialog
+            open={!!portalVersionDialog}
+            mode={portalVersionDialog?.mode ?? "user"}
+            info={portalRuntimeInfo}
+            busy={reinstallBusy}
+            onReinstall={() => void handleReinstallIntegration()}
+            onClose={() => setPortalVersionDialog(null)}
+          />
+
+          {/* portal 相关操作结果弹窗（toast 替代：安装/卸载/重装/会话
+              总线重启的结果，带遮罩强制用户知晓） */}
+          <AlertDialog
+            open={!!portalNotice}
+            title={portalNotice?.title ?? ""}
+            message={portalNotice?.message ?? ""}
+            onClose={() => setPortalNotice(null)}
           />
 
           <DragActionDialog

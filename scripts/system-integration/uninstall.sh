@@ -18,11 +18,16 @@
 # 环境变量：
 #   HOSHINEKO_PACKAGING_DIR - packaging 目录（本脚本不读取，仅与 install.sh
 #                             保持同参数兼容，可缺省）
+#   HOSHINEKO_PORTALS_DIR   - portal 配置目录覆盖（默认 /usr/share/...；
+#                             与 install.sh 一致；测试沙箱用）
 #   APPIMAGE                - AppImage 运行路径（桌面入口 Exec 恢复目标；
 #                             pkexec 会消毒环境，重入时须显式透传）
+#
+# 本脚本可被 reinstall.sh source 复用函数（见 reinstall.sh）：主入口 case
+# 包裹在 BASH_SOURCE 守卫内，被 source 时不执行主流程。
 set -euo pipefail
 
-PORTALS_DIR="/usr/share/xdg-desktop-portal/portals"
+PORTALS_DIR="${HOSHINEKO_PORTALS_DIR:-/usr/share/xdg-desktop-portal/portals}"
 SERVICES_DIR="/usr/share/dbus-1/services"
 PORTALS_CONF="$HOME/.config/xdg-desktop-portal/portals.conf"
 # 固定安装路径（可经环境变量覆盖：测试沙箱 / 定制安装，与 install.sh 一致）
@@ -54,6 +59,7 @@ kill_stale_services() {
 
 root_uninstall() {
   rm -f "$PORTALS_DIR/hoshineko.portal"
+  rm -f "$PORTALS_DIR/hoshineko.version"
   rm -f "$SERVICES_DIR/org.freedesktop.impl.portal.desktop.hoshineko.service"
   # FileManager1 是通用总线名，仅当内容属于本应用（Exec 指向 HoshinekoFM）才移除
   if [ -f "$SERVICES_DIR/org.freedesktop.FileManager1.service" ] \
@@ -126,6 +132,9 @@ user_uninstall() {
   kill_stale_services
 }
 
+# 主入口守卫：被 reinstall.sh source 复用函数时（BASH_SOURCE[0] != $0）
+# 不执行主流程，仅暴露 root_uninstall/user_uninstall/kill_stale_services 等函数。
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 case "${1:-}" in
   --root)
     root_uninstall
@@ -137,6 +146,7 @@ case "${1:-}" in
     if [ "$(id -u)" -ne 0 ]; then
       if command -v pkexec >/dev/null 2>&1; then
         pkexec env "HOSHINEKO_PACKAGING_DIR=${HOSHINEKO_PACKAGING_DIR:-}" \
+          "HOSHINEKO_PORTALS_DIR=$PORTALS_DIR" \
           "APPIMAGE=${APPIMAGE:-}" "$0" --root
       else
         echo "[warn] 缺少 pkexec：跳过 root 级卸载（请手动移除 /usr/share 下的 portal 配置与 D-Bus 激活文件）" >&2
@@ -147,3 +157,4 @@ case "${1:-}" in
     user_uninstall
     ;;
 esac
+fi

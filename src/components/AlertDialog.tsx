@@ -6,7 +6,8 @@ import { t } from '../i18n';
 interface AlertDialogProps {
   open: boolean;
   title: string;
-  message: string;
+  /** 正文；省略时仅显示标题（如无补充说明的结果通知） */
+  message?: string;
   onClose: () => void;
 }
 
@@ -31,6 +32,6 @@ export const AlertDialog: React.FC<AlertDialogProps> = ({
       <Button onClick={onClose}>{t('dialog.button.done')}</Button>
     }
   >
-    <div style={{ fontSize: '14px', lineHeight: '1.5', wordBreak: 'break-all' }}>{message}</div>
+    {message && <div style={{ fontSize: '14px', lineHeight: '1.5', wordBreak: 'break-all' }}>{message}</div>}
   </Dialog>
 );

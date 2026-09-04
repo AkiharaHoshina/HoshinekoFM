@@ -29,6 +29,41 @@ export interface BackendConflictInfo {
   appVersion: string;
 }
 
+/**
+ * portal 运行时诊断信息（主进程 system:get-portal-runtime-info 生成）：
+ * 启动版本检查（版本不一致弹窗）与开发模式详情弹窗共用。
+ * versionMismatch 仅当版本号文件存在且与当前版本不同才为 true——
+ * 版本文件缺失视为「portal 未被新版安装流程安装过」（旧流程残留/
+ * 不完整安装），不弹版本弹窗。
+ */
+export interface PortalRuntimeInfo {
+  /** 是否打包版运行（开发模式时前端弹「开发者详情」单按钮弹窗） */
+  isPackaged: boolean;
+  /** 当前应用版本（package.json 的 version） */
+  appVersion: string;
+  /** portal 配置是否已安装（未安装时前端不弹版本弹窗） */
+  portalInstalled: boolean;
+  /** 安装脚本写入的版本号（hoshineko.version 内容；缺失为 null） */
+  installedVersion: string | null;
+  /** 已安装 portal 版本与当前应用版本是否不一致 */
+  versionMismatch: boolean;
+  /** portal 配置目录（HOSHINEKO_PORTALS_DIR 覆盖后的实际路径） */
+  portalsDir: string;
+  /** 版本号文件路径 */
+  versionFilePath: string;
+  /** 系统集成安装状态（各文件存在性） */
+  integration: {
+    portalConfig: boolean;
+    fileManager1Service: boolean;
+    portalService: boolean;
+    portalsConf: boolean;
+  };
+  /** 本进程最近一次 D-Bus 后端注册结果；null = 尚未注册 */
+  registration: { portal: boolean; fileManager1: boolean } | null;
+  /** 后端总线名冲突诊断（缓存报告，未探测返回空数组） */
+  conflicts: BackendConflictInfo[];
+}
+
 /** Parameters for starting a batch job on the main process. */
 export interface StartJobParams {
   type: 'trash' | 'copy' | 'move' | 'delete';
@@ -271,6 +306,22 @@ export interface IElectronAPI {
       output: string;
       error: string;
     }>;
+    /**
+     * 一键重装系统集成（版本不一致弹窗「一键重装」按钮）：reinstall.sh
+     * 把卸载 + 安装合并为单次 pkexec 授权。错误码同安装。
+     */
+    reinstallSystemIntegration: (userOnly?: boolean) => Promise<{
+      success: boolean;
+      code?: 'NO_SCRIPT' | 'SCRIPT_FAILED';
+      output: string;
+      error: string;
+    }>;
+    /**
+     * portal 运行时诊断信息：启动时检查已安装 portal 版本号与当前
+     * 版本是否一致（不一致弹「一键重装」弹窗），并聚合安装状态、
+     * 后端注册结果与冲突报告供开发模式详情弹窗展示。
+     */
+    getPortalRuntimeInfo: () => Promise<PortalRuntimeInfo>;
     /**
      * 系统集成安装状态（各文件存在性；portalsConf 为内容检测：
      * portals.conf 是否含 preferred=hoshineko 项）
