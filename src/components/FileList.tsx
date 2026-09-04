@@ -216,6 +216,23 @@ const FileListComponent: React.FC<FileListProps> = ({
     setFailedImages(new Set());
   }, [currentPath]);
 
+  // 目录切换时回到顶部：react-window 复用滚动容器，条目数变化不会自动
+  // 复位——不处理则进入新目录停留在旧目录的滚动位置（主窗口与选择器/
+  // 保存器同源修复）。同一路径的刷新（fs 事件/重命名/粘贴等）不触发，
+  // 保持当前滚动位置不跳动；首帧 List 未挂载时跳过（容器初始即在顶部）。
+  // 必须声明在 scrollToFileName 效果之前：定位/揭示流程（路径变化 +
+  // 滚动目标同一次提交）先回到顶部再滚到目标，最终位置才是目标行。
+  const prevCurrentPathRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (prevCurrentPathRef.current === currentPath) return;
+    prevCurrentPathRef.current = currentPath;
+    const listElNow = listImperativeRef.current;
+    // 空目录无行可滚（scrollToRow 对 rowCount=0 抛 RangeError）
+    if (!listElNow || files.length === 0) return;
+    listElNow.scrollToRow({ index: 0, align: "start" });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- listImperativeRef 为稳定 ref 对象
+  }, [currentPath, listEl, files]);
+
   // Scroll to file when scrollToFileName changes and files are loaded
   const prevScrollTargetRef = useRef<string | undefined>(undefined);
   useEffect(() => {
