@@ -690,7 +690,7 @@ function AppContent() {
         setPortalVersionDialog(null);
         setPortalNotice({
           title: t("settings.portal_version_reinstalled"),
-          message: t("settings.portal_version_restart_hint"),
+          message: t("settings.portal_version_reinstalled_hint"),
         });
         // 版本号文件已更新为当前版本：作废不一致标记，后续冲突弹窗
         // 恢复可弹（当前会话仍残留旧常驻时设置页可见详情）
@@ -841,9 +841,9 @@ function AppContent() {
     try {
       const res = await window.electron?.installSystemIntegration();
       if (res?.success) {
-        // 安装脚本已杀掉旧的服务模式常驻（--portal/--filemanager1）；
-        // 本窗口自身注册的后端仍是旧代码，重启后（或 D-Bus 按需激活
-        // 新固定路径副本）才以新版本应答 portal/FileManager1 请求。
+        // 安装脚本已杀掉旧的服务模式常驻（--portal/--filemanager1），
+        // 主进程经 onIntegrationChanged 回调立即重新注册后端——
+        // 本窗口直接以新代码接管总线名，无需重启应用
         setPortalNotice({
           title: t("settings.integration_installed"),
           message: t("settings.integration_backend_restart_hint"),

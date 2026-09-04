@@ -76,6 +76,27 @@ async function queryNameOwner(bus: dbus.MessageBus, name: string): Promise<strin
 }
 
 /**
+ * 查询唯一连接名所属进程 PID（dbus-daemon 的 GetConnectionUnixProcessID）。
+ * 用于判别「总线名被本进程另一条连接持有」——安装/重装成功后重新注册
+ * 时（registerServiceBackends 重复调用）新连接 requestName 会得到 EXISTS，
+ * 不能误判为冲突（旧连接仍在服务，名字照常应答）。
+ *
+ * @param bus - 会话总线连接
+ * @param owner - 唯一连接名（如 :1.42）
+ * @returns 拥有者 PID；查询失败返回 null
+ */
+async function queryOwnerPid(bus: dbus.MessageBus, owner: string): Promise<number | null> {
+  try {
+    const proxy = await bus.getProxyObject('org.freedesktop.DBus', '/org/freedesktop/DBus');
+    const iface = proxy.getInterface('org.freedesktop.DBus');
+    const pid: unknown = await iface.GetConnectionUnixProcessID(owner);
+    return typeof pid === 'number' ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 注册 FileManager1 后端。
  * 会话总线不可用、总线名被占用时返回 false 并输出 console.error
  * （含占名者 owner，便于 5 秒内定位冲突）。
@@ -108,6 +129,13 @@ export async function setupFileManager1(
     const reply = await bus.requestName(busName, dbus.NameFlag.DO_NOT_QUEUE);
     if (reply !== 1) {
       const owner = await queryNameOwner(bus, busName);
+      // 名字被本进程既有连接持有（安装/重装成功后重新注册时常见）：
+      // 视为注册成功——旧连接仍在服务、名字照常应答，继续使用即可；
+      // 若按冲突上报会误弹「旧版常驻」警告
+      if (owner && (await queryOwnerPid(bus, owner)) === process.pid) {
+        bus.disconnect();
+        return true;
+      }
       console.error(
         `[fm1] 总线名 ${busName} 注册失败：已被占用${owner ? `（owner: ${owner}）` : ''}。` +
         '占名者可能是旧常驻服务进程（--filemanager1）或另一文件管理器实例——' +

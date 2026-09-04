@@ -226,6 +226,27 @@ async function queryNameOwner(bus: dbus.MessageBus, name: string): Promise<strin
 }
 
 /**
+ * 查询唯一连接名所属进程 PID（dbus-daemon 的 GetConnectionUnixProcessID）。
+ * 用于判别「总线名被本进程另一条连接持有」——安装/重装成功后重新注册
+ * 时（registerServiceBackends 重复调用）新连接 requestName 会得到 EXISTS，
+ * 不能误判为冲突（旧连接仍在服务，名字照常应答）。
+ *
+ * @param bus - 会话总线连接
+ * @param owner - 唯一连接名（如 :1.42）
+ * @returns 拥有者 PID；查询失败返回 null
+ */
+async function queryOwnerPid(bus: dbus.MessageBus, owner: string): Promise<number | null> {
+  try {
+    const proxy = await bus.getProxyObject('org.freedesktop.DBus', '/org/freedesktop/DBus');
+    const iface = proxy.getInterface('org.freedesktop.DBus');
+    const pid: unknown = await iface.GetConnectionUnixProcessID(owner);
+    return typeof pid === 'number' ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 注册 portal FileChooser 后端（**xdg-desktop-portal ≥ 1.19 新协议**：
  * OpenFile 直接返回 `(u, a{sv})`——响应码 + 结果字典，无 Request 对象
  * 往返、无 Response 信号）。
@@ -258,6 +279,13 @@ export async function setupPortalFileChooser(
     const reply = await bus.requestName(busName, dbus.NameFlag.DO_NOT_QUEUE);
     if (reply !== 1) {
       const owner = await queryNameOwner(bus, busName);
+      // 名字被本进程既有连接持有（安装/重装成功后重新注册时常见）：
+      // 视为注册成功——旧连接仍在服务、名字照常应答，继续使用即可；
+      // 若按冲突上报会误弹「旧版常驻」警告
+      if (owner && (await queryOwnerPid(bus, owner)) === process.pid) {
+        bus.disconnect();
+        return true;
+      }
       console.error(
         `[portal] 总线名 ${busName} 注册失败：已被占用${owner ? `（owner: ${owner}）` : ''}。` +
         '占名者可能是旧常驻服务进程（--portal）或另一实例——若刚升级/重装，' +

@@ -934,8 +934,14 @@ export function resetBackendConflictCache(): void {
  *
  * @param onSessionBusRestarted - 会话总线重启成功后的回调（main.ts 注入：
  *   重新注册 D-Bus 服务后端并作废冲突探测缓存；e2e harness 不注入）
+ * @param onIntegrationChanged - 系统集成安装/卸载/重装成功后的回调
+ *   （main.ts 注入：脚本已清理旧常驻，立即重新注册后端让本窗口接管
+ *   总线名——无需重启应用即用新版本应答；e2e harness 不注入）
  */
-export function registerSystemHandlers(onSessionBusRestarted?: () => void) {
+export function registerSystemHandlers(
+  onSessionBusRestarted?: () => void,
+  onIntegrationChanged?: () => void,
+) {
   /** 窗口管理器类型检测（自定义标题栏跟随系统模式） */
   ipcMain.handle('system:detect-window-manager', () => detectWindowManager());
 
@@ -1238,7 +1244,11 @@ export function registerSystemHandlers(onSessionBusRestarted?: () => void) {
    * @param userOnly - 仅执行用户级部分（无 polkit 环境降级 / 测试用）
    */
   ipcMain.handle('system:install-system-integration', async (_event, userOnly: unknown) => {
-    return runIntegrationScript('install.sh', userOnly === true ? ['--user-only'] : []);
+    const res = await runIntegrationScript('install.sh', userOnly === true ? ['--user-only'] : []);
+    // 脚本已清理旧常驻：立即重新注册后端，本窗口直接接管总线名
+    //（下次 portal 请求即由新版本应答，无需重启应用）
+    if (res.success) onIntegrationChanged?.();
+    return res;
   });
 
   /**
@@ -1249,7 +1259,11 @@ export function registerSystemHandlers(onSessionBusRestarted?: () => void) {
    * @param userOnly - 仅执行用户级部分（无 polkit 环境降级 / 测试用）
    */
   ipcMain.handle('system:uninstall-system-integration', async (_event, userOnly: unknown) => {
-    return runIntegrationScript('uninstall.sh', userOnly === true ? ['--user-only'] : []);
+    const res = await runIntegrationScript('uninstall.sh', userOnly === true ? ['--user-only'] : []);
+    // 脚本已清理常驻：重新注册后端与启动时行为保持一致（GUI 仍持名，
+    // 卸载只是移除激活文件与 portal 配置）
+    if (res.success) onIntegrationChanged?.();
+    return res;
   });
 
   /**
@@ -1260,7 +1274,12 @@ export function registerSystemHandlers(onSessionBusRestarted?: () => void) {
    * @param userOnly - 仅执行用户级部分（无 polkit 环境降级 / 测试用）
    */
   ipcMain.handle('system:reinstall-system-integration', async (_event, userOnly: unknown) => {
-    return runIntegrationScript('reinstall.sh', userOnly === true ? ['--user-only'] : []);
+    const res = await runIntegrationScript('reinstall.sh', userOnly === true ? ['--user-only'] : []);
+    // 重装脚本已击杀旧常驻并验证退出：立即重新注册后端，本窗口
+    // 直接以新版本接管 portal 总线名，无需重启应用（重装前旧常驻
+    // 持名导致本窗口注册失败的场景由此闭环）
+    if (res.success) onIntegrationChanged?.();
+    return res;
   });
 
   /**

@@ -825,12 +825,16 @@ const handleBackendsResult = ({ portal, fileManager1 }: { portal: boolean; fileM
 };
 
 registerFsHandlers();
-// 会话总线重启（设置页按钮）后：作废冲突探测缓存并重新注册后端——
-// 僵尸占名随总线重建消失，注册恢复成功；仍失败则重新探测给出新报告
-registerSystemHandlers(() => {
+// 后端重新注册统一入口（会话总线重启后 / 系统集成安装·卸载·重装成功后）：
+// 作废冲突探测缓存并重新注册后端——僵尸占名随总线重建消失、旧常驻随
+// 集成脚本击杀，注册恢复成功；仍失败则重新探测给出新报告。
+// 注册到「本进程既有连接仍持名」时 setup 内已按自持名视为成功
+// （见 portalFileChooser.ts / fileManager1.ts），不会误报冲突。
+const reRegisterBackends = () => {
   resetBackendConflictCache();
   void registerBackends().then(handleBackendsResult);
-});
+};
+registerSystemHandlers(reRegisterBackends, reRegisterBackends);
 registerWindowHandlers(getWindows);
 registerThemeHandlers();
 registerPickerHandlers((config, parent) =>

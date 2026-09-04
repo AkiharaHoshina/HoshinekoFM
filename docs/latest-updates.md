@@ -1,5 +1,31 @@
 # 更新日志
 
+## v0.11.35 — 重装后旧 portal 仍在应答根治：总线名精确击杀 + 安装后立即接管
+
+- **根因**：旧常驻清理（`kill_stale_services`）此前只按 cmdline 模式
+  `pkill -f 'HoshinekoFM.*--portal'` 发一次 SIGTERM——AppImage 被改名/
+  非标准路径启动的常驻匹配不到，挂死/忙死的常驻 TERM 无效，导致重装后
+  旧 portal 仍持总线名应答。
+- **脚本增强**（install.sh / uninstall.sh 的 `kill_stale_services`）：
+  - 首选 `busctl --user status <总线名>` 解析拥有者 PID 精确击杀（不依赖
+    cmdline 长相），`timeout 5` 防挂起；
+  - 拥有者非服务形态（cmdline 无 `--portal`/`--filemanager1`，如正在
+    运行的 GUI）时**不杀**，仅输出警告提示重启应用（安装脚本由 GUI
+    调用，杀 GUI 等于自杀且丢未落盘数据）；
+  - TERM → 最多 5 秒等待 → 仍存活升级 KILL → 再验证退出；
+  - pkill 模式匹配降级为兜底（覆盖其他会话总线残留/无 busctl 环境），
+    同样带升级与验证；`HOSHINEKO_SKIP_SERVICE_KILL=1` 守卫不变。
+- **安装/卸载/重装成功后立即重新注册后端**：`registerSystemHandlers`
+  新增 `onIntegrationChanged` 回调（main.ts 注入 `reRegisterBackends`，
+  与会话总线重启同链路），脚本已验证击杀后本窗口直接以新代码接管
+  总线名——无需重启应用即由新版本应答；`setupPortalFileChooser` /
+  `setupFileManager1` 注册名时若名字被**本进程既有连接**持有
+  （GetConnectionUnixProcessID 比对 PID）视为注册成功，避免重注册
+  误报冲突。
+- **文案**：重装/安装/卸载结果提示改为「已立即接管，无需重启」
+  （12 语言），版本弹窗提示改为前置说明；新增
+  `settings.portal_version_reinstalled_hint` 键。
+
 ## v0.11.34 — 默认配置 + 恢复默认设置 + 选择器本地化 + 滚动文本确认生效
 
 - **默认配置（首次使用，无保存设置时）**：语言跟随系统、显示隐藏文件

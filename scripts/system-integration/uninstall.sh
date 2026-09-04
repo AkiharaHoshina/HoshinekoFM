@@ -40,8 +40,57 @@ is_appimage() {
   [ -f "$1" ] && [ "$(dd if="$1" bs=1 skip=8 count=2 2>/dev/null)" = "AI" ]
 }
 
-# 清理服务模式常驻进程（--portal / --filemanager1 形态，精确匹配
-# 服务参数、不杀 GUI 窗口）：卸载后常驻进程不再继续持总线名应答。
+# 会话总线名（与 packaging/dbus 激活文件的 Name 一致）：busctl 按名
+# 解析拥有者 PID 精确击杀，不依赖进程 cmdline 长相——AppImage 被改名、
+# 非标准路径启动的旧常驻也能命中（cmdline 匹配兜底只覆盖「路径含
+# HoshinekoFM」的进程）。
+PORTAL_BUS_NAME="org.freedesktop.impl.portal.desktop.hoshineko"
+FM1_BUS_NAME="org.freedesktop.FileManager1"
+
+# 解析会话总线名拥有者 PID。busctl 缺失/会话总线不可用/名字无主 → 输出空。
+# timeout 兜底：异常总线状态下 busctl 可能挂起，不能拖死卸载流程。
+bus_owner_pid() {
+  command -v busctl >/dev/null 2>&1 || return 0
+  timeout 5 busctl --user status "$1" 2>/dev/null \
+    | awk '/^[[:space:]]*PID=/{sub(/^[[:space:]]*PID=/,""); print; exit}'
+}
+
+# 判断 PID 是否本应用服务模式常驻（cmdline 含 --portal / --filemanager1）。
+# 总线名拥有者可能是正在运行的 GUI（无服务参数）——杀 GUI 会丢未落盘
+# 数据（卸载脚本由 GUI 调用，杀 GUI 等于自杀），只能警告提示重启应用。
+is_service_resident() {
+  [ -r "/proc/$1/cmdline" ] || return 1
+  tr '\0' ' ' < "/proc/$1/cmdline" | grep -Eq -- '--(portal|filemanager1)'
+}
+
+# 对单个 PID：TERM → 最多等 5 秒 → 仍存活升级 KILL → 验证退出。
+# 挂死/忙死的常驻（TERM 无效）不升级会继续持总线名应答旧请求。
+kill_pid_escalate() {
+  local pid="$1"
+  kill -TERM "$pid" 2>/dev/null || return 1
+  local i
+  for i in 1 2 3 4 5; do
+    if ! kill -0 "$pid" 2>/dev/null; then return 0; fi
+    sleep 1
+  done
+  echo "[warn] PID $pid 未响应 SIGTERM，升级 SIGKILL" >&2
+  kill -KILL "$pid" 2>/dev/null || true
+  sleep 1
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "[warn] PID $pid 仍存活（不可中断状态或权限不足），总线名可能仍被占用" >&2
+    return 1
+  fi
+  return 0
+}
+
+# 清理服务模式常驻进程（--portal / --filemanager1 形态）：卸载后常驻
+# 进程不应继续持总线名应答。策略：
+#   1. 首选 busctl 按总线名解析拥有者 PID 精确击杀（AppImage 改名等
+#      cmdline 不含 HoshinekoFM 的旧常驻也能命中）；拥有者非服务形态
+#      （正在运行的 GUI / 其他文件管理器占 FileManager1）时不杀，仅警告；
+#   2. 兜底 cmdline 模式匹配（覆盖其他会话总线残留 + 无 busctl 环境），
+#      精确匹配服务参数、不杀 GUI 窗口；
+#   3. 两路都带 TERM → KILL 升级与存活验证，杜绝「杀不掉仍在应答」。
 # e2e/沙箱环境设 HOSHINEKO_SKIP_SERVICE_KILL=1 跳过。
 kill_stale_services() {
   echo "[user] 清理 portal/FileManager1 常驻进程"
@@ -49,9 +98,30 @@ kill_stale_services() {
     echo "[user] HOSHINEKO_SKIP_SERVICE_KILL 已设置，跳过 kill"
     return
   fi
+  if command -v busctl >/dev/null 2>&1; then
+    local bus_name pid
+    for bus_name in "$PORTAL_BUS_NAME" "$FM1_BUS_NAME"; do
+      pid="$(bus_owner_pid "$bus_name")"
+      [ -n "$pid" ] || continue
+      if ! is_service_resident "$pid"; then
+        echo "[warn] $bus_name 由非服务模式进程持有（PID $pid）：若为正在运行的 HoshinekoFM，请重启应用使新版接管" >&2
+        continue
+      fi
+      echo "[user] 击杀 $bus_name 旧常驻（PID $pid）"
+      kill_pid_escalate "$pid"
+    done
+  fi
   if command -v pkill >/dev/null 2>&1; then
-    pkill -f 'HoshinekoFM.*--portal' 2>/dev/null || true
-    pkill -f 'HoshinekoFM.*--filemanager1' 2>/dev/null || true
+    local pattern i
+    for pattern in 'HoshinekoFM.*--portal' 'HoshinekoFM.*--filemanager1'; do
+      pkill -TERM -f "$pattern" 2>/dev/null || true
+      i=0
+      while pgrep -f "$pattern" >/dev/null 2>&1 && [ "$i" -lt 5 ]; do
+        sleep 1
+        i=$((i + 1))
+      done
+      pkill -KILL -f "$pattern" 2>/dev/null || true
+    done
   else
     echo "[warn] 缺少 pkill：常驻进程需手动清理" >&2
   fi
