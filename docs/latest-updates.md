@@ -1,5 +1,14 @@
 # 更新日志
 
+## v0.11.33 — Places 单独配色区域（取消竖向分界线）
+
+- **调整**（`src/index.css`、`src/components/Sidebar.css`）：取消 Places
+  与文件区之间的竖向分界线；Places 改为单独颜色区域——深度介于左侧
+  功能栏（surface-container）与文件区（surface-container-low）之间：
+  M3 高程阶梯上两者相邻无现成 token，用 `color-mix` 对半混合两者；
+  两色均取自主题变量，设置里的 M3 取色变化时自动跟随重解。标签页栏
+  下方横向分界线保留。
+
 ## v0.11.33 — 侧边栏/标签页栏分界线
 
 - **新增**（`src/index.css`）：

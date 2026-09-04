@@ -1,6 +1,14 @@
 .sidebar {
     width: 200px;
-    background-color: var(--md-sys-color-surface-container-low);
+    /* Places 单独颜色区域：深度介于左侧功能栏（surface-container）与
+       文件区（surface-container-low）之间——M3 高程阶梯上两者相邻、
+       无现成 token，用 color-mix 对半混合；两色均来自主题变量，
+       设置里的 M3 取色变化时自动跟随重解 */
+    background-color: color-mix(
+        in srgb,
+        var(--md-sys-color-surface-container) 50%,
+        var(--md-sys-color-surface-container-low) 50%
+    );
     padding: 16px;
     display: flex;
     flex-direction: column;
