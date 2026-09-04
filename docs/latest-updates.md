@@ -1,5 +1,15 @@
 # 更新日志
 
+## v0.11.33 — 标签页栏并入 Places 配色区域（取消分界线）
+
+- **调整**（`src/index.css`、`src/components/TabBar.css`）：取消标签页栏
+  下方横向分界线；标签页栏区域改用与 Places 相同的配色——公共色抽成
+  `:root` 的 `--hoshineko-places-bg`（color-mix 对半混合功能栏与文件区
+  两色，随 M3 取色重解），`.tab-header-bar` 着此色、内部 `.tab-bar`
+  背景透明透出；**颜色区底线与标签胶囊底线对齐**——`.tab-bar` 高度
+  48→44（content-box 总高 52）+ `align-items: flex-end`，标签胶囊位置
+  不变（上 12/下 52），原来胶囊下方 4px 空余去除，区域底边即胶囊底边。
+
 ## v0.11.33 — Places 单独配色区域（取消竖向分界线）
 
 - **调整**（`src/index.css`、`src/components/Sidebar.css`）：取消 Places

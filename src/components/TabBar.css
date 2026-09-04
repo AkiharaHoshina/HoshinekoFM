@@ -1,11 +1,15 @@
 .tab-bar {
     display: flex;
-    align-items: center;
-    /* 与文件浏览区 / Places 同色，标签条与内容区之间不出现接缝 */
-    background: var(--md-sys-color-surface-container-low);
+    align-items: flex-end;
+    /* 背景透明：透出外层 .tab-header-bar 的 Places 同款区域色。
+       高度对齐：颜色区底线与标签胶囊底线对齐——content-box 下总高
+       = 44（内容）+ 8（上 padding）= 52，标签胶囊 40 底对齐后底边
+       即 52（与原视觉位置一致：胶囊上边 12/下边 52），不再在胶囊
+       下方留 4px 空余 */
+    background: transparent;
     padding: 8px 8px 0;
+    height: 44px;
     gap: 4px;
-    height: 48px;
     overflow-x: auto;
 }
 

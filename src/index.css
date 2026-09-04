@@ -137,6 +137,18 @@ html {
   overflow: hidden;
 }
 
+:root {
+  /* Places 与标签页栏的公共区域色：深度介于左侧功能栏
+     （surface-container）与文件区（surface-container-low）之间——
+     M3 高程阶梯上两者相邻无现成 token，用 color-mix 对半混合；
+     两色均取自主题变量，设置里的 M3 取色变化时自动跟随重解 */
+  --hoshineko-places-bg: color-mix(
+    in srgb,
+    var(--md-sys-color-surface-container) 50%,
+    var(--md-sys-color-surface-container-low) 50%
+  );
+}
+
 .app-shell {
   display: flex;
   flex: 1;
@@ -169,10 +181,10 @@ html {
   height: auto;
   display: flex;
   flex-direction: column;
-  /* 与文件浏览区同色：补上标签页与文件区之间的接缝 */
-  background: var(--md-sys-color-surface-container-low);
-  /* 标签页栏下方的分界线（从 Places 分界线处到最右） */
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  /* 标签页栏区域与 Places 同色（见 :root 的 --hoshineko-places-bg）：
+     内部 .tab-bar 背景透明透出此色；无底部分界线——颜色区底线与
+     标签胶囊底线对齐（TabBar 高度按此对齐调整） */
+  background: var(--hoshineko-places-bg);
 }
 
 .empty-state {
