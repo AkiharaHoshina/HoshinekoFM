@@ -1,6 +1,7 @@
 /**
- * e2e 05：主题颜色跨窗口同步（设置对话框 UI 路径 + 即时预览广播）。
- * A 在主题颜色二级对话框选择预设 → A/B 的 #app-theme CSS 完全一致。
+ * e2e 05：主题颜色跨窗口同步（预览卡先行 + 确定后全局应用）。
+ * A 在主题颜色二级对话框选择预设 → 仅预览卡变色（#app-theme 与 B 均不变）；
+ * 点「确定」后 A 全局应用并经 storage 同步，A/B 的 #app-theme CSS 一致。
  */
 const h = require('./harness.cjs');
 
@@ -27,11 +28,32 @@ const h = require('./harness.cjs');
     })()`);
     await h.waitDialogAnim();
 
-    // 选择第一个预设色盘 → 全局即时预览 + 跨窗口广播
-    await h.clickEl(winA, '.theme-color-preset', { index: 0 });
-    await h.waitFor(winA, `(document.getElementById('app-theme')?.textContent || '').includes('--md-sys-color-primary')`);
+    // 记录选择前 A/B 的注入主题 CSS（应为已保存主题或未注入）
+    const beforeA = await h.js(winA, `document.getElementById('app-theme')?.textContent ?? ''`);
+    const beforeB = await h.js(winB, `document.getElementById('app-theme')?.textContent ?? ''`);
 
-    // B 应收到预览广播并注入同一份 CSS
+    // 选择第一个预设色盘 → 仅预览卡变色（内联变量覆盖），全局不变
+    await h.clickEl(winA, '.theme-color-preset', { index: 0 });
+    await h.waitFor(winA, `(() => {
+      const card = document.querySelector('.theme-color-preview');
+      return !!card && (card.getAttribute('style') || '').includes('--md-sys-color-primary');
+    })()`, 5000);
+    const afterA = await h.js(winA, `document.getElementById('app-theme')?.textContent ?? ''`);
+    h.assert.strictEqual(afterA.value, beforeA.value, '选择预设后本窗口 #app-theme 不应变化');
+    const afterB = await h.js(winB, `document.getElementById('app-theme')?.textContent ?? ''`);
+    h.assert.strictEqual(afterB.value, beforeB.value, '选择预设后 B 窗口 #app-theme 不应变化（无预览广播）');
+
+    // 点「确定」→ 全局应用 + storage 同步到 B
+    await h.js(winA, `(() => {
+      const d = [...document.querySelectorAll('md-dialog')].find(x => x.open && x.querySelector('.theme-color-preview'));
+      [...d.querySelectorAll('md-filled-button, md-button')].find(b => /确定|OK/.test(b.textContent))?.click();
+      return true;
+    })()`);
+    await h.waitFor(winA, `(document.getElementById('app-theme')?.textContent || '').includes('--md-sys-color-primary')`, 8000);
+    const confirmedA = await h.js(winA, `document.getElementById('app-theme')?.textContent ?? ''`);
+    h.assert.notStrictEqual(confirmedA.value, beforeA.value, '确定后本窗口 #app-theme 应更新为所选预设');
+
+    // B 经 storage 同步后注入同一份 CSS
     const sync = await (async () => {
       const start = Date.now();
       while (Date.now() - start < 5000) {
@@ -42,11 +64,9 @@ const h = require('./harness.cjs');
       }
       return false;
     })();
-    h.assert.ok(sync, 'A/B 的 #app-theme CSS 应一致');
+    h.assert.ok(sync, '确定后 A/B 的 #app-theme CSS 应一致');
 
-    // 取消关闭（回退预览、跨窗口回退广播）
-    await h.key(winA, 'Escape');
-    await h.waitDialogAnim();
+    // 关闭设置对话框
     await h.key(winA, 'Escape');
     await h.waitDialogAnim();
   });

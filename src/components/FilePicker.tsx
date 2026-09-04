@@ -157,28 +157,9 @@ const FilePicker: React.FC = () => {
 
   const { handleDeviceMount, handleDeviceUnmount, handleDeviceEject, handleGvfsMount, handleGvfsUnmount } = useDeviceActions();
 
-  /** 主题配置变化（含首次挂载）时应用主题颜色——与 App 同构，跟随设置即时更新 */
+  /** 主题配置变化（含首次挂载）时应用主题颜色——与 App 同构，跟随设置同步 */
   useEffect(() => {
     void ThemeService.applyTheme(themeConfig);
-  }, [themeConfig]);
-
-  /**
-   * 主题实时预览订阅（与主窗口 App 同构）：主窗口在主题设置里
-   * 选择颜色时，主进程广播预览 CSS，选择器窗口立即注入同步；
-   * 预览结束（取消/关闭）时重新应用已保存主题。
-   */
-  useEffect(() => {
-    if (!window.electron?.onThemePreview || !window.electron?.onThemePreviewEnd) return;
-    const offPreview = window.electron.onThemePreview((css) => {
-      ThemeService.injectCss(css);
-    });
-    const offEnd = window.electron.onThemePreviewEnd(() => {
-      void ThemeService.applyTheme(themeConfig);
-    });
-    return () => {
-      offPreview();
-      offEnd();
-    };
   }, [themeConfig]);
 
   /**

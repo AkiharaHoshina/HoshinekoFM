@@ -1,5 +1,25 @@
 # 更新日志
 
+## v0.11.33 — 主题颜色调整改为仅预览卡变色（确定才全局应用）
+
+- **现象**：主题设置里选择预设/壁纸取色/自定义颜色时**全局立即变色**并
+  广播到所有窗口（含选择器），取消才回退——调整过程本身就在扰动整个
+  应用，不符合「调整只改预览、确定才应用」的预期。
+- **修复**（`src/components/ThemeColorDialog.tsx`、`src/services/ThemeService.ts`、
+  `electron/main.ts`、`electron/preload.ts`、`src/components/FilePicker.tsx`）：
+  - 颜色选择（预设/壁纸/DMS/matugen/自定义）改为经
+    `ThemeService.resolveThemeVars` 解析出明暗变量表（生成 CSS 但**不注入**），
+    仅以内联样式覆盖预览卡（与明暗草稿同一机制）——应用其余部分与所有
+    窗口保持已保存主题；
+  - 「应用」/「确定」才保存配置并经 `useLocalStorage` storage 事件跨窗口
+    同步全局应用（明暗草稿语义不变：开关同样只改预览卡）；
+  - 取消仅丢弃草稿——调整期间无任何全局改动，不再需要快照回滚；
+  - **移除 `theme:preview` / `theme:preview-end` 预览广播 IPC**（仅服务于
+    旧的即时全局预览；preload/electron.d.ts/App/FilePicker 订阅与 main.ts
+    + e2e harness 手工副本同步删除）。
+- e2e 05 重写：选择预设后本窗口与 B 的 `#app-theme` 均不变 + 预览卡出现
+  内联变量覆盖；点「确定」后本窗口更新为所选预设且 A/B 注入 CSS 一致。
+
 ## v0.11.33 — portal 版本不一致检测 + 一键重装（版本号文件 / 启动弹窗 / reinstall.sh）
 
 - **背景**：升级 AppImage 后，portal 目录里的 `hoshineko.portal` 与

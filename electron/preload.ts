@@ -9,19 +9,6 @@ contextBridge.exposeInMainWorld('electron', {
   setThemeSource: (source: 'dark' | 'light' | 'system') => ipcRenderer.invoke('theme:set-source', source),
   findWallpaper: () => ipcRenderer.invoke('theme:find-wallpaper'),
   genWallpaperTheme: (imagePath: string, type: string, contrast: number) => ipcRenderer.invoke('theme:gen-wallpaper', imagePath, type, contrast),
-  // 主题实时预览：预览变化 → 主进程广播到所有窗口
-  previewTheme: (css: string) => ipcRenderer.send('theme:preview', css),
-  endThemePreview: () => ipcRenderer.send('theme:preview-end'),
-  onThemePreview: (callback: (css: string) => void) => {
-    const handler = (_: Electron.IpcRendererEvent, css: string) => callback(css);
-    ipcRenderer.on('theme:preview-css', handler);
-    return () => ipcRenderer.removeListener('theme:preview-css', handler);
-  },
-  onThemePreviewEnd: (callback: () => void) => {
-    const handler = () => callback();
-    ipcRenderer.on('theme:preview-end', handler);
-    return () => ipcRenderer.removeListener('theme:preview-end', handler);
-  },
   /** 订阅系统明暗变化（跟随系统模式下主进程检测链变化时广播） */
   onSystemSchemeChanged: (callback: (mode: 'dark' | 'light') => void) => {
     const handler = (_: Electron.IpcRendererEvent, mode: unknown) => {

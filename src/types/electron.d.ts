@@ -152,14 +152,6 @@ export interface IElectronAPI {
     findWallpaper: () => Promise<string | null>;
     /** 用 matugen 从壁纸图片生成 M3 颜色方案 CSS；matugen 缺失时 fallback=true 且只返回种子色 */
     genWallpaperTheme: (imagePath: string, type: string, contrast: number) => Promise<{ success: boolean; css?: string; sourceColor?: string; fallback?: boolean; error?: string }>;
-    /** 主题实时预览：把当前预览 CSS 发给主进程广播到所有窗口 */
-    previewTheme: (css: string) => void;
-    /** 主题预览结束（取消/关闭）：所有窗口重新应用已保存主题 */
-    endThemePreview: () => void;
-    /** 订阅其他窗口的主题预览 CSS（返回取消订阅函数） */
-    onThemePreview: (callback: (css: string) => void) => () => void;
-    /** 订阅主题预览结束（返回取消订阅函数） */
-    onThemePreviewEnd: (callback: () => void) => () => void;
     listDir: (path: string) => Promise<{ data: IFile[]; actualPath: string; error?: { code: string; originalPath: string } }>;
     getParentPath: (path: string) => Promise<string>;
     getHomePath: () => Promise<string>;

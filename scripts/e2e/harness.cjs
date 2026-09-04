@@ -24,7 +24,7 @@
  *
  * 与 electron/main.ts 的一致性约定：本文件中的 scheme 注册、
  * preview:// 协议、main.ts 顶层直接注册的 handler（theme:get-css、
- * theme:preview、app:get-startup-path、picker:get-config、fs:watch-dir
+ * app:get-startup-path、picker:get-config、fs:watch-dir
  * 等）均为主进程实现的手工复制——修改 main.ts 时须同步更新这里。
  * **例外**：D-Bus 服务后端（portal FileChooser / FileManager1）已抽成
  * electron/backends.ts 共享模块，main.ts 与 harness 走同一条接线
@@ -195,19 +195,6 @@ function registerIpc() {
       return await fs.promises.readFile(themePath, 'utf-8');
     } catch {
       return null;
-    }
-  });
-
-  ipcMain.on('theme:preview', (_event, css) => {
-    if (typeof css !== 'string' || css.length > 2_000_000) return;
-    for (const win of getWindows()) {
-      if (win && !win.isDestroyed()) win.webContents.send('theme:preview-css', css);
-    }
-  });
-
-  ipcMain.on('theme:preview-end', () => {
-    for (const win of getWindows()) {
-      if (win && !win.isDestroyed()) win.webContents.send('theme:preview-end');
     }
   });
 

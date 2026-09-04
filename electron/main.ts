@@ -503,31 +503,10 @@ ipcMain.handle('theme:get-css', async () => {
 });
 
 /**
- * 主题实时预览广播：设置窗口预览主题变化（选择预设/壁纸取色/
- * 调色盘确定）时把 CSS 发给主进程，主进程广播到所有窗口，
- * 各窗口注入同一份 CSS 实现「选择颜色后所有窗口立刻同步」。
- * CSS 校验为字符串并限制长度，防止任意数据注入渲染进程。
+ * 主题颜色跨窗口同步不再走广播：主题对话框调整颜色只改预览卡，
+ * 「应用」/「确定」保存后各窗口经 localStorage storage 事件
+ * （useLocalStorage 的 settings.theme）同步应用（见 App.tsx）。
  */
-ipcMain.on('theme:preview', (_event, css: unknown) => {
-  if (typeof css !== 'string' || css.length > 2_000_000) return;
-  for (const win of getWindows()) {
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('theme:preview-css', css);
-    }
-  }
-});
-
-/**
- * 主题预览结束（设置窗口取消/关闭）：广播通知所有窗口
- * 重新应用各自已保存的主题配置，回退预览期间的临时 CSS。
- */
-ipcMain.on('theme:preview-end', () => {
-  for (const win of getWindows()) {
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('theme:preview-end');
-    }
-  }
-});
 
 /** 返回应用版本号（package.json 的 version），设置弹窗"关于"部分显示 */
 ipcMain.handle('app:get-version', () => app.getVersion());

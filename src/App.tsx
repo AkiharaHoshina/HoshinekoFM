@@ -1047,25 +1047,6 @@ function AppContent() {
     });
   }, [themeConfig, setThemeConfig]);
 
-  /**
-   * 主题实时预览订阅：其他窗口（如文件选择器）处于主题设置预览中时，
-   * 主进程广播的预览 CSS 直接注入本窗口——选择颜色后所有窗口立刻同步；
-   * 预览结束（取消/关闭）时重新应用本窗口已保存的主题配置。
-   */
-  useEffect(() => {
-    if (!window.electron?.onThemePreview || !window.electron?.onThemePreviewEnd) return;
-    const offPreview = window.electron.onThemePreview((css) => {
-      ThemeService.injectCss(css);
-    });
-    const offEnd = window.electron.onThemePreviewEnd(() => {
-      void ThemeService.applyTheme(themeConfig);
-    });
-    return () => {
-      offPreview();
-      offEnd();
-    };
-  }, [themeConfig]);
-
   const loadHome = () => {
     handleAddTab("app://dashboard");
   };
