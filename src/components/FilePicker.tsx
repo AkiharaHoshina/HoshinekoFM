@@ -5,6 +5,8 @@ import { Omnibar } from './Omnibar';
 import { SortControls } from './SortControls';
 import { Sidebar, type SidebarPinnedItem } from './Sidebar';
 import { Button } from './Button';
+import { Icon } from './Icon';
+import { IconButton } from './IconButton';
 import { OutlinedSelect, SelectOption, OutlinedTextField } from './md';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
@@ -69,6 +71,15 @@ const FilePicker: React.FC = () => {
   const [files, setFiles] = useState<IFile[]>([]);
   /** 搜索态：搜索结果显示时按目录分组（settings.searchGroupByDir） */
   const [searchActive, setSearchActive] = useState(false);
+  /** 搜索词与高级过滤（类型/最小/最大大小，与主窗口同款搜索筛选器） */
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOptions, setSearchOptions] = useState<{ type?: 'f' | 'd'; minSize?: string; maxSize?: string }>({});
+  const searchQueryRef = useRef('');
+  const searchOptionsRef = useRef<{ type?: 'f' | 'd'; minSize?: string; maxSize?: string }>({});
+  // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取
+  searchQueryRef.current = searchQuery;
+  // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取
+  searchOptionsRef.current = searchOptions;
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
   /** 键盘游标（focus）：与主窗口同语义——Shift+方向键游标前进锚点固定 */
@@ -174,6 +185,20 @@ const FilePicker: React.FC = () => {
     ? config?.settings
     : (liveSettings ?? undefined);
   const searchGroupByDir = pickerSettings?.searchGroupByDir ?? false;
+  /** 标题栏显示完整路径（确认时同步组） */
+  const showFullPathTitle = pickerSettings?.showFullPathTitle ?? false;
+  /**
+   * 标题栏显示完整路径（确认时同步组 settings.showFullPathTitle）：
+   * 开启时标题 = 「选择文件夹：完整目录」/「保存文件：完整目录」等；
+   * 关闭时仅模式标题（与原行为一致）。document.title 自动同步至
+   * 窗口标题（任务栏等 DE 区域显示用）。
+   */
+  const displayTitle = showFullPathTitle && currentPath
+    ? `${pickerTitle}：${currentPath}`
+    : pickerTitle;
+  useEffect(() => {
+    if (document.title !== displayTitle) document.title = displayTitle;
+  }, [displayTitle]);
   /**
    * 侧边栏固定目录数据源：优先取实时广播与主进程注入的
    * config.pinnedDirs（服务模式从快照补齐）；GUI 模式回落共享
@@ -381,7 +406,6 @@ const FilePicker: React.FC = () => {
                 : 'picker.title_file';
       const titleText = t(titleKey);
       setPickerTitle(titleText);
-      document.title = titleText;
       const home = await window.electron.getHomePath();
       // 初始目录：声明且为有效目录时优先，否则从家目录开始浏览
       let start = home;
@@ -394,19 +418,25 @@ const FilePicker: React.FC = () => {
     void init();
   }, [loadPath]);
 
-  /** Omnibar 搜索（与主界面一致：直接替换列表；searchActive 驱动
-   *  搜索结果的按目录分组（确认时同步组 settings.searchGroupByDir）） */
-  const handleSearch = useCallback(async (query: string) => {
+  /** Omnibar 搜索（与主界面一致的搜索筛选器：类型/最小/最大大小；
+   *  searchActive 驱动搜索结果按目录分组——确认时同步组
+   *  settings.searchGroupByDir） */
+  const handleSearch = useCallback(async (
+    query: string,
+    options: { type?: 'f' | 'd'; minSize?: string; maxSize?: string } = {},
+  ) => {
     if (!query.trim()) {
       setSearchActive(false);
       void loadPath(currentPath);
       return;
     }
+    setSearchActive(true);
+    setSearchQuery(query);
+    setSearchOptions(options);
     try {
-      const results = await window.electron.search(currentPath, query);
+      const results = await window.electron.search(currentPath, query, options);
       setFiles(results);
       setSelected(new Set());
-      setSearchActive(true);
     } catch (e) {
       showToast(
         t('error.search_failed', (e as Error)?.message || String(e) || t('error.unknown')),
@@ -414,6 +444,20 @@ const FilePicker: React.FC = () => {
       );
     }
   }, [currentPath, loadPath]);
+
+  /**
+   * 修改大小过滤文本（仅更新状态，不立即重搜——避免每敲一个字符就跑
+   * 一次 find）。提交时机：输入框 Enter。类型下拉则选择即重搜。
+   */
+  const updateSizeOption = useCallback((key: 'minSize' | 'maxSize', raw: string) => {
+    const v = raw.trim();
+    setSearchOptions((prev) => ({ ...prev, [key]: v === '' ? undefined : v }));
+  }, []);
+
+  /** 提交大小过滤并重搜（输入框 Enter 触发，读取最新选项） */
+  const commitSearchOptions = useCallback(() => {
+    void handleSearch(searchQueryRef.current, searchOptionsRef.current);
+  }, [handleSearch]);
 
   /** 目录 + 文件名拼接（根目录边界：dir 为 '/' 时不重复斜杠） */
   const joinPath = useCallback(
@@ -916,7 +960,7 @@ const FilePicker: React.FC = () => {
   return (
     <div className="picker-shell">
       {titleBarVisible && (
-        <TitleBar title={pickerTitle} marqueeEnabled={marqueeEnabled} />
+        <TitleBar title={displayTitle} marqueeEnabled={marqueeEnabled} />
       )}
       <div className="picker-body">
         <Sidebar
@@ -977,6 +1021,55 @@ const FilePicker: React.FC = () => {
               />
             </div>
           </div>
+          {/* 搜索筛选器（与主窗口同款：结果计数 + 清除 + 类型/最小/最大
+              大小过滤）——搜索态显示；类型选择即重搜，大小输入 Enter 提交 */}
+          {searchActive && (
+            <div style={{ padding: '8px 24px', background: 'var(--md-sys-color-surface-container)', color: 'var(--md-sys-color-on-surface-variant)', fontSize: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Icon name="search" />
+                <span>{t('search.results', files.length, searchQuery)}</span>
+                <IconButton onClick={() => { void loadPath(currentPath); }} variant="standard" title={t('search.clear')}>
+                  <Icon name="close" />
+                </IconButton>
+              </div>
+              <div className="search-filter-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                <OutlinedSelect
+                  className="search-filter-type"
+                  value={searchOptions.type ?? ''}
+                  onInput={(e) => {
+                    const v = (e.target as HTMLSelectElement).value;
+                    // 类型选择即重搜
+                    void handleSearch(searchQueryRef.current, {
+                      ...searchOptionsRef.current,
+                      type: v === '' ? undefined : (v as 'f' | 'd'),
+                    });
+                  }}
+                >
+                  <SelectOption value=""><div slot="headline">{t('search.type_all')}</div></SelectOption>
+                  <SelectOption value="f"><div slot="headline">{t('search.type_file')}</div></SelectOption>
+                  <SelectOption value="d"><div slot="headline">{t('search.type_folder')}</div></SelectOption>
+                </OutlinedSelect>
+                <OutlinedTextField
+                  label={t('search.min_size')}
+                  value={searchOptions.minSize ?? ''}
+                  onInput={(e) => updateSizeOption('minSize', (e.target as HTMLInputElement).value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitSearchOptions();
+                  }}
+                  style={{ width: '120px' }}
+                />
+                <OutlinedTextField
+                  label={t('search.max_size')}
+                  value={searchOptions.maxSize ?? ''}
+                  onInput={(e) => updateSizeOption('maxSize', (e.target as HTMLInputElement).value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitSearchOptions();
+                  }}
+                  style={{ width: '120px' }}
+                />
+              </div>
+            </div>
+          )}
           <div
             ref={fileZoneRef}
             className="picker-filelist"

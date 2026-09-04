@@ -502,21 +502,6 @@ function AppContent() {
   }, [viewMode, iconSize, showHiddenFiles, filledIcons, marqueeEnabled, sortBy, sortOrder, groupingEnabled]);
 
   /**
-   * 选择器设置快照上报（确认时同步组）：设置对话框里开关的个性化
-   * 设置（如搜索分类）在主窗口设置按下确定/退出时才同步到服务模式
-   * 选择器/保存器。settingsDialogOpen 关闭即视为确定（退出设置等于
-   * 确定，见 SettingsDialog）；初始挂载也上报一次（种子值）。
-   */
-  useEffect(() => {
-    if (settingsDialogOpen) return;
-    void window.electron.setPickerSettings({
-      searchGroupByDir,
-    }).catch(() => {
-      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
-    });
-  }, [settingsDialogOpen, searchGroupByDir]);
-
-  /**
    * 界面缩放（整页缩放，百分比）。持久化于 settings.uiScale，
    * 变更时经 IPC 应用本窗口 zoom factor，跨窗口 storage 同步。
    */
@@ -555,6 +540,23 @@ function AppContent() {
     "settings.showFullPathTitle",
     false,
   );
+
+  /**
+   * 选择器设置快照上报（确认时同步组）：设置对话框里开关的个性化
+   * 设置（如搜索分类、标题栏完整路径）在主窗口设置按下确定/退出时
+   * 才同步到服务模式选择器/保存器。settingsDialogOpen 关闭即视为确定
+   * （退出设置等于确定，见 SettingsDialog）；初始挂载也上报一次
+   * （种子值）。
+   */
+  useEffect(() => {
+    if (settingsDialogOpen) return;
+    void window.electron.setPickerSettings({
+      searchGroupByDir,
+      showFullPathTitle,
+    }).catch(() => {
+      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
+    });
+  }, [settingsDialogOpen, searchGroupByDir, showFullPathTitle]);
 
   /** 默认文件管理器：是否为 inode/directory 的默认处理程序（xdg-mime） */
   const [isDefaultFileManager, setIsDefaultFileManager] = useState(false);

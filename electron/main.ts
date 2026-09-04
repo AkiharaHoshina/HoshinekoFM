@@ -88,7 +88,8 @@ let pickerSettingsSnapshotCache: PickerSettings | null = null;
 function sanitizePickerSettings(input: unknown): PickerSettings | null {
   const it = (input ?? {}) as Record<string, unknown>;
   if (typeof it.searchGroupByDir !== 'boolean') return null;
-  return { searchGroupByDir: it.searchGroupByDir };
+  if (typeof it.showFullPathTitle !== 'boolean') return null;
+  return { searchGroupByDir: it.searchGroupByDir, showFullPathTitle: it.showFullPathTitle };
 }
 
 /**

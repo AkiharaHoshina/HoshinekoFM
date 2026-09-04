@@ -48,10 +48,11 @@ contextBridge.exposeInMainWorld('electron', {
   /** 订阅选择器设置快照变化（确认时同步组；null = 快照被清，回落注入值/默认） */
   onPickerSettingsChanged: (callback: (settings: {
     searchGroupByDir: boolean;
+    showFullPathTitle: boolean;
   } | null) => void) => {
     const handler = (_: Electron.IpcRendererEvent, settings: unknown) => {
       if (settings === null || typeof settings === 'object') {
-        callback(settings as { searchGroupByDir: boolean } | null);
+        callback(settings as { searchGroupByDir: boolean; showFullPathTitle: boolean } | null);
       }
     };
     ipcRenderer.on('picker:settings-changed', handler);
@@ -125,7 +126,7 @@ contextBridge.exposeInMainWorld('electron', {
   setThemeSnapshot: (config: unknown, darkMode: boolean | null) =>
     ipcRenderer.invoke('app:set-theme-snapshot', { config, darkMode }),
   /** 上报选择器设置快照（确认时同步组，如搜索分类）：设置确认时落盘 */
-  setPickerSettings: (settings: { searchGroupByDir: boolean }) =>
+  setPickerSettings: (settings: { searchGroupByDir: boolean; showFullPathTitle: boolean }) =>
     ipcRenderer.invoke('app:set-picker-settings', settings),
   readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path),
   readPreviewText: (path: string) => ipcRenderer.invoke('fs:read-preview-text', path),

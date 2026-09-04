@@ -107,7 +107,8 @@ const themeSnapshotFile = () => path.join(app.getPath('userData'), 'theme-snapsh
 function sanitizePickerSettings(input) {
   const it = (input ?? {}) || {};
   if (typeof it.searchGroupByDir !== 'boolean') return null;
-  return { searchGroupByDir: it.searchGroupByDir };
+  if (typeof it.showFullPathTitle !== 'boolean') return null;
+  return { searchGroupByDir: it.searchGroupByDir, showFullPathTitle: it.showFullPathTitle };
 }
 
 /**

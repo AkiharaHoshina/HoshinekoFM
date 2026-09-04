@@ -53,10 +53,10 @@ const h = require('./harness.cjs');
     })`);
     await h.waitFor(picker, `document.querySelectorAll('.file-group-header').length > 0`, 8000);
 
-    // ── 确认时同步组：搜索分类 ──
-    await h.js(win, `window.electron.setPickerSettings({ searchGroupByDir: true })`);
-    // 第二个选择器：创建时注入 config.settings
-    await h.js(win, `window.electron.openPicker({ mode: 'items' }); true`);
+    // ── 确认时同步组：搜索分类 + 标题栏完整路径 ──
+    await h.js(win, `window.electron.setPickerSettings({ searchGroupByDir: true, showFullPathTitle: true })`);
+    // 第二个选择器：创建时注入 config.settings（initialPath 定位到沙箱目录）
+    await h.js(win, `window.electron.openPicker({ mode: 'items', initialPath: ${JSON.stringify(dir)} }); true`);
     let picker2 = null;
     {
       const start = Date.now();
@@ -71,6 +71,24 @@ const h = require('./harness.cjs');
     const cfg2 = await h.js(picker2, `window.electron.getPickerConfig()`);
     h.assert.ok(cfg2.value.settings, '选择器配置应注入 settings 快照');
     h.assert.strictEqual(cfg2.value.settings.searchGroupByDir, true, '注入的搜索分类应为 true');
+    h.assert.strictEqual(cfg2.value.settings.showFullPathTitle, true, '注入的标题栏完整路径应为 true');
+
+    // 标题栏完整路径：开启时标题 = 模式标题 + 完整目录
+    await h.waitFor(picker2, `document.title.includes(${JSON.stringify(dir)})`, 8000);
+
+    // 实时广播（确认时组）：主窗口确认关闭完整路径 → 打开中的选择器
+    // 标题回落为仅模式标题（不含目录路径）
+    await h.js(win, `window.electron.setPickerSettings({ searchGroupByDir: true, showFullPathTitle: false })`);
+    {
+      const start = Date.now();
+      let reverted = false;
+      while (Date.now() - start < 8000) {
+        const t = await h.js(picker2, `document.title`);
+        if (t.ok && !t.value.includes(dir)) { reverted = true; break; }
+        await h.sleep(100);
+      }
+      h.assert.ok(reverted, '关闭完整路径后打开中的选择器标题应回落为仅模式标题');
+    }
 
     // 确认时组实时广播：打开中的选择器收到广播后，搜索结果按目录分组
     // （选择器内 omnibar 搜索 'a'，结果含 sub/a.txt 与根目录文件 → 出现
@@ -80,6 +98,10 @@ const h = require('./harness.cjs');
     await h.clickEl(picker2, '.omnibar-trigger');
     await h.waitFor(picker2, `!!document.querySelector('.omnibar-input')`);
     await h.setReactInput(picker2, '.omnibar-input', 'a');
+    await h.key(picker2, 'Enter');
+    // 搜索筛选器与主窗口同款：结果行 + 类型/大小过滤
+    await h.waitFor(picker2, `!!document.querySelector('.search-filter-type')`, 8000);
+    // 搜索结果按目录分组（组头 = 目录路径）
     await h.waitFor(picker2, `document.querySelectorAll('.file-group-header').length > 0`, 8000);
   });
 

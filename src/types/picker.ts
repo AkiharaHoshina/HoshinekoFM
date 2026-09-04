@@ -66,12 +66,14 @@ export interface PickerViewPrefs {
 
 /**
  * 选择器设置快照（主进程注入，服务模式从 GUI 的 picker-settings.json
- * 补齐）。确认时同步组：设置对话框里开关的个性化设置（如搜索分类），
- * 在主窗口设置按下确定/退出时同步（见 同步规则.md）。
+ * 补齐）。确认时同步组：设置对话框里开关的个性化设置（如搜索分类、
+ * 标题栏完整路径），在主窗口设置按下确定/退出时同步（见 同步规则.md）。
  */
 export interface PickerSettings {
   /** 搜索结果按所在目录分组 */
   searchGroupByDir: boolean;
+  /** 标题栏显示完整路径（开启时选择器标题为「选择文件夹：完整目录」等） */
+  showFullPathTitle: boolean;
 }
 
 /**

@@ -64,12 +64,15 @@ export interface PickerViewPrefs {
 
 /**
  * 选择器设置快照（与 src/types/picker.ts 的 PickerSettings 同源）。
- * 确认时同步组：设置对话框里开关的个性化设置（如搜索分类）——
- * 在主窗口设置按下确定/退出时同步（同步规则见 同步规则.md）。
+ * 确认时同步组：设置对话框里开关的个性化设置（如搜索分类、标题栏
+ * 完整路径）——在主窗口设置按下确定/退出时同步（同步规则见
+ * 同步规则.md）。
  */
 export interface PickerSettings {
   /** 搜索结果按所在目录分组 */
   searchGroupByDir: boolean;
+  /** 标题栏显示完整路径（开启时选择器标题为「选择文件夹：完整目录」等） */
+  showFullPathTitle: boolean;
 }
 
 /**
