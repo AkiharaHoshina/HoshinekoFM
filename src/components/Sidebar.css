@@ -136,7 +136,10 @@
 .sidebar-partition {
     position: relative;
     padding-left: 16px;
-    height: 48px;
+    /* 与普通胶囊条目（.sidebar-item）统一高度：设备分区条目此前 48px，
+       与固定文件夹/仪表盘等 56px 胶囊大小不一致（分区条目虽为两行
+       布局，M3 Navigation Drawer 带副文本条目同为 56px） */
+    height: 56px;
 }
 
 .sidebar-partition.unmounted {
