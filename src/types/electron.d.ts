@@ -1,5 +1,6 @@
 import type { IFile, AllDevice, GvfsVolume } from './files';
-import type { PickerConfig, PinnedDirEntry, PickerViewPrefs } from './picker';
+import type { PickerConfig, PinnedDirEntry, PickerViewPrefs, PickerThemeSnapshot } from './picker';
+import type { ThemeConfig } from './theme';
 
 export interface IDrive {
     name: string;
@@ -148,6 +149,12 @@ export interface IElectronAPI {
      * null = 快照被清，回落注入值/本地默认）。返回取消订阅函数。
      */
     onPickerViewPrefsChanged: (callback: (prefs: PickerViewPrefs | null) => void) => () => void;
+    /**
+     * 订阅主题快照变化（服务模式常驻进程广播，打开中的选择器/保存器
+     * 实时跟随 GUI 主题；null = 快照被清/无主题，回落注入值/默认）。
+     * 返回取消订阅函数。
+     */
+    onPickerThemeChanged: (callback: (theme: PickerThemeSnapshot | null) => void) => () => void;
     /** 探测当前壁纸图片路径，失败返回 null */
     findWallpaper: () => Promise<string | null>;
     /** 用 matugen 从壁纸图片生成 M3 颜色方案 CSS；matugen 缺失时 fallback=true 且只返回种子色 */
@@ -208,6 +215,12 @@ export interface IElectronAPI {
     setPinnedDirs: (pinnedDirs: PinnedDirEntry[]) => Promise<void>;
     /** 上报选择器显示偏好（主进程落盘快照，供服务模式选择器窗口跟随视图模式等只读设置） */
     setPickerViewPrefs: (prefs: PickerViewPrefs) => Promise<void>;
+    /**
+     * 上报主题快照（settings.theme 颜色配置 + settings.darkMode 明暗）：
+     * 主进程原子落盘到 GUI userData，供服务模式常驻进程的选择器/
+     * 保存器窗口注入（userData 隔离读不到 GUI 的 localStorage）。
+     */
+    setThemeSnapshot: (config: ThemeConfig | null, darkMode: boolean | null) => Promise<void>;
     readFile: (path: string) => Promise<string | null>;
     /**
      * 读取文本预览内容（预览面板用）。大小上限 512 KiB：

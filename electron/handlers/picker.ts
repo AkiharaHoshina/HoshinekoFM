@@ -56,6 +56,25 @@ export interface PickerViewPrefs {
 }
 
 /**
+ * 主题快照（与 src/types/picker.ts 的 PickerThemeSnapshot 同源）：
+ * GUI 的 settings.theme（颜色配置）+ settings.darkMode（明暗）——
+ * 服务模式常驻进程的选择器/保存器 userData 隔离读不到 GUI 的
+ * localStorage，经快照注入才能跟随主窗口主题（否则永远默认主题）。
+ * config 为 sanitize 后的最小结构（main.ts 校验字段类型）。
+ */
+export interface PickerThemeSnapshot {
+  config: {
+    kind: 'preset' | 'custom' | 'system' | 'wallpaper' | 'matugen';
+    seed?: string;
+    presetId?: string;
+    wallpaperPath?: string;
+    scheme?: string;
+    contrast?: number;
+  } | null;
+  darkMode: boolean | null;
+}
+
+/**
  * 选择器配置（picker:open 的声明 / picker:get-config 的返回）。
  * 字段与 `src/types/picker.ts` 的 PickerConfig 一一对应——前端类型
  * 文档同源，修改时须同步。
@@ -87,6 +106,13 @@ export interface PickerConfig {
    * 调用方传入该字段一律丢弃（白名单不包含）。
    */
   viewPrefs?: PickerViewPrefs;
+  /**
+   * 主题快照（颜色配置 + 明暗）。**仅主进程注入**（服务模式从 GUI 的
+   * theme-snapshot.json 快照补齐——常驻进程 userData 隔离，读不到
+   * GUI 的 settings.theme/settings.darkMode，选择器/保存器会永远显示
+   * 默认主题）。调用方传入该字段一律丢弃（白名单不包含）。
+   */
+  theme?: PickerThemeSnapshot;
 }
 
 /** 合法的选择模式白名单（防止任意值进入配置） */

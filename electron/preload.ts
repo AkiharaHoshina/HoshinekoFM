@@ -27,6 +27,24 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('picker:pinned-dirs-changed', handler);
     return () => ipcRenderer.removeListener('picker:pinned-dirs-changed', handler);
   },
+  /** 订阅主题快照变化（服务模式常驻进程广播；null = 快照被清/无主题，回落注入值/默认） */
+  onPickerThemeChanged: (callback: (theme: {
+    config: {
+      kind: 'preset' | 'custom' | 'system' | 'wallpaper' | 'matugen';
+      seed?: string;
+      presetId?: string;
+      wallpaperPath?: string;
+      scheme?: string;
+      contrast?: number;
+    } | null;
+    darkMode: boolean | null;
+  } | null) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, theme: unknown) => {
+      if (theme === null || typeof theme === 'object') callback(theme as never);
+    };
+    ipcRenderer.on('picker:theme-changed', handler);
+    return () => ipcRenderer.removeListener('picker:theme-changed', handler);
+  },
   /** 订阅选择器显示偏好变化（服务模式常驻进程广播；null = 快照被清，回落注入值/默认） */
   onPickerViewPrefsChanged: (callback: (prefs: {
     viewMode: 'grid' | 'list';
@@ -91,6 +109,9 @@ contextBridge.exposeInMainWorld('electron', {
   setPinnedDirs: (pinnedDirs: unknown) => ipcRenderer.invoke('app:set-pinned-dirs', pinnedDirs),
   /** 上报选择器显示偏好（主进程落盘快照，供服务模式选择器窗口跟随视图模式等只读设置） */
   setPickerViewPrefs: (prefs: unknown) => ipcRenderer.invoke('app:set-picker-view-prefs', prefs),
+  /** 上报主题快照（settings.theme 配置 + settings.darkMode）：落盘供服务模式选择器/保存器注入 */
+  setThemeSnapshot: (config: unknown, darkMode: boolean | null) =>
+    ipcRenderer.invoke('app:set-theme-snapshot', { config, darkMode }),
   readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path),
   readPreviewText: (path: string) => ipcRenderer.invoke('fs:read-preview-text', path),
   listArchive: (path: string, requestId?: string) => ipcRenderer.invoke('fs:list-archive', path, requestId),

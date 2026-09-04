@@ -58,6 +58,26 @@ export interface PickerViewPrefs {
   marqueeEnabled: boolean;
 }
 
+/**
+ * 主题快照（主进程注入，服务模式从 GUI 的 theme-snapshot.json 补齐）：
+ * 选择器/保存器窗口在服务模式常驻进程内 userData 隔离、读不到 GUI 的
+ * localStorage——注入快照才能跟随主窗口的颜色主题与明暗模式。
+ * config 为 settings.theme 的 sanitize 后结构（字段与 ThemeConfig 一致）。
+ */
+export interface PickerThemeSnapshot {
+  /** 主题颜色配置（null = GUI 未选主题，走 matugen 传统加载） */
+  config: {
+    kind: 'preset' | 'custom' | 'system' | 'wallpaper' | 'matugen';
+    seed?: string;
+    presetId?: string;
+    wallpaperPath?: string;
+    scheme?: string;
+    contrast?: number;
+  } | null;
+  /** 明暗模式（null = 跟随系统） */
+  darkMode: boolean | null;
+}
+
 /** 选择器窗口配置（picker:get-config 的返回值，普通窗口为 null） */
 export interface PickerConfig {
   /**
@@ -87,6 +107,13 @@ export interface PickerConfig {
    * picker:open 传入的该字段被白名单校验忽略。
    */
   viewPrefs?: PickerViewPrefs;
+  /**
+   * 主题快照（内部注入：服务模式选择器/保存器窗口从 GUI 快照补齐，
+   * 供颜色主题与明暗模式跟随主窗口——常驻进程 userData 隔离读不到
+   * GUI 的 localStorage）。调用方经 picker:open 传入的该字段被
+   * 白名单校验忽略。
+   */
+  theme?: PickerThemeSnapshot;
 }
 
 /** picker:open 的选项（渲染进程入口） */

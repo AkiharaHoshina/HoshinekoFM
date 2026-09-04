@@ -93,6 +93,36 @@ const pinnedSnapshotFile = () => path.join(app.getPath('userData'), 'sidebar-pin
 /** 选择器显示偏好快照缓存与文件（与 main.ts 的 app:set-picker-view-prefs 同步） */
 let pickerViewPrefsCache = null;
 const pickerViewPrefsFile = () => path.join(app.getPath('userData'), 'picker-prefs.json');
+/** 主题快照缓存与文件（与 main.ts 的 app:set-theme-snapshot / loadThemeSnapshot 同步） */
+let themeSnapshotCache = null;
+const themeSnapshotFile = () => path.join(app.getPath('userData'), 'theme-snapshot.json');
+
+/**
+ * 校验主题快照（与 main.ts sanitizeThemeSnapshot 同步）：任一字段非法
+ * 则整体丢弃返回 null（不注入）。
+ */
+function sanitizeThemeSnapshot(input) {
+  const it = (input ?? {}) || {};
+  const darkMode = it.darkMode;
+  if (darkMode !== null && typeof darkMode !== 'boolean') return null;
+  const cfg = it.config;
+  if (cfg === null) return { config: null, darkMode };
+  if (typeof cfg !== 'object') return null;
+  const KINDS = new Set(['preset', 'custom', 'system', 'wallpaper', 'matugen']);
+  if (typeof cfg.kind !== 'string' || !KINDS.has(cfg.kind)) return null;
+  const config = { kind: cfg.kind };
+  for (const f of ['seed', 'presetId', 'wallpaperPath', 'scheme']) {
+    if (cfg[f] !== undefined) {
+      if (typeof cfg[f] !== 'string') return null;
+      config[f] = cfg[f];
+    }
+  }
+  if (cfg.contrast !== undefined) {
+    if (typeof cfg.contrast !== 'number' || !Number.isFinite(cfg.contrast)) return null;
+    config.contrast = cfg.contrast;
+  }
+  return { config, darkMode };
+}
 
 /**
  * 后端总线名（进程级随机隔离）：每个测试文件是独立 Electron 进程，
@@ -310,6 +340,24 @@ function registerIpc() {
       if (!w.isDestroyed()) w.webContents.send('picker:view-prefs-changed', pickerViewPrefsCache);
     }
   });
+
+  // 与 main.ts 的 app:set-theme-snapshot 同步：GUI 渲染进程上报主题
+  // （settings.theme + settings.darkMode），内存缓存 + 原子落盘快照，
+  // 供选择器窗口注入（见 createTestWindow），并广播实时跟随
+  ipcMain.handle('app:set-theme-snapshot', async (_event, input) => {
+    themeSnapshotCache = sanitizeThemeSnapshot(input);
+    try {
+      const tmp = `${themeSnapshotFile()}.tmp`;
+      await fs.promises.writeFile(tmp, JSON.stringify(themeSnapshotCache ?? {}), 'utf-8');
+      await fs.promises.rename(tmp, themeSnapshotFile());
+    } catch {
+      /* 写快照失败：仅影响主题注入，不阻塞测试 */
+    }
+    // 模拟 main.ts 服务模式的快照实时监听（startSnapshotWatcher）
+    for (const w of windows) {
+      if (!w.isDestroyed()) w.webContents.send('picker:theme-changed', themeSnapshotCache);
+    }
+  });
 }
 
 /** 注册 media/preview 协议（与 main.ts 的 handler 同步） */
@@ -456,11 +504,22 @@ async function createTestWindow({ argv = [], picker = false, pickerConfig = null
         pickerViewPrefsCache = null;
       }
     }
+    if (themeSnapshotCache === null) {
+      try {
+        const raw = await fs.promises.readFile(themeSnapshotFile(), 'utf-8');
+        themeSnapshotCache = sanitizeThemeSnapshot(JSON.parse(raw));
+      } catch {
+        themeSnapshotCache = null;
+      }
+    }
     if (pinnedSnapshotCache.length > 0) {
       pickerConfig = { ...pickerConfig, pinnedDirs: pinnedSnapshotCache };
     }
     if (pickerViewPrefsCache) {
       pickerConfig = { ...pickerConfig, viewPrefs: pickerViewPrefsCache };
+    }
+    if (themeSnapshotCache) {
+      pickerConfig = { ...pickerConfig, theme: themeSnapshotCache };
     }
     pickerConfigByWindow.set(win, pickerConfig);
   }

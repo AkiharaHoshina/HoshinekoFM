@@ -1,5 +1,32 @@
 # 更新日志
 
+## v0.11.33 — 确认主题后颜色同步到选择器/保存器（theme 快照注入）
+
+- **现象**：主题设置确认后，颜色没有同步到选择器和保存器——服务模式
+  常驻进程（`--portal`/`--filemanager1`）的选择器/保存器窗口 userData
+  与 GUI 隔离，读不到 GUI 的 `settings.theme`/`settings.darkMode`，
+  永远显示默认主题（GUI 会话内的选择器经 storage 事件同步正常，实测
+  不受影响——此前 `theme:preview` 广播移除后服务模式选择器连预览期
+  的颜色跟随也失去了）。
+- **修复**（`electron/main.ts`、`electron/handlers/picker.ts`、
+  `electron/preload.ts`、`src/App.tsx`、`src/components/FilePicker.tsx`）：
+  - GUI 经新 IPC `app:set-theme-snapshot` 上报 `settings.theme` +
+    `settings.darkMode`（App.tsx 在两者变化时调用），主进程 sanitize 后
+    原子落盘 `theme-snapshot.json`（与固定项/选择器偏好快照同一机制）；
+  - 服务模式创建选择器/保存器窗口时从快照注入 `pickerConfig.theme`
+    （每次现读，GUI 改动下次弹窗即生效）；FilePicker 优先取注入值、
+    GUI 模式回落共享 session 的 localStorage；
+  - **实时继承**：常驻进程快照监听（startSnapshotWatcher）扩展第三文件，
+    变化广播 `picker:theme-changed`——打开中的选择器/保存器不重开窗口
+    即切换主题；明暗经注入的 darkMode 调 `theme:set-source`（nativeTheme
+    进程级，常驻进程只服务选择器/保存器窗口）；
+  - 注入快照经 sanitize（kind 白名单 + 字段类型校验），非法整体丢弃；
+    调用方经 picker:open 传入的 theme 字段被白名单忽略（不可伪造）。
+- e2e 40：注入断言（getPickerConfig 含 theme + #app-theme 生成整套变量）、
+  颜色通道实时广播断言（换种子 primary 变化）、非法快照丢弃断言
+  （第二个选择器不注入）；明暗通道不在 harness 断言——主窗口 App 的
+  跟随系统检测会与选择器竞争 themeSource，服务模式下无 GUI 窗口无此竞争。
+
 ## v0.11.33 — 主题设置固定预览区（预览卡 + 明暗开关 sticky）
 
 - **现象**：主题设置内容较长（预览卡 + 明暗开关 + 预设色盘 + 特殊颜色 +

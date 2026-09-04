@@ -12,7 +12,7 @@ import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor, startBac
 import type { BackendKind } from './handlers/backendInfo';
 import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers, startColorSchemeWatcher, stopColorSchemeWatcher } from './handlers/theme';
-import { registerPickerHandlers, type PickerConfig, type PinnedDirEntry, type PickerViewPrefs } from './handlers/picker';
+import { registerPickerHandlers, type PickerConfig, type PinnedDirEntry, type PickerViewPrefs, type PickerThemeSnapshot } from './handlers/picker';
 import { registerServiceBackends } from './backends';
 import { initJobHandlers } from './jobs';
 
@@ -73,6 +73,65 @@ const PICKER_PREFS_SNAPSHOT_FILE = path.join(LEGACY_USER_DATA_DIR, 'picker-prefs
 let pickerViewPrefsSnapshotCache: PickerViewPrefs | null = null;
 
 /**
+ * 主题快照文件：与固定项/选择器偏好快照同一机制（GUI 经 IPC 上报、
+ * 主进程原子落盘到 GUI userData），供服务模式常驻进程的选择器/
+ * 保存器窗口注入——其 userData 隔离读不到 GUI 的 localStorage，
+ * settings.theme（颜色配置）与 settings.darkMode（明暗）永远停在默认。
+ */
+const THEME_SNAPSHOT_FILE = path.join(LEGACY_USER_DATA_DIR, 'theme-snapshot.json');
+
+/** 主题快照内存缓存（GUI 模式由 IPC 上报保持最新；服务模式现读文件） */
+let themeSnapshotCache: PickerThemeSnapshot | null = null;
+
+/**
+ * 校验主题快照（来源可能是快照文件，可能被手改/损坏）：任一字段非法
+ * 则整体丢弃（返回 null，不注入）——快照由本应用 GUI 写入，损坏意味着
+ * 不该信任。config 为 null（GUI 未选主题，走 matugen 传统加载）合法。
+ */
+function sanitizeThemeSnapshot(input: unknown): PickerThemeSnapshot | null {
+  const it = (input ?? {}) as Record<string, unknown>;
+  const darkMode = it.darkMode;
+  if (darkMode !== null && typeof darkMode !== 'boolean') return null;
+  const cfg = it.config;
+  if (cfg === null) return { config: null, darkMode: darkMode as boolean | null };
+  if (typeof cfg !== 'object') return null;
+  const c = cfg as Record<string, unknown>;
+  const KINDS = new Set(['preset', 'custom', 'system', 'wallpaper', 'matugen']);
+  if (typeof c.kind !== 'string' || !KINDS.has(c.kind)) return null;
+  const config: NonNullable<PickerThemeSnapshot['config']> = {
+    kind: c.kind as NonNullable<PickerThemeSnapshot['config']>['kind'],
+  };
+  for (const field of ['seed', 'presetId', 'wallpaperPath', 'scheme'] as const) {
+    const v = c[field];
+    if (v !== undefined) {
+      if (typeof v !== 'string') return null;
+      config[field] = v;
+    }
+  }
+  if (c.contrast !== undefined) {
+    if (typeof c.contrast !== 'number' || !Number.isFinite(c.contrast)) return null;
+    config.contrast = c.contrast;
+  }
+  return { config, darkMode: darkMode as boolean | null };
+}
+
+/**
+ * 读取主题快照（服务模式选择器窗口注入用）：
+ * - GUI 模式下缓存由 `app:set-theme-snapshot` 保持最新，命中缓存直接返回；
+ * - 服务模式下缓存恒为 null，**每次调用现读文件**——GUI 改动主题后
+ *   常驻进程下次弹选择器立即看到，无需重启。
+ */
+async function loadThemeSnapshot(): Promise<PickerThemeSnapshot | null> {
+  if (themeSnapshotCache !== null) return themeSnapshotCache;
+  try {
+    const raw = await fs.readFile(THEME_SNAPSHOT_FILE, 'utf-8');
+    return sanitizeThemeSnapshot(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 校验选择器显示偏好快照（来源可能是快照文件，可能被手改/损坏）：
  * 任一字段非法则整体丢弃（返回 null，不注入）——快照由本应用 GUI
  * 写入，损坏意味着不该信任。iconSize 钳制到 [16, 128]。
@@ -125,14 +184,16 @@ let snapshotWatchTimer: ReturnType<typeof setTimeout> | null = null;
 /** 上次广播的原始内容（按内容对比，避免 LevelDB 噪声引发无意义广播） */
 let lastPinnedSnapshotRaw: string | null = null;
 let lastPrefsSnapshotRaw: string | null = null;
+let lastThemeSnapshotRaw: string | null = null;
 
 function startSnapshotWatcher(): void {
   if (snapshotWatcher) return;
   const broadcast = async () => {
     try {
-      const [pinnedRaw, prefsRaw] = await Promise.all([
+      const [pinnedRaw, prefsRaw, themeRaw] = await Promise.all([
         fs.readFile(PINNED_SNAPSHOT_FILE, 'utf-8').catch(() => null),
         fs.readFile(PICKER_PREFS_SNAPSHOT_FILE, 'utf-8').catch(() => null),
+        fs.readFile(THEME_SNAPSHOT_FILE, 'utf-8').catch(() => null),
       ]);
       if (pinnedRaw !== null && pinnedRaw !== lastPinnedSnapshotRaw) {
         lastPinnedSnapshotRaw = pinnedRaw;
@@ -146,6 +207,13 @@ function startSnapshotWatcher(): void {
         const prefs = sanitizePickerViewPrefs(JSON.parse(prefsRaw));
         for (const win of getWindows()) {
           if (!win.isDestroyed()) win.webContents.send('picker:view-prefs-changed', prefs);
+        }
+      }
+      if (themeRaw !== null && themeRaw !== lastThemeSnapshotRaw) {
+        lastThemeSnapshotRaw = themeRaw;
+        const theme = sanitizeThemeSnapshot(JSON.parse(themeRaw));
+        for (const win of getWindows()) {
+          if (!win.isDestroyed()) win.webContents.send('picker:theme-changed', theme);
         }
       }
     } catch {
@@ -278,19 +346,21 @@ async function createWindow(
 ): Promise<BrowserWindow> {
   const isPicker = options.picker === true;
   // 服务模式选择器：userData 隔离读不到 GUI 的 localStorage（侧边栏
-  // 固定项、视图模式等），主进程从 GUI userData 的快照文件补齐注入。
+  // 固定项、视图模式、主题等），主进程从 GUI userData 的快照文件补齐注入。
   // GUI 模式不做注入——选择器窗口与主窗口共享 session，FilePicker 直接
   // 读 localStorage（含 storage 事件实时同步），行为保持不变。
   if (isPicker && options.pickerConfig && SERVICE_ONLY_MODE) {
-    const [pinned, viewPrefs] = await Promise.all([
+    const [pinned, viewPrefs, theme] = await Promise.all([
       loadPinnedSnapshot(),
       loadPickerViewPrefsSnapshot(),
+      loadThemeSnapshot(),
     ]);
-    if (pinned.length > 0 || viewPrefs) {
+    if (pinned.length > 0 || viewPrefs || theme) {
       options.pickerConfig = {
         ...options.pickerConfig,
         ...(pinned.length > 0 ? { pinnedDirs: pinned } : {}),
         ...(viewPrefs ? { viewPrefs } : {}),
+        ...(theme ? { theme } : {}),
       };
     }
   }
@@ -609,6 +679,22 @@ ipcMain.handle('app:set-picker-view-prefs', async (_event, input: unknown) => {
     await fs.mkdir(LEGACY_USER_DATA_DIR, { recursive: true });
     await fs.writeFile(tmp, JSON.stringify(prefs ?? {}), 'utf-8');
     await fs.rename(tmp, PICKER_PREFS_SNAPSHOT_FILE);
+  } catch {
+    await fs.rm(tmp, { force: true }).catch(() => {});
+  }
+});
+
+// GUI 渲染进程上报主题快照（settings.theme 颜色配置 + settings.darkMode
+// 明暗）：更新内存缓存 + 原子落盘快照，供服务模式常驻进程的选择器/
+// 保存器窗口注入（userData 隔离读不到 GUI 的 localStorage）。
+ipcMain.handle('app:set-theme-snapshot', async (_event, input: unknown) => {
+  const theme = sanitizeThemeSnapshot(input);
+  themeSnapshotCache = theme;
+  const tmp = `${THEME_SNAPSHOT_FILE}.tmp`;
+  try {
+    await fs.mkdir(LEGACY_USER_DATA_DIR, { recursive: true });
+    await fs.writeFile(tmp, JSON.stringify(theme ?? {}), 'utf-8');
+    await fs.rename(tmp, THEME_SNAPSHOT_FILE);
   } catch {
     await fs.rm(tmp, { force: true }).catch(() => {});
   }

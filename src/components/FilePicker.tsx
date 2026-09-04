@@ -25,7 +25,7 @@ import { registerKeyboardZone, focusNextKeyboardZone, trackKeyboardZoneFocus } f
 import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, computeShiftArrowRange, type ListItem } from './FileList/utils';
 import type { IFile, AllDevice, GvfsVolume } from '../types/files';
 import type { ThemeConfig } from '../types/theme';
-import type { PickerConfig, PickerFilter, PickerViewPrefs } from '../types/picker';
+import type { PickerConfig, PickerFilter, PickerViewPrefs, PickerThemeSnapshot } from '../types/picker';
 import { getMimeDisplayName } from '../utils/mimeTypes';
 import './FilePicker.css';
 
@@ -109,11 +109,13 @@ const FilePicker: React.FC = () => {
   /**
    * 服务模式实时广播状态（undefined = 尚无广播）：
    * 常驻进程监听 GUI 快照文件，变化即经
-   * onPickerViewPrefsChanged / onPickerPinnedDirsChanged 推送——
-   * 打开中的选择器/保存器实时跟随 GUI，不再只在创建时继承。
+   * onPickerViewPrefsChanged / onPickerPinnedDirsChanged /
+   * onPickerThemeChanged 推送——打开中的选择器/保存器实时跟随 GUI，
+   * 不再只在创建时继承。
    */
   const [liveViewPrefs, setLiveViewPrefs] = useState<PickerViewPrefs | null | undefined>(undefined);
   const [livePinnedDirs, setLivePinnedDirs] = useState<SidebarPinnedItem[] | undefined>(undefined);
+  const [liveTheme, setLiveTheme] = useState<PickerThemeSnapshot | null | undefined>(undefined);
 
   useEffect(() => {
     const offPrefs = window.electron?.onPickerViewPrefsChanged?.((prefs) => {
@@ -122,9 +124,13 @@ const FilePicker: React.FC = () => {
     const offPinned = window.electron?.onPickerPinnedDirsChanged?.((dirs) => {
       setLivePinnedDirs(dirs);
     });
+    const offTheme = window.electron?.onPickerThemeChanged?.((theme) => {
+      setLiveTheme(theme);
+    });
     return () => {
       offPrefs?.();
       offPinned?.();
+      offTheme?.();
     };
   }, []);
 
@@ -153,7 +159,18 @@ const FilePicker: React.FC = () => {
   const [sortOrder, setSortOrder] = useLocalStorage<'asc' | 'desc'>('settings.sortOrder', 'asc');
   const [groupingEnabled, setGroupingEnabled] = useLocalStorage<boolean>('settings.groupingEnabled', true);
   // 与主窗口同键订阅：主题设置保存后经 storage 事件到达，选择器窗口立即重应用
-  const [themeConfig] = useLocalStorage<ThemeConfig | null>('settings.theme', null);
+  const [localThemeConfig] = useLocalStorage<ThemeConfig | null>('settings.theme', null);
+  /**
+   * 主题数据源：优先取实时广播（服务模式）与主进程注入的
+   * config.theme（服务模式创建时从快照补齐——常驻进程 userData 隔离
+   * 读不到 GUI 的 settings.theme，选择器/保存器会永远显示默认主题）；
+   * GUI 模式两者皆无，回落共享 session 的 localStorage（含 storage
+   * 事件实时同步）。
+   */
+  const injectedTheme: PickerThemeSnapshot | undefined = liveTheme === undefined
+    ? config?.theme
+    : (liveTheme ?? undefined);
+  const themeConfig: ThemeConfig | null = injectedTheme ? injectedTheme.config : localThemeConfig;
 
   const { handleDeviceMount, handleDeviceUnmount, handleDeviceEject, handleGvfsMount, handleGvfsUnmount } = useDeviceActions();
 
@@ -161,6 +178,20 @@ const FilePicker: React.FC = () => {
   useEffect(() => {
     void ThemeService.applyTheme(themeConfig);
   }, [themeConfig]);
+
+  /**
+   * 明暗模式（服务模式注入/广播时）：nativeTheme 是进程级全局状态——
+   * 常驻进程只服务选择器/保存器窗口，直接按其快照设置即可让所有
+   * 打开中的选择器跟随 GUI 明暗（null = 跟随系统回落 system）。
+   * GUI 模式无注入，跳过（主窗口已全局设置）。
+   */
+  const injectedDarkMode: boolean | null | undefined = injectedTheme?.darkMode;
+  useEffect(() => {
+    if (injectedDarkMode === undefined) return;
+    void window.electron?.setThemeSource(
+      injectedDarkMode === null ? 'system' : (injectedDarkMode ? 'dark' : 'light'),
+    );
+  }, [injectedDarkMode]);
 
   /**
    * 条目是否命中过滤器：文件名正则（portal glob 转来，大小写不敏感）、

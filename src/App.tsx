@@ -1047,6 +1047,17 @@ function AppContent() {
     });
   }, [themeConfig, setThemeConfig]);
 
+  /**
+   * 主题快照上报（服务模式选择器/保存器注入）：settings.theme 与
+   * settings.darkMode 变化时经 app:set-theme-snapshot 原子落盘到
+   * GUI userData，服务模式常驻进程（userData 隔离读不到 GUI 的
+   * localStorage）创建选择器/保存器窗口时从快照注入颜色主题与明暗
+   * ——否则确认主题后选择器/保存器仍显示默认主题。
+   */
+  useEffect(() => {
+    void window.electron?.setThemeSnapshot(themeConfig, darkMode);
+  }, [themeConfig, darkMode]);
+
   const loadHome = () => {
     handleAddTab("app://dashboard");
   };
