@@ -18,9 +18,20 @@
   z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  /* 明暗开关与预览卡的间距收紧（20px → 10px），固定区整体更矮，
+   * 垂直空间留给下方滚动区 */
+  gap: 10px;
   padding: 4px 0 16px;
   background: var(--md-sys-color-surface-container-high);
+}
+
+/* 主题颜色对话框整体略微加高（560px → 640px），滚动区获得更多垂直空间。
+ * md-dialog 的 max-height 定义在 shadow :host 上（min(560px, 100% - 48px)），
+ * 文档级普通规则压不过 shadow 规则（CSS Scoping：普通声明 shadow 树
+ * 优先），必须 !important（文档级 important 优先于 shadow 普通规则）；
+ * :has() 限定仅作用于主题颜色对话框，不影响其他 md-dialog。 */
+md-dialog:has(.theme-color-fixed) {
+  max-height: min(640px, calc(100% - 48px)) !important;
 }
 
 /* ── 预览卡 ── */
