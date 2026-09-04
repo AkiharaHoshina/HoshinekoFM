@@ -7,7 +7,9 @@
        即 52（与原视觉位置一致：胶囊上边 12/下边 52），不再在胶囊
        下方留 4px 空余 */
     background: transparent;
-    padding: 8px 8px 0;
+    /* 左 padding 归零：首个标签胶囊左缘与文件区左侧边界对齐
+       （右 padding 保留，新建标签按钮与右缘保持间距） */
+    padding: 8px 8px 0 0;
     height: 44px;
     gap: 4px;
     overflow-x: auto;
