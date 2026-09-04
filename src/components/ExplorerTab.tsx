@@ -1742,7 +1742,9 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         </div>
       ) : (
         // 内置终端打开且预览可见时：内容行向下负外边距 24px（状态栏高度），
-        // 预览/文件区延伸贴紧终端标题栏，状态栏叠在其底部边缘上方（终端标题正上方）
+        // 预览/文件区延伸贴紧终端标题栏。层级：文件区 < 统计区（z 101）
+        // < 预览区（z 200）< 终端（z 300）——预览压过统计区，
+        // 三者都在内置终端下层
         <div
           style={{
             display: 'flex',

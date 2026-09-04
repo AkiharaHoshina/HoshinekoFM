@@ -10,6 +10,11 @@
      圆角后露出的角落与文件浏览区背景同色自然过渡 */
   border-radius: 24px 0 0 0;
   overflow: hidden;
+  /* 层级：终端位于文件区（静态）、统计区（z 101）与预览区（z 200）
+     的上层——文件区高度 100% 延伸到终端下方（内容区不裁切），
+     终端必须压过它们 */
+  position: relative;
+  z-index: 300;
 }
 
 .terminal-panel-header {

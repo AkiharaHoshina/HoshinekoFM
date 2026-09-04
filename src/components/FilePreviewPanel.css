@@ -19,6 +19,10 @@
   border-top: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 24px 0 0 0;
   overflow: hidden;
+  /* 层级：预览区压过统计区（z 101），终端（z 300）又压过预览区——
+     终端打开时预览底延伸贴紧终端标题栏，其底部叠在统计区上方 */
+  position: relative;
+  z-index: 200;
 }
 
 /* ── 标题栏 ── */

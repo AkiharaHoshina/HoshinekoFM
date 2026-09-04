@@ -1,5 +1,15 @@
 # 更新日志
 
+## v0.11.33 — 预览区/统计区/终端层级调整
+
+- **调整**（`src/components/FilePreviewPanel.css`、
+  `src/components/TerminalPanel.css`、`src/components/ExplorerTab.tsx`）：
+  层级定为 **文件区（静态）< 统计区（z 101）< 预览区（z 200）<
+  内置终端（z 300）**——预览区压过统计区（终端打开时预览底延伸贴紧
+  终端标题栏，其底部叠在统计区上方）；统计区此前 z 101 压过了静态的
+  终端，给终端补 `position: relative; z-index: 300`、预览补 z 200，
+  三者均位于内置终端下层。
+
 ## v0.11.33 — 状态栏不透明化并压过文件区
 
 - **现象**：文件区底部统计区（底线 + 「N 个项目」）背景透明——内置
