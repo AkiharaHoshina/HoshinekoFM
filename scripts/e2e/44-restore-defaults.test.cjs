@@ -6,7 +6,7 @@
  *   实心图标关/主题与明暗跟随系统/标题栏跟随系统/完整路径关/滚动
  *   文本关/搜索分类开/home 占用关/文件预览关/目录大小计算开），且
  *   确定（退出）不会把旧的对话框内预览盖回去；
- * - 滚动文本开关确认时生效（对话框内切换只改预览）；
+ * - 滚动文本/文件预览开关确认时生效（对话框内切换只改预览）；
  * - 选择器语言同步：pickerSettings.locale 注入 + 广播，标题实时切换
  *   语言（渲染期派生，不再停留在挂载时语言）。
  */
@@ -15,7 +15,7 @@ const h = require('./harness.cjs');
 (async () => {
   await h.setupApp();
 
-  await h.run('44 默认配置 + 滚动文本确认生效 + 选择器语言同步', async () => {
+  await h.run('44 默认配置 + 滚动文本/文件预览确认生效 + 选择器语言同步', async () => {
     const dir = h.tempDir();
     h.makeFileTree(dir, { 'a.txt': 'x' });
 
@@ -79,6 +79,36 @@ const h = require('./harness.cjs');
     await h.waitDialogAnim();
     // 确定（退出）后生效：跑马灯容器消失（enabled=false 分支无该类）
     await h.waitFor(win, `!document.querySelector('.title-bar-title .marquee-container')`, 8000);
+
+    // ── 文件预览开关确认时生效（对话框内切换只改预览）──
+    // 预置 filePreview=true → 预览面板常驻（未选中时显示目录属性）
+    await h.waitFor(win, `!!document.querySelector('.file-preview-panel')`, 8000);
+    await openSettings();
+    const previewRow = await h.js(
+      win,
+      `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /文件预览|File preview/.test(row.textContent ?? ''))`,
+    );
+    h.assert.ok(previewRow.value >= 0, '设置中应存在文件预览行');
+    await h.scrollIntoView(win, '.settings-row', previewRow.value);
+    await h.js(
+      win,
+      `(() => {
+        const row = document.querySelectorAll('.settings-row')[${previewRow.value}];
+        const sw = row ? row.querySelector('md-switch') : null;
+        if (!sw) return false;
+        sw.click();
+        return true;
+      })()`,
+      true,
+    );
+    await h.sleep(400);
+    // 未确定：预览面板仍在（预览未生效）
+    const stillPreview = await h.js(win, `!!document.querySelector('.file-preview-panel')`);
+    h.assert.ok(stillPreview.value, '文件预览开关切换后未确定时面板不应立即消失');
+    await h.key(win, 'Escape');
+    await h.waitDialogAnim();
+    // 确定（退出）后生效：预览面板消失
+    await h.waitFor(win, `!document.querySelector('.file-preview-panel')`, 8000);
 
     // ── 恢复默认设置：取消不变 / 确认生效（旧预览不盖回）──
     await openSettings();

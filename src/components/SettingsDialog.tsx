@@ -31,9 +31,9 @@ interface SettingsDialogProps {
   /** 是否显示主页（/home）子区域的存储占用（默认关闭） */
   showHomeStorageUsage: boolean;
   onToggleShowHomeStorageUsage: () => void;
-  /** 文件预览面板开关（默认关闭） */
+  /** 文件预览面板开关（默认关闭；确定时生效） */
   filePreviewEnabled: boolean;
-  onToggleFilePreview: () => void;
+  onFilePreviewChange: (value: boolean) => void;
   /** 目录大小计算开关（默认开启；关闭后不再 du 遍历目录，减轻磁盘压力） */
   calculateDirSize: boolean;
   onToggleCalculateDirSize: () => void;
@@ -104,7 +104,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   showHomeStorageUsage,
   onToggleShowHomeStorageUsage,
   filePreviewEnabled,
-  onToggleFilePreview,
+  onFilePreviewChange,
   calculateDirSize,
   onToggleCalculateDirSize,
   isDefaultFileManager,
@@ -237,6 +237,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
    * 确定/退出时才应用，避免标题跑马灯在用户犹豫时反复滚动/静止。
    */
   const [pendingMarquee, setPendingMarquee] = useState<boolean>(marqueeEnabled);
+  /**
+   * 文件预览面板的应用时机：同上——开关只更新本地预览，确定/退出时
+   * 才应用，避免面板在用户犹豫时反复展开/收起。
+   */
+  const [pendingFilePreview, setPendingFilePreview] = useState<boolean>(filePreviewEnabled);
   /** 恢复默认设置确认对话框（带背景遮罩的 ConfirmDialog） */
   const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
 
@@ -248,6 +253,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       setPendingFullPath(showFullPathTitle);
       setPendingSearchGroupByDir(searchGroupByDir);
       setPendingMarquee(marqueeEnabled);
+      setPendingFilePreview(filePreviewEnabled);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 open 变化时同步
   }, [open]);
@@ -263,11 +269,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setPendingFullPath(showFullPathTitle);
     setPendingSearchGroupByDir(searchGroupByDir);
     setPendingMarquee(marqueeEnabled);
-  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, marqueeEnabled]);
+    setPendingFilePreview(filePreviewEnabled);
+  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, marqueeEnabled, filePreviewEnabled]);
 
   /**
-   * 应用语言 + 界面缩放 + 标题栏/完整路径/搜索分类/滚动文本等 pending
-   * 设置并关闭：确定与关闭走同一路径（退出设置等于确定）。
+   * 应用语言 + 界面缩放 + 标题栏/完整路径/搜索分类/滚动文本/文件预览
+   * 等 pending 设置并关闭：确定与关闭走同一路径（退出设置等于确定）。
    */
   const handleApply = () => {
     if (pendingLocale !== locale) onLocaleChange(pendingLocale);
@@ -276,6 +283,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     if (pendingFullPath !== showFullPathTitle) onShowFullPathTitleChange(pendingFullPath);
     if (pendingSearchGroupByDir !== searchGroupByDir) onSearchGroupByDirChange(pendingSearchGroupByDir);
     if (pendingMarquee !== marqueeEnabled) onMarqueeChange(pendingMarquee);
+    if (pendingFilePreview !== filePreviewEnabled) onFilePreviewChange(pendingFilePreview);
     onClose();
   };
 
@@ -514,14 +522,14 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               <Switch selected={showHomeStorageUsage} onClick={onToggleShowHomeStorageUsage} />
             </div>
 
-            <div className="settings-row" onClick={onToggleFilePreview}>
+            <div className="settings-row" onClick={() => setPendingFilePreview(!pendingFilePreview)}>
               <div className="settings-row__start">
                 <Icon name="preview" />
                 <div className="settings-row__label">
                   {t("settings.file_preview")}
                 </div>
               </div>
-              <Switch selected={filePreviewEnabled} onClick={onToggleFilePreview} />
+              <Switch selected={pendingFilePreview} onClick={() => setPendingFilePreview(!pendingFilePreview)} />
             </div>
 
             <div className="settings-row" onClick={onToggleCalculateDirSize}>

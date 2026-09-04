@@ -514,7 +514,7 @@ function AppContent() {
     false,
   );
 
-  /** 文件预览面板开关（默认关闭，设置 → 行为） */
+  /** 文件预览面板开关（默认关闭，设置 → 行为；确定时生效） */
   const [filePreviewEnabled, setFilePreviewEnabled] = useLocalStorage<boolean>(
     "settings.filePreview",
     false,
@@ -2085,7 +2085,7 @@ function AppContent() {
             showHomeStorageUsage={showHomeStorageUsage}
             onToggleShowHomeStorageUsage={() => setShowHomeStorageUsage(!showHomeStorageUsage)}
             filePreviewEnabled={filePreviewEnabled}
-            onToggleFilePreview={() => setFilePreviewEnabled(!filePreviewEnabled)}
+            onFilePreviewChange={setFilePreviewEnabled}
             calculateDirSize={calculateDirSize}
             onToggleCalculateDirSize={() => setCalculateDirSize(!calculateDirSize)}
             isDefaultFileManager={isDefaultFileManager}
