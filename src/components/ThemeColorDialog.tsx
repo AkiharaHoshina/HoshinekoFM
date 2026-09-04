@@ -65,6 +65,45 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
   }>({ dark: {}, light: {} });
   /** 最近一次有效草稿：壁纸取色整体失败时回滚到它，防止「确定」保存无种子的坏配置 */
   const draftRef = useRef<ThemeConfig | null>(current);
+  /**
+   * 滚动区是否已滚动（scrollTop > 0，有内容被固定区遮住）：驱动固定区
+   * 底部分隔线的显隐（`.theme-color-fixed--scrolled`）——分隔线只在
+   * 滚动后显示，与 md-dialog 内置分隔线的语义一致（但其内置线位于
+   * 标题下，本对话框已用 noHeadline 移除，这里自绘于固定区底部）。
+   */
+  const [scrolled, setScrolled] = useState(false);
+  /** 当前打开周期的 scroller（Dialog 的 onScrollerReady 回调写入） */
+  const scrollerRef = useRef<HTMLElement | null>(null);
+  /** 最新的 scroll 处理器（供回调挂/摘监听，见 handleScrollerReady） */
+  const onScrollRef = useRef<() => void>(() => { /* 占位 */ });
+  useEffect(() => {
+    onScrollRef.current = () => {
+      const sc = scrollerRef.current;
+      if (sc) setScrolled(sc.scrollTop > 0);
+    };
+  });
+
+  /**
+   * scroller 就绪回调：Dialog 每次打开都重挂载全新 md-dialog，这里
+   * 经回调拿到**当前周期**的 scroller（自行 closest/shadowRoot 定位会
+   * 拿到已被替换的旧元素）。切换周期时先摘除旧监听再挂新的；关闭时
+   * （open=false 无新 scroller）旧监听随旧元素一起被丢弃。
+   */
+  const handleScrollerReady = useCallback((sc: HTMLElement) => {
+    const prev = scrollerRef.current;
+    if (prev && prev !== sc) prev.removeEventListener('scroll', onScrollRef.current);
+    scrollerRef.current = sc;
+    sc.addEventListener('scroll', onScrollRef.current, { passive: true });
+    onScrollRef.current();
+  }, []);
+
+  // 关闭时复位滚动态（下次打开重新从顶部开始）
+  useEffect(() => {
+    if (!open) {
+      setScrolled(false); // eslint-disable-line react-hooks/set-state-in-effect -- 关闭时复位滚动态
+      scrollerRef.current = null;
+    }
+  }, [open]);
 
   // 打开时：加载 DMS 可用性、明暗检测、初始化草稿
   useEffect(() => {
@@ -317,6 +356,7 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
         onClose={handleCancel}
         backdrop
         noHeadline
+        onScrollerReady={handleScrollerReady}
         actions={
           <>
             <Button variant="text" onClick={handleCancel}>
@@ -335,8 +375,9 @@ export const ThemeColorDialog: React.FC<ThemeColorDialogProps> = ({ open, curren
         <div className="theme-color-content">
           {/* 固定区（sticky）：标题 + 预览卡 + 明暗开关——滚动其余设置时
               始终可见（标题移入固定区：对话框无 headline 槽，md-dialog
-              滚动时不再在标题下画内置分隔线，分隔线由固定区底部自绘） */}
-          <div className="theme-color-fixed">
+              滚动时不再在标题下画内置分隔线；分隔线由固定区底部自绘，
+              仅滚动后显示，见 --scrolled 类） */}
+          <div className={`theme-color-fixed${scrolled ? ' theme-color-fixed--scrolled' : ''}`}>
             <div className="theme-color-title">{t('theme.title')}</div>
             {/* 预览卡：颜色草稿与明暗草稿经 previewOverrideStyle 内联覆盖
                 整套变量，仅预览卡即时跟随草稿；应用其余部分与所有窗口

@@ -15,6 +15,16 @@
   max-height 在 shadow `:host` 上，文档级普通规则压不过 shadow 规则，
   用 `md-dialog:has(.theme-color-fixed) { max-height: ... !important }`
   覆盖（`:has()` 限定仅主题颜色对话框），滚动区获得更多垂直空间。
+- **迭代（间距对齐设置主页 + 条件分隔线）**：固定区标题间距与设置主页
+  实测对齐——标题文字距上边 24px（同 headline 槽 padding-top）、标题文字
+  底到预览 24px（标题 margin-bottom 14 + 固定区 gap 10，同设置主页标题底
+  到首个控件 16 底垫 + 8 顶垫）；对话框加高至 670px，滚动区可见高度不变
+  （实测 scroller 590 - 固定区 281 = 309，与原 560 - 251 一致）。分隔线改
+  **仅滚动后显示**（有内容被固定区遮住时）：透明 1px 常驻占位、滚动时
+  着色（无布局位移）——滚动状态经 Dialog 新增 `onScrollerReady` 回调拿
+  到**当前打开周期**的 shadow `.scroller`（md-dialog 每次打开重挂载全新
+   元素，自行定位会拿到已替换的旧元素），组件挂 scroll 监听写入
+   `--scrolled` 类。
 - **迭代（sticky 位移与分隔线）**：实测定位两个问题——
   - **固定区随滚动先微动一次**：md-dialog shadow 给内容槽包装层
     （Dialog 组件的 `div[slot=content]`）加 `padding-top: 8px`

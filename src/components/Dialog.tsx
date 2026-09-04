@@ -170,6 +170,14 @@ interface DialogProps {
    * 该线消失，由内容层自绘固定区/滚动区分隔线。
    */
   noHeadline?: boolean;
+  /**
+   * shadow 内滚动容器（.scroller）就绪回调：md-dialog 每次打开都
+   * 重挂载全新元素（key=cycle），且 Lit 首帧渲染异步——调用方需要
+   * 在 scroller 上挂监听（如主题对话框的滚动状态检测）时必须经此
+   * 回调获取**当前打开周期**的 scroller，自行定位会拿到已被替换的
+   * 旧元素。每次打开周期就绪时都会调用（重复调用幂等）。
+   */
+  onScrollerReady?: (scroller: HTMLElement) => void;
 }
 
 /**
@@ -182,7 +190,7 @@ const DIALOG_GAP_MS = 250;
 
 let lastDialogClosedAt = 0;
 
-export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, actions, backdrop = false, noHeadline = false }) => {
+export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, actions, backdrop = false, noHeadline = false, onScrollerReady }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dialogRef = useRef<any>(null);
 
@@ -202,6 +210,12 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
    * 开关可靠性——关闭动画可接受损失。
    */
   const [cycle, setCycle] = useState(0);
+
+  /** onScrollerReady 的最新值（effect 内经 ref 读取，回调身份变化不重跑 effect） */
+  const onScrollerReadyRef = useRef(onScrollerReady);
+  useEffect(() => {
+    onScrollerReadyRef.current = onScrollerReady;
+  }, [onScrollerReady]);
 
   useEffect(() => {
     if (!open) {
@@ -258,6 +272,9 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
       if (sc) {
         scrollerEl = sc;
         sc.addEventListener('scroll', onShadowScrollerScroll);
+        // 通知调用方：**当前打开周期**的 scroller 就绪（经 ref 读取，
+        // 避免回调身份变化导致本 effect 重跑）
+        onScrollerReadyRef.current?.(sc);
       } else {
         rafId = requestAnimationFrame(tryAttachScroller);
       }

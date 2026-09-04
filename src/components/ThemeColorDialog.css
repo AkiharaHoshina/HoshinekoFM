@@ -20,38 +20,47 @@ md-dialog:has(.theme-color-fixed) > div[slot="content"] {
  * 滚动容器是 md-dialog shadow 内的 .scroller；slotted 内容在 flat tree
  * 中做 sticky 定位，滚出时吸附在 scroller 顶部。负外边距扩进内容层侧
  * padding：固定区背景横向铺满、遮住从下方滚过的内容；sticky 保留布局
- * 占位，后续内容在其下方正常排布。底部 1px 分隔线标出固定区与滚动区
- * 的边界（替代 md-dialog 标题下的内置横线，本对话框无 headline 槽）。 */
+ * 占位，后续内容在其下方正常排布。
+ * 间距对齐设置主页：标题文字距上边 24px（同 headline 槽 padding-top），
+ * 标题到预览 24px（标题 margin-bottom 14 + gap 10，同设置主页标题文字底
+ * 到首个控件 16 底垫 + 8 顶垫）。
+ * 底部分隔线仅滚动后（有内容被遮住）显示：透明 1px 常驻占位（无布局
+ * 位移），--scrolled 时着色（滚动状态由组件监听 scroller 写入）。 */
 .theme-color-fixed {
   position: sticky;
   top: 0;
   z-index: 1;
   display: flex;
   flex-direction: column;
-  /* 明暗开关与预览卡的间距收紧（20px → 10px），固定区整体更矮，
-   * 垂直空间留给下方滚动区 */
   gap: 10px;
   margin: 0 -24px;
-  padding: 8px 24px 12px;
+  padding: 24px 24px 12px;
   background: var(--md-sys-color-surface-container-high);
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  border-bottom: 1px solid transparent;
 }
 
-/* 固定区内的对话框标题（M3 headline-small，替代原 headline 槽） */
+.theme-color-fixed--scrolled {
+  border-bottom-color: var(--md-sys-color-outline-variant);
+}
+
+/* 固定区内的对话框标题（M3 headline-small，替代原 headline 槽）。
+ * margin-bottom 14px + 固定区 gap 10px = 标题文字底到预览 24px，
+ * 与设置主页标题到首个控件的距离一致 */
 .theme-color-title {
   font-size: 1.5rem;
   line-height: 2rem;
   font-weight: 400;
   color: var(--md-sys-color-on-surface);
+  margin-bottom: 14px;
 }
 
-/* 主题颜色对话框整体略微加高（560px → 640px），滚动区获得更多垂直空间。
- * md-dialog 的 max-height 定义在 shadow :host 上（min(560px, 100% - 48px)），
- * 文档级普通规则压不过 shadow 规则（CSS Scoping：普通声明 shadow 树
- * 优先），必须 !important（文档级 important 优先于 shadow 普通规则）；
- * :has() 限定仅作用于主题颜色对话框，不影响其他 md-dialog。 */
+/* 主题颜色对话框整体加高（560px → 670px）：新增标题间距（+30px 固定区）
+ * 后滚动区可见高度保持不变——md-dialog 的 max-height 定义在 shadow
+ * :host 上（min(560px, 100% - 48px)），文档级普通规则压不过 shadow 规则
+ * （CSS Scoping：普通声明 shadow 树优先），必须 !important（文档级
+ * important 优先于 shadow 普通规则）；:has() 限定仅主题颜色对话框。 */
 md-dialog:has(.theme-color-fixed) {
-  max-height: min(640px, calc(100% - 48px)) !important;
+  max-height: min(670px, calc(100% - 48px)) !important;
 }
 
 /* ── 预览卡 ── */
