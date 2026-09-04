@@ -1,5 +1,19 @@
 # 更新日志
 
+## v0.11.33 — 状态栏不透明化并压过文件区
+
+- **现象**：文件区底部统计区（底线 + 「N 个项目」）背景透明——内置
+  终端打开时文件区经负外边距延伸到状态栏下方（贴紧终端标题栏的既有
+  设计），文件（夹）、选区与框选器透过状态栏可见，鼠标亦可能穿透到
+  文件区。
+- **修复**（`src/components/StatusBar.tsx`）：背景改不透明的
+  `--md-sys-color-surface-container-low`（与文件区同色无缝衔接）；
+  底线改 `--md-sys-color-outline-variant`（原 `--border-color` 仅在生成
+  主题中存在，fallback 下底线不渲染）；文字改
+  `--md-sys-color-on-surface-variant`；`position: relative; z-index: 101`
+  ——压过 `.selection-box`（z-index 100），状态栏盖在文件内容与鼠标
+  框选器上方，鼠标不再穿透。
+
 ## v0.11.33 — 标签页栏分界线 + 整体下移
 
 - **调整**（`src/index.css`、`src/components/TabBar.css`、
