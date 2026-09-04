@@ -45,17 +45,30 @@ const crypto = require('crypto');
       paths.push(p);
     }
 
-    // 期望的缓存文件名（PNG 源 → .png；key = `<path>@128`——默认
-    // 图标大小 64 × 2（HiDPI 分桶 128），与 Row 的 thumbSizeForIcon 一致）
+    // 期望的缓存文件名（PNG 源 → .png；key = `<path>@96`——默认
+    // 图标大小 48 × 2（HiDPI 分桶 96），与 Row 的 thumbSizeForIcon 一致）
     const expectedFile = new Map(paths.map((p) => {
-      const hash = crypto.createHash('md5').update(`${p}@128`).digest('hex');
+      const hash = crypto.createHash('md5').update(`${p}@96`).digest('hex');
       return [`${hash}.png`, p];
     }));
 
     // 打开窗口：1400×900 下 30 个条目全部可见，打开即发起全量请求
-    // （真实场景的首开风暴）；主进程并行轮询缓存目录记录落盘顺序
-    const appeared = [];
+    // （真实场景的首开风暴）。v0.11.33 起首次使用默认列表 + 48px——
+    // 列表视图 react-window 只渲染可见行（约 16 条），全量排空断言
+    // 需要 30 个条目全部发起请求：锁定网格视图（图标 48px 下 30 条
+    // 两三行内全部可见，缩略图 key 仍为 `path@96`）。
     const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await h.js(
+      win,
+      `localStorage.setItem('settings.viewMode', JSON.stringify('grid'));
+       localStorage.setItem('settings.iconSize', JSON.stringify(48));
+       location.reload();`,
+    );
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+
+    // 主进程并行轮询缓存目录记录落盘顺序
+    const appeared = [];
     {
       const start = Date.now();
       while (Date.now() - start < 15000) {
@@ -70,7 +83,6 @@ const crypto = require('crypto');
         await h.sleep(25);
       }
     }
-    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
 
     // FIFO 顺序断言：最先落盘的缓存应偏向前部文件（首屏顶部先生成，
     // 而非从底部开始——曾因 LIFO 调度把首开爆发反转）
@@ -87,14 +99,14 @@ const crypto = require('crypto');
     // 队列排空：全部 30 个缓存文件落盘，无丢失
     h.assert.strictEqual(countCacheFiles(), 30, '队列应全量排空（30 个缓存文件）');
 
-    // 二次同批请求：全部命中缓存快路径（s=128 与列表 URL 同尺寸）
+    // 二次同批请求：全部命中缓存快路径（s=96 与列表 URL 同尺寸）
     const second = await h.js(
       win,
       `Promise.all(${JSON.stringify(paths)}.map((p) => new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => resolve(true);
         img.onerror = () => reject(new Error('failed ' + p));
-        img.src = 'media://' + p + '?s=128';
+        img.src = 'media://' + p + '?s=96';
       }))).then(() => 'all-loaded').catch((e) => 'error: ' + e.message)`,
     );
     h.assert.strictEqual(second.value, 'all-loaded', `二次请求（缓存命中）应全部加载：${second.value}`);

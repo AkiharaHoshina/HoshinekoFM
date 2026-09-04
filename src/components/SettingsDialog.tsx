@@ -3,6 +3,7 @@ import { Dialog } from "./Dialog";
 import { Button } from "./Button";
 import { Icon } from "./Icon";
 import { Switch, Slider, Divider, OutlinedSelect, SelectOption } from "./md";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { t, getLanguageOptions, type Locale } from '../i18n';
 import type { BackendConflictInfo } from '../types/electron';
 import "./SettingsDialog.css";
@@ -24,8 +25,9 @@ interface SettingsDialogProps {
   onToggleFilledIcons: () => void;
   locale: Locale;
   onLocaleChange: (locale: Locale) => void;
+  /** 滚动文本（跑马灯标题）开关；确定时生效 */
   marqueeEnabled: boolean;
-  onToggleMarquee: () => void;
+  onMarqueeChange: (value: boolean) => void;
   /** 是否显示主页（/home）子区域的存储占用（默认关闭） */
   showHomeStorageUsage: boolean;
   onToggleShowHomeStorageUsage: () => void;
@@ -63,9 +65,9 @@ interface SettingsDialogProps {
   thumbCacheBusy: boolean;
   /** 清空缩略图缓存（toast 与占用刷新由 App 处理） */
   onClearThumbCache: () => void;
-  /** 搜索分类：搜索结果按同目录分组（组头 = 完整目录路径） */
+  /** 搜索分类：搜索结果按同目录分组（组头 = 完整目录路径；确定时生效） */
   searchGroupByDir: boolean;
-  onToggleSearchGroupByDir: () => void;
+  onSearchGroupByDirChange: (value: boolean) => void;
   /** 标题栏模式（null = 跟随系统，true/false = 手动开/关） */
   titleBarMode: boolean | null;
   onTitleBarChange: (mode: boolean | null) => void;
@@ -78,6 +80,8 @@ interface SettingsDialogProps {
   onThemeColor: () => void;
   /** 当前主题种子色（入口行的色点展示，可为空） */
   themeSeedColor?: string;
+  /** 恢复默认设置（确认后把全部个性化设置重置为首次使用的默认值） */
+  onRestoreDefaults: () => void;
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({
@@ -96,7 +100,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   locale,
   onLocaleChange,
   marqueeEnabled,
-  onToggleMarquee,
+  onMarqueeChange,
   showHomeStorageUsage,
   onToggleShowHomeStorageUsage,
   filePreviewEnabled,
@@ -118,7 +122,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   thumbCacheBusy,
   onClearThumbCache,
   searchGroupByDir,
-  onToggleSearchGroupByDir,
+  onSearchGroupByDirChange,
   titleBarMode,
   onTitleBarChange,
   showFullPathTitle,
@@ -126,6 +130,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   detectedWm,
   onThemeColor,
   themeSeedColor,
+  onRestoreDefaults,
 }) => {
   const langOptions = getLanguageOptions();
 
@@ -221,6 +226,19 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
    */
   const [pendingTitleBar, setPendingTitleBar] = useState<boolean | null>(titleBarMode);
   const [pendingFullPath, setPendingFullPath] = useState<boolean>(showFullPathTitle);
+  /**
+   * 搜索分类的应用时机：同上——开关只更新本地预览，确定/退出时才真正
+   * 应用。生效时若搜索页面打开，右上角分类按钮强制高亮且点击无效
+   * （退出搜索恢复），故不能开关即改（会打断正在浏览的搜索结果）。
+   */
+  const [pendingSearchGroupByDir, setPendingSearchGroupByDir] = useState<boolean>(searchGroupByDir);
+  /**
+   * 滚动文本（跑马灯标题）的应用时机：同上——开关只更新本地预览，
+   * 确定/退出时才应用，避免标题跑马灯在用户犹豫时反复滚动/静止。
+   */
+  const [pendingMarquee, setPendingMarquee] = useState<boolean>(marqueeEnabled);
+  /** 恢复默认设置确认对话框（带背景遮罩的 ConfirmDialog） */
+  const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
 
   // 每次打开对话框时把预览重置为当前已应用的值
   useEffect(() => {
@@ -228,406 +246,462 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- 打开时同步预览初值
       setPendingTitleBar(titleBarMode);
       setPendingFullPath(showFullPathTitle);
+      setPendingSearchGroupByDir(searchGroupByDir);
+      setPendingMarquee(marqueeEnabled);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 open 变化时同步
   }, [open]);
 
+  // 恢复默认设置后（应用值整体变化）把预览重置为新值，避免「确定」
+  // 时把旧预览重新盖回去
+  useEffect(() => {
+    if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 应用值变化时同步预览
+    setPendingLocale(locale);
+    setPendingUiScale(uiScale);
+    setPendingTitleBar(titleBarMode);
+    setPendingFullPath(showFullPathTitle);
+    setPendingSearchGroupByDir(searchGroupByDir);
+    setPendingMarquee(marqueeEnabled);
+  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, marqueeEnabled]);
+
   /**
-   * 应用语言 + 界面缩放并关闭：确定与关闭走同一路径（退出设置等于确定）。
+   * 应用语言 + 界面缩放 + 标题栏/完整路径/搜索分类/滚动文本等 pending
+   * 设置并关闭：确定与关闭走同一路径（退出设置等于确定）。
    */
   const handleApply = () => {
     if (pendingLocale !== locale) onLocaleChange(pendingLocale);
     if (pendingUiScale !== uiScale) onUiScaleChange(pendingUiScale);
     if (pendingTitleBar !== titleBarMode) onTitleBarChange(pendingTitleBar);
     if (pendingFullPath !== showFullPathTitle) onShowFullPathTitleChange(pendingFullPath);
+    if (pendingSearchGroupByDir !== searchGroupByDir) onSearchGroupByDirChange(pendingSearchGroupByDir);
+    if (pendingMarquee !== marqueeEnabled) onMarqueeChange(pendingMarquee);
     onClose();
   };
 
   return (
-    <Dialog
-      title={t("settings.title")}
-      open={open}
-      onClose={handleApply}
-      actions={
-        <Button onClick={handleApply} variant="filled">
-          {t("settings.done")}
-        </Button>
-      }
-    >
-      <div className="settings-content">
-        {/* Language */}
-        <div className="settings-section--compact">
-          <div className="settings-section-header">
-            {t("settings.language")}
-          </div>
-          <OutlinedSelect
-            className="settings-select"
-            value={pendingLocale}
-            onInput={(e) => {
-              const val = (e.target as HTMLSelectElement).value as Locale;
-              if (val) setPendingLocale(val);
-            }}
-          >
-            {langOptions.map((opt) => (
-              <SelectOption key={opt.value} value={opt.value}>
-                <div slot="headline">{opt.name}</div>
-              </SelectOption>
-            ))}
-          </OutlinedSelect>
-        </div>
-
-        <Divider />
-
-        {/* Show Hidden Files */}
-        <div className="settings-row" onClick={onToggleHiddenFiles}>
-          <div className="settings-row__start">
-            <Icon name={showHiddenFiles ? "visibility" : "visibility_off"} />
-            <div className="settings-row__label">
-              {t("settings.show_hidden")}
+    <>
+      <Dialog
+        title={t("settings.title")}
+        open={open}
+        onClose={handleApply}
+        actions={
+          <Button onClick={handleApply} variant="filled">
+            {t("settings.done")}
+          </Button>
+        }
+      >
+        <div className="settings-content">
+          {/* Language */}
+          <div className="settings-section--compact">
+            <div className="settings-section-header">
+              {t("settings.language")}
             </div>
-          </div>
-          <Switch selected={showHiddenFiles} onClick={onToggleHiddenFiles} />
-        </div>
-
-        <Divider />
-
-        {/* Appearance */}
-        <div className="settings-section">
-          <div className="settings-section-header">
-            {t("settings.appearance")}
-          </div>
-
-          <div className="settings-view-mode">
-            <div className="settings-view-mode__label">
-              {t("settings.view_mode")}
-            </div>
-            <div className="settings-view-mode__buttons">
-              <Button
-                variant={viewMode === "grid" ? "filled" : "outlined"}
-                onClick={() => onViewModeChange("grid")}
-              >
-                <Icon name="grid_view" /> {t("settings.grid")}
-              </Button>
-              <Button
-                variant={viewMode === "list" ? "filled" : "outlined"}
-                onClick={() => onViewModeChange("list")}
-              >
-                <Icon name="view_list" /> {t("settings.list")}
-              </Button>
-            </div>
+            <OutlinedSelect
+              className="settings-select"
+              value={pendingLocale}
+              onInput={(e) => {
+                const val = (e.target as HTMLSelectElement).value as Locale;
+                if (val) setPendingLocale(val);
+              }}
+            >
+              {langOptions.map((opt) => (
+                <SelectOption key={opt.value} value={opt.value}>
+                  <div slot="headline">{opt.name}</div>
+                </SelectOption>
+              ))}
+            </OutlinedSelect>
           </div>
 
-          <div className="settings-icon-size">
-            <div className="settings-icon-size__header">
-              <span>{t("settings.icon_size")}</span>
-              <span className="settings-icon-size__value">{iconSize}px</span>
-            </div>
-            <Slider
-              min={16}
-              max={128}
-              step={8}
-              value={iconSize}
-              onInput={(e) => onIconSizeChange(Number((e.target as HTMLInputElement).value))}
-              style={{ width: "100%" }}
-            />
-          </div>
+          <Divider />
 
-          {/* 界面缩放：整页缩放（50%–200%），与图标大小滑条同款样式；
-              拖拽仅改预览，点「完成」/关闭对话框才应用 */}
-          <div className="settings-icon-size">
-            <div className="settings-icon-size__header">
-              <span>{t("settings.ui_scale")}</span>
-              <span className="settings-icon-size__value">{pendingUiScale}%</span>
-            </div>
-            <Slider
-              min={50}
-              max={200}
-              step={5}
-              value={pendingUiScale}
-              onInput={(e) => setPendingUiScale(Number((e.target as HTMLInputElement).value))}
-              style={{ width: "100%" }}
-            />
-          </div>
-
-          <div className="settings-row" onClick={onToggleFilledIcons}>
+          {/* Show Hidden Files */}
+          <div className="settings-row" onClick={onToggleHiddenFiles}>
             <div className="settings-row__start">
-              <Icon name="favorite" filled={filledIcons} />
+              <Icon name={showHiddenFiles ? "visibility" : "visibility_off"} />
               <div className="settings-row__label">
-                {t("settings.filled_icons")}
+                {t("settings.show_hidden")}
               </div>
             </div>
-            <Switch selected={filledIcons} onClick={onToggleFilledIcons} />
+            <Switch selected={showHiddenFiles} onClick={onToggleHiddenFiles} />
           </div>
 
-          {/* 主题颜色入口：打开二级颜色设置对话框。
+          <Divider />
+
+          {/* Appearance */}
+          <div className="settings-section">
+            <div className="settings-section-header">
+              {t("settings.appearance")}
+            </div>
+
+            <div className="settings-view-mode">
+              <div className="settings-view-mode__label">
+                {t("settings.view_mode")}
+              </div>
+              <div className="settings-view-mode__buttons">
+                <Button
+                  variant={viewMode === "grid" ? "filled" : "outlined"}
+                  onClick={() => onViewModeChange("grid")}
+                >
+                  <Icon name="grid_view" /> {t("settings.grid")}
+                </Button>
+                <Button
+                  variant={viewMode === "list" ? "filled" : "outlined"}
+                  onClick={() => onViewModeChange("list")}
+                >
+                  <Icon name="view_list" /> {t("settings.list")}
+                </Button>
+              </div>
+            </div>
+
+            <div className="settings-icon-size">
+              <div className="settings-icon-size__header">
+                <span>{t("settings.icon_size")}</span>
+                <span className="settings-icon-size__value">{iconSize}px</span>
+              </div>
+              <Slider
+                min={16}
+                max={128}
+                step={8}
+                value={iconSize}
+                onInput={(e) => onIconSizeChange(Number((e.target as HTMLInputElement).value))}
+                style={{ width: "100%" }}
+              />
+            </div>
+
+            {/* 界面缩放：整页缩放（50%–200%），与图标大小滑条同款样式；
+              拖拽仅改预览，点「完成」/关闭对话框才应用 */}
+            <div className="settings-icon-size">
+              <div className="settings-icon-size__header">
+                <span>{t("settings.ui_scale")}</span>
+                <span className="settings-icon-size__value">{pendingUiScale}%</span>
+              </div>
+              <Slider
+                min={50}
+                max={200}
+                step={5}
+                value={pendingUiScale}
+                onInput={(e) => setPendingUiScale(Number((e.target as HTMLInputElement).value))}
+                style={{ width: "100%" }}
+              />
+            </div>
+
+            <div className="settings-row" onClick={onToggleFilledIcons}>
+              <div className="settings-row__start">
+                <Icon name="favorite" filled={filledIcons} />
+                <div className="settings-row__label">
+                  {t("settings.filled_icons")}
+                </div>
+              </div>
+              <Switch selected={filledIcons} onClick={onToggleFilledIcons} />
+            </div>
+
+            {/* 主题颜色入口：打开二级颜色设置对话框。
               无原生控件的行（色点 span 不可聚焦），显式 role="button" +
                tabIndex 让它进入 Tab 停靠；Enter/Space 显式激活（注入键盘
               事件不合成原生点击） */}
-          <div
-            className="settings-row"
-            role="button"
-            tabIndex={0}
-            onClick={onThemeColor}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onThemeColor();
-              }
-            }}
-          >
-            <div className="settings-row__start">
-              <Icon name="palette" />
-              <div className="settings-row__label">
-                {t("settings.theme_color")}
-              </div>
-            </div>
-            <span
-              className="settings-theme-dot"
-              style={themeSeedColor ? { backgroundColor: themeSeedColor } : undefined}
-            />
-          </div>
-
-          {/* 标题栏（与明暗主题开关同构：跟随系统 / 开 / 关；
-              确定/关闭设置时才生效——开关只改本地预览） */}
-          <div className="settings-row">
-            <div className="settings-row__start">
-              <Icon name="web_asset" />
-              <div className="settings-row__label-col">
-                <div className="settings-row__label">
-                  {t("settings.title_bar")}
-                </div>
-                {pendingTitleBar === null && detectedWm && (
-                  <div className="settings-row__sub">
-                    {t("theme.follow_system")}（{detectedWm.name || t(`theme.source_${detectedWm.source}`)}）
-                  </div>
-                )}
-              </div>
-            </div>
-            <Button
-              variant="text"
-              disabled={pendingTitleBar === null}
-              onClick={() => setPendingTitleBar(null)}
-            >
-              {t("theme.follow_system")}
-            </Button>
-            <Switch
-              selected={pendingTitleBar === null
-                ? (detectedWm ? detectedWm.kind !== "tiling" : true)
-                : pendingTitleBar}
-              onClick={() => {
-                const effective = pendingTitleBar === null
-                  ? (detectedWm ? detectedWm.kind !== "tiling" : true)
-                  : pendingTitleBar;
-                setPendingTitleBar(!effective);
+            <div
+              className="settings-row"
+              role="button"
+              tabIndex={0}
+              onClick={onThemeColor}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onThemeColor();
+                }
               }}
-            />
-          </div>
-
-          <div className="settings-row">
-            <div className="settings-row__start">
-              <Icon name="subdirectory_arrow_right" />
-              <div className="settings-row__label">
-                {t("settings.show_full_path_title")}
-              </div>
-            </div>
-            <Switch selected={pendingFullPath} onClick={() => setPendingFullPath(!pendingFullPath)} />
-          </div>
-        </div>
-
-        <Divider />
-
-        {/* Behavior */}
-        <div className="settings-section">
-          <div className="settings-section-header">
-            {t("settings.behavior")}
-          </div>
-
-          <div className="settings-row" onClick={onToggleMarquee}>
-            <div className="settings-row__start">
-              <Icon name="play_arrow" />
-              <div className="settings-row__label">
-                {t("settings.marquee_text")}
-              </div>
-            </div>
-            <Switch selected={marqueeEnabled} onClick={onToggleMarquee} />
-          </div>
-
-          <div className="settings-row" onClick={onToggleSearchGroupByDir}>
-            <div className="settings-row__start">
-              <Icon name="account_tree" />
-              <div className="settings-row__label-col">
+            >
+              <div className="settings-row__start">
+                <Icon name="palette" />
                 <div className="settings-row__label">
-                  {t("settings.search_group_by_dir")}
-                </div>
-                <div className="settings-row__sub settings-row__sub--wrap">
-                  {t("settings.search_group_by_dir_desc")}
+                  {t("settings.theme_color")}
                 </div>
               </div>
+              <span
+                className="settings-theme-dot"
+                style={themeSeedColor ? { backgroundColor: themeSeedColor } : undefined}
+              />
             </div>
-            <Switch selected={searchGroupByDir} onClick={onToggleSearchGroupByDir} />
-          </div>
 
-          <div className="settings-row" onClick={onToggleShowHomeStorageUsage}>
-            <div className="settings-row__start">
-              <Icon name="home" />
-              <div className="settings-row__label">
-                {t("settings.show_home_storage")}
+            {/* 标题栏（与明暗主题开关同构：跟随系统 / 开 / 关；
+              确定/关闭设置时才生效——开关只改本地预览） */}
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="web_asset" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.title_bar")}
+                  </div>
+                  {pendingTitleBar === null && detectedWm && (
+                    <div className="settings-row__sub">
+                      {t("theme.follow_system")}（{detectedWm.name || t(`theme.source_${detectedWm.source}`)}）
+                    </div>
+                  )}
+                </div>
               </div>
+              <Button
+                variant="text"
+                disabled={pendingTitleBar === null}
+                onClick={() => setPendingTitleBar(null)}
+              >
+                {t("theme.follow_system")}
+              </Button>
+              <Switch
+                selected={pendingTitleBar === null
+                  ? (detectedWm ? detectedWm.kind !== "tiling" : true)
+                  : pendingTitleBar}
+                onClick={() => {
+                  const effective = pendingTitleBar === null
+                    ? (detectedWm ? detectedWm.kind !== "tiling" : true)
+                    : pendingTitleBar;
+                  setPendingTitleBar(!effective);
+                }}
+              />
             </div>
-            <Switch selected={showHomeStorageUsage} onClick={onToggleShowHomeStorageUsage} />
-          </div>
 
-          <div className="settings-row" onClick={onToggleFilePreview}>
-            <div className="settings-row__start">
-              <Icon name="preview" />
-              <div className="settings-row__label">
-                {t("settings.file_preview")}
-              </div>
-            </div>
-            <Switch selected={filePreviewEnabled} onClick={onToggleFilePreview} />
-          </div>
-
-          <div className="settings-row" onClick={onToggleCalculateDirSize}>
-            <div className="settings-row__start">
-              <Icon name="calculate" />
-              <div className="settings-row__label-col">
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="subdirectory_arrow_right" />
                 <div className="settings-row__label">
-                  {t("settings.calculate_dir_size")}
-                </div>
-                <div className="settings-row__sub settings-row__sub--wrap">
-                  {t("settings.calculate_dir_size_desc")}
+                  {t("settings.show_full_path_title")}
                 </div>
               </div>
+              <Switch selected={pendingFullPath} onClick={() => setPendingFullPath(!pendingFullPath)} />
             </div>
-            <Switch selected={calculateDirSize} onClick={onToggleCalculateDirSize} />
           </div>
 
-          {/* 默认文件管理器（xdg-mime inode/directory 关联，写用户级配置） */}
-          <div className="settings-row">
-            <div className="settings-row__start">
-              <Icon name="folder_shared" />
-              <div className="settings-row__label-col">
+          <Divider />
+
+          {/* Behavior */}
+          <div className="settings-section">
+            <div className="settings-section-header">
+              {t("settings.behavior")}
+            </div>
+
+            <div className="settings-row" onClick={() => setPendingMarquee(!pendingMarquee)}>
+              <div className="settings-row__start">
+                <Icon name="play_arrow" />
                 <div className="settings-row__label">
-                  {t("settings.default_file_manager")}
-                </div>
-                <div className="settings-row__sub">
-                  {isDefaultFileManager
-                    ? t("settings.is_default_file_manager")
-                    : t("settings.default_file_manager_desc")}
+                  {t("settings.marquee_text")}
                 </div>
               </div>
+              <Switch selected={pendingMarquee} onClick={() => setPendingMarquee(!pendingMarquee)} />
             </div>
-            {/* 已是默认时「恢复为系统默认」常驻：有记录还原原处理程序，
+
+            <div className="settings-row" onClick={() => setPendingSearchGroupByDir(!pendingSearchGroupByDir)}>
+              <div className="settings-row__start">
+                <Icon name="account_tree" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.search_group_by_dir")}
+                  </div>
+                  <div className="settings-row__sub settings-row__sub--wrap">
+                    {t("settings.search_group_by_dir_desc")}
+                  </div>
+                </div>
+              </div>
+              <Switch selected={pendingSearchGroupByDir} onClick={() => setPendingSearchGroupByDir(!pendingSearchGroupByDir)} />
+            </div>
+
+            <div className="settings-row" onClick={onToggleShowHomeStorageUsage}>
+              <div className="settings-row__start">
+                <Icon name="home" />
+                <div className="settings-row__label">
+                  {t("settings.show_home_storage")}
+                </div>
+              </div>
+              <Switch selected={showHomeStorageUsage} onClick={onToggleShowHomeStorageUsage} />
+            </div>
+
+            <div className="settings-row" onClick={onToggleFilePreview}>
+              <div className="settings-row__start">
+                <Icon name="preview" />
+                <div className="settings-row__label">
+                  {t("settings.file_preview")}
+                </div>
+              </div>
+              <Switch selected={filePreviewEnabled} onClick={onToggleFilePreview} />
+            </div>
+
+            <div className="settings-row" onClick={onToggleCalculateDirSize}>
+              <div className="settings-row__start">
+                <Icon name="calculate" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.calculate_dir_size")}
+                  </div>
+                  <div className="settings-row__sub settings-row__sub--wrap">
+                    {t("settings.calculate_dir_size_desc")}
+                  </div>
+                </div>
+              </div>
+              <Switch selected={calculateDirSize} onClick={onToggleCalculateDirSize} />
+            </div>
+
+            {/* 默认文件管理器（xdg-mime inode/directory 关联，写用户级配置） */}
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="folder_shared" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.default_file_manager")}
+                  </div>
+                  <div className="settings-row__sub">
+                    {isDefaultFileManager
+                      ? t("settings.is_default_file_manager")
+                      : t("settings.default_file_manager_desc")}
+                  </div>
+                </div>
+              </div>
+              {/* 已是默认时「恢复为系统默认」常驻：有记录还原原处理程序，
                 无记录（系统集成安装直接写 xdg-mime 关联）清除关联回落系统默认，
                 避免按钮消失导致无法取消 */}
-            {isDefaultFileManager ? (
-              <Button variant="outlined" disabled={fmBusy} onClick={onRestoreDefaultFm}>
-                {t("settings.restore_default_file_manager")}
-              </Button>
-            ) : (
-              <Button variant="outlined" disabled={fmBusy} onClick={onSetDefaultFm}>
-                {t("settings.set_default_file_manager")}
-              </Button>
-            )}
-          </div>
+              {isDefaultFileManager ? (
+                <Button variant="outlined" disabled={fmBusy} onClick={onRestoreDefaultFm}>
+                  {t("settings.restore_default_file_manager")}
+                </Button>
+              ) : (
+                <Button variant="outlined" disabled={fmBusy} onClick={onSetDefaultFm}>
+                  {t("settings.set_default_file_manager")}
+                </Button>
+              )}
+            </div>
 
-          {/* 系统集成一键安装/卸载：portal 配置 + D-Bus 激活文件（需授权）；
+            {/* 系统集成一键安装/卸载：portal 配置 + D-Bus 激活文件（需授权）；
               已安装时按钮变为卸载，避免重复安装的误导性失败提示。
               后端名冲突（旧版常驻/无响应）时副标题改为冲突提示 */}
-          <div className="settings-row">
-            <div className="settings-row__start">
-              <Icon name="widgets" />
-              <div className="settings-row__label-col">
-                <div className="settings-row__label">
-                  {t("settings.system_integration")}
-                </div>
-                <div className="settings-row__sub settings-row__sub--wrap">
-                  {portalConflictText
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="widgets" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.system_integration")}
+                  </div>
+                  <div className="settings-row__sub settings-row__sub--wrap">
+                    {portalConflictText
                     ?? (isIntegrationInstalled
                       ? t("settings.system_integration_done")
                       : t("settings.system_integration_desc"))}
+                  </div>
                 </div>
               </div>
+              {isIntegrationInstalled ? (
+                <Button variant="outlined" disabled={integrationBusy} onClick={onUninstallIntegration}>
+                  {t("settings.uninstall_integration")}
+                </Button>
+              ) : (
+                <Button variant="outlined" disabled={integrationBusy} onClick={onInstallIntegration}>
+                  {t("settings.install_integration")}
+                </Button>
+              )}
             </div>
-            {isIntegrationInstalled ? (
-              <Button variant="outlined" disabled={integrationBusy} onClick={onUninstallIntegration}>
-                {t("settings.uninstall_integration")}
-              </Button>
-            ) : (
-              <Button variant="outlined" disabled={integrationBusy} onClick={onInstallIntegration}>
-                {t("settings.install_integration")}
-              </Button>
-            )}
-          </div>
 
-          {/* 重启会话总线（常驻入口）：unresponsive（僵尸占名）冲突态下
+            {/* 重启会话总线（常驻入口）：unresponsive（僵尸占名）冲突态下
               是唯一有效的清除手段（已死进程泄漏的总线连接随总线重启
               释放），成功经主进程回调自动重新注册后端；无冲突时也保留
               入口，作总线异常时的手动恢复手段 */}
-          <div className="settings-row">
-            <div className="settings-row__start">
-              <Icon name="sync" />
-              <div className="settings-row__label-col">
-                <div className="settings-row__label">
-                  {t("settings.restart_session_bus")}
-                </div>
-                <div className="settings-row__sub settings-row__sub--wrap">
-                  {t("settings.restart_session_bus_desc")}
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="sync" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.restart_session_bus")}
+                  </div>
+                  <div className="settings-row__sub settings-row__sub--wrap">
+                    {t("settings.restart_session_bus_desc")}
+                  </div>
                 </div>
               </div>
+              <Button variant="outlined" disabled={sessionBusBusy} onClick={onRestartSessionBus}>
+                {t("settings.restart_session_bus")}
+              </Button>
             </div>
-            <Button variant="outlined" disabled={sessionBusBusy} onClick={onRestartSessionBus}>
-              {t("settings.restart_session_bus")}
-            </Button>
-          </div>
 
-          {/* 缩略图缓存：占用展示 + 一键清除。浏览缓存目录已不再递归
+            {/* 缩略图缓存：占用展示 + 一键清除。浏览缓存目录已不再递归
               生成缓存（fsUtils 递归防护），此处提供手动清理入口 */}
-          <div className="settings-row">
-            <div className="settings-row__start">
-              <Icon name="image" />
-              <div className="settings-row__label-col">
-                <div className="settings-row__label">
-                  {t("settings.thumb_cache")}
-                </div>
-                <div className="settings-row__sub settings-row__sub--wrap">
-                  {thumbCacheInfo && thumbCacheInfo.totalBytes > 0
-                    ? t("settings.thumb_cache_info", thumbCacheInfo.fileCount, formatBytes(thumbCacheInfo.totalBytes))
-                    : t("settings.thumb_cache_empty")}
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="image" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.thumb_cache")}
+                  </div>
+                  <div className="settings-row__sub settings-row__sub--wrap">
+                    {thumbCacheInfo && thumbCacheInfo.totalBytes > 0
+                      ? t("settings.thumb_cache_info", thumbCacheInfo.fileCount, formatBytes(thumbCacheInfo.totalBytes))
+                      : t("settings.thumb_cache_empty")}
+                  </div>
                 </div>
               </div>
+              <Button
+                variant="outlined"
+                disabled={thumbCacheBusy || !thumbCacheInfo || thumbCacheInfo.totalBytes === 0}
+                onClick={onClearThumbCache}
+              >
+                {t("settings.clear_thumb_cache")}
+              </Button>
             </div>
-            <Button
-              variant="outlined"
-              disabled={thumbCacheBusy || !thumbCacheInfo || thumbCacheInfo.totalBytes === 0}
-              onClick={onClearThumbCache}
-            >
-              {t("settings.clear_thumb_cache")}
-            </Button>
+          </div>
+
+          <Divider />
+
+          {/* 默认配置（关于分界线上方）：恢复默认设置入口 */}
+          <div className="settings-section">
+            <div className="settings-section-header">
+              {t("settings.defaults")}
+            </div>
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="restart_alt" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.restore_defaults")}
+                  </div>
+                  <div className="settings-row__sub settings-row__sub--wrap">
+                    {t("settings.restore_defaults_desc")}
+                  </div>
+                </div>
+              </div>
+              <Button variant="outlined" onClick={() => setConfirmRestoreOpen(true)}>
+                {t("settings.restore_defaults")}
+              </Button>
+            </div>
+          </div>
+
+          <Divider />
+
+          {/* About */}
+          <div className="settings-section">
+            <div className="settings-section-header">
+              {t("settings.about")}
+            </div>
+            <div className="settings-about-row">
+              <span className="settings-row__label">{t("settings.version")}</span>
+              <span className="settings-about-version">{version}</span>
+            </div>
+            <div className="settings-about-row">
+              <Button
+                variant="outlined"
+                onClick={() => { void window.electron.openExternal(GITHUB_REPO_URL); }}
+              >
+                GitHub
+              </Button>
+            </div>
           </div>
         </div>
+      </Dialog>
 
-        <Divider />
-
-        {/* About */}
-        <div className="settings-section">
-          <div className="settings-section-header">
-            {t("settings.about")}
-          </div>
-          <div className="settings-about-row">
-            <span className="settings-row__label">{t("settings.version")}</span>
-            <span className="settings-about-version">{version}</span>
-          </div>
-          <div className="settings-about-row">
-            <Button
-              variant="outlined"
-              onClick={() => { void window.electron.openExternal(GITHUB_REPO_URL); }}
-            >
-              GitHub
-            </Button>
-          </div>
-        </div>
-      </div>
-    </Dialog>
+      <ConfirmDialog
+        open={confirmRestoreOpen}
+        title={t("settings.restore_defaults")}
+        message={t("settings.restore_defaults_confirm")}
+        onConfirm={() => {
+          setConfirmRestoreOpen(false);
+          onRestoreDefaults();
+        }}
+        onCancel={() => setConfirmRestoreOpen(false)}
+      />
+    </>
   );
 };

@@ -20,6 +20,15 @@ const h = require('./harness.cjs');
 
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `document.querySelectorAll('.file-list-item').length > 0`);
+    // 本组断言依赖网格列几何：显式锁定网格视图 + 图标 64px
+    // （v0.11.33 起首次使用默认为列表 + 48px，列数不同）
+    await h.js(
+      win,
+      `localStorage.setItem('settings.viewMode', JSON.stringify('grid'));
+       localStorage.setItem('settings.iconSize', JSON.stringify(64));
+       location.reload();`,
+    );
+    await h.waitFor(win, `document.querySelectorAll('.file-list-item').length > 0`);
 
     const sel = () =>
       h.js(win, `Array.from(document.querySelectorAll('.file-list-item.selected')).map((el) => el.dataset.path)`);
@@ -138,6 +147,7 @@ const h = require('./harness.cjs');
     await h.js(
       win,
       `localStorage.setItem('settings.viewMode', JSON.stringify('grid'));
+       localStorage.setItem('settings.iconSize', JSON.stringify(64));
        localStorage.setItem('settings.groupingEnabled', JSON.stringify(true));
        location.reload();`,
     );
@@ -212,10 +222,12 @@ const h = require('./harness.cjs');
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 10`);
 
-    // 恢复网格视图 + 分组（localStorage 跨窗口共享，前置用例可能改动）
+    // 恢复网格视图 + 分组（localStorage 跨窗口共享，前置用例可能改动）；
+    // 列几何断言依赖图标 64px（v0.11.33 起默认 48px，列数不同）
     await h.js(
       win,
       `localStorage.setItem('settings.viewMode', JSON.stringify('grid'));
+       localStorage.setItem('settings.iconSize', JSON.stringify(64));
        localStorage.setItem('settings.groupingEnabled', JSON.stringify(true));
        location.reload();`,
     );

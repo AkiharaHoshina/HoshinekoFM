@@ -22,7 +22,7 @@ import { showToast, shortPath } from '../utils/toast';
 import { sortFiles } from '../utils/fileSort';
 import { ConflictDialog } from './ConflictDialog';
 import type { ConflictResult } from '../utils/fileConflict';
-import { t, useLocale } from '../i18n';
+import { t, useLocale, getLocale, setLocale, getLanguageOptions, type Locale } from '../i18n';
 import { registerKeyboardZone, focusNextKeyboardZone, trackKeyboardZoneFocus } from '../utils/focusZones';
 import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, computeShiftArrowRange, type ListItem } from './FileList/utils';
 import type { IFile, AllDevice, GvfsVolume } from '../types/files';
@@ -103,8 +103,18 @@ const FilePicker: React.FC = () => {
   /** 保存模式：目标名与当前目录现有条目重名 → 弹冲突重命名对话框
    *  （null = 无冲突；isDir = 重名对象是否为目录，影响安全名生成） */
   const [saveConflict, setSaveConflict] = useState<{ name: string; isDir: boolean } | null>(null);
-  /** 选择器窗口标题（标题栏 + document.title 同步） */
-  const [pickerTitle, setPickerTitle] = useState('');
+  /** 选择器窗口标题文本（渲染期派生：语言切换经 useLocale 订阅实时
+   *  重新求值——此前在挂载时 t() 一次存入 state，语言切换后标题栏
+   *  停留在旧语言） */
+  const pickerTitle = !config
+    ? ''
+    : t(
+      config.mode === 'folder' ? 'picker.title_folder'
+        : config.mode === 'files' ? 'picker.title_files'
+          : config.mode === 'items' ? 'picker.title_items'
+            : config.mode === 'save' ? 'picker.title_save'
+              : 'picker.title_file',
+    );
   /** 标题栏可见性（与主窗口同键/同逻辑） */
   const { visible: titleBarVisible } = useTitleBar();
 
@@ -114,11 +124,20 @@ const FilePicker: React.FC = () => {
 
   // 与主界面共享同一批设置键（排序/分组为读写：选择器内可调节并双向同步）
   const [localShowHiddenFiles] = useLocalStorage<boolean>('settings.showHiddenFiles', true);
-  const [localIconSize] = useLocalStorage<number>('settings.iconSize', 64);
-  const [localViewMode] = useLocalStorage<'grid' | 'list'>('settings.viewMode', 'grid');
+  const [localIconSize] = useLocalStorage<number>('settings.iconSize', 48);
+  const [localViewMode] = useLocalStorage<'grid' | 'list'>('settings.viewMode', 'list');
   const [localFilledIcons] = useLocalStorage<boolean>('settings.filledIcons', false);
-  const [localMarqueeEnabled] = useLocalStorage<boolean>('settings.marqueeEnabled', true);
+  const [localMarqueeEnabled] = useLocalStorage<boolean>('settings.marqueeEnabled', false);
   const [localPinnedDirs] = useLocalStorage<SidebarPinnedItem[]>('sidebar.pinned', []);
+  /**
+   * GUI 模式回落：确认时同步组设置（searchGroupByDir /
+   * showFullPathTitle）与主窗口共享同一 localStorage——新窗口创建时
+   * 挂载即取当前值（打开时同步），主窗口设置按下确定后经 storage
+   * 事件实时跟随；服务模式注入值优先于本地（见 pickerSettings）。
+   * 默认值与主窗口一致（搜索分类 true / 完整路径 false）。
+   */
+  const [localSearchGroupByDir] = useLocalStorage<boolean>('settings.searchGroupByDir', true);
+  const [localShowFullPathTitle] = useLocalStorage<boolean>('settings.showFullPathTitle', false);
   /**
    * 服务模式实时广播状态（undefined = 尚无广播）：
    * 常驻进程监听 GUI 快照文件，变化即经
@@ -177,16 +196,30 @@ const FilePicker: React.FC = () => {
   const groupingEnabled = viewPrefs?.groupingEnabled ?? localGroupingEnabled;
   /**
    * 选择器设置（确认时同步组）：优先取实时广播与主进程注入的
-   * config.settings（服务模式从快照补齐）；GUI 模式回落默认
-   * （settings.searchGroupByDir 由主窗口经 storage 事件保持——
-   * 选择器自身无该设置项）。
+   * config.settings（服务模式从快照补齐）；GUI 模式两者皆无，回落
+   * 共享 session 的 localStorage（含 storage 事件实时同步——主窗口
+   * 设置确定后即生效，新建窗口打开时亦取当前值）。
    */
   const pickerSettings: PickerSettings | undefined = liveSettings === undefined
     ? config?.settings
     : (liveSettings ?? undefined);
-  const searchGroupByDir = pickerSettings?.searchGroupByDir ?? false;
+  const searchGroupByDir = pickerSettings?.searchGroupByDir ?? localSearchGroupByDir;
   /** 标题栏显示完整路径（确认时同步组） */
-  const showFullPathTitle = pickerSettings?.showFullPathTitle ?? false;
+  const showFullPathTitle = pickerSettings?.showFullPathTitle ?? localShowFullPathTitle;
+  /**
+   * 服务模式语言同步（确认时同步组 locale）：常驻进程选择器窗口
+   * userData 隔离，i18n 语言默认跟随系统；GUI 在设置里确定语言后经
+   * 快照注入 + 广播到达，这里把注入值应用到 i18n 模块（白名单校验：
+   * 未知代码忽略回落自身）。GUI 模式无注入，走共享 localStorage 的
+   * storage 事件同步（i18n 模块内建）。
+   */
+  useEffect(() => {
+    const loc = pickerSettings?.locale;
+    if (typeof loc !== 'string') return;
+    const known = getLanguageOptions().map((o) => o.value as string);
+    if (!known.includes(loc)) return;
+    if (getLocale() !== loc) setLocale(loc as Locale);
+  }, [pickerSettings?.locale]);
   /**
    * 标题栏显示完整路径（确认时同步组 settings.showFullPathTitle）：
    * 开启时标题 = 「选择文件夹：完整目录」/「保存文件：完整目录」等；
@@ -398,14 +431,6 @@ const FilePicker: React.FC = () => {
       }
       // 保存模式：默认文件名（保存请求方声明）
       if (cfg.mode === 'save') setFileName(cfg.defaultFileName ?? '');
-      const titleKey =
-        cfg.mode === 'folder' ? 'picker.title_folder'
-          : cfg.mode === 'files' ? 'picker.title_files'
-            : cfg.mode === 'items' ? 'picker.title_items'
-              : cfg.mode === 'save' ? 'picker.title_save'
-                : 'picker.title_file';
-      const titleText = t(titleKey);
-      setPickerTitle(titleText);
       const home = await window.electron.getHomePath();
       // 初始目录：声明且为有效目录时优先，否则从家目录开始浏览
       let start = home;
@@ -1015,6 +1040,7 @@ const FilePicker: React.FC = () => {
                 sortBy={sortBy}
                 sortOrder={sortOrder}
                 groupingEnabled={groupingEnabled}
+                groupingForced={searchActive && searchGroupByDir}
                 onSortByChange={setLocalSortBy}
                 onSortOrderChange={setLocalSortOrder}
                 onGroupingToggle={() => setLocalGroupingEnabled(!groupingEnabled)}

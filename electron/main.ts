@@ -84,12 +84,21 @@ let pickerSettingsSnapshotCache: PickerSettings | null = null;
 
 /**
  * 校验选择器设置快照：任一字段非法则整体丢弃（返回 null，不注入）。
+ * locale 可选（老版本 GUI 快照无该字段仍可用）：'auto' 或 `xx-XX` 形态。
  */
 function sanitizePickerSettings(input: unknown): PickerSettings | null {
   const it = (input ?? {}) as Record<string, unknown>;
   if (typeof it.searchGroupByDir !== 'boolean') return null;
   if (typeof it.showFullPathTitle !== 'boolean') return null;
-  return { searchGroupByDir: it.searchGroupByDir, showFullPathTitle: it.showFullPathTitle };
+  const settings: PickerSettings = {
+    searchGroupByDir: it.searchGroupByDir,
+    showFullPathTitle: it.showFullPathTitle,
+  };
+  if (it.locale !== undefined) {
+    if (typeof it.locale !== 'string' || !/^(auto|[a-z]{2}-[A-Z]{2})$/.test(it.locale)) return null;
+    settings.locale = it.locale;
+  }
+  return settings;
 }
 
 /**

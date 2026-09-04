@@ -95,6 +95,13 @@ const h = require('./harness.cjs');
     // 目录组头）。先搜索拿到原始结果，再开广播验证分组头出现
     const sr = await h.js(picker2, `window.electron.search(${JSON.stringify(dir)}, 'a')`);
     h.assert.ok(sr.ok && sr.value.length > 0, '搜索应返回结果');
+    // 搜索前把分组开关注入 false：搜索态下分组按钮仍强制高亮（证明
+    // 高亮来自搜索分类强制而非继承分组开关）
+    await h.js(win, `window.electron.setPickerViewPrefs({
+      viewMode: 'grid', iconSize: 64, showHiddenFiles: true,
+      filledIcons: false, marqueeEnabled: true,
+      sortBy: 'size', sortOrder: 'desc', groupingEnabled: false,
+    })`);
     await h.clickEl(picker2, '.omnibar-trigger');
     await h.waitFor(picker2, `!!document.querySelector('.omnibar-input')`);
     await h.setReactInput(picker2, '.omnibar-input', 'a');
@@ -103,6 +110,38 @@ const h = require('./harness.cjs');
     await h.waitFor(picker2, `!!document.querySelector('.search-filter-type')`, 8000);
     // 搜索结果按目录分组（组头 = 目录路径）
     await h.waitFor(picker2, `document.querySelectorAll('.file-group-header').length > 0`, 8000);
+
+    // 搜索分类开启 + 搜索态：分组按钮强制高亮（groupingEnabled=false 仍 filled）
+    const forcedTag = await h.js(picker2, `(() => {
+      const zone = document.querySelector('[data-kb-zone="topbar-sort"]');
+      const btn = zone?.querySelector('md-filled-icon-button, md-icon-button, md-tonal-icon-button, md-outlined-icon-button');
+      return btn ? btn.tagName.toLowerCase() : null;
+    })()`);
+    h.assert.strictEqual(forcedTag.value, 'md-filled-icon-button', '搜索态分组按钮应强制高亮（filled 变体）');
+
+    // 强制态点击无效：分组开关 localStorage 不变
+    const gBefore = await h.js(picker2, `localStorage.getItem('settings.groupingEnabled')`);
+    await h.clickEl(picker2, '[data-kb-zone="topbar-sort"] md-filled-icon-button, [data-kb-zone="topbar-sort"] md-icon-button');
+    await h.sleep(400);
+    const gAfter = await h.js(picker2, `localStorage.getItem('settings.groupingEnabled')`);
+    h.assert.strictEqual(gAfter.value, gBefore.value, '强制态点击分组按钮不应改变分组开关');
+
+    // 退出搜索（清除按钮）→ 分组按钮恢复可点（groupingEnabled=false → standard）
+    await h.clickEl(picker2, '[title="清除搜索"], [title="Clear Search"]');
+    await h.waitFor(picker2, `!document.querySelector('.search-filter-type')`, 8000);
+    const restoredTag = await h.js(picker2, `(() => {
+      const zone = document.querySelector('[data-kb-zone="topbar-sort"]');
+      const btn = zone?.querySelector('md-filled-icon-button, md-icon-button, md-tonal-icon-button, md-outlined-icon-button');
+      return btn ? btn.tagName.toLowerCase() : null;
+    })()`);
+    h.assert.strictEqual(restoredTag.value, 'md-icon-button', '退出搜索后分组按钮应恢复 standard 变体');
+    // 恢复后可点：先把本地开关置 false（须由主窗口写入——storage 事件
+    // 只在其他窗口派发，选择器自写不更新自身状态；注入值优先于本地，
+    // 本地为默认 true 时点击 true→true 不产生写入），再点击 → 本地翻转 true
+    await h.js(win, `localStorage.setItem('settings.groupingEnabled', 'false'); true`);
+    await h.sleep(300);
+    await h.clickEl(picker2, '[data-kb-zone="topbar-sort"] md-filled-icon-button, [data-kb-zone="topbar-sort"] md-icon-button');
+    await h.waitFor(picker2, `localStorage.getItem('settings.groupingEnabled') === 'true'`, 5000);
   });
 
   h.finish();

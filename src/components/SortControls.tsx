@@ -11,6 +11,12 @@ interface SortControlsProps {
   sortOrder: SortOrder;
   /** 分组开关状态 */
   groupingEnabled: boolean;
+  /**
+   * 搜索态强制分组（settings.searchGroupByDir 开启且搜索进行中）：
+   * 分组按钮强制高亮（filled）且点击无效，退出搜索后恢复可点——
+   * 搜索结果的分组渲染由调用方（groupByDir）控制，此开关只锁定按钮。
+   */
+  groupingForced?: boolean;
   /** 切换排序字段（再次点击同一字段时由组件内部翻转方向） */
   onSortByChange: (by: SortBy) => void;
   /** 设置排序方向 */
@@ -28,6 +34,7 @@ export const SortControls: React.FC<SortControlsProps> = ({
   sortBy,
   sortOrder,
   groupingEnabled,
+  groupingForced = false,
   onSortByChange,
   onSortOrderChange,
   onGroupingToggle,
@@ -35,8 +42,8 @@ export const SortControls: React.FC<SortControlsProps> = ({
   return (
     <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
       <IconButton
-        variant={groupingEnabled ? 'filled' : 'standard'}
-        onClick={onGroupingToggle}
+        variant={groupingEnabled || groupingForced ? 'filled' : 'standard'}
+        onClick={groupingForced ? undefined : onGroupingToggle}
         title={t('sort.toggle_grouping')}
       >
         <Icon name="view_agenda" />

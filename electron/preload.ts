@@ -49,10 +49,11 @@ contextBridge.exposeInMainWorld('electron', {
   onPickerSettingsChanged: (callback: (settings: {
     searchGroupByDir: boolean;
     showFullPathTitle: boolean;
+    locale?: string;
   } | null) => void) => {
     const handler = (_: Electron.IpcRendererEvent, settings: unknown) => {
       if (settings === null || typeof settings === 'object') {
-        callback(settings as { searchGroupByDir: boolean; showFullPathTitle: boolean } | null);
+        callback(settings as { searchGroupByDir: boolean; showFullPathTitle: boolean; locale?: string } | null);
       }
     };
     ipcRenderer.on('picker:settings-changed', handler);
@@ -125,8 +126,8 @@ contextBridge.exposeInMainWorld('electron', {
   /** 上报主题快照（settings.theme 配置 + settings.darkMode）：落盘供服务模式选择器/保存器注入 */
   setThemeSnapshot: (config: unknown, darkMode: boolean | null) =>
     ipcRenderer.invoke('app:set-theme-snapshot', { config, darkMode }),
-  /** 上报选择器设置快照（确认时同步组，如搜索分类）：设置确认时落盘 */
-  setPickerSettings: (settings: { searchGroupByDir: boolean; showFullPathTitle: boolean }) =>
+  /** 上报选择器设置快照（确认时同步组，如搜索分类；locale 可选）：设置确认时落盘 */
+  setPickerSettings: (settings: { searchGroupByDir: boolean; showFullPathTitle: boolean; locale?: string }) =>
     ipcRenderer.invoke('app:set-picker-settings', settings),
   readFile: (path: string) => ipcRenderer.invoke('fs:read-file', path),
   readPreviewText: (path: string) => ipcRenderer.invoke('fs:read-preview-text', path),

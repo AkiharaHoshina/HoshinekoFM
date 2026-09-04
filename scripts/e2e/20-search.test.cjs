@@ -31,6 +31,10 @@ const path = require('path');
 
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 3`);
+    // 跑马灯默认关闭（v0.11.33 起）：组头跑马灯容器断言依赖开启态
+    await h.js(win, `localStorage.setItem('settings.marqueeEnabled', 'true'); true`);
+    win.webContents.reload();
+    await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 3`);
 
     try {
       // omnibar 输入 proc → Enter 搜索（不含 '/' = 搜索而非路径导航）

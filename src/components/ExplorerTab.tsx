@@ -1719,6 +1719,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               sortBy={sortBy}
               sortOrder={sortOrder}
               groupingEnabled={groupingEnabled}
+              groupingForced={searchActive && searchGroupByDir}
               onSortByChange={onSortByChange}
               onSortOrderChange={onSortOrderChange}
               onGroupingToggle={onGroupingToggle}

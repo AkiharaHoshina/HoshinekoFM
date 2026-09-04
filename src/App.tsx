@@ -424,11 +424,11 @@ function AppContent() {
   );
   const [iconSize, setIconSize] = useLocalStorage<number>(
     "settings.iconSize",
-    64,
+    48,
   );
   const [viewMode, setViewMode] = useLocalStorage<"grid" | "list">(
     "settings.viewMode",
-    "grid",
+    "list",
   );
   const [filledIcons, setFilledIcons] = useLocalStorage<boolean>(
     "settings.filledIcons",
@@ -448,7 +448,8 @@ function AppContent() {
     "settings.groupingEnabled",
     true,
   );
-  /** 搜索分类：搜索结果按同目录分组（组头 = 完整目录路径） */
+  /** 搜索分类：搜索结果按同目录分组（组头 = 完整目录路径；
+   *  设置确定时生效——搜索态下强制右上角分类按钮高亮且点击无效） */
   const [searchGroupByDir, setSearchGroupByDir] = useLocalStorage<boolean>(
     "settings.searchGroupByDir",
     true,
@@ -476,7 +477,7 @@ function AppContent() {
 
   const [marqueeEnabled, setMarqueeEnabled] = useLocalStorage<boolean>(
     "settings.marqueeEnabled",
-    true,
+    false,
   );
 
   /**
@@ -543,20 +544,21 @@ function AppContent() {
 
   /**
    * 选择器设置快照上报（确认时同步组）：设置对话框里开关的个性化
-   * 设置（如搜索分类、标题栏完整路径）在主窗口设置按下确定/退出时
-   * 才同步到服务模式选择器/保存器。settingsDialogOpen 关闭即视为确定
-   * （退出设置等于确定，见 SettingsDialog）；初始挂载也上报一次
-   * （种子值）。
+   * 设置（搜索分类、标题栏完整路径、语言）本身即在主窗口设置按下
+   * 确定/退出时生效（见 SettingsDialog），此处在其生效后同步到服务
+   * 模式选择器/保存器。settingsDialogOpen 关闭即视为确定（退出设置
+   * 等于确定，见 SettingsDialog）；初始挂载也上报一次（种子值）。
    */
   useEffect(() => {
     if (settingsDialogOpen) return;
     void window.electron.setPickerSettings({
       searchGroupByDir,
       showFullPathTitle,
+      locale,
     }).catch(() => {
       /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
     });
-  }, [settingsDialogOpen, searchGroupByDir, showFullPathTitle]);
+  }, [settingsDialogOpen, searchGroupByDir, showFullPathTitle, locale]);
 
   /** 默认文件管理器：是否为 inode/directory 的默认处理程序（xdg-mime） */
   const [isDefaultFileManager, setIsDefaultFileManager] = useState(false);
@@ -1082,6 +1084,50 @@ function AppContent() {
   const loadHome = () => {
     handleAddTab("app://dashboard");
   };
+
+  /**
+   * 恢复默认设置（设置底部「恢复默认设置」确认后调用）：把全部
+   * 个性化设置重置为首次使用时的默认值（与 useLocalStorage 各键的
+   * 默认参数一致，见 docs/进度.md 默认配置表）——语言跟随系统、
+   * 显示隐藏文件开、列表模式、图标 48px、UI 100%、实心图标关、
+   * 主题颜色与明暗跟随系统、标题栏跟随系统、完整路径关、滚动文本
+   * 关、搜索分类开、home 存储占用关、文件预览关、计算目录大小开。
+   * 各 setter 写 localStorage 触发跨窗口 storage 同步，快照上报
+   * effect 随状态变化自动落盘（选择器/保存器同步跟随）。
+   */
+  const handleRestoreDefaults = useCallback(() => {
+    handleLocaleChange("auto");
+    setShowHiddenFiles(true);
+    setViewMode("list");
+    setIconSize(48);
+    setUiScale(100);
+    setFilledIcons(false);
+    setThemeConfig(null);
+    setDarkMode(null);
+    setTitleBarMode(null);
+    setShowFullPathTitle(false);
+    setMarqueeEnabled(false);
+    setSearchGroupByDir(true);
+    setShowHomeStorageUsage(false);
+    setFilePreviewEnabled(false);
+    setCalculateDirSize(true);
+  }, [
+    handleLocaleChange,
+    setShowHiddenFiles,
+    setViewMode,
+    setIconSize,
+    setUiScale,
+    setFilledIcons,
+    setThemeConfig,
+    setDarkMode,
+    setTitleBarMode,
+    setShowFullPathTitle,
+    setMarqueeEnabled,
+    setSearchGroupByDir,
+    setShowHomeStorageUsage,
+    setFilePreviewEnabled,
+    setCalculateDirSize,
+  ]);
 
   const hasInitialized = useRef(false);
 
@@ -2035,7 +2081,7 @@ function AppContent() {
             locale={locale}
             onLocaleChange={handleLocaleChange}
             marqueeEnabled={marqueeEnabled}
-            onToggleMarquee={() => setMarqueeEnabled(!marqueeEnabled)}
+            onMarqueeChange={setMarqueeEnabled}
             showHomeStorageUsage={showHomeStorageUsage}
             onToggleShowHomeStorageUsage={() => setShowHomeStorageUsage(!showHomeStorageUsage)}
             filePreviewEnabled={filePreviewEnabled}
@@ -2057,7 +2103,7 @@ function AppContent() {
             thumbCacheBusy={thumbCacheBusy}
             onClearThumbCache={() => void handleClearThumbCache()}
             searchGroupByDir={searchGroupByDir}
-            onToggleSearchGroupByDir={() => setSearchGroupByDir(!searchGroupByDir)}
+            onSearchGroupByDirChange={setSearchGroupByDir}
             titleBarMode={titleBarMode}
             onTitleBarChange={setTitleBarMode}
             showFullPathTitle={showFullPathTitle}
@@ -2065,6 +2111,7 @@ function AppContent() {
             detectedWm={detectedWm}
             onThemeColor={() => setThemeColorOpen(true)}
             themeSeedColor={themeConfig?.seed}
+            onRestoreDefaults={handleRestoreDefaults}
           />
 
           <ThemeColorDialog

@@ -74,6 +74,12 @@ export interface PickerSettings {
   searchGroupByDir: boolean;
   /** 标题栏显示完整路径（开启时选择器标题为「选择文件夹：完整目录」等） */
   showFullPathTitle: boolean;
+  /**
+   * 语言（可选）：服务模式选择器窗口 userData 隔离、i18n 默认跟随
+   * 系统——GUI 在设置里确定语言后经快照注入/广播，选择器应用同一
+   * 语言（'auto' = 跟随系统）。未知代码白名单外，前端忽略。
+   */
+  locale?: string;
 }
 
 /**

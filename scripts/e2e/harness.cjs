@@ -99,16 +99,35 @@ const pickerSettingsFile = () => path.join(app.getPath('userData'), 'picker-sett
 /** 主题快照缓存与文件（与 main.ts 的 app:set-theme-snapshot / loadThemeSnapshot 同步） */
 let themeSnapshotCache = null;
 const themeSnapshotFile = () => path.join(app.getPath('userData'), 'theme-snapshot.json');
+/**
+ * 选择器快照注入开关（默认 true = 服务模式语义）：置 false 模拟真实
+ * main.ts 的 GUI 模式——选择器不注入快照，回落共享 session 的
+ * localStorage（e2e 43 测此路径）。
+ */
+let injectPickerSnapshots = true;
+/** 设置选择器快照注入开关（须在创建选择器窗口前调用） */
+function setPickerSnapshotInjection(enabled) {
+  injectPickerSnapshots = Boolean(enabled);
+}
 
 /**
  * 校验选择器设置快照（与 main.ts sanitizePickerSettings 同步）：
- * 任一字段非法则整体丢弃返回 null（不注入）。
+ * 任一字段非法则整体丢弃返回 null（不注入）。locale 可选（老版本
+ * 快照无该字段仍可用）：'auto' 或 `xx-XX` 形态。
  */
 function sanitizePickerSettings(input) {
   const it = (input ?? {}) || {};
   if (typeof it.searchGroupByDir !== 'boolean') return null;
   if (typeof it.showFullPathTitle !== 'boolean') return null;
-  return { searchGroupByDir: it.searchGroupByDir, showFullPathTitle: it.showFullPathTitle };
+  const settings = {
+    searchGroupByDir: it.searchGroupByDir,
+    showFullPathTitle: it.showFullPathTitle,
+  };
+  if (it.locale !== undefined) {
+    if (typeof it.locale !== 'string' || !/^(auto|[a-z]{2}-[A-Z]{2})$/.test(it.locale)) return null;
+    settings.locale = it.locale;
+  }
+  return settings;
 }
 
 /**
@@ -497,6 +516,13 @@ function resolveStartupPath(argv) {
  * 创建测试窗口（默认加载真实 dist/index.html + 真实 preload）。
  * argv 最后一个参数为存在的目录/文件时作为启动路径（与 main.ts 一致）；
  * picker=true 时以 `?mode=picker` 加载选择器界面并登记配置。
+ *
+ * 快照注入开关（injectPickerSnapshots，默认 true）：真实 main.ts 只在
+ * 服务模式（--portal/--filemanager1）注入快照，GUI 模式选择器共享
+ * session 走 localStorage 回落（见 FilePicker 的 localSearchGroupByDir /
+ * localShowFullPathTitle）。harness 无服务模式进程，默认按服务模式语义
+ * 注入（e2e 32/33/40/41 覆盖该链路）；测 GUI 模式回落用
+ * `h.setPickerSnapshotInjection(false)` 关闭注入（e2e 43）。
  */
 async function createTestWindow({ argv = [], picker = false, pickerConfig = null, parent = null, width = 1400, height = 900, startupSelect = null } = {}) {
   const startupPath = resolveStartupPath(argv);
@@ -524,7 +550,7 @@ async function createTestWindow({ argv = [], picker = false, pickerConfig = null
   win.on('unmaximize', emitMaximizeState);
   if (startupPath) startupPathByWindow.set(win, startupPath);
   if (startupSelect) startupSelectByWindow.set(win, startupSelect);
-  if (picker && pickerConfig) {
+  if (picker && pickerConfig && injectPickerSnapshots) {
     // 与 main.ts 服务模式注入同步：选择器窗口补上固定项与显示偏好快照
     // （userData 隔离下 localStorage 读不到 GUI 固定项/偏好）
     if (pinnedSnapshotCache === null) {
@@ -571,6 +597,10 @@ async function createTestWindow({ argv = [], picker = false, pickerConfig = null
     if (pickerSettingsCache) {
       pickerConfig = { ...pickerConfig, settings: pickerSettingsCache };
     }
+  }
+  if (picker && pickerConfig) {
+    // 与 main.ts createWindow 一致：两种模式都登记配置（pickering:get-config
+    // 的来源），快照注入只是服务模式分支（上面的 injectPickerSnapshots 块）
     pickerConfigByWindow.set(win, pickerConfig);
   }
   if (picker) {
@@ -854,6 +884,7 @@ module.exports = {
   getBackendRegistration: () => backendRegistrationPromise,
   setupApp,
   createTestWindow,
+  setPickerSnapshotInjection,
   getWindows,
   sleep,
   js,

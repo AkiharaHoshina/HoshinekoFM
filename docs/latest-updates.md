@@ -1,5 +1,78 @@
 # 更新日志
 
+## v0.11.33 — 默认配置 + 恢复默认设置 + 选择器本地化 + 滚动文本确认生效
+
+- **默认配置（首次使用，无保存设置时）**：语言跟随系统、显示隐藏文件
+  开、**列表模式**（原网格）、**图标 48px**（原 64）、UI 100%、实心图标
+  关、主题颜色与明暗跟随系统、标题栏跟随系统、完整路径关、**滚动文本
+  关**（原开）、搜索分类开、home 存储占用关、文件预览关、计算目录大小
+  开——App.tsx 与 FilePicker 回落默认值同步修改（`settings.viewMode` =
+  `'list'`、`settings.iconSize` = 48、`settings.marqueeEnabled` = false）。
+- **恢复默认设置**（`src/components/SettingsDialog.tsx` + App.tsx
+  `handleRestoreDefaults`）：设置底部「默认配置」区域（行为设置底部新增
+  分界线 + 关于分界线上方区域）内按钮 → 带背景遮罩 ConfirmDialog
+  （确认/取消）→ 确认后全部个性化设置重置为上述默认值（语言回
+  'auto'、主题/明暗/标题栏回 null），setter 写 localStorage 触发跨窗口
+  storage 同步、快照上报 effect 自动落盘；对话框内旧预览经 props 同步
+  effect 重置，确定（退出）不会把旧预览盖回。
+- **滚动文本开关确认时生效**：与语言/完整路径同款 pending 机制——对话框
+  内切换只改预览，确定/退出才应用（此前开关即改）。
+- **选择器/保存器本地化**：
+  - 标题文本改为渲染期派生（此前挂载时 t() 一次存入 state，语言切换后
+    标题栏停留在旧语言）；
+  - `pickerSettings` 新增 `locale`（确认时同步组，sanitize：'auto' 或
+    `xx-XX`，可选字段向后兼容旧快照）——服务模式选择器经快照注入 +
+    `picker:settings-changed` 广播应用与 GUI 相同语言（标题、按钮、
+    筛选器等全部文本），GUI 模式走共享 localStorage 的 storage 事件；
+    全部 12 个语言文件补齐新增键并核对 308 个源码用键无缺失。
+- e2e 44 新增：恢复默认设置（取消不变/确认全量断言/旧预览不盖回）、
+  滚动文本确认生效、选择器语言注入 + 广播标题实时切换；e2e 15/20/29
+  适配跑马灯新默认（显式开启）。
+
+## v0.11.33 — 选择器/保存器 GUI 模式设置回落（标题栏完整路径失效修复）
+
+- **根因**：真实 `createWindow` 只在服务模式（`SERVICE_ONLY_MODE`）注入
+  快照（`electron/main.ts`），GUI 模式选择器（侧边栏固定目录、壁纸选择、
+  仪表盘打开等）与主窗口共享 session 却无人传递
+  `searchGroupByDir` / `showFullPathTitle`——FilePicker 此前对这两个键
+  **没有 localStorage 回落**，恒为默认 false：标题栏完整路径在 GUI 模式
+  选择器/保存器里完全不显示（用户报告的「标题栏同步没生效」），搜索分类
+  同样失效。
+- **修复**（`src/components/FilePicker.tsx`）：新增
+  `localSearchGroupByDir` / `localShowFullPathTitle`（`useLocalStorage`
+  读与主窗口同一组键，默认值一致 true/false），`pickerSettings` 注入/
+  广播值优先、否则回落本地——**新窗口创建时挂载即取当前设置（打开时
+  同步）**，主窗口设置确定后经 storage 事件实时跟随；服务模式注入路径
+  不受影响。
+- **harness 对齐 main.ts**（`scripts/e2e/harness.cjs`）：快照注入加开关
+  `h.setPickerSnapshotInjection(false)`（默认 true = 服务模式语义，
+  e2e 32/33/40/41 不变）；`pickerConfigByWindow.set` 移出注入块无条件
+  登记（与 main.ts 一致——此前 GUI 模式模拟下 get-config 为 null，
+  选择器白屏）。e2e 43 新增：关闭注入后选择器打开即显示完整路径标题、
+  主窗口写入后标题回落、搜索分类默认分组 + 关闭实时生效。
+
+## v0.11.33 — 搜索分类确定时生效 + 搜索态强制分组按钮
+
+- **设置项改名**：`settings.search_group_by_dir` 文本改为
+  「搜索结果按所在目录分类」（全部语言同步更新：en-US 为
+  「Group search results by directory」等）。
+- **确定时生效**（`src/components/SettingsDialog.tsx`）：搜索分类开关与
+  标题栏完整路径同款 pending 机制——对话框内切换只改预览，按下确定/
+  退出（退出 = 确定）才真正应用（此前开关即改）。App.tsx 的
+  `app:set-picker-settings` 上报随确认后的状态变化走同一条链路同步到
+  服务模式选择器/保存器（`picker:settings-changed` 广播实时跟随）。
+- **搜索态强制分组按钮**（`src/components/SortControls.tsx` 新增
+  `groupingForced`）：搜索分类开启且搜索页面打开时，右上角分类按钮
+  强制高亮（filled 变体）且点击无效（onClick 置空），退出搜索后恢复
+  可点——主窗口（ExplorerTab）与选择器/保存器（FilePicker）一致
+  （`groupingForced={searchActive && searchGroupByDir}`）。按钮不用
+  `disabled` 属性：禁用态会置灰，与「强制高亮」矛盾。
+- 同步规则文档（`同步规则.md`）更新：确认时同步组两项设置主窗口内部
+  亦确认时生效（三方同拍），并补充强制分组按钮行为。
+- e2e 42（新增）：改名文本定位 + 对话框内切换不生效 + Escape 确定生效
+  + 搜索态强制高亮/点击无效 + 退出搜索恢复可点；e2e 41 扩展：选择器
+  搜索态强制高亮/点击无效/退出恢复断言。
+
 ## v0.11.33 — 选择器搜索对齐主窗口 + 标题栏完整路径同步
 
 - **选择器搜索升级**（`src/components/FilePicker.tsx`）：与主窗口同款——
