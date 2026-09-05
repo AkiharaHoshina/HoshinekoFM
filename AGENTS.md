@@ -27,6 +27,7 @@ No unit-test framework — e2e tests live in `scripts/e2e/` (Electron main-proce
   - **picker `resolvePicker` 会立即关窗**：其自身 IPC 响应可能丢失，测试里必须 fire-and-forget（不能 await）。
   - **md-select 程序化选择**：`select(value)` 是静默的（不派发事件），须补 `dispatchEvent(new Event('input'))` 才触发 React onInput（harness 已封装 `selectOption`）；选项是宿主**轻 DOM** 子节点（非 shadow）。
   - **标题栏标题断言**：跑马灯（MarqueeText）会把文本复制多份渲染，textContent 不可靠——读 `.title-bar-title .marquee-container` 的 title 属性；重载后启动路径异步解析（初始为默认仪表盘标签），须 waitFor 目标标题。
+  - **侧边栏布局异步移位**：重载后位置列表（主页等）异步到达会把固定区/设备区整体下移——对侧边栏条目做真实输入点击前须等待布局稳定（固定项出现后再 sleep 数百 ms），否则点击落在位移前的旧坐标误点其他项（e2e 46 踩过：误点主页列表项）。
   - **平铺 WM 下无最小化入口**：检测到 tiling（i3/sway/hyprland/niri 等）时右侧最小化按钮与 v 菜单「最小化」项隐藏（`TitleBar hideMinimize`），且主进程 `window:minimize` no-op 兜底——断言控制区按钮数/下标、最小化行为前先确认当前检测环境（`detectWindowManager` 在 invoke 时读 `process.env.XDG_CURRENT_DESKTOP`，e2e 测试进程即主进程，可直接改环境变量切换分支，e2e 15 用 GNOME 覆盖堆叠分支）。
   - **三态开关（跟随系统/开/关）模式**：标题栏（SettingsDialog）与明暗主题（ThemeColorDialog）同款——md-switch 必须纯展示化（pointer-events:none + 内部 input 移出 Tab 序），交互由外层 `role=switch` 容器接管，草稿只经函数式更新；直接给受控 md-switch 挂 onClick 会有内部 checkbox 状态机与 React 受控赋值的时序竞争（跟随模式「点两次才生效」）。语义：跟随系统按钮→null；手动点开关→取反；跟随模式点开关→退出跟随+新值=生效值的反。**新增同款开关必须遵循 `docs/跟随系统设置项目逻辑.md`**。
   - **portal 后端总线名**：e2e 用**进程级随机名** `…hoshineko.e2e.p<pid>.r<随机>`（`h.E2E_PORTAL_BUS_NAME` / `h.E2E_FM1_BUS_NAME`，harness 经 backends.js 注册），避免与运行中的应用实例/残留 e2e 进程抢名；后端就绪断言 `await h.getBackendRegistration()` 返回值（本进程注册状态），**不要用 GetNameOwner 轮询**（只证明名字有主、不证明主是本进程）。

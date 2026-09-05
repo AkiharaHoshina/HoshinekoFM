@@ -692,7 +692,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <Icon
                   name="folder"
                   className="sidebar-icon"
-                  filled={currentPath.startsWith(item.path)}
+                  // 仅当前打开的固定目录实心：此前用 startsWith，嵌套固定
+                  // （A 与 A/B 同时固定、打开 B）时 A 与 B 图标都实心
+                  filled={currentPath === item.path}
                 />
                 <span className="sidebar-label sidebar-pin-label">
                   <MarqueeText enabled={marqueeEnabled}>{item.name}</MarqueeText>
