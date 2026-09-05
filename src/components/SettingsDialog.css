@@ -80,6 +80,19 @@
   max-width: none;
 }
 
+/* 标题栏开关纯展示化（与主题明暗开关同构）：交互由外层容器
+ * （role=switch）接管，杜绝 md-switch 内部 checkbox 状态机与
+ * React 受控赋值的竞争（跟随模式点两次才生效的根源） */
+.settings-titlebar-switch-area {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.settings-titlebar-switch-area md-switch {
+  pointer-events: none;
+}
+
 .settings-view-mode {
   margin-bottom: 16px;
 }

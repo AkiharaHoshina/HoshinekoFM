@@ -192,6 +192,24 @@ const h = require('./harness.cjs');
     const wm = await h.js(win, `window.electron.detectWindowManager()`);
     h.assert.ok(wm.value && wm.value.kind === 'tiling', `本机应检测为平铺 WM，实际 ${JSON.stringify(wm.value)}`);
 
+    // 跟随系统模式下点开关（真实指针点击，回归 md-switch 内部状态机
+    // 与受控赋值的竞争——曾「点两次才生效」）：退出跟随 + 切换为开
+    // （平铺 WM 生效值 = 隐藏，点一次应变为手动开；交互由外层
+    // role=switch 容器接管，md-switch 纯展示化）
+    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
+    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
+    await h.waitFor(win, `!!document.querySelector('.settings-titlebar-switch-area')`);
+    await h.scrollIntoView(win, '.settings-titlebar-switch-area', 0);
+    const followChecked = await h.js(win, `document.querySelector('.settings-titlebar-switch-area')?.getAttribute('aria-checked')`);
+    h.assert.strictEqual(followChecked.value, 'false', '跟随系统（平铺隐藏）时开关应显示关');
+    await h.clickEl(win, '.settings-titlebar-switch-area', { index: 0 });
+    await h.sleep(300);
+    const afterToggle = await h.js(win, `document.querySelector('.settings-titlebar-switch-area')?.getAttribute('aria-checked')`);
+    h.assert.strictEqual(afterToggle.value, 'true', '跟随模式下点一次开关应退出跟随并切换为开');
+    await h.key(win, 'Escape');
+    await h.waitDialogAnim();
+    await h.waitFor(win, `document.querySelectorAll('.title-bar').length === 1`);
+
     void titleOf;
   });
 

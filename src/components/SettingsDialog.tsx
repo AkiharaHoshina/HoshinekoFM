@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import type { MdSwitch as MdSwitchElement } from '@material/web/switch/switch.js';
 import { Dialog } from "./Dialog";
 import { Button } from "./Button";
 import { Icon } from "./Icon";
@@ -226,6 +227,38 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
    */
   const [pendingTitleBar, setPendingTitleBar] = useState<boolean | null>(titleBarMode);
   const [pendingFullPath, setPendingFullPath] = useState<boolean>(showFullPathTitle);
+
+  /** 标题栏开关显示值：草稿为 null（跟随系统）时显示当前实际生效值 */
+  const effectiveTitleBar = pendingTitleBar === null
+    ? (detectedWm ? detectedWm.kind !== "tiling" : true)
+    : pendingTitleBar;
+
+  /**
+   * 标题栏开关切换语义（与主题明暗开关同构，用户明确约定）：
+   * - 跟随系统模式下点开关：同时「退出跟随」+「切换模式」——
+   *   新值 = 当前生效值（平铺 WM 隐藏 / 常规 DE 显示；检测不可用
+   *   视为显示）的反；
+   * - 手动模式下点开关：普通手动切换（取反）；
+   * - 手动模式下点「跟随系统」：进入跟随模式，开关回到生效值。
+   *
+   * 实现要点：md-switch 内部有独立的 checkbox 状态机（原生切换 →
+   * handleInput 回写 selected），与 React 受控赋值存在时序竞争，是
+   * 「跟随模式点两次才生效」的根源。这里把 md-switch 纯展示化
+   * （pointer-events: none + 内部 input 移出 Tab 序），交互全部由
+   * 外层容器接管——草稿只经函数式更新计算，彻底无竞争。
+   */
+  const handleTitleBarSwitchToggle = () => {
+    setPendingTitleBar((prev) =>
+      prev === null ? !(detectedWm ? detectedWm.kind !== "tiling" : true) : !prev,
+    );
+  };
+
+  /** 移除标题栏开关 md-switch 内部 input 的键盘可达性（交互由外层容器接管） */
+  const titleBarSwitchRef = useRef<MdSwitchElement | null>(null);
+  useEffect(() => {
+    const input = titleBarSwitchRef.current?.shadowRoot?.querySelector('input') as HTMLInputElement | null | undefined;
+    if (input && input.tabIndex !== -1) input.tabIndex = -1;
+  });
   /**
    * 搜索分类的应用时机：同上——开关只更新本地预览，确定/退出时才真正
    * 应用。生效时若搜索页面打开，右上角分类按钮强制高亮且点击无效
@@ -433,7 +466,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             </div>
 
             {/* 标题栏（与明暗主题开关同构：跟随系统 / 开 / 关；
-              确定/关闭设置时才生效——开关只改本地预览） */}
+               确定/关闭设置时才生效——开关只改本地预览。
+               开关纯展示化（role=switch 外层容器接管交互），杜绝
+               md-switch 内部状态机与受控赋值的竞争） */}
             <div className="settings-row">
               <div className="settings-row__start">
                 <Icon name="web_asset" />
@@ -455,17 +490,21 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               >
                 {t("theme.follow_system")}
               </Button>
-              <Switch
-                selected={pendingTitleBar === null
-                  ? (detectedWm ? detectedWm.kind !== "tiling" : true)
-                  : pendingTitleBar}
-                onClick={() => {
-                  const effective = pendingTitleBar === null
-                    ? (detectedWm ? detectedWm.kind !== "tiling" : true)
-                    : pendingTitleBar;
-                  setPendingTitleBar(!effective);
+              <div
+                className="settings-titlebar-switch-area"
+                role="switch"
+                aria-checked={effectiveTitleBar}
+                tabIndex={0}
+                onClick={handleTitleBarSwitchToggle}
+                onKeyDown={(e) => {
+                  if (e.key === " " || e.key === "Enter") {
+                    e.preventDefault();
+                    handleTitleBarSwitchToggle();
+                  }
                 }}
-              />
+              >
+                <Switch ref={titleBarSwitchRef} selected={effectiveTitleBar} />
+              </div>
             </div>
 
             <div className="settings-row">
