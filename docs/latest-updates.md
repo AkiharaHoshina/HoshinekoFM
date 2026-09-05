@@ -46,7 +46,15 @@
   + 切换模式（新值 = 生效值的反）**。统一逻辑写入
   `docs/跟随系统设置项目逻辑.md`（新增同款开关必须遵循）；
   e2e 15 补真实指针点击回归（跟随模式下点一次即退出跟随并切为开）。
-- 验证：`npx tsc -b`、`npm run lint` 通过；e2e 15/24/27/44/45 通过。
+- **可执行文件打开修复（.AppImage 等）**：带扩展名的可执行映像
+  （`.AppImage`/`.bin` 等，X_OK 位 + MIME ∈ x-elf/x-executable/
+  x-pie-executable/x-sharedlib）双击/右键「打开」此前经 xdg-open 处理——
+  系统无注册 handler 时按 octet-stream 交给浏览器弹「是否保存此文件」。
+  `fs:open` 现与无扩展名可执行文件同语义**直接执行**（spawn，cwd =
+  文件所在目录，ENOEXEC 回退 xdg-open）；非可执行 MIME（如 .sh
+  脚本仍交编辑器）与无 X_OK 位的文件行为不变；e2e 03d 覆盖
+  （双击 + 右键两条链路，脚本落标记文件断言）。
+- 验证：`npx tsc -b`、`npm run lint` 通过；e2e 03/15/24/27/44/45 通过。
 
 ## v0.11.36 — 搜索分类抑制逻辑修正
 

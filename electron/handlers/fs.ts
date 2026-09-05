@@ -991,6 +991,19 @@ export function registerFsHandlers() {
   });
 
   /**
+   * 可直接执行（内核 exec 语义）的 MIME 类型：ELF 可执行映像。
+   * 有扩展名且带 X_OK 位的这类文件（.AppImage/.bin 等）xdg-open
+   * 常无注册 handler，按 octet-stream 交给浏览器弹「是否保存」，
+   * 必须直接执行。
+   */
+  const EXECUTABLE_MIMES = new Set([
+    'application/x-elf',
+    'application/x-executable',
+    'application/x-pie-executable',
+    'application/x-sharedlib',
+  ]);
+
+  /**
    * Open a file/directory with the system default handler. Returns error string if failed.
    *
    * 不用 shell.openPath：它在 Linux/Wayland 上会为 xdg-activation 令牌
@@ -999,8 +1012,9 @@ export function registerFsHandlers() {
    * ipcMain.handle 的回复通道被 GC 后以「reply was never sent」拒绝。
    * 这里直接 spawn xdg-open，spawn/error 事件必然落定 promise。
    *
-   * 无后缀的可执行文件（stat X_OK 位）**直接执行**：xdg-open 对无
-   * 扩展名的 ELF/脚本常按 octet-stream 交给浏览器（弹出「是否保存
+   * 可执行文件直接执行：无扩展名（stat X_OK 位）与带扩展名的
+   * 可执行映像（X_OK + MIME ∈ EXECUTABLE_MIMES，如 .AppImage）——
+   * xdg-open 对这类文件常按 octet-stream 交给浏览器（弹出「是否保存
    * 此文件」），不是双击打开的可执行语义。内核拒绝执行（ENOEXEC，
    * 无 shebang 的文本等）时回退 xdg-open。
    */
@@ -1027,33 +1041,47 @@ export function registerFsHandlers() {
 
     try {
       const stats = await fs.stat(filePath);
-      if (stats.isFile() && !path.extname(filePath) && (stats.mode & 0o111) !== 0) {
-        return new Promise<string>((resolve) => {
-          let child: ChildProcess;
+      if (stats.isFile() && (stats.mode & 0o111) !== 0) {
+        const ext = path.extname(filePath);
+        // 无扩展名的可执行文件直接执行（原逻辑）；有扩展名的经 MIME
+        // 判定是否为可执行映像（.AppImage → application/x-elf）——
+        // 避免 xdg-open 无 handler 时按 octet-stream 交给浏览器
+        let shouldExec = !ext;
+        if (ext) {
           try {
-            // cwd = 文件所在目录（可执行程序通常依赖自身目录）
-            child = spawn(filePath, [], {
-              detached: true,
-              stdio: 'ignore',
-              cwd: path.dirname(filePath),
-            });
-          } catch (e) {
-            resolve(getExecError(e).message);
-            return;
+            shouldExec = EXECUTABLE_MIMES.has((await detectMime(filePath)) ?? '');
+          } catch {
+            shouldExec = false;
           }
-          child.on('error', (err: Error) => {
-            // 无 shebang 的文本等被内核拒绝执行：回退默认打开
-            if ((err as NodeJS.ErrnoException).code === 'ENOEXEC') {
-              resolve(openWithXdg());
-            } else {
-              resolve(err.message);
+        }
+        if (shouldExec) {
+          return new Promise<string>((resolve) => {
+            let child: ChildProcess;
+            try {
+              // cwd = 文件所在目录（可执行程序通常依赖自身目录）
+              child = spawn(filePath, [], {
+                detached: true,
+                stdio: 'ignore',
+                cwd: path.dirname(filePath),
+              });
+            } catch (e) {
+              resolve(getExecError(e).message);
+              return;
             }
+            child.on('error', (err: Error) => {
+              // 无 shebang 的文本等被内核拒绝执行：回退默认打开
+              if ((err as NodeJS.ErrnoException).code === 'ENOEXEC') {
+                resolve(openWithXdg());
+              } else {
+                resolve(err.message);
+              }
+            });
+            child.on('spawn', () => {
+              child.unref();
+              resolve('');
+            });
           });
-          child.on('spawn', () => {
-            child.unref();
-            resolve('');
-          });
-        });
+        }
       }
     } catch { /* stat 失败（路径不存在等）：交给 xdg-open 报错 */ }
 
