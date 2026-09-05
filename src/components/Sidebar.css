@@ -54,6 +54,13 @@
     margin: 5.5px 0 13.5px 12px;
 }
 
+/* 区块间隔：固定文件夹/设备等非首区块标题与上一区块内容之间
+   留出略微间隔（标题上方此前无留白，区块间无缝衔接）；
+   首区块贴顶、添加固定按钮区保持与列表条目一致的 4px 间距（见下） */
+.sidebar > .sidebar-section:not(:first-child):not(.sidebar-pin-section) {
+    margin-top: 16px;
+}
+
 .sidebar-list {
     display: flex;
     flex-direction: column;

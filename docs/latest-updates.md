@@ -1,5 +1,42 @@
 # 更新日志
 
+## v0.11.38 — 平铺 WM 最小化修复 / 回收站目录预览 / 标题栏与侧边栏细节
+
+- **问题**：平铺窗口管理器（i3/sway/hyprland/niri 等）不实现
+  iconify（`_NET_WM_STATE_HIDDEN`）语义——用户手动开启自定义标题栏
+  后点击最小化，窗口被 WM 隐藏后无从恢复，表现为「卡死」。
+- **隐藏入口**：`TitleBar` 新增 `hideMinimize` prop（JSDoc 说明平铺
+  WM 语义）——检测到平铺 WM（`detectedWm.kind === 'tiling'`）时，
+  右侧最小化按钮与 v 菜单「最小化」项一并隐藏（保留最大化/关闭）；
+  App 与 FilePicker 两处渲染点同步传入。检测失败/fallback 常规桌面
+  时按钮照常显示（安全默认）。
+- **根因兜底**：`window:minimize` handler 在平铺 WM 下 no-op——
+  `detectWindowManager` 从 system.ts 导出（原为模块私有），window.ts
+  复用同一探测链；绕过 UI 的直接 IPC 调用也不会把窗口送进无法恢复
+  的状态（v 菜单/按钮隐藏只是入口层，主进程层兜底根治）。
+- e2e 15 改造：平铺分支断言控制区仅剩 最大化/关闭（字号 18/22）、
+  无 `.title-bar-btn-min`、v 菜单两条目、`minimizeWindow()` 直接调用
+  不进入最小化态；临时置 `process.env.XDG_CURRENT_DESKTOP=GNOME`
+  （detect 在 invoke 时读环境变量，测试进程即主进程）覆盖堆叠分支
+  断言三按钮（22/18/22）、v 菜单三条目与最小化/恢复全链路，测后
+  恢复环境再断言跟随系统隐藏分支。
+- **回收站目录属性预览修复**：开启预览切到回收站（trash://）且未选中
+  条目时，预览面板此前显示「无法预览」——`fs:get-dir-info` 的路径校验
+  （`startsWith('/')`）先于 trash:// 映射执行，虚拟路径被 INVALID_PATH
+  拦下，映射成为死代码。校验现放行 `trash://`（映射到真实回收站
+  files 目录后再 stat），面板正常展示真实目录的属性（位置行显示虚拟
+  名 trash://，大小经解析出的真实路径 du）；e2e 45 覆盖（面板标题
+  trash:// + 属性网格出现 + 无「无法预览」占位）。
+- **v 菜单最大化项随状态切换**：标题栏 v 菜单首项在窗口最大化时显示
+  「还原」（图标同步切换为还原图标），未最大化时显示「最大化」——
+  与右侧按钮的 title/图标语义一致（复用 `window.restore` 键）；
+  e2e 15 补断言（最大化后重开菜单按 /还原|Restore/ 匹配）。
+- **侧边栏区块间隔**：Places 栏的 位置/固定文件夹/设备 区块标题与
+  上一区块内容此前无缝衔接——非首区块（`.sidebar-section:not(:first-
+  child):not(.sidebar-pin-section)`）标题上方新增 16px 间隔；首区块
+  贴顶与「添加固定」按钮区（保持与列表条目一致的 4px 间距）不受影响。
+- 验证：`npx tsc -b`、`npm run lint` 通过；e2e 15/24/44/45 通过。
+
 ## v0.11.36 — 搜索分类抑制逻辑修正
 
 - **搜索失败复位**：主窗口与选择器/保存器搜索失败（或后端不可用）时

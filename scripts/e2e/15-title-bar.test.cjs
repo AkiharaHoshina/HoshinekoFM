@@ -3,6 +3,10 @@
  * 注意：
  * - 本机 WM 为 niri（平铺）——跟随系统默认隐藏标题栏，用例先强制
  *   settings.titleBar=true 断言显示逻辑，再清空设置断言隐藏分支；
+ * - 平铺 WM 下隐藏最小化按钮与 v 菜单最小化项（WM 不支持 iconify），
+ *   且主进程 window:minimize no-op 兜底；堆叠环境行为经临时改
+ *   process.env.XDG_CURRENT_DESKTOP=GNOME 覆盖断言（detect 在
+ *   invoke 时读环境变量，测试进程即主进程，可直接改）；
  * - 标题断言一律读 .title-bar-title 的 title 属性（跑马灯会把文本
  *   复制多份渲染，textContent 不可靠）；
  * - 重载后启动路径异步解析（初始默认仪表盘标签），须 waitFor 目标标题。
@@ -55,9 +59,18 @@ const h = require('./harness.cjs');
     await h.key(win, 'Enter');
     await h.waitFor(win, `document.querySelector('.title-bar-title .marquee-container')?.title === 'Hoshineko Nya~'`);
 
-    // 图标尺寸：最小化/关闭 22px（字形视觉占比小，放大与最大化方框等大）
+    // 图标尺寸：平铺 WM 下无最小化按钮——控制区只剩 最大化/关闭
+    //（最小化/关闭 22px，最大化 18px）
     const iconSizes = await h.js(win, `Array.from(document.querySelectorAll('.title-bar-controls .title-bar-btn md-icon')).map((i) => getComputedStyle(i).fontSize)`);
-    h.assert.deepStrictEqual(iconSizes.value, ['22px', '18px', '22px'], '最小化/关闭图标应放大至 22px');
+    h.assert.deepStrictEqual(iconSizes.value, ['18px', '22px'], '平铺 WM 下应只有 最大化/关闭 两按钮');
+    const minBtnCount = await h.js(win, `document.querySelectorAll('.title-bar-controls .title-bar-btn-min').length`);
+    h.assert.strictEqual(minBtnCount.value, 0, '平铺 WM 下不应渲染最小化按钮');
+
+    // 根因兜底：主进程 window:minimize 在平铺 WM 下 no-op——
+    // 绕过 UI 直接调 IPC 也不得进入最小化状态（避免无从恢复的卡死）
+    await h.js(win, `window.electron.minimizeWindow().then(() => true)`);
+    await h.sleep(300);
+    h.assert.strictEqual(win.isMinimized(), false, '平铺 WM 下 minimizeWindow 应 no-op');
 
     // 设置确定时生效（非即时）：打开设置 → 切换标题栏开关 → 对话框内
     // 不立即变化 → 关闭（Escape = 确定）→ 标题栏消失
@@ -103,17 +116,18 @@ const h = require('./harness.cjs');
     await h.waitDialogAnim();
     await h.waitFor(win, `document.querySelectorAll('.title-bar').length === 1`);
 
-    // v 菜单：最大化 / 最小化 / 退出 三项，图标字号与右侧按钮一致（18/22/22）
+    // v 菜单：平铺 WM 下只有 最大化 / 退出 两项（无最小化），
+    // 图标字号与右侧按钮一致（18/22）
     await h.clickEl(win, '.title-bar-menu-btn');
-    await h.waitFor(win, `document.querySelectorAll('.context-menu md-list-item').length >= 3`);
+    await h.waitFor(win, `document.querySelectorAll('.context-menu md-list-item').length === 2`);
     const menuIconSizes = await h.js(win, `Array.from(document.querySelectorAll('.context-menu .context-menu-icon')).map((i) => getComputedStyle(i).fontSize)`);
-    h.assert.deepStrictEqual(menuIconSizes.value, ['18px', '22px', '22px'], 'v 菜单图标字号应与右侧按钮一致');
-    // 对齐：三个条目的文字（headline）起始 x 应一致（图标字号不同但前导槽定宽居中）
+    h.assert.deepStrictEqual(menuIconSizes.value, ['18px', '22px'], 'v 菜单图标字号应与右侧按钮一致');
+    // 对齐：两个条目的文字（headline）起始 x 应一致（图标字号不同但前导槽定宽居中）
     const headlineXs = await h.js(win, `Array.from(document.querySelectorAll('.context-menu md-list-item span[slot="headline"]')).map((s) => Math.round(s.getBoundingClientRect().left))`);
     h.assert.strictEqual(new Set(headlineXs.value).size, 1, `菜单文字应左对齐，实际 x: ${JSON.stringify(headlineXs.value)}`);
 
-    // 最大化 / 还原：主进程状态与图标切换
-    await h.clickEl(win, '.title-bar-controls .title-bar-btn', { index: 1 });
+    // 最大化 / 还原：主进程状态与图标切换（平铺下最大化是第一个按钮）
+    await h.clickEl(win, '.title-bar-controls .title-bar-btn', { index: 0 });
     await (async () => {
       const t0 = Date.now();
       while (Date.now() - t0 < 5000) {
@@ -122,9 +136,13 @@ const h = require('./harness.cjs');
       }
       throw new Error('最大化后窗口应处于最大化状态');
     })();
-    await h.waitFor(win, `document.querySelectorAll('.title-bar-controls .title-bar-btn')[1].textContent.includes('filter_none')`);
+    await h.waitFor(win, `document.querySelectorAll('.title-bar-controls .title-bar-btn')[0].textContent.includes('filter_none')`);
 
-    await h.clickEl(win, '.title-bar-controls .title-bar-btn', { index: 1 });
+    // v 菜单「最大化」在最大化状态下切换为「还原」（取消最大化）
+    await h.clickEl(win, '.title-bar-menu-btn');
+    await h.waitFor(win, `/还原|Restore/.test(document.querySelector('.context-menu md-list-item span[slot="headline"]')?.textContent ?? '')`);
+
+    await h.clickEl(win, '.title-bar-controls .title-bar-btn', { index: 0 });
     await (async () => {
       const t0 = Date.now();
       while (Date.now() - t0 < 5000) {
@@ -133,6 +151,20 @@ const h = require('./harness.cjs');
       }
       throw new Error('还原后窗口应退出最大化状态');
     })();
+
+    // 堆叠式环境（模拟 GNOME）：最小化入口恢复且行为正常——
+    // detectWindowManager 在 invoke 时读取 process.env，测试进程即
+    // Electron 主进程，直接改环境变量即可切换检测结果
+    process.env.XDG_CURRENT_DESKTOP = 'GNOME';
+    win.webContents.reload();
+    await h.waitFor(win, `!!document.querySelector('.title-bar')`);
+    await h.waitFor(win, `document.querySelectorAll('.title-bar-controls .title-bar-btn').length === 3`);
+    const stackingSizes = await h.js(win, `Array.from(document.querySelectorAll('.title-bar-controls .title-bar-btn md-icon')).map((i) => getComputedStyle(i).fontSize)`);
+    h.assert.deepStrictEqual(stackingSizes.value, ['22px', '18px', '22px'], '堆叠环境下最小化按钮应恢复（22/18/22）');
+
+    // v 菜单：堆叠环境下三条目（最大化/最小化/退出）
+    await h.clickEl(win, '.title-bar-menu-btn');
+    await h.waitFor(win, `document.querySelectorAll('.context-menu md-list-item').length === 3`);
 
     // 最小化：主进程状态；随后由主进程恢复
     await h.clickEl(win, '.title-bar-controls .title-bar-btn', { index: 0 });
@@ -146,6 +178,11 @@ const h = require('./harness.cjs');
     })();
     win.restore();
     await h.sleep(300);
+
+    // 恢复平铺环境
+    delete process.env.XDG_CURRENT_DESKTOP;
+    win.webContents.reload();
+    await h.waitFor(win, `!!document.querySelector('.title-bar')`);
 
     // 跟随系统：清空设置 → niri（平铺）隐藏标题栏；detect 结果结构化
     await h.js(win, `localStorage.removeItem('settings.titleBar'); true`);

@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow, dialog, nativeImage, app, webContents } from 'e
 import path from 'path';
 import { promises as fs, writeFileSync, existsSync, readFileSync } from 'fs';
 import { getCachedDragIconPath } from '../fsUtils';
+import { detectWindowManager } from './system';
 
 /**
  * 活跃拖拽登记。
@@ -272,8 +273,15 @@ export function registerWindowHandlers(getWindows: () => BrowserWindow[]) {
    * - minimize / toggle-maximize / close 作用于发起请求的窗口；
    * - is-maximized 查询当前最大化状态（标题栏按钮图标随状态切换，
    *   状态变化经 maximize/unmaximize 事件由 main.ts 广播）。
+   *
+   * 最小化在平铺 WM（i3/sway/hyprland/niri 等）下 no-op：这些 WM
+   * 不实现 iconify（_NET_WM_STATE_HIDDEN），窗口被隐藏后无从恢复，
+   * 表现为「最小化卡死」。UI 入口已按检测结果隐藏最小化按钮
+   * （TitleBar hideMinimize），此处为主进程兜底——绕过 UI 的直接
+   * IPC 调用也不会把窗口送进无法恢复的状态。
    */
   ipcMain.handle('window:minimize', (event) => {
+    if (detectWindowManager().kind === 'tiling') return;
     BrowserWindow.fromWebContents(event.sender)?.minimize();
   });
 

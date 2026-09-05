@@ -115,8 +115,9 @@ const FilePicker: React.FC = () => {
             : config.mode === 'save' ? 'picker.title_save'
               : 'picker.title_file',
     );
-  /** 标题栏可见性（与主窗口同键/同逻辑） */
-  const { visible: titleBarVisible } = useTitleBar();
+  /** 标题栏可见性 + 窗口管理器检测（与主窗口同键/同逻辑；
+   *  平铺 WM 下隐藏最小化入口） */
+  const { visible: titleBarVisible, detectedWm } = useTitleBar();
 
   /** 设备 / GVfs 右键菜单（本地状态，菜单项与 App 一致） */
   const [deviceMenu, setDeviceMenu] = useState<{ x: number; y: number; device: AllDevice } | null>(null);
@@ -998,7 +999,11 @@ const FilePicker: React.FC = () => {
   return (
     <div className="picker-shell">
       {titleBarVisible && (
-        <TitleBar title={displayTitle} marqueeEnabled={marqueeEnabled} />
+        <TitleBar
+          title={displayTitle}
+          marqueeEnabled={marqueeEnabled}
+          hideMinimize={detectedWm?.kind === 'tiling'}
+        />
       )}
       <div className="picker-body">
         <Sidebar

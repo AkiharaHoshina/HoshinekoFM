@@ -11,6 +11,14 @@ interface TitleBarProps {
   title: string;
   /** 滚动文本开关（标题超长时滚动显示，否则截断尾部 …） */
   marqueeEnabled: boolean;
+  /**
+   * 平铺 WM（i3/sway/hyprland/niri 等）下隐藏最小化入口：
+   * 右侧最小化按钮与 v 菜单「最小化」项一并移除。这些 WM 不实现
+   * iconify，最小化后窗口无从恢复（表现为卡死）——由调用方按
+   * `detectedWm.kind === 'tiling'` 传入；主进程 window:minimize
+   * 亦有同条件 no-op 兜底。
+   */
+  hideMinimize?: boolean;
 }
 
 /**
@@ -18,10 +26,11 @@ interface TitleBarProps {
  * - 整条可拖动（-webkit-app-region: drag，按钮区 no-drag）；
  * - 左侧「v」菜单按钮（展开：最大化 / 最小化 / 退出）；
  * - v 按钮右侧窗口标题：超长截断尾部 …，开启滚动文本时滚动显示；
- * - 右侧 最小化 / 最大化（最大化时显示还原图标）/ 关闭 三按钮。
+ * - 右侧 最小化 / 最大化（最大化时显示还原图标）/ 关闭 三按钮；
+ *   `hideMinimize` 时最小化按钮与菜单项一并隐藏（平铺 WM）。
  * 最大化状态经 window:is-maximized 查询 + maximize/unmaximize 事件订阅。
  */
-export const TitleBar: React.FC<TitleBarProps> = ({ title, marqueeEnabled }) => {
+export const TitleBar: React.FC<TitleBarProps> = ({ title, marqueeEnabled, hideMinimize = false }) => {
   const [isMaximized, setIsMaximized] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -31,24 +40,29 @@ export const TitleBar: React.FC<TitleBarProps> = ({ title, marqueeEnabled }) => 
     return () => off?.();
   }, []);
 
-  /** v 菜单：最大化 / 最小化 / 退出（图标字号与右侧三按钮一致：18/22/22） */
+  /** v 菜单「最小化」项（平铺 WM 不支持 iconify，hideMinimize 时剔除） */
+  const minimizeItem: ContextMenuItem = {
+    label: t('window.minimize'),
+    icon: 'remove',
+    iconSize: 22,
+    action: () => {
+      void window.electron?.minimizeWindow();
+    },
+  };
+
+  /** v 菜单：最大化 / 最小化 / 退出（图标字号与右侧三按钮一致：18/22/22）；
+   *  `hideMinimize`（平铺 WM）时不含最小化项；最大化时首项切换为
+   *  还原（「取消最大化」，图标与右侧还原按钮一致） */
   const menuItems: ContextMenuItem[] = [
     {
-      label: t('window.maximize'),
-      icon: 'crop_square',
+      label: isMaximized ? t('window.restore') : t('window.maximize'),
+      icon: isMaximized ? 'filter_none' : 'crop_square',
       iconSize: 18,
       action: () => {
         void window.electron?.toggleMaximizeWindow();
       },
     },
-    {
-      label: t('window.minimize'),
-      icon: 'remove',
-      iconSize: 22,
-      action: () => {
-        void window.electron?.minimizeWindow();
-      },
-    },
+    ...(hideMinimize ? [] : [minimizeItem]),
     { label: '', divider: true, action: () => {} },
     {
       label: t('window.quit'),
@@ -85,14 +99,16 @@ export const TitleBar: React.FC<TitleBarProps> = ({ title, marqueeEnabled }) => 
       </div>
 
       <div className="title-bar-controls">
-        <IconButton
-          variant="standard"
-          className="title-bar-btn title-bar-btn-min"
-          onClick={() => void window.electron?.minimizeWindow()}
-          title={t('window.minimize')}
-        >
-          <Icon name="remove" />
-        </IconButton>
+        {!hideMinimize && (
+          <IconButton
+            variant="standard"
+            className="title-bar-btn title-bar-btn-min"
+            onClick={() => void window.electron?.minimizeWindow()}
+            title={t('window.minimize')}
+          >
+            <Icon name="remove" />
+          </IconButton>
+        )}
         <IconButton
           variant="standard"
           className="title-bar-btn"

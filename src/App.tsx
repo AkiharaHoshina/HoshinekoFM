@@ -1586,7 +1586,11 @@ function AppContent() {
   return (
     <div className="app-root">
       {titleBarVisible && (
-        <TitleBar title={windowTitle} marqueeEnabled={marqueeEnabled} />
+        <TitleBar
+          title={windowTitle}
+          marqueeEnabled={marqueeEnabled}
+          hideMinimize={detectedWm?.kind === 'tiling'}
+        />
       )}
       <div className="app-shell" onClick={closeContextMenu}>
         <NavigationRail

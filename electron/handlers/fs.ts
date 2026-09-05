@@ -1276,7 +1276,11 @@ export function registerFsHandlers() {
    *          INVALID_PATH / NOT_DIR / READ_FAILED
    */
   ipcMain.handle('fs:get-dir-info', async (_, dirPath: string) => {
-    if (typeof dirPath !== 'string' || !dirPath.startsWith('/')) {
+    // trash:// 虚拟目录放行（随后映射到真实回收站 files 目录）——
+    // 它不以 '/' 开头，若与普通路径同条件校验会被 INVALID_PATH 拦下，
+    // 使下面的 trash 映射成为死代码（预览面板切到回收站时显示
+    // 「无法预览」）。
+    if (typeof dirPath !== 'string' || (dirPath !== 'trash://' && !dirPath.startsWith('/'))) {
       return { success: false, code: 'INVALID_PATH' };
     }
     const realPath = dirPath === 'trash://'

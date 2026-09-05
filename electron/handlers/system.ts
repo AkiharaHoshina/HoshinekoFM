@@ -830,7 +830,7 @@ export interface WindowManagerResult {
  * 分隔的列表，逐项归一后查白名单）；平铺命中优先于常规命中；
  * 全部未命中时 fallback 常规桌面（标题栏显示）。
  */
-function detectWindowManager(): WindowManagerResult {
+export function detectWindowManager(): WindowManagerResult {
   for (const [source, value] of [
     ['xdg_current_desktop', process.env.XDG_CURRENT_DESKTOP],
     ['xdg_session_desktop', process.env.XDG_SESSION_DESKTOP],
