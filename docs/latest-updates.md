@@ -1,5 +1,33 @@
 # 更新日志
 
+## v0.11.41 — Ctrl+滚轮图标缩放 + 右上角视图模式切换按钮
+
+- **Ctrl+滚轮图标缩放**（主窗口/选择器/保存器同款手势）：光标在文件区
+  （`.file-list-container`）上按 Ctrl+滚轮按设置滑条同范围/步进
+  （16–128px±8）调整图标大小——与设置对话框的「图标大小」滑条完全同源
+  （范围/步进常量抽到 `src/utils/iconZoom.ts`，滑条与快捷键共用）。
+  主窗口缩放即写 `settings.iconSize`（立即同步组）：GUI 模式选择器经
+  共享 session 的 storage 事件实时跟随，服务模式选择器/保存器经
+  viewPrefs 快照广播实时跟随；选择器/保存器内缩放同样生效——GUI 模式
+  写共享 localStorage 双向同步，服务模式（userData 隔离、注入值优先）
+  经 `iconSizeOverride` **会话覆盖**立即生效，收到下一次主窗口广播即
+  清除覆盖（主窗口为权威）。对话框/右键菜单打开时不响应；窗口级
+  非被动监听阻止默认滚动（React 受控 onWheel 是 passive 的、无效）。
+- **右上角视图模式切换按钮**（主窗口/选择器/保存器共用 SortControls）：
+  分类开关右侧新增**单个切换按钮**，图标/tooltip 显示切换目标（列表
+  模式显示网格图标），点击翻转网格/列表——与设置对话框同键
+  `settings.viewMode`（立即同步组，跨窗口/快照广播自动生效）；选择器内
+  切换走 `viewModeOverride` 会话覆盖（与图标缩放同款语义：GUI 模式只写
+  共享 localStorage 双向同步，服务模式注入优先时写覆盖、收到广播即
+  清除）。
+- i18n：新增 `sort.switch_to_grid` / `sort.switch_to_list`（12 语言文件）。
+- e2e 50（`50-ctrl-wheel-zoom.test.cjs`）：主窗口缩放持久化键与图标
+  宽度断言 + 打开中的选择器实时跟随 + 选择器内缩放会话覆盖 + 主窗口
+  变化覆盖 + GUI 模式（关闭注入）双向同步；e2e 51
+  （`51-view-mode-toggle.test.cjs`）：主窗口/选择器切换按钮翻转断言 +
+  注入继承与实时跟随 + 会话覆盖与权威恢复 + GUI 模式双向同步（按钮按
+  图标 ligature 定位，locale 无关）。全套 e2e 51 套通过。
+
 ## v0.11.40 — 加入彩蛋
 
 - **加入彩蛋**：设置对话框打开期间按 **Ctrl+PgDn** 弹出「Hoshineko

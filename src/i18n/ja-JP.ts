@@ -379,6 +379,8 @@ const jaJP = {
 
   // ── 排序 ──
   'sort.toggle_grouping': 'グループ化の切り替え',
+  'sort.switch_to_grid': 'グリッド表示に切り替え',
+  'sort.switch_to_list': 'リスト表示に切り替え',
   'sort.by_name': '名前順',
   'sort.by_size': 'サイズ順',
   'sort.by_date': '更新日時順',

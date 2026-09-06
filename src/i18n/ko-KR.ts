@@ -380,6 +380,8 @@ const koKR = {
 
   // ── 정렬 ──
   'sort.toggle_grouping': '그룹화 전환',
+  'sort.switch_to_grid': '격자 보기로 전환',
+  'sort.switch_to_list': '목록 보기로 전환',
   'sort.by_name': '이름순 정렬',
   'sort.by_size': '크기순 정렬',
   'sort.by_date': '수정일순 정렬',

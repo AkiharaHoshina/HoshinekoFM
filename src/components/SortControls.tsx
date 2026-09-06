@@ -17,27 +17,34 @@ interface SortControlsProps {
    * 搜索结果的分组渲染由调用方（groupByDir）控制，此开关只锁定按钮。
    */
   groupingForced?: boolean;
+  /** 当前视图模式（网格/列表） */
+  viewMode: 'grid' | 'list';
   /** 切换排序字段（再次点击同一字段时由组件内部翻转方向） */
   onSortByChange: (by: SortBy) => void;
   /** 设置排序方向 */
   onSortOrderChange: (order: SortOrder) => void;
   /** 切换分组开关 */
   onGroupingToggle: () => void;
+  /** 切换视图模式（网格/列表，与设置对话框同键） */
+  onViewModeChange: (mode: 'grid' | 'list') => void;
 }
 
 /**
- * 浏览区排序/分组控件组（分组开关 + 名称/大小/日期排序按钮）。
- * 主窗口（ExplorerTab 顶栏）与文件选择器（picker-topbar）共用；
- * 状态由调用方持有（settings.* 持久化键），实现跨窗口完全同步。
+ * 浏览区排序/分组控件组（分组开关 + 视图模式切换 + 名称/大小/日期
+ * 排序按钮）。主窗口（ExplorerTab 顶栏）与文件选择器（picker-topbar）
+ * 共用；状态由调用方持有（settings.* 持久化键），实现跨窗口完全同步。
+ * 视图模式切换按钮图标/tooltip 显示切换目标（列表模式显示网格图标）。
  */
 export const SortControls: React.FC<SortControlsProps> = ({
   sortBy,
   sortOrder,
   groupingEnabled,
   groupingForced = false,
+  viewMode,
   onSortByChange,
   onSortOrderChange,
   onGroupingToggle,
+  onViewModeChange,
 }) => {
   return (
     <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
@@ -47,6 +54,12 @@ export const SortControls: React.FC<SortControlsProps> = ({
         title={t('sort.toggle_grouping')}
       >
         <Icon name="view_agenda" />
+      </IconButton>
+      <IconButton
+        onClick={() => onViewModeChange(viewMode === 'grid' ? 'list' : 'grid')}
+        title={viewMode === 'grid' ? t('sort.switch_to_list') : t('sort.switch_to_grid')}
+      >
+        <Icon name={viewMode === 'grid' ? 'view_list' : 'grid_view'} />
       </IconButton>
       <div style={{ width: '1px', background: 'var(--md-sys-color-outline-variant)', margin: '0 4px' }} />
       <IconButton

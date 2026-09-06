@@ -33,6 +33,7 @@ import { OpenWithDialog } from "./components/OpenWithDialog";
 import { PropertiesDialog } from "./components/PropertiesDialog";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useUiZoom } from "./hooks/useUiZoom";
+import { zoomIconSize } from "./utils/iconZoom";
 import type { ThemeConfig } from "./types/theme";
 import {
   trashFiles,
@@ -1210,11 +1211,25 @@ function AppContent() {
       const openDialogs = Array.from(document.querySelectorAll('md-dialog[open]'));
       if (openDialogs.length > 0 && !openDialogs.some((d) => d.contains(target))) {
         e.preventDefault();
+        return;
+      }
+      // Ctrl+滚轮：文件区图标大小缩放（与设置滑条同范围/步进 16–128±8）。
+      // 主窗口是权威来源：写 settings.iconSize → GUI 模式选择器经共享
+      // session 的 storage 事件实时跟随；服务模式经 viewPrefs 快照广播
+      // 到达打开中的选择器/保存器（立即同步组）。对话框打开时不缩放
+      //（此时 target 必在对话框内，不可能命中文件区容器）。
+      if (
+        e.ctrlKey &&
+        e.deltaY !== 0 &&
+        (target as Element).closest?.('.file-list-container')
+      ) {
+        e.preventDefault();
+        setIconSize((prev) => zoomIconSize(prev, e.deltaY));
       }
     };
     window.addEventListener('wheel', handler, { passive: false });
     return () => window.removeEventListener('wheel', handler);
-  }, []);
+  }, [setIconSize]);
 
   /**
    * 键盘分区框架（见 utils/focusZones）：
@@ -1746,6 +1761,7 @@ function AppContent() {
                   onSortByChange={setSortBy}
                   onSortOrderChange={setSortOrder}
                   onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}
+                  onViewModeChange={setViewMode}
                   refreshSignal={tab.version}
                   scrollToFileName={tab.pendingSelectFile}
                   onScrollToComplete={handleScrollToComplete}

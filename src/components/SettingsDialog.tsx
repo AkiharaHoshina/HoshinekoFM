@@ -6,6 +6,7 @@ import { Icon } from "./Icon";
 import { Switch, Slider, Divider, OutlinedSelect, SelectOption } from "./md";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { t, getLanguageOptions, type Locale } from '../i18n';
+import { ICON_SIZE_MIN, ICON_SIZE_MAX, ICON_SIZE_STEP } from '../utils/iconZoom';
 import type { BackendConflictInfo } from '../types/electron';
 import "./SettingsDialog.css";
 
@@ -401,9 +402,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 <span className="settings-icon-size__value">{iconSize}px</span>
               </div>
               <Slider
-                min={16}
-                max={128}
-                step={8}
+                min={ICON_SIZE_MIN}
+                max={ICON_SIZE_MAX}
+                step={ICON_SIZE_STEP}
                 value={iconSize}
                 onInput={(e) => onIconSizeChange(Number((e.target as HTMLInputElement).value))}
                 style={{ width: "100%" }}

@@ -20,6 +20,7 @@ import { DragProvider } from '../contexts/DragContext';
 import { TitleBar } from './TitleBar';
 import { showToast, shortPath } from '../utils/toast';
 import { sortFiles, sortFilesByDir } from '../utils/fileSort';
+import { zoomIconSize } from '../utils/iconZoom';
 import { ConflictDialog } from './ConflictDialog';
 import type { ConflictResult } from '../utils/fileConflict';
 import { t, useLocale, getLocale, setLocale, getLanguageOptions, type Locale } from '../i18n';
@@ -125,8 +126,8 @@ const FilePicker: React.FC = () => {
 
   // 与主界面共享同一批设置键（排序/分组为读写：选择器内可调节并双向同步）
   const [localShowHiddenFiles] = useLocalStorage<boolean>('settings.showHiddenFiles', true);
-  const [localIconSize] = useLocalStorage<number>('settings.iconSize', 48);
-  const [localViewMode] = useLocalStorage<'grid' | 'list'>('settings.viewMode', 'list');
+  const [localIconSize, setLocalIconSize] = useLocalStorage<number>('settings.iconSize', 48);
+  const [localViewMode, setLocalViewMode] = useLocalStorage<'grid' | 'list'>('settings.viewMode', 'list');
   const [localFilledIcons] = useLocalStorage<boolean>('settings.filledIcons', false);
   const [localMarqueeEnabled] = useLocalStorage<boolean>('settings.marqueeEnabled', false);
   const [localPinnedDirs] = useLocalStorage<SidebarPinnedItem[]>('sidebar.pinned', []);
@@ -150,9 +151,28 @@ const FilePicker: React.FC = () => {
   const [livePinnedDirs, setLivePinnedDirs] = useState<SidebarPinnedItem[] | undefined>(undefined);
   const [liveTheme, setLiveTheme] = useState<PickerThemeSnapshot | null | undefined>(undefined);
   const [liveSettings, setLiveSettings] = useState<PickerSettings | null | undefined>(undefined);
+  /**
+   * Ctrl+滚轮缩放会话覆盖：服务模式下注入的 viewPrefs 优先于本地
+   * localStorage（userData 隔离，写本地不会改变显示），缩放时写入
+   * 覆盖值让当前窗口立即响应；GUI 模式无注入（viewPrefs 为 undefined），
+   * 只写本地 settings.iconSize，经共享 session 的 storage 事件与主窗口
+   * 双向同步。语义与「选择器内调整会被下一次主窗口变化覆盖」一致：
+   * 收到新广播（onPickerViewPrefsChanged）即清除覆盖，主窗口重新权威。
+   */
+  const [iconSizeOverride, setIconSizeOverride] = useState<number | null>(null);
+  /**
+   * 视图模式切换会话覆盖：与 iconSizeOverride 同款语义——服务模式下
+   * 注入的 viewPrefs 优先，切换按钮点击时经覆盖值让当前窗口立即生效；
+   * 收到新广播即清除（主窗口重新权威）。GUI 模式无注入，只写本地
+   * settings.viewMode，经 storage 事件与主窗口双向同步。
+   */
+  const [viewModeOverride, setViewModeOverride] = useState<'grid' | 'list' | null>(null);
 
   useEffect(() => {
     const offPrefs = window.electron?.onPickerViewPrefsChanged?.((prefs) => {
+      // 主窗口变化重新权威：清除本窗口的 Ctrl+滚轮缩放覆盖
+      setIconSizeOverride(null);
+      setViewModeOverride(null);
       setLiveViewPrefs(prefs);
     });
     const offPinned = window.electron?.onPickerPinnedDirsChanged?.((dirs) => {
@@ -184,8 +204,8 @@ const FilePicker: React.FC = () => {
     ? config?.viewPrefs
     : (liveViewPrefs ?? undefined);
   const showHiddenFiles = viewPrefs?.showHiddenFiles ?? localShowHiddenFiles;
-  const iconSize = viewPrefs?.iconSize ?? localIconSize;
-  const viewMode = viewPrefs?.viewMode ?? localViewMode;
+  const iconSize = iconSizeOverride ?? viewPrefs?.iconSize ?? localIconSize;
+  const viewMode = viewModeOverride ?? viewPrefs?.viewMode ?? localViewMode;
   const filledIcons = viewPrefs?.filledIcons ?? localFilledIcons;
   const marqueeEnabled = viewPrefs?.marqueeEnabled ?? localMarqueeEnabled;
   const [localSortBy, setLocalSortBy] = useLocalStorage<'name' | 'size' | 'date'>('settings.sortBy', 'name');
@@ -195,6 +215,47 @@ const FilePicker: React.FC = () => {
   const sortBy = viewPrefs?.sortBy ?? localSortBy;
   const sortOrder = viewPrefs?.sortOrder ?? localSortOrder;
   const groupingEnabled = viewPrefs?.groupingEnabled ?? localGroupingEnabled;
+
+  /**
+   * Ctrl+滚轮缩放：在文件区（.file-list-container）上按 Ctrl+滚轮
+   * 调整图标大小（与设置滑条同范围/步进，见 utils/iconZoom）。
+   * 主窗口同款手势（App.tsx 的滚轮 handler）——选择器内缩放写本地
+   * settings.iconSize：GUI 模式与主窗口共享 session，storage 事件
+   * 双向同步；服务模式经 iconSizeOverride 会话覆盖立即生效（下次
+   * 主窗口变化即清除）。对话框/右键菜单打开时不响应；窗口级非被动
+   * 监听以阻止默认滚动。
+   */
+  const iconZoomRef = useRef({ iconSize, hasViewPrefs: Boolean(viewPrefs) });
+  // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取
+  iconZoomRef.current = { iconSize, hasViewPrefs: Boolean(viewPrefs) };
+  const applyIconZoom = useCallback((next: number) => {
+    setLocalIconSize(next);
+    if (iconZoomRef.current.hasViewPrefs) setIconSizeOverride(next);
+  }, [setLocalIconSize]);
+
+  /**
+   * 视图模式切换（顶栏切换按钮）：写本地 settings.viewMode（GUI 模式
+   * 经 storage 事件与主窗口双向同步）；服务模式注入 viewPrefs 优先，
+   * 同时写会话覆盖让当前窗口立即生效（下一次主窗口变化即清除）。
+   */
+  const handleViewModeChange = useCallback((mode: 'grid' | 'list') => {
+    setLocalViewMode(mode);
+    if (viewPrefs) setViewModeOverride(mode);
+  }, [setLocalViewMode, viewPrefs]);
+
+  useEffect(() => {
+    const handler = (e: WheelEvent) => {
+      if (!e.ctrlKey || e.deltaY === 0) return;
+      const target = e.target as Element;
+      if (!target.closest?.('.file-list-container')) return;
+      if (document.querySelector('md-dialog[open], .context-menu')) return;
+      e.preventDefault();
+      const next = zoomIconSize(iconZoomRef.current.iconSize, e.deltaY);
+      if (next !== iconZoomRef.current.iconSize) applyIconZoom(next);
+    };
+    window.addEventListener('wheel', handler, { passive: false });
+    return () => window.removeEventListener('wheel', handler);
+  }, [applyIconZoom]);
   /**
    * 选择器设置（确认时同步组）：优先取实时广播与主进程注入的
    * config.settings（服务模式从快照补齐）；GUI 模式两者皆无，回落
@@ -1059,9 +1120,11 @@ const FilePicker: React.FC = () => {
                 sortOrder={sortOrder}
                 groupingEnabled={groupingEnabled}
                 groupingForced={searchActive && searchGroupByDir}
+                viewMode={viewMode}
                 onSortByChange={setLocalSortBy}
                 onSortOrderChange={setLocalSortOrder}
                 onGroupingToggle={() => setLocalGroupingEnabled(!groupingEnabled)}
+                onViewModeChange={handleViewModeChange}
               />
             </div>
           </div>

@@ -379,6 +379,8 @@ const zhTW = {
 
   // ── 排序 ──
   'sort.toggle_grouping': '切換群組',
+  'sort.switch_to_grid': '切換到格狀檢視',
+  'sort.switch_to_list': '切換到清單檢視',
   'sort.by_name': '依名稱',
   'sort.by_size': '依大小',
   'sort.by_date': '依修改日期',

@@ -379,6 +379,8 @@ const zhCT = {
 
   // ── 排序 ──
   'sort.toggle_grouping': '切換分組',
+  'sort.switch_to_grid': '切換到網格檢視',
+  'sort.switch_to_list': '切換到清單檢視',
   'sort.by_name': '按名稱排序',
   'sort.by_size': '按大細排序',
   'sort.by_date': '按修改時間排序',

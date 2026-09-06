@@ -418,6 +418,8 @@ const ukUA = {
 
   // ── 排序 ──
   'sort.toggle_grouping': 'Перемкнути групування',
+  'sort.switch_to_grid': 'Перейти до сітки',
+  'sort.switch_to_list': 'Перейти до списку',
   'sort.by_name': 'Сортувати за іменем',
   'sort.by_size': 'Сортувати за розміром',
   'sort.by_date': 'Сортувати за датою змінення',

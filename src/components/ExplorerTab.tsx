@@ -88,6 +88,9 @@ interface ExplorerTabProps {
     onSortOrderChange: (order: SortOrder) => void;
     /** 切换分组开关（App 写入持久化键，跨窗口同步） */
     onGroupingToggle: () => void;
+    /** 切换视图模式（App 写入持久化键 settings.viewMode，跨窗口同步；
+     *  与设置对话框的网格/列表按钮同源） */
+    onViewModeChange: (mode: 'grid' | 'list') => void;
     refreshSignal: number;
     scrollToFileName?: string;
     onScrollToComplete?: () => void;
@@ -135,7 +138,7 @@ interface ExplorerTabProps {
     terminalOpen?: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, onSortByChange, onSortOrderChange, onGroupingToggle, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -1733,9 +1736,11 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               sortOrder={sortOrder}
               groupingEnabled={groupingEnabled}
               groupingForced={searchGroupActive}
+              viewMode={viewMode}
               onSortByChange={onSortByChange}
               onSortOrderChange={onSortOrderChange}
               onGroupingToggle={onGroupingToggle}
+              onViewModeChange={onViewModeChange}
             />
           </div>
         </div>

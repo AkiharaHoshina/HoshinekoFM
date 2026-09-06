@@ -421,6 +421,8 @@ const ruUA = {
 
   // ── 排序 ──
   'sort.toggle_grouping': 'Переключить группировку',
+  'sort.switch_to_grid': 'Переключиться на сетку',
+  'sort.switch_to_list': 'Переключиться на список',
   'sort.by_name': 'Сортировать по имени',
   'sort.by_size': 'Сортировать по размеру',
   'sort.by_date': 'Сортировать по дате изменения',

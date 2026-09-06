@@ -379,6 +379,8 @@ const zhCN = {
 
   // ── 排序 ──
   'sort.toggle_grouping': '切换分组',
+  'sort.switch_to_grid': '切换到网格视图',
+  'sort.switch_to_list': '切换到列表视图',
   'sort.by_name': '按名称排序',
   'sort.by_size': '按大小排序',
   'sort.by_date': '按修改时间排序',

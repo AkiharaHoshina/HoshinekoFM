@@ -390,6 +390,8 @@ const enUS = {
 
   // ── 排序 ──
   'sort.toggle_grouping': 'Toggle Grouping',
+  'sort.switch_to_grid': 'Switch to Grid',
+  'sort.switch_to_list': 'Switch to List',
   'sort.by_name': 'Sort by Name',
   'sort.by_size': 'Sort by Size',
   'sort.by_date': 'Sort by Date Modified',

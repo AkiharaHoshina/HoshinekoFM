@@ -379,6 +379,8 @@ const zhHK = {
 
   // ── 排序 ──
   'sort.toggle_grouping': '切換分組',
+  'sort.switch_to_grid': '切換到網格檢視',
+  'sort.switch_to_list': '切換到列表檢視',
   'sort.by_name': '按名稱',
   'sort.by_size': '按大小',
   'sort.by_date': '按修改日期',
