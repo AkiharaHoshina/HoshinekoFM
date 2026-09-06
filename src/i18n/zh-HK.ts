@@ -51,6 +51,9 @@ const zhHK = {
   'dialog.button.ok': '確定',
   'nya.contribution': 'HoshinekoFM希望為跨性別者權益作出貢獻。',
   'nya.links': '一些連結',
+  'nya.link.group': 'HoshinekoFM討論群',
+  'nya.link.channel': '星奈的頻道',
+  'nya.link.project_trans': 'Project Trans',
   'dialog.button.close': '關閉',
   'dialog.button.open': '開啟',
 

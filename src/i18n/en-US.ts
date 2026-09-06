@@ -51,6 +51,9 @@ const enUS = {
   'dialog.button.ok': 'OK',
   'nya.contribution': 'HoshinekoFM hopes to contribute to transgender rights.',
   'nya.links': 'Some links',
+  'nya.link.group': 'HoshinekoFM Discussion Group',
+  'nya.link.channel': "Hoshineko's Channel",
+  'nya.link.project_trans': 'Project Trans',
   'dialog.button.close': 'Close',
   'dialog.button.open': 'Open',
 

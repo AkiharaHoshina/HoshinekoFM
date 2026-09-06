@@ -77,6 +77,9 @@ const ruUA = {
   'dialog.button.ok': 'ОК',
   'nya.contribution': 'HoshinekoFM надеется внести вклад в права трансгендерных людей.',
   'nya.links': 'Ссылки',
+  'nya.link.group': 'Группа обсуждения HoshinekoFM',
+  'nya.link.channel': 'Канал Хосинэко',
+  'nya.link.project_trans': 'Project Trans',
   'dialog.button.close': 'Закрыть',
   'dialog.button.open': 'Открыть',
 

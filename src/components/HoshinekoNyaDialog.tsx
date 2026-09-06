@@ -26,8 +26,8 @@ function openExternal(url: string) {
  * 「Hoshineko Nya~」不随语言切换，内容为 HoshinekoAkihara.png 与
  * Transgender Pride 旗纵向排列（图片固定 293px 宽锁定渲染尺寸，
  * 不随对话框宽度/窗口高度缩放）；底部为分割线 + 贡献声明 + 相关
- * 链接 **outlined 按钮横向排列**（经 shell:open-external 用系统
- * 浏览器打开；按钮文案为专有名词，不随语言切换）。
+ * 链接 **outlined 按钮横向排列**（文案经 i18n，经 shell:open-external
+ * 用系统浏览器打开）。
  *
  * PgDn/PgUp 翻页滚动：内容区无焦点元素，打开时焦点落在 actions 槽
  * 的确定按钮上（shadow scroller 之外）——Chromium 的默认翻页从焦点
@@ -110,13 +110,13 @@ export const HoshinekoNyaDialog: React.FC<HoshinekoNyaDialogProps> = ({ open, on
           <p className="hoshineko-nya-links-label">{t('nya.links')}</p>
           <div className="hoshineko-nya-links">
             <Button variant="outlined" onClick={() => openExternal('https://t.me/HoshinekoDiscuss')}>
-              HoshinekoFM讨论群
+              {t('nya.link.group')}
             </Button>
             <Button variant="outlined" onClick={() => openExternal('https://t.me/evelxyn331')}>
-              星奈的频道
+              {t('nya.link.channel')}
             </Button>
             <Button variant="outlined" onClick={() => openExternal('https://project-trans.org/')}>
-              Project Trans
+              {t('nya.link.project_trans')}
             </Button>
           </div>
         </div>

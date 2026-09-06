@@ -52,6 +52,9 @@ const koKR = {
   'dialog.button.ok': '확인',
   'nya.contribution': 'HoshinekoFM은 트랜스젠더 권리 향상에 기여하고자 합니다.',
   'nya.links': '링크',
+  'nya.link.group': 'HoshinekoFM 토론 그룹',
+  'nya.link.channel': '호시네코의 채널',
+  'nya.link.project_trans': 'Project Trans',
   'dialog.button.close': '닫기',
   'dialog.button.open': '열기',
 

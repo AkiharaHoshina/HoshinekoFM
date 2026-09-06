@@ -51,6 +51,9 @@ const zhAC = {
   'dialog.button.ok': '确定',
   'nya.contribution': 'HoshinekoFM希望为跨性别者权益作出贡献。',
   'nya.links': '一些链接',
+  'nya.link.group': 'HoshinekoFM讨论群',
+  'nya.link.channel': '星奈的频道',
+  'nya.link.project_trans': 'Project Trans',
   'dialog.button.close': '关闭',
   'dialog.button.open': '打开',
 

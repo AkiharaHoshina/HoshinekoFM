@@ -51,6 +51,9 @@ const jaJP = {
   'dialog.button.ok': 'OK',
   'nya.contribution': 'HoshinekoFMはトランスジェンダーの権利への貢献を望んでいます。',
   'nya.links': 'リンク',
+  'nya.link.group': 'HoshinekoFMディスカッショングループ',
+  'nya.link.channel': '星奈のチャンネル',
+  'nya.link.project_trans': 'Project Trans',
   'dialog.button.close': '閉じる',
   'dialog.button.open': '開く',
 

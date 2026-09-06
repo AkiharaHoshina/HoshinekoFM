@@ -110,37 +110,32 @@ const h = require('./harness.cjs');
     });
     const footer = await h.js(win, `(() => {
       const d = ${nya};
-      const btns = [...d.querySelectorAll('md-button, md-text-button, md-filled-button, md-outlined-button')];
+      const linkBtns = [...d.querySelectorAll('.hoshineko-nya-links md-button, .hoshineko-nya-links md-text-button, .hoshineko-nya-links md-filled-button, .hoshineko-nya-links md-outlined-button')];
       return {
         divider: !!d.querySelector('.hoshineko-nya-divider'),
         contribution: (d.querySelector('.hoshineko-nya-contribution')?.textContent ?? '').length > 0,
         linksLabel: (d.querySelector('.hoshineko-nya-links-label')?.textContent ?? '').length > 0,
-        group: btns.some(b => b.textContent.includes('HoshinekoFM讨论群')),
-        channel: btns.some(b => b.textContent.includes('星奈的频道')),
-        project: btns.some(b => b.textContent.includes('Project Trans')),
-        linksRow: (() => {
-          const c = d.querySelector('.hoshineko-nya-links');
-          return c ? getComputedStyle(c).flexDirection : null;
-        })(),
+        linkCount: linkBtns.length,
+        allLabels: linkBtns.every(b => (b.textContent ?? '').trim().length > 0),
+        linksRow: getComputedStyle(d.querySelector('.hoshineko-nya-links')).flexDirection,
       };
     })()`);
     h.assert.strictEqual(footer.value.divider, true, '底部应有分割横线');
     h.assert.strictEqual(footer.value.contribution, true, '底部应有贡献声明文本');
     h.assert.strictEqual(footer.value.linksLabel, true, '底部应有「一些链接」标签');
-    h.assert.strictEqual(footer.value.group, true, '应有 HoshinekoFM讨论群 按钮');
-    h.assert.strictEqual(footer.value.channel, true, '应有 星奈的频道 按钮');
-    h.assert.strictEqual(footer.value.project, true, '应有 Project Trans 按钮');
+    h.assert.strictEqual(footer.value.linkCount, 3, '应有三个链接按钮');
+    h.assert.strictEqual(footer.value.allLabels, true, '链接按钮文案应已本地化（非空）');
     h.assert.strictEqual(footer.value.linksRow, 'row', '链接按钮应横向排列');
-    const clickLink = (label) => h.js(win, `(() => {
+    // 按按钮顺序点击（文案随语言变化，用 .hoshineko-nya-links 内下标定位）
+    const clickLinkAt = (index) => h.js(win, `(() => {
       const d = ${nya};
-      const b = [...d.querySelectorAll('md-button, md-text-button, md-filled-button, md-outlined-button')]
-        .find(x => x.textContent.includes(${JSON.stringify(label)}));
+      const b = [...d.querySelectorAll('.hoshineko-nya-links md-button, .hoshineko-nya-links md-text-button, .hoshineko-nya-links md-filled-button, .hoshineko-nya-links md-outlined-button')][${index}];
       b?.click();
       return !!b;
     })()`);
-    h.assert.strictEqual((await clickLink('HoshinekoFM讨论群')).value, true, '讨论群按钮应可点击');
-    h.assert.strictEqual((await clickLink('星奈的频道')).value, true, '频道按钮应可点击');
-    h.assert.strictEqual((await clickLink('Project Trans')).value, true, 'Project Trans 按钮应可点击');
+    h.assert.strictEqual((await clickLinkAt(0)).value, true, '讨论群按钮应可点击');
+    h.assert.strictEqual((await clickLinkAt(1)).value, true, '频道按钮应可点击');
+    h.assert.strictEqual((await clickLinkAt(2)).value, true, 'Project Trans 按钮应可点击');
     await new Promise((r) => setTimeout(r, 300));
     h.assert.deepStrictEqual(
       opened,
