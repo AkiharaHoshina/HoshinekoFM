@@ -48,6 +48,9 @@ const enUS = {
   'dialog.button.cancel': 'Cancel',
   'dialog.button.confirm': 'OK',
   'dialog.button.done': 'Done',    //Not in use but translation is not correct
+  'dialog.button.ok': 'OK',
+  'nya.contribution': 'HoshinekoFM hopes to contribute to transgender rights.',
+  'nya.links': 'Some links',
   'dialog.button.close': 'Close',
   'dialog.button.open': 'Open',
 

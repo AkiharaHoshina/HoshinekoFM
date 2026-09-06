@@ -48,6 +48,9 @@ const zhCT = {
   'dialog.button.cancel': '取消',
   'dialog.button.confirm': '確認',
   'dialog.button.done': '完成',
+  'dialog.button.ok': '確定',
+  'nya.contribution': 'HoshinekoFM希望為跨性別者權益作出貢獻。',
+  'nya.links': '一些連結',
   'dialog.button.close': '關閉',
   'dialog.button.open': '打開',
 

@@ -1,5 +1,31 @@
 # 更新日志
 
+## v0.11.40 — 加入彩蛋
+
+- **加入彩蛋**：设置对话框打开期间按 **Ctrl+PgDn** 弹出「Hoshineko
+  Nya~」对话框（M3 样式 + 叠层遮罩，与设置对话框同宽 560px）——
+  标题固定不随语言，内容为 HoshinekoAkihara.png 与 Transgender Pride
+  旗纵向排列（固定 293px 宽锁定渲染尺寸，不随对话框宽度/窗口高度
+  缩放）；底部为分割线 + 贡献声明 + 「一些链接」outlined 按钮横向
+  排列（HoshinekoFM讨论群 / 星奈的频道 / Project Trans，经
+  `shell:open-external` 用系统浏览器打开，按钮文案为专有名词不随
+  语言）；确定按钮关闭。
+- 交互细节：内容溢出时 PgDn/PgUp 翻页滚动（内容无焦点元素，打开时
+  焦点在 scroller 外的确定按钮上——拦截按键手动滚动 shadow
+  scroller，焦点在 scroller 内时交还默认行为）；打开时**无任何高亮
+  且滚动置顶**（原生 `showModal()` 强制聚焦首个按钮会出现
+  `:focus-visible` 高亮环——autofocus 目标改为内容顶部 0×0 焦点锚点，
+  承接初始焦点、不进 Tab 序，Tab 后才选中首个按钮显示边框；高内容
+  容器的聚焦滚动校正不再滚到底部）；普通 PgDn（无 Ctrl）不触发，
+  portal 版本弹窗打开期间不生效（其 PgDn 有独立语义）。
+- i18n：新增 `dialog.button.ok` / `nya.contribution` / `nya.links`
+  键（12 语言文件）。
+- e2e 49（`49-nya-dialog.test.cjs`）：触发守卫（未开设置不弹/普通
+  PgDn 不弹）、同宽与图片固定尺寸断言、底部区块与三链接按钮
+  openExternal 地址精确断言（测试内替换 `shell:open-external`
+  handler 录制）、打开时焦点锚点无高亮 + 滚动置顶、Tab 选中首按钮、
+  矮窗口 PgDn/PgUp 翻页回归。e2e 04/27/39 回归通过。
+
 ## v0.11.39 修复 — 一键重装失败（busctl 无主总线名炸掉安装流程）
 
 - **问题**：版本更新后「一键重装」失败——第一次执行击杀旧常驻

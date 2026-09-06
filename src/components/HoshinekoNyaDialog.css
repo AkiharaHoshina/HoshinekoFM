@@ -1,0 +1,70 @@
+/* 彩蛋对话框「Hoshineko Nya~」内容：与设置对话框同宽（内容槽
+   min-width 512px + slot 左右 24px 内边距 = md-dialog 560px，
+   与 SettingsDialog.css 同款保证宽度稳定不随图片加载忽宽忽窄）；
+   图片纵向居中排列，大小锁定现渲染尺寸——PNG 受 40vh 高度上限
+   换算为 293px 宽，SVG 跟随 293px 封顶，对话框加宽后不放大。 */
+/* 焦点锚点：0×0 位于内容顶部，打开时承接初始焦点（autofocus 目标）——
+   焦点滚动校正不会把高内容容器滚到底部；无可见焦点环 */
+.hoshineko-nya-focus-anchor {
+    width: 0;
+    height: 0;
+    outline: none;
+}
+
+.hoshineko-nya-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    min-width: 512px;
+}
+
+.hoshineko-nya-img {
+    display: block;
+    width: auto;
+    height: auto;
+    /* 锁定渲染尺寸：固定 293px 宽（PNG 1346×1869 → 293×407、
+       SVG 800×480 → 293×176），不随对话框宽度/窗口高度缩放 */
+    max-width: 293px;
+    object-fit: contain;
+    user-select: none;
+}
+
+/* 底部区块：分割线 + 贡献声明 + 链接按钮（纵向居中排列） */
+.hoshineko-nya-footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+
+.hoshineko-nya-divider {
+    width: 100%;
+    height: 1px;
+    background-color: var(--md-sys-color-outline-variant);
+    margin: 8px 0;
+}
+
+.hoshineko-nya-contribution {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.6;
+    text-align: center;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.hoshineko-nya-links-label {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--md-sys-color-outline);
+}
+
+.hoshineko-nya-links {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 4px;
+}

@@ -19,6 +19,7 @@ import { ContextMenu } from "./components/ContextMenu";
 import type { ContextMenuItem } from "./components/ContextMenu";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ThemeColorDialog } from "./components/ThemeColorDialog";
+import { HoshinekoNyaDialog } from "./components/HoshinekoNyaDialog";
 import { TerminalPanel, DEFAULT_TERMINAL_HEIGHT } from "./components/TerminalPanel";
 import { TitleBar } from "./components/TitleBar";
 import type { IFile, GvfsVolume } from "./types/files";
@@ -436,6 +437,9 @@ function AppContent() {
 
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
 
+  /** 彩蛋对话框「Hoshineko Nya~」开关（设置打开期间按 PgDn 触发） */
+  const [nyaDialogOpen, setNyaDialogOpen] = useState(false);
+
   const [showHiddenFiles, setShowHiddenFiles] = useLocalStorage<boolean>(
     "settings.showHiddenFiles",
     true,
@@ -693,6 +697,21 @@ function AppContent() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [portalVersionDialog]);
+
+  /**
+   * 彩蛋：设置对话框打开期间按 Ctrl+PgDn → 打开「Hoshineko Nya~」
+   * 对话框（叠层遮罩盖在设置之上）。仅在设置打开时挂监听；portal
+   * 版本弹窗打开期间不生效（其 PgDn 有独立的开发详情切换语义）。
+   */
+  useEffect(() => {
+    if (!settingsDialogOpen || portalVersionDialog) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || e.key !== 'PageDown') return;
+      setNyaDialogOpen(true);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [settingsDialogOpen, portalVersionDialog]);
 
   /**
    * 版本不一致弹窗「一键重装」：reinstall.sh 卸载 + 安装合并为单次
@@ -2144,6 +2163,11 @@ function AppContent() {
             onClose={() => setThemeColorOpen(false)}
             darkMode={darkMode}
             onDarkModeChange={setDarkMode}
+          />
+
+          <HoshinekoNyaDialog
+            open={nyaDialogOpen}
+            onClose={() => setNyaDialogOpen(false)}
           />
         </main>
       </div>

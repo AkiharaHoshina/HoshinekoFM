@@ -49,6 +49,9 @@ const koKP = {
   'dialog.button.cancel': '취소',
   'dialog.button.confirm': '확인',
   'dialog.button.done': '완료',
+  'dialog.button.ok': '확인',
+  'nya.contribution': 'HoshinekoFM은 트랜스젠더 권리 향상에 기여하고자 합니다.',
+  'nya.links': '링크',
   'dialog.button.close': '닫기',
   'dialog.button.open': '열기',
 

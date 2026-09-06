@@ -45,6 +45,7 @@ No unit-test framework — e2e tests live in `scripts/e2e/` (Electron main-proce
   - **滚动条拖动（sendInputEvent）**：Chromium 原生滚动条接管拖动，期间**不向页面派发 mousemove**（mousedown/mouseup 照常、click 被吞）——框选副作用由 scroll 事件驱动；e2e 28 断言「滚动条拖动不得进入框选模式」用状态栏框选提示（onSelectionModeChange 副作用）作确定性信号（选框本身依赖几何，合成输入下不一定出现）。
   - 菜单/按钮文案按中英文双匹配（`/取消|Cancel/`），规避系统语言差异。
   - **侧边栏固定区拖拽排序是 HTML5 DnD（仅排序语义，不经过文件拖拽系统）**：源条目拖起后 display:none（隐藏延迟到 rAF——先让浏览器截取拖拽图像，`pinReorderActiveRef` 守卫起拖瞬间松手竞态；源条目留 DOM 末尾保证 ESC 取消时 dragend 派发清理）；插入位置 = 上/下半区（±4px 死区防抖动）+ 空占位按钮（`.sidebar-pin-gap`）；间隙语义基于「去掉源条目后的剩余列表」（`computePinReorderGap` 的 `- (from < hoverIndex ? 1 : 0)` 补偿，与 App 侧 `splice(from,1)` 一致）；其他区域不接收（无 drop 处理器落下即回弹）。**harness 无 HTML5 DnD 模拟能力**——e2e 47 测同步链路本身（跨窗口 localStorage 写入等价于另一主窗口完成排序；同窗口写不派发 storage 事件），不要试图合成 dragstart/drop；选择器/保存器固定区只读（draggable 关闭）。
+  - **彩蛋对话框（设置 + Ctrl+PgDn，e2e 49）**：原生 `dialog.showModal()` 强制聚焦首个可聚焦子元素（键盘触发下 :focus-visible 高亮环）——用 autofocus 承接点接管初始焦点，**属性必须在 ref 回调写入**（Dialog 以 key={cycle} 每次打开重挂载 md-dialog、内容节点重建，挂载期 effect 写到旧节点；TS 不允许 div 的 autofocus 属性）；承接点做成内容顶部 **0×0 焦点锚点**（tabindex=-1、不进 Tab 序）——聚焦高内容容器会被 Dialog 的焦点滚动校正滚到底部（r.bottom > s.bottom 分支），锚点在顶部则不滚动、打开置顶；无焦点环断言查 `outlineStyle === 'none'`（`outline:none` 后 outlineWidth 仍报 3px = medium 初始值）；内容无焦点元素时 PgDn/PgUp 翻页失效（焦点在 scroller 外的确定按钮）——经 `onScrollerReady` 拿当前周期 scroller 手动滚动；图片固定 max-width 像素值（勿用 vh 上限，会随窗口高度漂移）。
   - 对话框内容超出视口时点击前 `scrollIntoView`。
 - harness 有 120s 全局看门狗，任何挂起会强制退出并报 WATCHDOG TIMEOUT。
 

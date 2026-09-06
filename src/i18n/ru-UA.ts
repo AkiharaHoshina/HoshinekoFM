@@ -74,6 +74,9 @@ const ruUA = {
   'dialog.button.cancel': 'Отмена',
   'dialog.button.confirm': 'ОК',
   'dialog.button.done': 'Готово',
+  'dialog.button.ok': 'ОК',
+  'nya.contribution': 'HoshinekoFM надеется внести вклад в права трансгендерных людей.',
+  'nya.links': 'Ссылки',
   'dialog.button.close': 'Закрыть',
   'dialog.button.open': 'Открыть',
 

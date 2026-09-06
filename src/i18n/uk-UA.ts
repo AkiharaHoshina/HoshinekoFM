@@ -71,6 +71,9 @@ const ukUA = {
   'dialog.button.cancel': 'Скасувати',
   'dialog.button.confirm': 'Гаразд',
   'dialog.button.done': 'Готово',
+  'dialog.button.ok': 'ОК',
+  'nya.contribution': 'HoshinekoFM сподівається зробити внесок у права трансгендерних людей.',
+  'nya.links': 'Посилання',
   'dialog.button.close': 'Закрити',
   'dialog.button.open': 'Відкрити',
 

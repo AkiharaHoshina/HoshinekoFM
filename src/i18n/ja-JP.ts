@@ -48,6 +48,9 @@ const jaJP = {
   'dialog.button.cancel': 'キャンセル',
   'dialog.button.confirm': '確認',
   'dialog.button.done': '完了',
+  'dialog.button.ok': 'OK',
+  'nya.contribution': 'HoshinekoFMはトランスジェンダーの権利への貢献を望んでいます。',
+  'nya.links': 'リンク',
   'dialog.button.close': '閉じる',
   'dialog.button.open': '開く',
 
