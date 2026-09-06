@@ -57,10 +57,15 @@ FM1_BUS_NAME="org.freedesktop.FileManager1"
 
 # 解析会话总线名拥有者 PID。busctl 缺失/会话总线不可用/名字无主 → 输出空。
 # timeout 兜底：异常总线状态下 busctl 可能挂起，不能拖死安装流程。
+# 注意末行 `|| true`：set -o pipefail 下 busctl 对无主名字以非零退出
+# （dbus-broker 报 Failed to get credentials: No such device or address），
+# 命令替换 `pid="$(bus_owner_pid ...)"` 会继承该失败并在 set -e 下炸掉
+# 整个安装流程——「名字无主」是正常状态，必须吞掉非零退出码。
 bus_owner_pid() {
   command -v busctl >/dev/null 2>&1 || return 0
   timeout 5 busctl --user status "$1" 2>/dev/null \
-    | awk '/^[[:space:]]*PID=/{sub(/^[[:space:]]*PID=/,""); print; exit}'
+    | awk '/^[[:space:]]*PID=/{sub(/^[[:space:]]*PID=/,""); print; exit}' \
+    || true
 }
 
 # 判断 PID 是否本应用服务模式常驻（cmdline 含 --portal / --filemanager1）。
@@ -71,24 +76,38 @@ is_service_resident() {
   tr '\0' ' ' < "/proc/$1/cmdline" | grep -Eq -- '--(portal|filemanager1)'
 }
 
+# 进程是否已死亡（含僵尸）：僵尸对 kill -0 恒为「存活」、SIGKILL 亦无效
+# （父进程尚未收割），但其总线连接早已随进程退出关闭——视为已清理。
+# 用 /proc/<pid>/status 的 State 判定（stat 的 comm 字段可含空格不可靠）。
+proc_dead() {
+  if ! kill -0 "$1" 2>/dev/null; then return 0; fi
+  local state
+  state="$(awk '/^State:/{print $2}' "/proc/$1/status" 2>/dev/null || true)"
+  [ "$state" = "Z" ]
+}
+
 # 对单个 PID：TERM → 最多等 5 秒 → 仍存活升级 KILL → 验证退出。
 # 挂死/忙死的常驻（TERM 无效）不升级会继续持总线名应答旧请求。
+# TERM 送达失败时区分两种情形：进程已自行退出（ESRCH——busctl 解析
+# 与击杀之间的竞态，常驻恰好死亡）或已成僵尸，均视为已清理；
+# 仍存活（EPERM 等）才判失败。
 kill_pid_escalate() {
   local pid="$1"
-  kill -TERM "$pid" 2>/dev/null || return 1
+  if ! kill -TERM "$pid" 2>/dev/null; then
+    if proc_dead "$pid"; then return 0; fi
+    return 1
+  fi
   local i
   for i in 1 2 3 4 5; do
-    if ! kill -0 "$pid" 2>/dev/null; then return 0; fi
+    if proc_dead "$pid"; then return 0; fi
     sleep 1
   done
   echo "[warn] PID $pid 未响应 SIGTERM，升级 SIGKILL" >&2
   kill -KILL "$pid" 2>/dev/null || true
   sleep 1
-  if kill -0 "$pid" 2>/dev/null; then
-    echo "[warn] PID $pid 仍存活（不可中断状态或权限不足），总线名可能仍被占用" >&2
-    return 1
-  fi
-  return 0
+  if proc_dead "$pid"; then return 0; fi
+  echo "[warn] PID $pid 仍存活（不可中断状态或权限不足），总线名可能仍被占用" >&2
+  return 1
 }
 
 # 清理旧的服务模式常驻进程（--portal / --filemanager1 形态）：旧常驻

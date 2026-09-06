@@ -1,5 +1,31 @@
 # 更新日志
 
+## v0.11.39 修复 — 一键重装失败（busctl 无主总线名炸掉安装流程）
+
+- **问题**：版本更新后「一键重装」失败——第一次执行击杀旧常驻
+  进程后中断，重试永远停在「[user] 清理 portal/FileManager1
+  常驻进程」，实际被报安装失败。
+- **根因**：`bus_owner_pid` 里 `timeout 5 busctl --user status <名字> |
+  awk` 在 `set -o pipefail` 下，busctl 对**无主总线名**以非零退出
+  （dbus-broker：`Failed to get credentials: No such device or
+  address`）——管线失败经命令替换 `pid="$(bus_owner_pid …)"` 在
+  `set -e` 下当场终止整个安装脚本。重装流程第一次「清理」击杀旧常驻
+  成功后，第二次「清理」时名字已无主 → 脚本死；重试时第一次「清理」
+  即死。这是 v0.11.33 引入重装路径时就存在的潜伏缺陷——此前从未
+  触发过真实重装，e2e 39 又全程 `HOSHINEKO_SKIP_SERVICE_KILL=1`
+  跳过 kill 路径，一直未暴露。
+- **修复**：`bus_owner_pid` 末行加 `|| true` 吞掉非零退出码（名字
+  无主是正常状态，输出空 → 调用方 continue）；`kill_pid_escalate`
+  加固——新增 `proc_dead`（kill -0 失败**或** `/proc/<pid>/status`
+  State=Z 僵尸）判死（僵尸对 SIGKILL 无效、父进程未收割时曾误报
+  「仍存活」导致失败），TERM 送达失败时区分 ESRCH 竞态（进程已在
+  解析与击杀之间自行退出，视为已清理）与 EPERM（真失败）。
+- e2e 48（`48-integration-kill-path.test.cjs`）：PATH 影子化假
+  busctl/systemctl/pkill/pgrep/xdg-mime + 沙箱 HOME/USER_BIN，
+  不设跳过实测 kill 路径——总线名无主重装成功回归 + 假常驻
+  （`exec -a 'HoshinekoFM --portal' sleep 300`）击杀与僵尸判定。
+  e2e 39/18/37 回归通过。
+
 ## v0.11.39 — 侧边栏固定文件夹拖拽排序
 
 - **固定文件夹拖拽排序（places 栏固定区）**：固定区条目可拖拽
