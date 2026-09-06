@@ -6,7 +6,7 @@
 
 # Hoshineko File Manager
 <p align="center">
-  <img src="Screenshot_for_HoshinekoFM1.png" alt="Hoshineko">
+  <img src="Screenshot_for_HoshinekoFM.png" alt="Hoshineko">
 </p>
 
 Hoshineko File Manager is a modern, "Performance-First" file manager built using Material 3 Design, Electron, and React.
