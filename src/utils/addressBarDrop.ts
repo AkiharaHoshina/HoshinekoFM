@@ -3,6 +3,7 @@ import type { IFile } from '../types/files';
 import type { DragClaimResult } from '../types/electron.d';
 import { extractDropPaths, samePathSet } from './dragDrop';
 import { shouldSuppressDrop } from './nativeDragTracker';
+import { isPinReorderDragActive } from './pinReorderDrag';
 
 /**
  * 面包屑/地址栏类「路径落点」共用的拖放处理工厂。
@@ -32,12 +33,16 @@ export function createAddressBarDropHandler(deps: AddressBarDropDeps) {
   const { getDragState, endDrag, onDropFiles, onDropExternalFiles } = deps;
 
   const handleDragOver = (e: DragEvent<Element>) => {
+    // 侧边栏固定区排序拖拽：非文件拖放，不接收也不给光标提示
+    if (isPinReorderDragActive()) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
   };
 
   const handleDrop = async (e: DragEvent<Element>, targetPath: string) => {
+    // 侧边栏固定区排序拖拽：非文件拖放，不消费（兜底）
+    if (isPinReorderDragActive()) return;
     e.preventDefault();
     e.stopPropagation();
 

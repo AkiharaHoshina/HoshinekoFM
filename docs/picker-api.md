@@ -131,3 +131,4 @@ const picked = await window.electron.openPicker({
 - v0.11.38：平铺 WM（i3/sway/hyprland/niri 等）下选择器/保存器标题栏隐藏最小化入口（`TitleBar hideMinimize`，与主窗口一致；主进程 `window:minimize` 同条件 no-op 兜底）；侧边栏 位置/固定文件夹/设备 区块标题上方增加间隔（与主窗口一致）。
 - v0.11.39：侧边栏固定目录顺序——选择器/保存器固定区**只读**（条目不可拖拽、无移除按钮，不允许改变顺序）；主窗口排序后经既有 `app:set-pinned-dirs` 快照 + `picker:pinned-dirs-changed` 广播，**打开中的选择器/保存器实时跟随新顺序**（GUI 模式选择器另经共享 session 的 storage 事件兜底）。
 - v0.11.41：选择器/保存器内 **Ctrl+滚轮图标缩放**与**右上角视图模式切换按钮**——与主窗口同款手势（范围/步进与设置滑条同源 16–128±8）；GUI 模式写共享 localStorage（`settings.iconSize`/`settings.viewMode`）经 storage 事件与主窗口**双向**同步；服务模式（userData 隔离、注入 viewPrefs 优先）经 `iconSizeOverride`/`viewModeOverride` **会话覆盖**立即生效，收到 `picker:view-prefs-changed` 广播即清除覆盖（主窗口为权威，「选择器内调整被下一次主窗口变化覆盖」语义）。
+- v0.11.42：**选择器/保存器不接收任何拖放**——拖动任何可拖动控件（固定项/文件条目/外部文件）经过窗口时不再出现误导性高亮或光标提示：FileList 文件夹落点按 `onDropOnFolder` 门控（选择器不传）、Omnibar/Breadcrumbs 落点回调改为可选（选择器不传 → 落点管线为 null → dragover/dragenter/drop 全早退不 preventDefault）；主窗口行为不变。

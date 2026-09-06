@@ -1105,8 +1105,6 @@ const FilePicker: React.FC = () => {
                 currentPath={currentPath}
                 onNavigate={(p) => { void loadPath(p); }}
                 onSearch={(q) => { void handleSearch(q); }}
-                onDropFiles={() => {}}
-                onDropExternalFiles={() => {}}
               />
             </div>
             <div

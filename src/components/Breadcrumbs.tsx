@@ -8,6 +8,7 @@ import type { ContextMenuItem } from "./ContextMenu";
 import { useDrag } from "../contexts/DragContext";
 import type { IFile } from "../types/files";
 import { createAddressBarDropHandler } from "../utils/addressBarDrop";
+import { isPinReorderDragActive } from "../utils/pinReorderDrag";
 import { t } from "../i18n";
 
 type HomeMap = Record<string, { username: string; uid: number }>;
@@ -122,12 +123,17 @@ function buildSpecialLabel(
 interface BreadcrumbsProps {
   currentPath: string;
   onNavigate: (path: string) => void;
-  onDropFiles: (
+  /**
+   * 内部/跨窗口拖放落点（复制/移动到胶囊代表目录）。未提供（选择器/
+   * 保存器）时胶囊不接收任何拖放——不高亮、不给光标提示。
+   */
+  onDropFiles?: (
     targetPath: string,
     files: IFile[],
     operation: "move" | "copy",
   ) => void;
-  onDropExternalFiles: (targetPath: string, filePaths: string[]) => void;
+  /** 外部应用拖入落点（复制导入）。未提供时不接收拖放 */
+  onDropExternalFiles?: (targetPath: string, filePaths: string[]) => void;
 }
 
 interface SymlinkInfo {
@@ -166,9 +172,13 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   /**
    * 共享落点管线（内部/跨窗口/外部三段式，见 addressBarDrop）。
    * 与地址栏背景（Omnibar）共用同一实现，保证落点语义一致。
+   * 未提供落点回调（选择器/保存器）时为 null——胶囊不接收任何拖放
+   * （handleDragOver/handleDragEnter/handleDrop 全部早退）。
    */
   const dropHandler = useMemo(
-    () => createAddressBarDropHandler({ getDragState, endDrag, onDropFiles, onDropExternalFiles }),
+    () => (onDropFiles && onDropExternalFiles
+      ? createAddressBarDropHandler({ getDragState, endDrag, onDropFiles, onDropExternalFiles })
+      : null),
     [getDragState, endDrag, onDropFiles, onDropExternalFiles],
   );
 
@@ -246,16 +256,20 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   }, [currentPath, parts]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    dropHandler.handleDragOver(e);
+    dropHandler?.handleDragOver(e);
   }, [dropHandler]);
 
   const handleDragEnter = useCallback(
     (e: React.DragEvent, targetPath: string) => {
+      // 未提供落点回调（选择器/保存器）：不接受任何拖放，不高亮
+      if (!dropHandler) return;
+      // 侧边栏固定区排序拖拽：非文件拖放，不高亮胶囊
+      if (isPinReorderDragActive()) return;
       e.preventDefault();
       e.stopPropagation();
       setDragOverPath(targetPath);
     },
-    [],
+    [dropHandler],
   );
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
@@ -268,9 +282,10 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
 
   const handleDrop = useCallback(
     (e: React.DragEvent, targetPath: string) => {
-      // 清空落点高亮后走共享落点管线（内部/跨窗口/外部三段式）
+      // 清空落点高亮后走共享落点管线（内部/跨窗口/外部三段式）；
+      // 未提供落点回调（选择器/保存器）时不消费
       setDragOverPath(null);
-      void dropHandler.handleDrop(e, targetPath);
+      if (dropHandler) void dropHandler.handleDrop(e, targetPath);
     },
     [dropHandler],
   );

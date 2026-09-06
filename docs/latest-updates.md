@@ -1,5 +1,33 @@
 # 更新日志
 
+## v0.11.42 — 固定项排序拖拽误导高亮修复 + 选择器/保存器拒绝拖放
+
+- **固定项排序拖拽不触发文件落点误导高亮**：侧边栏固定区排序拖拽是
+  仅排序语义的纯 HTML5 会话（dataTransfer 只有 text/plain 源索引，不设
+  DragContext、不发起原生 OS 拖拽），而文件落点目标此前不区分拖拽
+  类型——拖动固定项经过文件区文件夹条目、地址栏面包屑胶囊时出现
+  「可放置」的误导性高亮，地址栏背景/文件区背景/终端给 copy/move
+  光标提示（标签页有 dragState 守卫，但残留陈旧 dragState 时仍会
+  误高亮）。修复：`src/utils/pinReorderDrag.ts` 全局标志（dragstart
+  置 true、dragend 置 false——HTML5 规范保证 dragend 必派发），六个
+  文件落点处理器（FileList 文件夹 dragover/drop、Breadcrumbs 胶囊
+  dragenter、地址栏背景、文件区背景、TabBar、终端）守卫早退（不
+  preventDefault → 浏览器默认不接受，无高亮无光标提示）；排序拖拽
+  自身链路不受影响。
+- **选择器/保存器不接收任何拖放**：拖动任何可拖动控件（侧边栏固定项、
+  文件条目、外部文件）经过选择器/保存器窗口时，文件区文件夹条目与
+  地址栏胶囊此前同样显示误导高亮、地址栏背景给光标提示。修复：
+  FileList 文件夹落点按 `onDropOnFolder` 是否存在门控（选择器不传）；
+  Omnibar/Breadcrumbs 的 `onDropFiles`/`onDropExternalFiles` 改为可选
+  （选择器不传 → 落点管线为 null → dragover/dragenter/drop 全部早退）；
+  选择器/保存器窗口内不再有任何拖放接收点。
+- e2e 52（`52-pin-drag-no-highlight.test.cjs`）：合成 DragEvent——
+  拖拽期间对标签页/面包屑胶囊/文件夹条目派发 dragover/dragenter
+  断言无 `.drag-over` 类 + dragstart→dragover→drop 完整换序回归；
+  e2e 53（`53-picker-no-drop.test.cjs`）：选择器内胶囊/文件夹条目
+  无高亮且 defaultPrevented=false、地址栏背景不被接受 + 主窗口同款
+  合成事件仍高亮/接受（回归）。全套 e2e 53 套通过。
+
 ## v0.11.41 — Ctrl+滚轮图标缩放 + 右上角视图模式切换按钮
 
 - **Ctrl+滚轮图标缩放**（主窗口/选择器/保存器同款手势）：光标在文件区

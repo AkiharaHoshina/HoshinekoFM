@@ -35,6 +35,7 @@ import { useDrag } from '../contexts/DragContext';
 import { t } from '../i18n';
 import { extractDropPaths, samePathSet } from '../utils/dragDrop';
 import { shouldSuppressDrop } from '../utils/nativeDragTracker';
+import { isPinReorderDragActive } from '../utils/pinReorderDrag';
 import { sortFiles, sortFilesByDir, type SortBy, type SortOrder } from '../utils/fileSort';
 import type { ContextMenuItem } from './ContextMenu';
 import {
@@ -1841,6 +1842,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                 style={{ flex: 1, minWidth: 0, height: '100%' }}
                 data-drop-target="filelist"
                 onDragOver={(e) => {
+                  // 侧边栏固定区排序拖拽：非文件拖放，不接收也不给光标提示
+                  if (isPinReorderDragActive()) return;
                   e.preventDefault();
                   e.dataTransfer.dropEffect = 'copy';
                 }}

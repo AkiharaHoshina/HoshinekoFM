@@ -12,6 +12,7 @@ import { ContextMenu } from "./ContextMenu";
 import type { ContextMenuItem } from "./ContextMenu";
 import { useDrag } from "../contexts/DragContext";
 import { shouldSuppressDrop } from "../utils/nativeDragTracker";
+import { setPinReorderDragActive } from "../utils/pinReorderDrag";
 import { registerKeyboardZone } from "../utils/focusZones";
 
 /** 侧边栏固定目录条目（仅目录，与仪表盘固定项相互独立） */
@@ -698,6 +699,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(index));
     pinReorderActiveRef.current = true;
+    // 全局排序拖拽标志：文件落点目标（文件区/地址栏/标签页等）据此
+    // 忽略本次拖拽，不显示「可放置」的误导性高亮（dragend 时清除）
+    setPinReorderDragActive(true);
     requestAnimationFrame(() => {
       if (!pinReorderActiveRef.current) return;
       setPinDrag({ from: index, gap: null });
@@ -775,6 +779,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   /** 拖拽结束（含取消/落点未被接收）：清除状态，源条目恢复显示 */
   const handlePinReorderDragEnd = () => {
     pinReorderActiveRef.current = false;
+    setPinReorderDragActive(false);
     setPinDrag(null);
   };
 

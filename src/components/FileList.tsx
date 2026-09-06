@@ -20,6 +20,7 @@ import { Row, type RowData } from "./FileList/Row";
 import { useRubberBandSelection, isPointerOnScrollbar } from "../hooks/useRubberBandSelection";
 import { useLocale } from "../i18n";
 import { startNativeDragTracking, shouldSuppressDrop } from "../utils/nativeDragTracker";
+import { isPinReorderDragActive } from "../utils/pinReorderDrag";
 
 interface FileListProps {
   files: IFile[];
@@ -470,6 +471,10 @@ const FileListComponent: React.FC<FileListProps> = ({
 
   const handleFolderDragOver = useCallback(
     (e: React.DragEvent, file: IFile) => {
+      // 侧边栏固定区排序拖拽：非文件拖放，不接收也不高亮
+      if (isPinReorderDragActive()) return;
+      // 未提供文件夹落点回调（选择器/保存器）：不接收任何拖放也不高亮
+      if (!onDropOnFolder) return;
       if (getDraggedPaths().has(file.path)) {
         e.dataTransfer.dropEffect = "none";
         return;
@@ -481,7 +486,7 @@ const FileListComponent: React.FC<FileListProps> = ({
       // Track for internal drop (native drag kills HTML5 drop events)
       lastDragOverFolderRef.current = file;
     },
-    [getDraggedPaths],
+    [getDraggedPaths, onDropOnFolder],
   );
 
   const handleFolderDragLeave = useCallback(() => {
@@ -490,6 +495,11 @@ const FileListComponent: React.FC<FileListProps> = ({
 
   const handleFolderDrop = useCallback(
     (e: React.DragEvent, targetFile: IFile) => {
+      // 侧边栏固定区排序拖拽：非文件拖放，不消费（兜底——dragover
+      // 守卫下本不会派发到此处）
+      if (isPinReorderDragActive()) return;
+      // 未提供文件夹落点回调（选择器/保存器）：不消费任何拖放
+      if (!onDropOnFolder) return;
       // 幻影 drop-back：本窗口刚发起过拖拽，真实 drop 落在其他窗口
       if (shouldSuppressDrop()) {
         return;

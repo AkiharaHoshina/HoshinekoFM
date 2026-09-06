@@ -4,6 +4,7 @@ import { t } from '../i18n';
 import { showToast } from '../utils/toast';
 import { useDrag } from '../contexts/DragContext';
 import { shouldSuppressDrop } from '../utils/nativeDragTracker';
+import { isPinReorderDragActive } from '../utils/pinReorderDrag';
 import { registerKeyboardZone } from '../utils/focusZones';
 import type { IFile } from '../types/files';
 import './TabBar.css';
@@ -192,6 +193,12 @@ export const TabBar: React.FC<TabBarProps> = ({
     };
 
     const onDragOver = (e: DragEvent) => {
+      // 侧边栏固定区排序拖拽：非文件拖放，不高亮标签页（dragState 守卫
+      // 之外的第二道防线——上次文件拖拽残留陈旧 dragState 时同样拦截）
+      if (isPinReorderDragActive()) {
+        setDragOverTabId(null);
+        return;
+      }
       const dragState = getDragState();
       if (!dragState || dragState.files.length === 0) {
         // 非内部拖拽：不接受，也不高亮
@@ -211,6 +218,9 @@ export const TabBar: React.FC<TabBarProps> = ({
 
     const onDrop = (e: DragEvent) => {
       setDragOverTabId(null);
+      // 侧边栏固定区排序拖拽：非文件拖放，不消费（兜底——dragover
+      // 守卫下本不会派发到此处）
+      if (isPinReorderDragActive()) return;
       // 幻影 drop-back（本窗口刚发起过拖拽，真实 drop 落在其他窗口）：
       // 直接忽略，防止同一次拖放被重复处理
       if (shouldSuppressDrop()) return;

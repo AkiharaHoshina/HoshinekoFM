@@ -9,6 +9,7 @@ import type { ContextMenuItem } from './ContextMenu';
 import { useDrag } from '../contexts/DragContext';
 import { extractDropPaths } from '../utils/dragDrop';
 import { shouldSuppressDrop } from '../utils/nativeDragTracker';
+import { isPinReorderDragActive } from '../utils/pinReorderDrag';
 
 /** 右键菜单位置（null 表示关闭） */
 interface TerminalMenuPos {
@@ -363,6 +364,8 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdR
       data-drop-target="terminal"
       // 允许放置：原生拖拽期间 dragover 到达时声明 copy 语义
       onDragOver={(e) => {
+        // 侧边栏固定区排序拖拽：非文件拖放，不接收也不给光标提示
+        if (isPinReorderDragActive()) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
       }}
