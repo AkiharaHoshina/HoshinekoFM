@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Icon } from "./Icon";
 import { IconButton } from "./IconButton";
 import { MarqueeText } from "./MarqueeText";
@@ -23,6 +23,15 @@ export interface SidebarPinnedItem {
   /** 是否为目录（当前固定功能仅允许目录，字段保留以便将来支持文件） */
   isDir: boolean;
 }
+
+/**
+ * 固定区排序拖拽期间的渲染条目：真实固定项（origIndex 为在
+ * pinnedDirs 中的原始索引，hidden 标记源条目已隐藏本体）或
+ * 插入间隙占位（gap 为插入位置，0..n-1）。
+ */
+type PinRenderEntry =
+  | { kind: 'item'; item: SidebarPinnedItem; origIndex: number; hidden?: boolean }
+  | { kind: 'gap'; gap: number };
 
 interface SidebarProps {
   currentPath: string;
@@ -56,6 +65,12 @@ interface SidebarProps {
   onPinPath: (path: string) => void;
   /** 移除固定目录 */
   onUnpinPath: (path: string) => void;
+  /**
+   * 固定目录拖拽排序：把 fromIndex 的条目移动到 toIndex
+   * （App 侧写入持久化存储）。picker 变体不传——选择器内
+   * 固定区只导航不排序（draggable 不启用）。
+   */
+  onReorderPin?: (fromIndex: number, toIndex: number) => void;
   /**
    * 变体：'picker' 用于文件选择器窗口——隐藏仪表盘入口、固定按钮、
    * 固定移除按钮、右键固定菜单与侧边栏拖放路由（选择器只导航不落点）。
@@ -105,6 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   pinnedDirs,
   onPinPath,
   onUnpinPath,
+  onReorderPin,
   variant = 'default',
   hideTrash = false,
 }) => {
@@ -610,6 +626,158 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onUnpinPath(path);
   };
 
+  // ── 固定目录拖拽排序（仅调整顺序，其他区域不接收） ──
+
+  /** 上半/下半区分界死区（像素）：光标在中线 ± 该值时保持当前间隙，
+   *  避免鼠标在中线附近微抖导致插入位置来回翻转（闪动）。 */
+  const PIN_HALF_BAND_PX = 4;
+
+  /**
+   * 固定区排序拖拽状态：from 为源条目在 pinnedDirs 中的原始索引，
+   * gap 为当前插入间隙（0..n-1，n = 固定项总数——即去掉源条目后
+   * 剩余列表中的插入位置：0 = 最前，n-1 = 最后）；null = 未悬停任何
+   * 固定项，不显示占位。源索引同时写入 dataTransfer（text/plain）：
+   * nativeDragTracker 在真实 drop 的捕获阶段会补发合成 dragend
+   * （Dashboard 同款坑），state 可能被提前清空——drop 时以 dataTransfer
+   * 读到的源索引为准。
+   */
+  const [pinDrag, setPinDrag] = useState<{ from: number; gap: number | null } | null>(null);
+
+  /** 拖拽会话是否仍在进行（同步于 dragstart/dragend 与 drop）：
+   *  起拖时经 rAF 延迟更新状态（保证浏览器先截取拖拽图像再隐藏
+   *  源条目），回调执行前拖拽可能已结束——经此 ref 丢弃过期更新。 */
+  const pinReorderActiveRef = useRef(false);
+
+  /**
+   * 计算排序插入间隙：悬停条目上半区 → 插到它前面，下半区 → 插到它后面。
+   * 源条目位于悬停条目上方时，去掉源条目后悬停条目下标左移 1，
+   * 需减去 (from < hoverIndex ? 1 : 0) 补偿，保证间隙基于
+   * 「去掉源条目后的剩余列表」语义（与 App 侧 splice(from,1) 一致）。
+   */
+  const computePinReorderGap = (hoverIndex: number, clientY: number, rect: DOMRect, from: number): number => {
+    const lowerHalf = clientY >= rect.top + rect.height / 2;
+    return hoverIndex + (lowerHalf ? 1 : 0) - (from < hoverIndex ? 1 : 0);
+  };
+
+  /**
+   * 拖拽期间的固定区渲染清单：源条目隐藏本体（display:none，仍保留
+   * 在 DOM 末尾以接收 dragend），其余条目保持原顺序不动；插入间隙处
+   * 生成一个空占位按钮（边界由 CSS 描绘）。列表本身不再随拖拽移位，
+   * 反馈只有一个占位元素——消除「实时重排」的反馈回路振荡。
+   */
+  const pinRenderList = useMemo<PinRenderEntry[]>(() => {
+    if (!pinDrag) return pinnedDirs.map((item, i) => ({ kind: 'item', item, origIndex: i }));
+    const entries: PinRenderEntry[] = [];
+    const { from, gap } = pinDrag;
+    for (let i = 0; i < pinnedDirs.length; i++) {
+      if (i === from) continue;
+      if (gap !== null && i - (from < i ? 1 : 0) === gap) {
+        entries.push({ kind: 'gap', gap });
+      }
+      entries.push({ kind: 'item', item: pinnedDirs[i], origIndex: i });
+    }
+    if (gap === pinnedDirs.length - 1) entries.push({ kind: 'gap', gap });
+    // 源条目留在 DOM（display:none）：若移出 DOM，取消拖拽（ESC）时
+    // dragend 不派发，隐藏状态无法清理
+    entries.push({ kind: 'item', item: pinnedDirs[from], origIndex: from, hidden: true });
+    return entries;
+  }, [pinDrag, pinnedDirs]);
+
+  /**
+   * 排序拖拽发起：源索引同步写入 dataTransfer（drop 时读取）；
+   * 隐藏源本体的状态更新延迟到下一帧——先让浏览器截取拖拽图像
+   * （此时源条目仍可见），否则截到的拖拽图像为空白。
+   * 从条目右侧移除按钮（×）按下时不起拖（那是取消固定交互）。
+   */
+  const handlePinReorderDragStart = (e: React.DragEvent, index: number) => {
+    if (isPicker || !onReorderPin) return;
+    if ((e.target as HTMLElement).closest('.sidebar-pin-remove')) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+    pinReorderActiveRef.current = true;
+    requestAnimationFrame(() => {
+      if (!pinReorderActiveRef.current) return;
+      setPinDrag({ from: index, gap: null });
+    });
+  };
+
+  /**
+   * 悬停到某固定项：按上/下半区计算插入间隙（中线 ± 死区时保持
+   * 当前值），间隙变化时移动占位（仅排序拖拽自身，文件拖放由
+   * 文档级路由处理）。
+   */
+  const handlePinReorderDragOver = (e: React.DragEvent, index: number) => {
+    if (isPicker || !pinDrag) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const mid = rect.top + rect.height / 2;
+    if (pinDrag.gap !== null && Math.abs(e.clientY - mid) <= PIN_HALF_BAND_PX) return;
+    const gap = computePinReorderGap(index, e.clientY, rect, pinDrag.from);
+    // dragover 高频事件：同值早退，仅在间隙变化时更新占位
+    setPinDrag((prev) => (prev && prev.gap !== gap ? { ...prev, gap } : prev));
+  };
+
+  /** 悬停到插入间隙占位本身：占位即当前间隙，保持并接受放置 */
+  const handlePinGapDragOver = (e: React.DragEvent, gap: number) => {
+    if (isPicker || !pinDrag) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setPinDrag((prev) => (prev && prev.gap !== gap ? { ...prev, gap } : prev));
+  };
+
+  /** 拖离固定区（进入其他区域/空白）时收起占位 */
+  const handlePinReorderListLeave = (e: React.DragEvent) => {
+    const el = e.currentTarget as HTMLElement;
+    if (e.relatedTarget && el.contains(e.relatedTarget as Node)) return;
+    setPinDrag((prev) => (prev ? { ...prev, gap: null } : prev));
+  };
+
+  /**
+   * 松手确认（落在真实固定项上）：光标仍在中线死区内时提交当前
+   * 显示的占位间隙（所见即所得），否则按落下位置重新计算；
+   * 把源条目移动到该间隙（App 侧持久化）；无效索引/原位置
+   * （间隙 == 源位置）不做任何事。
+   */
+  const handlePinReorderDrop = (e: React.DragEvent, index: number) => {
+    if (isPicker) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const fromRaw = e.dataTransfer.getData('text/plain');
+    const from = Number(fromRaw);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const mid = rect.top + rect.height / 2;
+    let gap: number;
+    if (pinDrag && pinDrag.gap !== null && Math.abs(e.clientY - mid) <= PIN_HALF_BAND_PX) {
+      gap = pinDrag.gap;
+    } else {
+      gap = computePinReorderGap(index, e.clientY, rect, from);
+    }
+    setPinDrag(null);
+    if (!fromRaw || !Number.isFinite(from) || from === gap) return;
+    onReorderPin?.(from, gap);
+  };
+
+  /** 松手确认（落在插入间隙占位上）：占位的间隙即目标位置 */
+  const handlePinGapDrop = (e: React.DragEvent, gap: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const fromRaw = e.dataTransfer.getData('text/plain');
+    const from = Number(fromRaw);
+    setPinDrag(null);
+    if (!fromRaw || !Number.isFinite(from) || from === gap) return;
+    onReorderPin?.(from, gap);
+  };
+
+  /** 拖拽结束（含取消/落点未被接收）：清除状态，源条目恢复显示 */
+  const handlePinReorderDragEnd = () => {
+    pinReorderActiveRef.current = false;
+    setPinDrag(null);
+  };
+
   return (
     <aside
       className="sidebar"
@@ -672,45 +840,67 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {pinnedDirs.length > 0 && (
         <div className="sidebar-section">
           <h3 className="sidebar-title">{t("sidebar.pinned")}</h3>
-          <div className="sidebar-list">
-            {pinnedDirs.map((item) => (
-              <div
-                key={item.path}
-                className={`sidebar-item ${currentPath === item.path ? "active" : ""} ${dragOverTarget === `${TARGET_PREFIX_PLACE}${item.path}` ? "drag-over" : ""}`}
-                data-sidebar-target={`${TARGET_PREFIX_PLACE}${item.path}`}
-                role="button"
-                tabIndex={-1}
-                onClick={() => onNavigate(item.path)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onNavigate(item.path);
-                  }
-                }}
-                title={item.path}
-              >
-                <Icon
-                  name="folder"
-                  className="sidebar-icon"
-                  // 仅当前打开的固定目录实心：此前用 startsWith，嵌套固定
-                  // （A 与 A/B 同时固定、打开 B）时 A 与 B 图标都实心
-                  filled={currentPath === item.path}
-                />
-                <span className="sidebar-label sidebar-pin-label">
-                  <MarqueeText enabled={marqueeEnabled}>{item.name}</MarqueeText>
-                </span>
-                {!isPicker && (
-                  <IconButton
-                    variant="standard"
-                    onClick={(e) => handleRemovePinned(e, item.path)}
-                    className="sidebar-pin-remove"
-                    title={t("sidebar.unpin")}
-                  >
-                    <Icon name="close" />
-                  </IconButton>
-                )}
-              </div>
-            ))}
+          <div
+            className="sidebar-list"
+            onDragLeave={handlePinReorderListLeave}
+          >
+            {pinRenderList.map((entry) => {
+              if (entry.kind === 'gap') {
+                return (
+                  <div
+                    key={`pin-gap-${entry.gap}`}
+                    className="sidebar-item sidebar-pin-gap"
+                    onDragOver={(e) => handlePinGapDragOver(e, entry.gap)}
+                    onDrop={(e) => handlePinGapDrop(e, entry.gap)}
+                  />
+                );
+              }
+              const item = entry.item;
+              const origIndex = entry.origIndex;
+              return (
+                <div
+                  key={item.path}
+                  className={`sidebar-item ${entry.hidden ? "sidebar-pin-source-hidden" : ""} ${currentPath === item.path ? "active" : ""} ${dragOverTarget === `${TARGET_PREFIX_PLACE}${item.path}` ? "drag-over" : ""}`}
+                  data-sidebar-target={`${TARGET_PREFIX_PLACE}${item.path}`}
+                  role="button"
+                  tabIndex={-1}
+                  draggable={!isPicker && !!onReorderPin}
+                  onDragStart={(e) => handlePinReorderDragStart(e, origIndex)}
+                  onDragOver={(e) => handlePinReorderDragOver(e, origIndex)}
+                  onDrop={(e) => handlePinReorderDrop(e, origIndex)}
+                  onDragEnd={handlePinReorderDragEnd}
+                  onClick={() => onNavigate(item.path)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onNavigate(item.path);
+                    }
+                  }}
+                  title={item.path}
+                >
+                  <Icon
+                    name="folder"
+                    className="sidebar-icon"
+                    // 仅当前打开的固定目录实心：此前用 startsWith，嵌套固定
+                    // （A 与 A/B 同时固定、打开 B）时 A 与 B 图标都实心
+                    filled={currentPath === item.path}
+                  />
+                  <span className="sidebar-label sidebar-pin-label">
+                    <MarqueeText enabled={marqueeEnabled}>{item.name}</MarqueeText>
+                  </span>
+                  {!isPicker && (
+                    <IconButton
+                      variant="standard"
+                      onClick={(e) => handleRemovePinned(e, item.path)}
+                      className="sidebar-pin-remove"
+                      title={t("sidebar.unpin")}
+                    >
+                      <Icon name="close" />
+                    </IconButton>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

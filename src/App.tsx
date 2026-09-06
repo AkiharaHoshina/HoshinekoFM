@@ -322,6 +322,24 @@ function AppContent() {
   );
 
   /**
+   * 侧边栏固定目录拖拽排序：把 from 位置的条目移动到 to 位置
+   * （固定区条目 HTML5 DnD，仅排序，不经过文件拖拽系统；
+   * 顺序变更自动经 setPinnedDirs 持久化 + 上报主进程快照）。
+   */
+  const reorderPinnedDir = useCallback(
+    (from: number, to: number) => {
+      setPinnedDirs((prev) => {
+        if (from === to || from < 0 || to < 0 || from >= prev.length || to >= prev.length) return prev;
+        const next = [...prev];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        return next;
+      });
+    },
+    [setPinnedDirs],
+  );
+
+  /**
    * 固定项上报主进程（含首次挂载）：主进程原子落盘快照到 GUI 的
    * userData 目录，服务模式（--portal / --filemanager1）常驻进程的
    * 选择器/保存器窗口经快照读取固定目录——其 userData 与 GUI 隔离，
@@ -1656,6 +1674,7 @@ function AppContent() {
           pinnedDirs={pinnedDirs}
           onPinPath={pinSidebarDir}
           onUnpinPath={unpinSidebarDir}
+          onReorderPin={reorderPinnedDir}
         />
 
         <main className="main-content">

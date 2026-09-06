@@ -204,6 +204,29 @@
     white-space: nowrap;
 }
 
+/* 排序拖拽中的源条目：隐藏本体（拖拽图像已由浏览器在起拖时截取），
+   仍保留在 DOM 末尾以接收 dragend 清理 */
+.sidebar-item.sidebar-pin-source-hidden {
+    display: none;
+}
+
+/* 排序插入位置占位：空按钮 + 虚线边界，轻淡入动画避免生硬闪现 */
+.sidebar-item.sidebar-pin-gap {
+    outline: 2px dashed var(--md-sys-color-primary);
+    outline-offset: -2px;
+    background-color: var(--md-sys-color-surface-container-high);
+    animation: sidebar-pin-gap-in 0.15s ease;
+}
+
+@keyframes sidebar-pin-gap-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
 /* 固定目录条目的移除按钮：悬停显现（与设备弹出按钮同款交互） */
 .sidebar-pin-remove {
     flex-shrink: 0;

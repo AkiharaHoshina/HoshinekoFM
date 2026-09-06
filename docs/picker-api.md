@@ -129,3 +129,4 @@ const picked = await window.electron.openPicker({
 - v0.11.34：同步规则（见 `同步规则.md`）——`viewPrefs` 扩展 sortBy/sortOrder/groupingEnabled（立即同步组）；新增 `settings` 注入（确认时同步组：`searchGroupByDir`/`showFullPathTitle`，后增 `locale`）；新增 `theme` 注入（主题快照）；选择器搜索对齐主窗口（结果计数/清除/类型/大小筛选器，同一条 `system:search`，结果按搜索分类分组）；GUI 模式回落共享 localStorage（打开时同步 + storage 事件实时跟随）；标题文本渲染期派生实时跟随语言。
 - v0.11.36：搜索分类聚簇修复——选择器 `sortedFiles` 补 `sortFilesByDir` 分支（与主窗口一致），搜索结果按目录聚簇后组头不再重复；搜索失败复位搜索态并重载当前目录（不再锁定分类开关停留在旧内容）。
 - v0.11.38：平铺 WM（i3/sway/hyprland/niri 等）下选择器/保存器标题栏隐藏最小化入口（`TitleBar hideMinimize`，与主窗口一致；主进程 `window:minimize` 同条件 no-op 兜底）；侧边栏 位置/固定文件夹/设备 区块标题上方增加间隔（与主窗口一致）。
+- v0.11.39：侧边栏固定目录顺序——选择器/保存器固定区**只读**（条目不可拖拽、无移除按钮，不允许改变顺序）；主窗口排序后经既有 `app:set-pinned-dirs` 快照 + `picker:pinned-dirs-changed` 广播，**打开中的选择器/保存器实时跟随新顺序**（GUI 模式选择器另经共享 session 的 storage 事件兜底）。

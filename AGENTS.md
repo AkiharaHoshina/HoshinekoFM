@@ -44,6 +44,7 @@ No unit-test framework — e2e tests live in `scripts/e2e/` (Electron main-proce
   - **导航栏活动项是 `md-filled-icon-button` 变体**：标准 `md-icon-button` 选择器不含活动项——e2e 15 按标准按钮计下标（0..3 = 仪表盘/回收站/终端/设置，活动项 Files 不计入）；激活导致变体切换替换元素丢焦点，应用内键盘激活后经 rAF 恢复同下标焦点（测试勿依赖激活后的焦点落点，必要时显式 focus）。
   - **滚动条拖动（sendInputEvent）**：Chromium 原生滚动条接管拖动，期间**不向页面派发 mousemove**（mousedown/mouseup 照常、click 被吞）——框选副作用由 scroll 事件驱动；e2e 28 断言「滚动条拖动不得进入框选模式」用状态栏框选提示（onSelectionModeChange 副作用）作确定性信号（选框本身依赖几何，合成输入下不一定出现）。
   - 菜单/按钮文案按中英文双匹配（`/取消|Cancel/`），规避系统语言差异。
+  - **侧边栏固定区拖拽排序是 HTML5 DnD（仅排序语义，不经过文件拖拽系统）**：源条目拖起后 display:none（隐藏延迟到 rAF——先让浏览器截取拖拽图像，`pinReorderActiveRef` 守卫起拖瞬间松手竞态；源条目留 DOM 末尾保证 ESC 取消时 dragend 派发清理）；插入位置 = 上/下半区（±4px 死区防抖动）+ 空占位按钮（`.sidebar-pin-gap`）；间隙语义基于「去掉源条目后的剩余列表」（`computePinReorderGap` 的 `- (from < hoverIndex ? 1 : 0)` 补偿，与 App 侧 `splice(from,1)` 一致）；其他区域不接收（无 drop 处理器落下即回弹）。**harness 无 HTML5 DnD 模拟能力**——e2e 47 测同步链路本身（跨窗口 localStorage 写入等价于另一主窗口完成排序；同窗口写不派发 storage 事件），不要试图合成 dragstart/drop；选择器/保存器固定区只读（draggable 关闭）。
   - 对话框内容超出视口时点击前 `scrollIntoView`。
 - harness 有 120s 全局看门狗，任何挂起会强制退出并报 WATCHDOG TIMEOUT。
 
