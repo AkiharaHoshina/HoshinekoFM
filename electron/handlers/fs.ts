@@ -1298,22 +1298,31 @@ export function registerFsHandlers() {
    * 秒回，避免整个面板陪跑最慢的大小计算）。
    *
    * `trash://` 虚拟路径映射到真实回收站 files 目录，并把解析后的
-   * 真实路径随 `path` 返回（前端用它对真实目录算大小）。
+   * 真实路径随 `path` 返回（前端用它对真实目录算大小）；回收站子目录
+   * 虚拟路径（`trash://文件夹名`，前端混合路径模型的显示形态）同样
+   * 映射到 files 目录下的真实子目录——相对段剔除 `.`/`..`/空段防逃逸
+   * （与前端 utils/trashPath 同语义）。
    *
    * @returns success + 各字段 + path（真实路径）；失败时携带
    *          INVALID_PATH / NOT_DIR / READ_FAILED
    */
   ipcMain.handle('fs:get-dir-info', async (_, dirPath: string) => {
-    // trash:// 虚拟目录放行（随后映射到真实回收站 files 目录）——
-    // 它不以 '/' 开头，若与普通路径同条件校验会被 INVALID_PATH 拦下，
-    // 使下面的 trash 映射成为死代码（预览面板切到回收站时显示
-    // 「无法预览」）。
-    if (typeof dirPath !== 'string' || (dirPath !== 'trash://' && !dirPath.startsWith('/'))) {
+    // trash:// 虚拟目录（含子目录）放行（随后映射到真实回收站 files
+    // 目录）——它不以 '/' 开头，若与普通路径同条件校验会被
+    // INVALID_PATH 拦下，使下面的 trash 映射成为死代码（预览面板切到
+    // 回收站时显示「无法预览」）。
+    if (typeof dirPath !== 'string' || (dirPath !== 'trash://' && !dirPath.startsWith('trash://') && !dirPath.startsWith('/'))) {
       return { success: false, code: 'INVALID_PATH' };
     }
-    const realPath = dirPath === 'trash://'
-      ? path.join(getTrashRoot(), 'files')
-      : dirPath;
+    let realPath = dirPath;
+    if (dirPath.startsWith('trash://')) {
+      const filesRoot = path.join(getTrashRoot(), 'files');
+      const segments = dirPath.slice('trash://'.length).split('/')
+        .filter((s) => s !== '' && s !== '.' && s !== '..');
+      realPath = segments.length === 0
+        ? filesRoot
+        : path.join(filesRoot, ...segments);
+    }
     try {
       const stats = await fs.stat(realPath);
       if (!stats.isDirectory()) return { success: false, code: 'NOT_DIR' };

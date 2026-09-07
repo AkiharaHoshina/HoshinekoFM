@@ -643,7 +643,7 @@ ipcMain.handle('theme:get-css', async () => {
 /**
  * 构造启动器条目环境（真实路径）：桌面目录经 Electron XDG 解析
  * （中文「桌面」等本地化目录可用），菜单目录走 XDG_DATA_HOME，
- * 图标源在打包产物 extraResources（AppImage 挂载路径每次随机，
+ * 图标源为仓库/打包产物的 src/icon.svg（AppImage 挂载路径每次随机，
  * Icon= 必须引用复制到 hicolor 的稳定落点，见 launcherEntry.ts）。
  */
 function buildLauncherEnv(): LauncherEntryEnv {
@@ -658,13 +658,13 @@ function buildLauncherEnv(): LauncherEntryEnv {
   return {
     desktopDir,
     applicationsDir: path.join(dataHome, 'applications'),
-    iconsDir: path.join(dataHome, 'icons', 'hicolor', '512x512'),
+    iconsDir: path.join(dataHome, 'icons', 'hicolor', 'scalable'),
     userDataDir: app.getPath('userData'),
     execPath: process.execPath,
     appImage: process.env.APPIMAGE ?? null,
     iconSource: app.isPackaged
-      ? path.join(process.resourcesPath, 'assets', 'icon.png')
-      : path.resolve(__dirname, '../assets/icon.png'),
+      ? path.join(process.resourcesPath, 'src', 'icon.svg')
+      : path.resolve(__dirname, '../src/icon.svg'),
   };
 }
 

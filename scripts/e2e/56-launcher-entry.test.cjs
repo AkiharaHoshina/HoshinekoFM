@@ -27,11 +27,11 @@ const path = require('path');
     const scratch = h.tempDir();
     const desktopDir = path.join(scratch, 'Desktop');
     const appmenuDir = path.join(scratch, 'applications');
-    const iconsDir = path.join(userData, 'xdg-data', 'icons', 'hicolor', '512x512');
+    const iconsDir = path.join(userData, 'xdg-data', 'icons', 'hicolor', 'scalable');
     const desktopFile = path.join(desktopDir, 'HoshinekoFM.desktop');
     const appmenuFile = path.join(appmenuDir, 'HoshinekoFM.desktop');
     const markerFile = path.join(userData, 'launcher-entries.json');
-    const iconFile = path.join(iconsDir, 'hoshineko-fm.png');
+    const iconFile = path.join(iconsDir, 'hoshineko-fm.svg');
 
     // 含空格与引号的假执行路径（断言 Exec 转义）
     process.env.HOSHINEKO_E2E_DESKTOP_DIR = desktopDir;
@@ -72,12 +72,16 @@ const path = require('path');
       const mode = fs.statSync(file).mode & 0o111;
       h.assert.ok(mode !== 0, `${name} 条目应带可执行位（chmod 755）`);
     }
-    // 图标已复制（与仓库 assets/icon.png 一致）
+    // 图标已复制（与仓库 src/icon.svg 一致，SVG 矢量）
     h.assert.ok(fs.existsSync(iconFile), '图标应复制到 hicolor 目录');
     h.assert.strictEqual(
       fs.statSync(iconFile).size,
-      fs.statSync(path.join(h.ROOT, 'assets', 'icon.png')).size,
+      fs.statSync(path.join(h.ROOT, 'src', 'icon.svg')).size,
       '复制后的图标应与源文件同大小',
+    );
+    h.assert.ok(
+      fs.readFileSync(iconFile, 'utf-8').trimStart().startsWith('<svg'),
+      '复制后的图标应为 SVG 矢量内容',
     );
     // marker 已落盘（两 kind 均记录）
     h.assert.deepStrictEqual(readMarker(), { desktop: true, appmenu: true }, 'marker 应记录两个条目均已创建');

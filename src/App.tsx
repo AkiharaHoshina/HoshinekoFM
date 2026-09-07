@@ -1106,6 +1106,15 @@ function AppContent() {
    * - 真实目录 → 目录名（根目录为 /）；「显示完整路径」开启时显示完整路径。
    */
   const activeTabPath = tabs.find((t) => t.id === activeTabId)?.path ?? '';
+  /**
+   * 当前标签页是否为虚拟路径（仪表盘/回收站根）：虚拟路径不可作为
+   * 终端工作目录——左侧功能栏打开终端时回落主进程默认（~ 家目录），
+   * 否则 node-pty 以不存在的目录 spawn、shell 立即退出（见 TerminalPane）。
+   */
+  const isVirtualTerminalDir =
+    activeTabPath === 'app://dashboard' ||
+    activeTabPath === 'dashboard://' ||
+    activeTabPath === 'trash://';
   const windowTitle = useMemo(() => {
     if (activeTabPath === 'app://dashboard') return 'Hoshineko Nya~';
     if (activeTabPath === 'trash://') return t('nav.trash');
@@ -1912,8 +1921,10 @@ function AppContent() {
             <TerminalPanel
               cwd={
                 terminalCwd ||
-              tabs.find((t) => t.id === activeTabId)?.path ||
-              undefined
+                (isVirtualTerminalDir
+                  ? undefined
+                  : tabs.find((t) => t.id === activeTabId)?.path) ||
+                undefined
               }
               currentDir={tabs.find((t) => t.id === activeTabId)?.path || undefined}
               cdRequest={terminalCdRequest}

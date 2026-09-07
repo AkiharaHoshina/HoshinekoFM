@@ -977,7 +977,7 @@ export function registerSystemHandlers(
         : `Exec="${process.execPath}" "${app.getAppPath()}" %U`;
     const iconLine = process.env.APPIMAGE
       ? '' // AppImage 集成通常自带 .desktop 与图标
-      : `Icon=${path.join(app.getAppPath(), 'assets', 'icon.png')}`;
+      : `Icon=${path.join(app.getAppPath(), 'src', 'icon.svg')}`;
     return (
       [
         '[Desktop Entry]',

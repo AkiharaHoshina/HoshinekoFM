@@ -1004,17 +1004,23 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
    * - 单选文件（非目录）→ 显示该文件的预览。
    * 回收站条目（path 为 Trash/files 内真实文件）与搜索结果（真实路径）
    * 均可正常预览；回收站目录携带 trashOriginalPath 供属性网格显示原位置。
+   * **回收站目录虚拟显示（混合路径模型）**：预览的目录路径位于回收站
+   * files 目录下时换算为 trash://… 虚拟形态（与地址栏同款）——属性网格
+   * 位置行与悬停标题不再暴露真实 Trash/files 路径（后端 fs:get-dir-info
+   * 会把 trash://… 映射回真实路径做 stat/大小计算）。
    */
   const previewState = useMemo<{ kind: 'hidden' } | { kind: 'directory'; path: string; trashOriginalPath?: string } | { kind: 'multiple' } | { kind: 'file'; file: IFile }>(() => {
     if (!filePreviewEnabled || currentPath === 'app://dashboard') return { kind: 'hidden' };
-    if (selectedFiles.size === 0) return { kind: 'directory', path: currentPath };
+    const virtualDir = (p: string): string =>
+      (trashRoot && p.startsWith(trashRoot) ? realToTrashVirtual(p, trashRoot) : p);
+    if (selectedFiles.size === 0) return { kind: 'directory', path: virtualDir(currentPath) };
     if (selectedFiles.size > 1) return { kind: 'multiple' };
     const path = Array.from(selectedFiles)[0];
     const f = files.find((x) => x.path === path);
-    if (!f) return { kind: 'directory', path: currentPath };
-    if (f.isDirectory) return { kind: 'directory', path: f.path, trashOriginalPath: f.trashOriginalPath };
+    if (!f) return { kind: 'directory', path: virtualDir(currentPath) };
+    if (f.isDirectory) return { kind: 'directory', path: virtualDir(f.path), trashOriginalPath: f.trashOriginalPath };
     return { kind: 'file', file: f };
-  }, [filePreviewEnabled, currentPath, selectedFiles, files]);
+  }, [filePreviewEnabled, currentPath, selectedFiles, files, trashRoot]);
 
   /** 预览行容器引用（分隔条拖动时按行宽计算百分比） */
   const previewRowRef = useRef<HTMLDivElement | null>(null);

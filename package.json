@@ -74,6 +74,10 @@
       {
         "from": "assets/icon.png",
         "to": "assets/icon.png"
+      },
+      {
+        "from": "src/icon.svg",
+        "to": "src/icon.svg"
       }
     ],
     "asarUnpack": [

@@ -54,6 +54,48 @@
   断言）+ 列表刷新 + 同名冲突错误态取消不创建 + 选择模式背景右键
   无菜单回归——菜单项是 `md-list-item` 不是 `.context-menu-item`；
   回归 06/38/41/43 通过。
+- **回收站子目录预览虚拟路径**：预览面板预览回收站内目录时不再暴露
+  真实 `Trash/files` 路径——ExplorerTab `previewState` 对 files 目录
+  下的路径经 `realToTrashVirtual` 换算为 `trash://…`（与地址栏同款，
+  trashRoot 依赖）；后端 `fs:get-dir-info` 接受 `trash://…` 虚拟路径
+  （含子目录）映射到真实 files 子目录（相对段剔除 `.`/`..`/空段防
+  逃逸，与前端 trashPath 同语义）——面板名称仍为文件夹名，悬停标题/
+  属性网格位置行为虚拟路径（预览面板全文不得含 `.local/share/Trash`）。
+- **终端虚拟目录回落家目录**：App 派生 `isVirtualTerminalDir`
+  （`app://dashboard` / `dashboard://` / `trash://`）——左侧功能栏
+  打开终端时 cwd 传 undefined（主进程 `cwd || os.homedir()` 回落 ~），
+  此前虚拟路径当 cwd 传 node-pty spawn 失败、shell 立即退出；
+  「在此打开终端」（terminalCwd）优先不受影响。
+- **e2e 59**：回收站子目录预览标题/位置行虚拟断言 + 面板全文无
+  `.local/share/Trash` + 记录型 terminal:spawn handler 断言三次 cwd
+  （真实目录 = 该目录 / 仪表盘 = 空串 / 回收站根 = 空串——虚拟目录
+  传空串由后端回落 ~）；回归 12/23/24/45/57 通过。
+- **应用图标改用 SVG（.desktop 等位置）**：图标源从 `assets/icon.png`
+  （实为 JPEG 内容）改为 `src/icon.svg`（SVG 矢量）——启动器条目复制
+  落点随之从 `~/.local/share/icons/hicolor/512x512/hoshineko-fm.png` 改为
+  `hicolor/scalable/hoshineko-fm.svg`（freedesktop 图标主题规范，SVG 归
+  scalable 目录；launcherEntry.ts / main.ts / e2e harness 环境同源三处），
+  `src/icon.svg` 经 extraResources 进打包产物（`resourcesPath/src/icon.svg`，
+  dev 回落仓库文件）；系统集成 .desktop 开发分支（system.ts
+  buildDesktopEntry）Icon= 同步改指 `<appPath>/src/icon.svg`；AppImage
+  打包图标（electron-builder `linux.icon`，仅支持 PNG）仍用
+  `assets/icon.png` 不变。e2e 56 更新（图标落点 scalable/hoshineko-fm.svg
+  + 复制内容以 `<svg` 开头断言）。
+- **缩略图缓存失效与重新缓存**：图片被改动（重命名/复制/移动/就地
+  覆盖替换/删除后重建）后不再显示陈旧缩略图——`electron/fsUtils.ts`
+  生成成功时记录**源内容戳**（mtimeMs+size）到点号前缀 sidecar
+  （`~/.cache/hoshineko-fm/thumbnails/.{hash}.stamp`，e2e 计数与
+  `getThumbnailCacheInfo` 统计均排除）。命中校验：内存 LRU 条目带
+  `{cachePath, stamp, epoch}`——**同世代请求零 stat 快路径直返**
+  （滚动风暴性能不回归），世代变化（FileList 在文件操作/目录刷新后
+  bump thumbEpoch，经 `media://…?v=` 传入）时异步 stat 源文件比对戳——
+  一致刷新 LRU 世代直返；不一致（覆盖/替换/编辑器保存）作废旧缓存
+  文件+戳并重新生成；源已删除返回旧缓存（条目随刷新移除）；无戳
+  （旧版本缓存）按当前源补录视为新鲜；内存命中但磁盘缓存消失（外部
+  删除/清缓存竞争）作废条目走生成。e2e 60 覆盖（覆盖后缓存字节变化 +
+  sidecar 戳更新 / 重命名新 key 生成 + 旧孤儿保留 / 旧路径重建重新
+  生成 / 删除回退不崩溃）；e2e 30/34/35 回归通过（35 滚动风暴为
+  环境性 flake，stash 对照与改动无关）。
 
 ## v0.11.45 — 标题栏 v 菜单「新建窗口」
 
@@ -90,10 +132,10 @@
   StartupWMClass=HoshinekoFM`——Exec 优先 `APPIMAGE` 环境变量（AppImage 形态
   稳定入口），回落进程路径；路径经桌面条目规范转义（反斜杠/引号）；
   `chmod 755` + `gio set metadata::trusted true`（GNOME 双击信任，best-effort）。
-- **图标**：`assets/icon.png` 经 extraResources 进打包产物，启动时复制到
-  `~/.local/share/icons/hicolor/512x512/hoshineko-fm.png` 稳定落点（AppImage
-  挂载路径每次随机，Icon= 必须引用不随版本变化的路径）；复制失败/源缺失
-  省略 Icon 行（通用图标兜底）。
+- **图标**：`src/icon.svg`（SVG 矢量）经 extraResources 进打包产物，启动时
+  复制到 `~/.local/share/icons/hicolor/scalable/hoshineko-fm.svg` 稳定落点
+  （AppImage 挂载路径每次随机，Icon= 必须引用不随版本变化的路径）；
+  复制失败/源缺失省略 Icon 行（通用图标兜底）。
 - **目录解析**：桌面目录走 Electron XDG 解析（中文「桌面」等本地化目录可用，
   回落 `~/Desktop`）；菜单目录走 `XDG_DATA_HOME`/`~/.local/share/applications`。
 - **共享模块**：核心逻辑抽成 `electron/launcherEntry.ts`（同 backends.ts 模式，

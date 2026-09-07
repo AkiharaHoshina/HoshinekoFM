@@ -541,22 +541,84 @@ function thumbCacheKey(key: string, ext: 'png' | 'jpg'): string {
 }
 
 /**
- * 缓存命中内存 LRU：cacheKeyBase → 缓存文件路径。
- * 命中后直接返回，跳过每请求 2 次 existsSync 同步 stat（来回滚动时
+ * 缩略图缓存条目对应的源内容戳（mtimeMs + size）——命中校验用：
+ * 源文件被就地覆盖（粘贴替换/解压覆盖/编辑器保存/删除后重建等）后
+ * 戳不匹配，作废缓存并重新生成，防止陈旧缩略图长期不刷新。
+ */
+interface ThumbStamp {
+  mtimeMs: number;
+  size: number;
+}
+
+/**
+ * 缓存命中内存 LRU：cacheKeyBase → 命中条目（缓存路径 + 源内容戳 +
+ * 最近校验世代）。
+ * 同世代命中后直接返回，跳过每请求 2 次 existsSync 同步 stat（来回滚动时
  * 主进程事件循环不被磁盘 stat 阻塞）。只记录确认存在的命中条目。
  */
-const thumbHitCache = new Map<string, string>();
+interface ThumbHitEntry {
+  cachePath: string;
+  /** 生成/校验时记录的源内容戳；null = 记录失败（下次世代变化时按当前源补录） */
+  stamp: ThumbStamp | null;
+  /** 最近一次校验（或生成）时的世代——同世代请求走零 stat 快路径；
+   *  世代变化（目录切换/刷新/文件操作后 FileList bump thumbEpoch）
+   *  才重新校验源内容戳 */
+  epoch: number;
+}
+const thumbHitCache = new Map<string, ThumbHitEntry>();
 /** LRU 上限：超出后淘汰最久未命中的条目（Map 插入序 = 命中序） */
 const THUMB_HIT_CACHE_MAX = 10_000;
 
 /** 记录（或刷新）缓存命中条目；生成成功后也经此写入 */
-function rememberThumbHit(key: string, cachePath: string): void {
+function rememberThumbHit(
+  key: string,
+  cachePath: string,
+  stamp: ThumbStamp | null,
+  epoch: number,
+): void {
   thumbHitCache.delete(key);
-  thumbHitCache.set(key, cachePath);
+  thumbHitCache.set(key, { cachePath, stamp, epoch });
   if (thumbHitCache.size > THUMB_HIT_CACHE_MAX) {
     const oldest = thumbHitCache.keys().next().value;
     if (oldest !== undefined) thumbHitCache.delete(oldest);
   }
+}
+
+/** 内容戳 sidecar 文件路径（点号前缀——e2e 计数与缓存统计均排除） */
+function thumbStampPath(cacheKeyBase: string): string {
+  const hash = crypto.createHash('md5').update(cacheKeyBase).digest('hex');
+  return path.join(THUMB_CACHE_DIR, `.${hash}.stamp`);
+}
+
+/** 读取内容戳 sidecar（不存在/损坏返回 null——旧版本缓存无戳，按当前源补录） */
+async function readThumbStamp(stampFile: string): Promise<ThumbStamp | null> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(stampFile, 'utf-8')) as ThumbStamp;
+    if (typeof parsed?.mtimeMs === 'number' && typeof parsed?.size === 'number') return parsed;
+  } catch { /* 无戳/损坏：视为未知 */ }
+  return null;
+}
+
+/** 写内容戳 sidecar（失败不阻断——下次世代变化时按当前源重新校验/补录） */
+async function writeThumbStamp(stampFile: string, stamp: ThumbStamp): Promise<void> {
+  try {
+    await fs.writeFile(stampFile, JSON.stringify(stamp), 'utf-8');
+  } catch { /* 写戳失败不影响缩略图服务 */ }
+}
+
+/** 源文件当前内容戳（stat 失败返回 null = 源已不存在/不可访问） */
+async function statSourceStamp(filePath: string): Promise<ThumbStamp | null> {
+  try {
+    const st = await fs.stat(filePath);
+    return { mtimeMs: st.mtimeMs, size: st.size };
+  } catch {
+    return null;
+  }
+}
+
+/** 内容戳相等判定（mtimeMs + size 双字段） */
+function stampsEqual(a: ThumbStamp, b: ThumbStamp): boolean {
+  return a.mtimeMs === b.mtimeMs && a.size === b.size;
 }
 
 /**
@@ -650,6 +712,53 @@ function probeThumbCacheHit(cachePng: string, cacheJpg: string): Promise<string 
   return chained;
 }
 
+/**
+ * 命中校验（世代变化时）：比对源文件当前 mtimeMs+size 与生成时记录的
+ * 内容戳——一致则刷新 LRU 世代并直返；不一致（重命名后同路径重建/
+ * 就地覆盖/粘贴替换/编辑器保存等）则作废旧缓存文件并重新生成，
+ * 防止陈旧缩略图长期不刷新。源已不存在（删除/移走）时无新内容可
+ * 生成，返回旧缓存即可（条目随列表刷新移除）；无戳记录（旧版本缓存/
+ * 写戳失败）时按当前源补录视为新鲜。
+ */
+async function revalidateThumbHit(
+  filePath: string,
+  cacheKeyBase: string,
+  cachePath: string,
+  memStamp: ThumbStamp | null,
+  stampFile: string,
+  epoch: number,
+  regenerate: () => Promise<string | null>,
+): Promise<string | null> {
+  const stamp = memStamp ?? await readThumbStamp(stampFile);
+  if (stamp) {
+    const current = await statSourceStamp(filePath);
+    if (!current) {
+      // 源已不存在：无新内容可生成，返回旧缓存（条目即将随刷新移除）
+      thumbHitCache.delete(cacheKeyBase);
+      return cachePath;
+    }
+    if (stampsEqual(current, stamp)) {
+      rememberThumbHit(cacheKeyBase, cachePath, stamp, epoch);
+      return cachePath;
+    }
+    // 内容已变化：作废旧缓存与戳，重新生成
+    dlog('stale-invalidated', path.basename(filePath));
+    thumbHitCache.delete(cacheKeyBase);
+    void (async () => {
+      await fs.rm(cachePath, { force: true }).catch(() => { /* 已被删除 */ });
+      await fs.rm(stampFile, { force: true }).catch(() => { /* 无戳文件 */ });
+    })();
+    return regenerate();
+  }
+  // 无戳记录：按当前源补录（视为新鲜），下一次世代变化再参与校验
+  const current = await statSourceStamp(filePath);
+  if (current) {
+    void writeThumbStamp(stampFile, current);
+    rememberThumbHit(cacheKeyBase, cachePath, current, epoch);
+  }
+  return cachePath;
+}
+
 export function getThumbnail(
   filePath: string,
   maxSize: number,
@@ -664,24 +773,40 @@ export function getThumbnail(
   dlog('getThumbnail', path.basename(filePath), `size=${maxSize}`, `epoch=${epoch}`, `signal=${signal ? 'y' : 'n'}`);
   ensureThumbCacheDir();
   const cacheKeyBase = cropToSquare ? `${filePath}@${maxSize}-square` : `${filePath}@${maxSize}`;
-  // 内存 LRU 快路径优先：命中时零磁盘 stat
+  // 内存 LRU 同世代快路径：列表未刷新（世代未变）时零磁盘 IO 直返——
+  // 滚动风暴的绝对快路径；文件操作/目录刷新会 bump 世代（FileList
+  // thumbEpoch，经 media:// URL ?v= 传入）→ 走内容戳校验（防就地
+  // 覆盖后的陈旧缩略图，见 revalidateThumbHit）
   const memHit = thumbHitCache.get(cacheKeyBase);
-  if (memHit) {
+  if (memHit && memHit.epoch === epoch) {
     dlog('memHit', path.basename(filePath), `${Date.now() - entryAt}ms`);
-    return Promise.resolve(memHit);
+    return Promise.resolve(memHit.cachePath);
   }
   const cachePng = thumbCacheKey(cacheKeyBase, 'png');
   const cacheJpg = thumbCacheKey(cacheKeyBase, 'jpg');
+  const stampFile = thumbStampPath(cacheKeyBase);
 
   // 异步探测命中（快路径不进队列）；命中写入 LRU
   return probeThumbCacheHit(cachePng, cacheJpg).then((hit) => {
-    if (hit) {
-      dlog('diskHit', path.basename(filePath), `${Date.now() - entryAt}ms`);
-      rememberThumbHit(cacheKeyBase, hit);
-      return hit;
+    if (!hit) {
+      if (memHit) {
+        // 内存命中但磁盘缓存已消失（外部删除/清缓存竞争）：作废条目走生成
+        dlog('memHit-but-disk-gone', path.basename(filePath));
+        thumbHitCache.delete(cacheKeyBase);
+      }
+      dlog('miss→queue', path.basename(filePath), `${Date.now() - entryAt}ms`);
+      return scheduleThumbnailGeneration(filePath, maxSize, cropToSquare, cacheKeyBase, cachePng, cacheJpg, epoch, signal);
     }
-    dlog('miss→queue', path.basename(filePath), `${Date.now() - entryAt}ms`);
-    return scheduleThumbnailGeneration(filePath, maxSize, cropToSquare, cacheKeyBase, cachePng, cacheJpg, epoch, signal);
+    dlog('diskHit', path.basename(filePath), `${Date.now() - entryAt}ms`);
+    return revalidateThumbHit(
+      filePath,
+      cacheKeyBase,
+      hit,
+      memHit?.stamp ?? null,
+      stampFile,
+      epoch,
+      () => scheduleThumbnailGeneration(filePath, maxSize, cropToSquare, cacheKeyBase, cachePng, cacheJpg, epoch, signal),
+    );
   });
 }
 
@@ -894,8 +1019,18 @@ function scheduleThumbnailGeneration(
         dlog('START', path.basename(filePath), `epoch=${entry.epoch}`, `queue=${thumbQueue.length}`, `active=${thumbActive}`);
         void generateThumbnailUncached(filePath, maxSize, cropToSquare, cachePng, cacheJpg)
           .then((v) => {
-            // 生成成功写入内存 LRU：后续请求零同步 stat
-            if (v && v !== THUMB_QUEUE_DROPPED) rememberThumbHit(cacheKeyBase, v);
+            // 生成成功写入内存 LRU（后续同世代请求零 stat）并记录源内容戳
+            // （异步、不阻塞 resolve）：世代变化的请求据此校验缓存新鲜度
+            if (v && v !== THUMB_QUEUE_DROPPED) {
+              void statSourceStamp(filePath).then(async (stamp) => {
+                if (stamp) {
+                  await writeThumbStamp(thumbStampPath(cacheKeyBase), stamp);
+                  rememberThumbHit(cacheKeyBase, v, stamp, entry.epoch);
+                } else {
+                  rememberThumbHit(cacheKeyBase, v, null, entry.epoch);
+                }
+              });
+            }
             settle(v);
           })
           .catch(() => settle(null))
@@ -966,7 +1101,8 @@ export async function getThumbnailCacheInfo(): Promise<{ fileCount: number; tota
     let fileCount = 0;
     let totalBytes = 0;
     for (const e of entries) {
-      if (!e.isFile()) continue;
+      // 内容戳 sidecar（.stamp）不参与统计——只统计真正的缩略图文件
+      if (!e.isFile() || e.name.endsWith('.stamp')) continue;
       fileCount++;
       try {
         totalBytes += (await fs.stat(path.join(THUMB_CACHE_DIR, e.name))).size;

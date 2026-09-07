@@ -14,7 +14,8 @@ export interface LauncherEntryEnv {
   desktopDir: string;
   /** 应用程序菜单目录（XDG_DATA_HOME/applications，如 ~/.local/share/applications） */
   applicationsDir: string;
-  /** 应用图标目录（hicolor/512x512，Icon= 引用的绝对路径落点） */
+  /** 应用图标目录（hicolor/scalable，Icon= 引用的绝对路径落点——SVG 图标
+   *  按 freedesktop 图标主题规范归入 scalable 尺寸目录） */
   iconsDir: string;
   /** userData 目录（marker 文件落点：记录「已创建过」防止删掉后反复重建） */
   userDataDir: string;
@@ -22,7 +23,8 @@ export interface LauncherEntryEnv {
   execPath: string;
   /** AppImage 运行路径（AppImage 运行时注入的 APPIMAGE 环境变量；无则为 null） */
   appImage: string | null;
-  /** 图标源文件绝对路径（打包产物 extraResources / 开发模式仓库文件；不存在为 null） */
+  /** 图标源文件绝对路径（SVG：打包产物 extraResources / 开发模式仓库
+   *  src/icon.svg；不存在为 null） */
   iconSource: string | null;
   /** gio 可执行文件（用于 metadata::trusted 标记，GNOME 双击信任）；
    *  e2e 传 null 跳过（沙箱无意义且要求系统装有 glib） */
@@ -44,8 +46,9 @@ export interface LauncherEntryResult {
 /** 桌面入口文件名（与 productName 对齐，Wayland app_id 同源） */
 const ENTRY_FILE_NAME = 'HoshinekoFM.desktop';
 
-/** 图标复制落点文件名（hicolor 主题目录内的稳定名称，不随 AppImage 挂载路径变化） */
-const ICON_FILE_NAME = 'hoshineko-fm.png';
+/** 图标复制落点文件名（hicolor 主题目录内的稳定名称，不随 AppImage 挂载路径
+ *  变化；SVG 矢量图标放 scalable 目录，任意尺寸渲染无损） */
+const ICON_FILE_NAME = 'hoshineko-fm.svg';
 
 /** marker 文件名（userData 内；记录各条目是否已创建过——「仅首次创建」语义的落点） */
 const MARKER_FILE_NAME = 'launcher-entries.json';

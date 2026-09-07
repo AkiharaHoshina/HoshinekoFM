@@ -438,11 +438,11 @@ function registerIpc() {
     return {
       desktopDir: process.env.HOSHINEKO_E2E_DESKTOP_DIR || path.join(userData, 'Desktop'),
       applicationsDir: process.env.HOSHINEKO_E2E_APPMENU_DIR || path.join(dataHome, 'applications'),
-      iconsDir: path.join(dataHome, 'icons', 'hicolor', '512x512'),
+      iconsDir: path.join(dataHome, 'icons', 'hicolor', 'scalable'),
       userDataDir: userData,
       execPath: process.env.HOSHINEKO_E2E_LAUNCHER_EXEC || '/opt/HoshinekoFM/HoshinekoFM',
       appImage: process.env.HOSHINEKO_E2E_LAUNCHER_APPIMAGE || null,
-      iconSource: path.join(__dirname, '..', '..', 'assets', 'icon.png'),
+      iconSource: path.join(__dirname, '..', '..', 'src', 'icon.svg'),
       gioExecutable: null,
     };
   };
