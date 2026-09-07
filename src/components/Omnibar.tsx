@@ -82,6 +82,8 @@ export const Omnibar: React.FC<OmnibarProps> = ({
 
   /** 检测当前路径中是否有任意段是软链接 */
   useEffect(() => {
+    // 回收站虚拟路径（trash://…）无真实目录段，跳过软链接检测
+    if (currentPath.startsWith('trash://')) return;
     const segments = currentPath.split('/').filter(Boolean)
       .map((_, i, arr) => '/' + arr.slice(0, i + 1).join('/'));
 
@@ -94,9 +96,20 @@ export const Omnibar: React.FC<OmnibarProps> = ({
         if (!cancelled) setHasPathSymlinks(false);
       });
     }
-    setOmnibarCtxMenu(null); // eslint-disable-line react-hooks/set-state-in-effect
     return () => { cancelled = true; };
   }, [currentPath]);
+
+  /**
+   * 路径变化时复位软链接检测结果与编辑按钮右键菜单（渲染期复位——
+   * 官方「adjusting state during render」模式，避免 effect 内同步
+   * setState 触发级联渲染）。
+   */
+  const [prevPathForReset, setPrevPathForReset] = useState(currentPath);
+  if (prevPathForReset !== currentPath) {
+    setPrevPathForReset(currentPath);
+    setHasPathSymlinks(false);
+    setOmnibarCtxMenu(null);
+  }
 
   /**
    * 编辑按钮右键菜单：仅在当前路径包含软链接时显示"展平软链接"选项。
@@ -160,7 +173,13 @@ export const Omnibar: React.FC<OmnibarProps> = ({
       {isEditing ? (
         <div className="omnibar-input-wrapper">
           <Icon
-            name={inputValue.startsWith("/") ? "folder_open" : "search"}
+            name={
+              inputValue.startsWith("/") ||
+              inputValue.startsWith("trash://") ||
+              inputValue.startsWith("dashboard://")
+                ? "folder_open"
+                : "search"
+            }
             className="omnibar-icon"
           />
           <input

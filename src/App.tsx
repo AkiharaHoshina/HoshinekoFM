@@ -581,6 +581,18 @@ function AppContent() {
   );
 
   /**
+   * 自定义新标签页目录（默认 `/`，与历史行为一致）：绝对路径、仪表盘
+   * （内部形态 app://dashboard，设置对话框输入 dashboard:// 时归一化）
+   * 或回收站虚拟路径（trash:// / trash://文件夹名）。
+   * 新建标签页（TabBar + 按钮 / Ctrl+T / 空状态按钮）统一从该键取初值；
+   * 目录不存在时由 ExplorerTab 的 loadPath 报错提示（与地址栏输入同语义）。
+   */
+  const [newTabPath, setNewTabPath] = useLocalStorage<string>(
+    "settings.newTabPath",
+    "/",
+  );
+
+  /**
    * 桌面条目开关确定时的处理：写持久化值 + 按新值创建/删除条目。
    * 只有确定操作的窗口执行删除（storage 同步到其他窗口时其 effect
    * 只走 ensure 幂等路径，不会重复删除）。
@@ -1223,6 +1235,7 @@ function AppContent() {
     setSortControlsCollapsed(false);
     setAutoCreateDesktopEntry(true);
     setAutoCreateAppMenuEntry(true);
+    setNewTabPath("/");
     // 恢复默认 = 开关回到开：显式补一次创建意图（marker 幂等；若此前
     // 开关关闭并确定删除过条目/清过 marker，恢复后立即重建）
     void window.electron.ensureLauncherEntry("desktop").catch(() => {
@@ -1250,6 +1263,7 @@ function AppContent() {
     setSortControlsCollapsed,
     setAutoCreateDesktopEntry,
     setAutoCreateAppMenuEntry,
+    setNewTabPath,
   ]);
 
   const hasInitialized = useRef(false);
@@ -1372,12 +1386,12 @@ function AppContent() {
         if (activeTabId) handleCloseTab(activeTabId);
       } else if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 't' || e.key === 'T')) {
         e.preventDefault();
-        handleAddTab();
+        handleAddTab(newTabPath);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [tabs, activeTabId, setActiveTabId, handleCloseTab, handleAddTab]);
+  }, [tabs, activeTabId, setActiveTabId, handleCloseTab, handleAddTab, newTabPath]);
 
   const toggleTerminal = () => {
     // 每次呼出恢复默认高度（关闭时重置无副作用）
@@ -1803,7 +1817,7 @@ function AppContent() {
               activeTabId={activeTabId}
               onTabClick={setActiveTabId}
               onTabClose={handleCloseTab}
-              onNewTab={() => handleAddTab()}
+              onNewTab={() => handleAddTab(newTabPath)}
               onDropFiles={handleDropOnTab}
             />
           </header>
@@ -1888,7 +1902,7 @@ function AppContent() {
                 <div className="empty-state-content">
                   <Icon name="tab" size={48} />
                   <p>{t("empty.no_tabs")}</p>
-                  <Button onClick={() => handleAddTab()}>{t("empty.open_new_tab")}</Button>
+                  <Button onClick={() => handleAddTab(newTabPath)}>{t("empty.open_new_tab")}</Button>
                 </div>
               </div>
             )}
@@ -2237,6 +2251,8 @@ function AppContent() {
             onAutoCreateDesktopEntryChange={handleAutoCreateDesktopEntryChange}
             autoCreateAppMenuEntry={autoCreateAppMenuEntry}
             onAutoCreateAppMenuEntryChange={handleAutoCreateAppMenuEntryChange}
+            newTabPath={newTabPath}
+            onNewTabPathChange={setNewTabPath}
             isDefaultFileManager={isDefaultFileManager}
             fmBusy={fmBusy}
             onSetDefaultFm={() => void handleSetDefaultFm()}

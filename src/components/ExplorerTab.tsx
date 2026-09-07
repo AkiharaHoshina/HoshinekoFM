@@ -49,6 +49,10 @@ import {
 } from '../utils/fileConflict';
 import { registerKeyboardZone } from '../utils/focusZones';
 import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, computeCtrlArrowTarget, computeShiftArrowRange, type ListItem } from './FileList/utils';
+import {
+  trashVirtualToReal,
+  realToTrashVirtual,
+} from '../utils/trashPath';
 
 interface ExplorerTabProps {
     tabId: string;
@@ -149,6 +153,13 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
+  /** 回收站 files 目录真实路径（异步获取；混合路径模型下地址栏虚拟显示、
+   *  内部仍用真实路径做文件操作——见 loadPath 与 displayPath） */
+  const [trashRoot, setTrashRoot] = useState<string | null>(null);
+  /** trashRoot 最新值引用：loadPath 可能在 trashRoot 异步到达前被调用 */
+  const trashRootRef = useRef<string | null>(null);
+  // eslint-disable-next-line react-hooks/refs -- 渲染期同步 ref 供稳定回调读取
+  trashRootRef.current = trashRoot;
   const suppressWatchRef = useRef(false);
   const loadPathTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 指向最新的 loadPath，避免在其自身的 setTimeout 回调中提前引用（react-hooks/immutability） */
@@ -269,6 +280,9 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     setSearchActive(false); // Reset search
     setSearchQuery('');
 
+    // 仪表盘别名：地址栏/设置输入的 dashboard:// 与内部 app://dashboard 等价
+    if (path === 'dashboard://') path = 'app://dashboard';
+
     if (path === 'app://dashboard') {
       // 虚拟路径也要记录进 loadingPathRef：导航守卫按「上次加载的路径」
       // 判断是否跳过，不记录会导致从虚拟页导航回上次的真实路径时被
@@ -284,6 +298,30 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       loadingPathRef.current = path;
       setCurrentPath(path);
       onPathChange(tabId, path);
+      const data = await FileSystemService.listTrash();
+      setFiles(data);
+      return;
+    }
+
+    // 回收站虚拟子目录（trash://文件夹名）：映射为真实 files 目录路径后
+    // 走普通列目录（currentPath 保持真实路径，地址栏经 displayPath 换算
+    // 回虚拟形态）。trashRoot 尚未到达时兜底拉取一次。
+    if (path.startsWith('trash://') && path !== 'trash://') {
+      const root = trashRootRef.current
+        ?? await window.electron.getTrashDir().catch(() => null);
+      if (!root) {
+        showToast(t('error.cannot_open_dir', path), 'error');
+        return;
+      }
+      path = trashVirtualToReal(path, root);
+    }
+
+    // 回收站 files 根目录（从子目录返回上级 / 手动输入真实路径）：
+    // 归一化为 trash:// 视图，保证清空/还原等回收站语义不丢失
+    if (trashRootRef.current && path === trashRootRef.current) {
+      loadingPathRef.current = 'trash://';
+      setCurrentPath('trash://');
+      onPathChange(tabId, 'trash://');
       const data = await FileSystemService.listTrash();
       setFiles(data);
       return;
@@ -351,6 +389,34 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   // eslint-disable-next-line react-hooks/refs -- keep ref in sync with latest handler
   loadPathRef.current = loadPath;
 
+  // 挂载时获取回收站 files 目录真实路径（混合路径模型换算基准；
+  // 虚拟子目录加载早于其到达时 loadPath 会兜底重拉一次）
+  useEffect(() => {
+    let cancelled = false;
+    void window.electron.getTrashDir()
+      .then((dir) => {
+        if (!cancelled) setTrashRoot(dir);
+      })
+      .catch(() => { /* 获取失败保持 null，虚拟子目录加载会报错提示 */ });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * 地址栏显示路径（混合路径模型）：回收站 files 目录下的真实路径换算为
+   * trash:// 虚拟形态（files 根 = trash://，子目录 = trash://文件夹名），
+   * 普通路径与 trash:// 原样。仅用于 Omnibar 显示/编辑与面包屑渲染，
+   * 内部状态与文件操作仍走真实路径。
+   */
+  const displayPath = useMemo(() => {
+    if (currentPath === 'trash://' || currentPath.startsWith('trash://')) return currentPath;
+    if (trashRoot && currentPath.startsWith(trashRoot)) {
+      return realToTrashVirtual(currentPath, trashRoot);
+    }
+    return currentPath;
+  }, [currentPath, trashRoot]);
+
   useEffect(() => {
     if (initialPath && loadingPathRef.current !== initialPath) {
       loadPath(initialPath, true);
@@ -378,7 +444,15 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   // Watch current directory for external filesystem changes
   useEffect(() => {
-    if (!isActive || currentPath === 'app://dashboard' || currentPath === 'trash://') return;
+    // 虚拟路径（仪表盘/回收站/尚未解析的 trash://… 与 dashboard:// 初值）
+    // 无真实目录可监听——跳过（loadPath 会立即换算为真实路径）
+    if (
+      !isActive ||
+      currentPath === 'app://dashboard' ||
+      currentPath === 'dashboard://' ||
+      currentPath === 'trash://' ||
+      currentPath.startsWith('trash://')
+    ) return;
     let cancelled = false;
 
     // If the directory was deleted while tab was inactive,
@@ -443,7 +517,13 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   // Poll mount map to detect device mount/unmount changes
   useEffect(() => {
-    if (!isActive || currentPath === 'app://dashboard' || currentPath === 'trash://') return;
+    if (
+      !isActive ||
+      currentPath === 'app://dashboard' ||
+      currentPath === 'dashboard://' ||
+      currentPath === 'trash://' ||
+      currentPath.startsWith('trash://')
+    ) return;
     // Reset on path change so stale mount map from previous dir
     // doesn't trigger a spurious loadPath on the first poll
     mountMapVersionRef.current = null;
@@ -698,6 +778,19 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     [onConflictDialog, onConfirmDialog, onDragAction, loadPath, currentPath],
   );
 
+  /**
+   * 拖放落点路径解析：面包屑胶囊在回收站子目录视图下给出的是虚拟路径
+   * （trash://文件夹名），落点管线/列表读取需要真实路径——此处换算
+   * （trash:// 根由调用方走移入回收站语义，不经过本函数）。
+   */
+  const resolveDropTarget = useCallback((targetPath: string): string => {
+    if (targetPath.startsWith('trash://') && targetPath !== 'trash://') {
+      const root = trashRootRef.current;
+      if (root) return trashVirtualToReal(targetPath, root);
+    }
+    return targetPath;
+  }, []);
+
   const handleDropOnBreadcrumb = useCallback(
     async (targetPath: string, draggedFiles: IFile[], operation: "move" | "copy") => {
       // 拖到回收站 = 移入回收站
@@ -705,13 +798,14 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         await trashFiles(draggedFiles.map((f) => f.path), () => loadPath(currentPath));
         return;
       }
-      const { data: targetFiles } = await FileSystemService.listDir(targetPath);
+      const realTarget = resolveDropTarget(targetPath);
+      const { data: targetFiles } = await FileSystemService.listDir(realTarget);
       const sourcePath = draggedFiles.length > 0
         ? draggedFiles[0].path.substring(0, draggedFiles[0].path.lastIndexOf('/'))
         : currentPath;
-      handleDropOnTarget(draggedFiles, targetPath, operation, targetFiles, sourcePath);
+      handleDropOnTarget(draggedFiles, realTarget, operation, targetFiles, sourcePath);
     },
-    [handleDropOnTarget, loadPath, currentPath],
+    [handleDropOnTarget, loadPath, currentPath, resolveDropTarget],
   );
 
   const handleExternalDropOnBreadcrumb = useCallback(
@@ -723,11 +817,11 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       }
       await importFiles(
         filePaths.map((p) => ({ path: p })),
-        targetPath,
+        resolveDropTarget(targetPath),
       );
       loadPath(currentPath);
     },
-    [loadPath, currentPath],
+    [loadPath, currentPath, resolveDropTarget],
   );
 
   // 过滤 + 分组 + 排序（共享逻辑：与文件选择器完全一致，
@@ -1757,7 +1851,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           )}
           <div ref={omnibarZoneRef} data-kb-zone="topbar-omnibar" onKeyDown={handleTopBarKeyDown} style={{ flex: 1, overflow: 'hidden', minWidth: sortControlsCollapsed ? 0 : OMNIBAR_MIN_WIDTH_EXPANDED }}>
             <Omnibar
-              currentPath={currentPath}
+              currentPath={displayPath}
               onNavigate={(p: string) => loadPath(p, true)}
               onSearch={handleSearch}
               onDropFiles={handleDropOnBreadcrumb}

@@ -1,0 +1,12 @@
+.newtab-path-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.newtab-path-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--md-sys-color-on-surface-variant);
+  white-space: pre-wrap;
+}

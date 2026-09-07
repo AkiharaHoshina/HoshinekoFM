@@ -156,6 +156,15 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     ? currentPath
     : "/" + currentPath;
   const parts = useMemo(() => sanitizedPath.split("/").filter(Boolean), [sanitizedPath]);
+  /**
+   * 回收站虚拟路径（trash:// 或 trash://文件夹名）：地址栏不渲染真实
+   * Trash/files 路径，而是「回收站胶囊 + 条目相对段」。
+   */
+  const isTrashVirtual = currentPath === 'trash://' || currentPath.startsWith('trash://');
+  const trashRelParts = useMemo(() => {
+    if (!isTrashVirtual) return [];
+    return currentPath.slice('trash://'.length).split('/').filter(Boolean);
+  }, [isTrashVirtual, currentPath]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastRef = useRef<HTMLSpanElement>(null);
 
@@ -228,6 +237,9 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   }, [currentPath]);
 
   useEffect(() => {
+    // 回收站虚拟路径无真实目录段，跳过软链接检测（segmentPaths 会是
+    // 无意义的前缀，如 /trash:）
+    if (isTrashVirtual) return;
     const segmentPaths = parts.map(
       (_, i) => "/" + parts.slice(0, i + 1).join("/"),
     );
@@ -253,7 +265,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentPath, parts]);
+  }, [currentPath, parts, isTrashVirtual]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     dropHandler?.handleDragOver(e);
@@ -524,11 +536,22 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     );
   })() : null;
 
-  // 回收站虚拟目录：渲染单个胶囊，样式与主页/根目录胶囊一致。
+  // 回收站虚拟路径：渲染「回收站胶囊」（trash:// 根时加粗为最后一个
+  // 元素）+ 相对段按钮（trash://文件夹名/…），样式与主页/根目录胶囊一致。
+  // 段按钮导航到对应的 trash:// 前缀虚拟路径；胶囊/段均接收拖放（与
+  // 普通面包屑段一致，主窗口落点管线会把虚拟路径换算为真实路径）。
   // 所有 hooks 已在此处之前执行完毕，early return 不会破坏 hooks 顺序。
-  if (currentPath === 'trash://') {
+  if (isTrashVirtual) {
     return (
-      <div ref={scrollRef} className="breadcrumb-container">
+      <div
+        ref={scrollRef}
+        className="breadcrumb-container"
+        onWheel={(e) => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollLeft += e.deltaY;
+          }
+        }}
+      >
         <Chip
           title={t("trash.title")}
           onClick={() => onNavigate("trash://")}
@@ -540,8 +563,34 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
           className={`breadcrumb-chip${dragOverPath === "trash://" ? " drag-over" : ""}`}
         >
           <Icon name="delete" slot="icon" />
-          <span style={{ fontWeight: 600 }}>{t("trash.title")}</span>
+          <span style={{ fontWeight: trashRelParts.length === 0 ? 600 : 400 }}>{t("trash.title")}</span>
         </Chip>
+        {trashRelParts.map((p, i) => {
+          const segmentPath = "trash://" + trashRelParts.slice(0, i + 1).join("/");
+          const isLast = i === trashRelParts.length - 1;
+          return (
+            <React.Fragment key={segmentPath}>
+              <span
+                ref={isLast ? lastRef : undefined}
+                className={`breadcrumb-separator${dragOverPath === segmentPath ? " drag-over" : ""}`}
+              >
+                /
+              </span>
+              <Button
+                variant="text"
+                onClick={() => { onNavigate(segmentPath); }}
+                onDragOver={handleDragOver}
+                onDragEnter={(e) => handleDragEnter(e, segmentPath)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, segmentPath)}
+                className={`breadcrumb-item${dragOverPath === segmentPath ? " drag-over" : ""}`}
+                style={{ fontWeight: isLast ? 600 : 400 }}
+              >
+                {p}
+              </Button>
+            </React.Fragment>
+          );
+        })}
         {ctxMenuNode}
       </div>
     );

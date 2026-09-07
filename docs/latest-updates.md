@@ -1,5 +1,60 @@
 # 更新日志
 
+## v0.11.45.14 — 自定义新标签页目录 + 回收站子目录虚拟路径地址栏
+
+- **自定义新标签页目录（设置 → 行为）**：新增「新建标签页目录」行
+  （副标题常驻展示当前值）→「自定义」按钮打开二级对话框
+  （`NewTabPathDialog`，样式与重命名对话框一致：OutlinedTextField +
+  提示行，**带背景遮罩**——Dialog `backdrop` prop，叠在设置对话框
+  之上）——支持绝对路径（如 `/home/user/Downloads`）、`dashboard://`
+  （打开仪表盘，归一化为内部形态 `app://dashboard`）与 `trash://`
+  （回收站本身，合法）/ `trash://文件夹名`（打开回收站或回收站中的
+  目录）。校验规则在 `src/utils/newTabPath.ts`：绝对路径 / dashboard
+  别名 / trash 前缀 + 相对段拒绝 `.`/`..`/空段（防止路径逃逸）；
+  非法输入显示错误态 + 确认禁用；不校验目录存在性（不存在由新标签页
+  loadPath 报错，与地址栏输入同语义）。确认即生效（对话框本身即
+  草稿机制，无 pending 开关），持久化 `settings.newTabPath`（默认 `/`，
+  恢复默认设置重置）。新建标签页三入口（TabBar + 按钮 / Ctrl+T /
+  空状态按钮）统一从该键取初值。
+- **回收站子目录虚拟路径地址栏（混合路径模型）**：打开回收站中的
+  文件夹后，地址栏不再显示真实 `Trash/files` 绝对路径——不编辑时
+  面包屑显示「回收站胶囊 / 文件夹名」，点击编辑按钮时输入框显示
+  `trash://文件夹名` 虚拟路径。实现：currentPath 仍保持真实路径
+  （文件操作/搜索/监听全部照常工作），仅显示层换算虚拟——
+  `src/utils/trashPath.ts` 提供虚拟↔真实互转（非法段剔除防逃逸）；
+  ExplorerTab `displayPath` 换算喂给 Omnibar/Breadcrumbs；`loadPath`
+  解析 `trash://…` 虚拟路径（trashRoot 异步兜底重拉）、把回收站
+  files 根归一化为 trash:// 视图（从子目录返回上级时清空/还原等
+  回收站语义不丢）、支持 `dashboard://` 别名（地址栏手输同支持）；
+  Breadcrumbs 回收站分支渲染「回收站胶囊 + 相对段」（胶囊/段的拖放
+  落点经 ExplorerTab `resolveDropTarget` 换算真实路径）；Omnibar
+  跳过虚拟路径的软链接检测（渲染期复位检测结果，避免 effect 内
+  同步 setState 级联渲染）。
+- **保存器背景右键「新建文件夹」**：仅保存模式（`config.mode ===
+  'save'`）文件区空白处右键弹背景菜单，**只含「新建文件夹」一项**
+  （无新建文件/粘贴/属性——文件名走底部输入框，其余无语义）；选择
+  模式背景右键无任何菜单（handler 内 `isSave` 守卫早退，与「选择器
+  不接收拖放」同源）。点击菜单项 → 复用主窗口的 `NameInputDialog`
+  （`isDir` 确认补尾斜杠、同名冲突校验/安全名同源）；确认后
+  `createDirectory` mkdir + 重载当前目录（列表出现新文件夹）。
+  FileList 的 `onBackgroundContextMenu` 是可选 prop——选择器此前不传
+  （无背景菜单），现在保存模式传入该 handler。
+- **i18n**：新增 `settings.new_tab_path` / `settings.new_tab_path_edit` /
+  `newtab.title` / `newtab.hint` / `newtab.invalid`（12 语言文件）。
+- **e2e 57**：绝对路径 / dashboard 归一 / trash 根 / trash 子目录四类
+  新标签页初值 + 设置对话框 UI 链路（背景遮罩注入 + 非法输入错误态
+  与确认禁用 + trash:// 本身合法 + dashboard:// 归一化为
+  app://dashboard）+ 回收站子目录面包屑「回收站胶囊 + 文件夹名」/
+  编辑框 trash:// 虚拟路径 / 返回上级归一——坑：多标签页时隐藏标签页
+  DOM 常驻，地址栏/文件区选择器必须限定在活动标签页 wrapper
+  （`.content-area` 下 `display !== 'none'` 的子 div）内。e2e 44 补
+  `settings.newTabPath` 恢复默认断言；回归 04/06/15/20/26/31/41/42/
+  43/44/45/52/53/55 通过。**e2e 58**：保存模式背景右键菜单只含
+  「新建文件夹」一项 + 点击 → NameInputDialog → 确认 mkdir（磁盘
+  断言）+ 列表刷新 + 同名冲突错误态取消不创建 + 选择模式背景右键
+  无菜单回归——菜单项是 `md-list-item` 不是 `.context-menu-item`；
+  回归 06/38/41/43 通过。
+
 ## v0.11.45 — 标题栏 v 菜单「新建窗口」
 
 - **菜单项**：标题栏左侧 v 菜单顶部新增「新建窗口」（`open_in_new` 图标）——

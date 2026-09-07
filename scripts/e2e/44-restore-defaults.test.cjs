@@ -38,6 +38,7 @@ const h = require('./harness.cjs');
       set('settings.calculateDirSize', false);
       set('settings.uiScale', 150);
       set('settings.locale', 'en-US');
+      set('settings.newTabPath', ${JSON.stringify(dir)});
       return true;
     })(); true`);
     win.webContents.reload();
@@ -203,6 +204,7 @@ const h = require('./harness.cjs');
       dirSize: localStorage.getItem('settings.calculateDirSize'),
       uiScale: localStorage.getItem('settings.uiScale'),
       locale: localStorage.getItem('settings.locale'),
+      newTab: localStorage.getItem('settings.newTabPath'),
     })`);
     const expected = {
       hidden: 'true',
@@ -219,6 +221,7 @@ const h = require('./harness.cjs');
       dirSize: 'true',
       uiScale: '100',
       locale: '"auto"',
+      newTab: '"/"',
     };
     h.assert.deepStrictEqual(JSON.parse(ls.value), expected, `恢复后设置应为默认值：${ls.value}`);
     // 确定（退出）：恢复前拖到 200% 的 UI 缩放预览不得盖回

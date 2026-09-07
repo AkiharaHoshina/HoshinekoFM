@@ -13,6 +13,8 @@ import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import { FileSystemService } from '../services/FileSystemService';
 import { ThemeService } from '../services/ThemeService';
+import { createDirectory } from '../utils/fileOperations';
+import { NameInputDialog } from './NameInputDialog';
 import { useDeviceActions } from '../hooks/useDeviceActions';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useUiZoom } from '../hooks/useUiZoom';
@@ -124,6 +126,14 @@ const FilePicker: React.FC = () => {
   /** 设备 / GVfs 右键菜单（本地状态，菜单项与 App 一致） */
   const [deviceMenu, setDeviceMenu] = useState<{ x: number; y: number; device: AllDevice } | null>(null);
   const [gvfsMenu, setGvfsMenu] = useState<{ x: number; y: number; volume: GvfsVolume } | null>(null);
+  /** 保存模式背景右键菜单位置（仅「新建文件夹」一项；null = 未打开）。
+   *  仅保存器提供——选择模式无新建语义（与「保存器不接收拖放」同源） */
+  const [bgMenu, setBgMenu] = useState<{ x: number; y: number } | null>(null);
+  /** 新建文件夹对话框状态（复用主窗口的 NameInputDialog；null = 未打开） */
+  const [createFolderDialog, setCreateFolderDialog] = useState<{
+    defaultName: string;
+    existingNames: string[];
+  } | null>(null);
 
   // 与主界面共享同一批设置键（排序/分组为读写：选择器内可调节并双向同步）
   const [localShowHiddenFiles] = useLocalStorage<boolean>('settings.showHiddenFiles', true);
@@ -1082,6 +1092,47 @@ const FilePicker: React.FC = () => {
   /** 保存模式（portal SaveFile）：底部过滤器控件换成文件名输入框 */
   const isSave = config?.mode === 'save';
 
+  /**
+   * 保存模式背景右键菜单：只提供「新建文件夹」——保存器无新建文件
+   * 语义（文件名走底部输入框），也不提供粘贴/属性等主窗口菜单项。
+   * 选择模式不提供任何背景菜单（保持原行为）。
+   */
+  const handleBackgroundContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isSave) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setBgMenu({ x: e.clientX, y: e.clientY });
+    },
+    [isSave],
+  );
+
+  /** 保存模式背景菜单项：仅「新建文件夹」 */
+  const bgMenuItems: ContextMenuItem[] = bgMenu
+    ? [{
+      label: t('context_menu.new_folder'),
+      icon: 'create_new_folder',
+      action: () => {
+        setBgMenu(null);
+        setCreateFolderDialog({
+          defaultName: t('dialog.create.default_folder'),
+          existingNames: files.map((f) => f.name),
+        });
+      },
+    }]
+    : [];
+
+  /** 新建文件夹确认：mkdir 成功后刷新当前目录（列表出现新文件夹） */
+  const handleCreateFolderConfirm = useCallback(
+    (name: string) => {
+      setCreateFolderDialog(null);
+      void createDirectory(joinPath(currentPath, name), () => {
+        void loadPath(currentPath);
+      });
+    },
+    [currentPath, joinPath, loadPath],
+  );
+
   if (!config) {
     return <div className="picker-shell" />;
   }
@@ -1229,6 +1280,7 @@ const FilePicker: React.FC = () => {
               onSelect={handleSelect}
               onNavigate={handleNavigate}
               onSetSelected={handleSetSelected}
+              onBackgroundContextMenu={handleBackgroundContextMenu}
               onDeselectAll={() => {
                 setSelected(new Set());
                 setLastSelectedPath(null);
@@ -1313,6 +1365,15 @@ const FilePicker: React.FC = () => {
           onClose={() => setGvfsMenu(null)}
         />
       )}
+      {/* 保存模式背景右键菜单：仅「新建文件夹」 */}
+      {bgMenu && (
+        <ContextMenu
+          x={bgMenu.x}
+          y={bgMenu.y}
+          items={bgMenuItems}
+          onClose={() => setBgMenu(null)}
+        />
+      )}
       {/* 保存模式重名冲突：与主窗口复制/移动同款 ConflictDialog
           （operation="save" 时 skip 模式改标「覆盖」）。确认后
           resolvePicker 只回传最终路径：覆盖 = 原名；自动/手动重命名 =
@@ -1347,6 +1408,18 @@ const FilePicker: React.FC = () => {
             void window.electron.resolvePicker([joinPath(currentPath, renamed)]);
           }}
           onCancel={() => setSaveConflict(null)}
+        />
+      )}
+      {/* 保存模式「新建文件夹」对话框（复用主窗口创建对话框：
+          isDir 确认后补尾斜杠，NameInputDialog 冲突校验同主窗口） */}
+      {createFolderDialog && (
+        <NameInputDialog
+          title={t('dialog.create.folder')}
+          defaultName={createFolderDialog.defaultName}
+          isDir
+          existingNames={createFolderDialog.existingNames}
+          onConfirm={handleCreateFolderConfirm}
+          onCancel={() => setCreateFolderDialog(null)}
         />
       )}
     </div>

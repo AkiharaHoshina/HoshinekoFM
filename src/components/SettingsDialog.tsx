@@ -5,6 +5,8 @@ import { Button } from "./Button";
 import { Icon } from "./Icon";
 import { Switch, Slider, Divider, OutlinedSelect, SelectOption } from "./md";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { NewTabPathDialog } from "./NewTabPathDialog";
+import { formatNewTabPath } from "../utils/newTabPath";
 import { t, getLanguageOptions, type Locale } from '../i18n';
 import { ICON_SIZE_MIN, ICON_SIZE_MAX, ICON_SIZE_STEP } from '../utils/iconZoom';
 import type { BackendConflictInfo } from '../types/electron';
@@ -46,6 +48,10 @@ interface SettingsDialogProps {
   /** 自动创建应用程序菜单条目（默认开启；同上，确定时生效） */
   autoCreateAppMenuEntry: boolean;
   onAutoCreateAppMenuEntryChange: (value: boolean) => void;
+  /** 自定义新标签页目录（绝对路径或 dashboard:// / trash:// 虚拟路径，
+   *  内部形态：仪表盘为 app://dashboard；经二级对话框修改，确认即生效） */
+  newTabPath: string;
+  onNewTabPathChange: (path: string) => void;
   /** 默认文件管理器状态（xdg-mime inode/directory 关联） */
   isDefaultFileManager: boolean;
   fmBusy: boolean;
@@ -120,6 +126,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onAutoCreateDesktopEntryChange,
   autoCreateAppMenuEntry,
   onAutoCreateAppMenuEntryChange,
+  newTabPath,
+  onNewTabPathChange,
   isDefaultFileManager,
   fmBusy,
   onSetDefaultFm,
@@ -296,6 +304,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   const [pendingAutoCreateAppMenuEntry, setPendingAutoCreateAppMenuEntry] = useState<boolean>(autoCreateAppMenuEntry);
   /** 恢复默认设置确认对话框（带背景遮罩的 ConfirmDialog） */
   const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
+  /** 自定义新标签页目录二级对话框开关 */
+  const [newTabDialogOpen, setNewTabDialogOpen] = useState(false);
 
   // 每次打开对话框时把预览重置为当前已应用的值
   useEffect(() => {
@@ -646,6 +656,26 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               <Switch selected={pendingAutoCreateAppMenuEntry} onClick={() => setPendingAutoCreateAppMenuEntry(!pendingAutoCreateAppMenuEntry)} />
             </div>
 
+            {/* 自定义新标签页目录：二级对话框输入（绝对路径 / dashboard:// /
+              trash:// 虚拟路径），确认即生效（对话框本身即草稿机制，无
+              pending 开关）——副标题常驻展示当前值 */}
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="tab" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.new_tab_path")}
+                  </div>
+                  <div className="settings-row__sub settings-row__sub--wrap">
+                    {formatNewTabPath(newTabPath)}
+                  </div>
+                </div>
+              </div>
+              <Button variant="outlined" onClick={() => setNewTabDialogOpen(true)}>
+                {t("settings.new_tab_path_edit")}
+              </Button>
+            </div>
+
             {/* 默认文件管理器（xdg-mime inode/directory 关联，写用户级配置） */}
             <div className="settings-row">
               <div className="settings-row__start">
@@ -809,6 +839,17 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         }}
         onCancel={() => setConfirmRestoreOpen(false)}
       />
+
+      {newTabDialogOpen && (
+        <NewTabPathDialog
+          currentPath={newTabPath}
+          onConfirm={(path) => {
+            setNewTabDialogOpen(false);
+            onNewTabPathChange(path);
+          }}
+          onCancel={() => setNewTabDialogOpen(false)}
+        />
+      )}
     </>
   );
 };
