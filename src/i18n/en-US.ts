@@ -152,6 +152,10 @@ const enUS = {
   'open_with.search': 'Search applications...',
   'open_with.recommended': 'Recommended Applications',
   'open_with.all': 'All Applications',
+  'open_with.set_default': 'Always use this app to open this type of file',
+  'open_with.restore_default': 'Restore default open method',
+  'open_with.restored_notice': 'Default open method restored',
+  'open_with.restored_title': 'Restored',
 
   // ── 设置弹窗 ──
   'settings.title': 'Settings',

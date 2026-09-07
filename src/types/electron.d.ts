@@ -185,6 +185,11 @@ export interface IElectronAPI {
     trashFile: (path: string) => Promise<boolean>;
     renameFile: (oldPath: string, newPath: string) => Promise<boolean>;
     createDirectory: (path: string) => Promise<boolean>;
+    /**
+     * 用系统默认程序打开文件。返回空串 = 已发起打开；'NO_HANDLER' =
+     * 系统未注册该文件类型默认程序（xdg-open 会回退浏览器弹「是否保
+     * 存」，调用方应弹出「打开方式」对话框）；其他非空 = 错误信息。
+     */
     openPath: (path: string) => Promise<string>;
     extractFile: (path: string) => Promise<boolean>;
     /**
@@ -194,6 +199,14 @@ export interface IElectronAPI {
     compress: (params: { paths: string[]; destPath: string; format: 'zip' | 'tar.gz' }) => Promise<{ success: boolean; code?: string; error?: string }>;
     getApps: () => Promise<{ name: string; icon: string; exec: string; desktopFile: string; }[]>;
     openWith: (exec: string, path: string, desktopFile?: string) => Promise<true | string>;
+    /**
+     * 手动默认打开方式规则（DefaultOpenRule 目录，按 MIME 键）。
+     * get/set/delete 都以文件路径为参数，MIME 由主进程检测。
+     * set/delete 返回是否成功（检测失败/参数非法返回 false）。
+     */
+    getOpenRule: (path: string) => Promise<{ mime: string; exec: string; desktopFile?: string; name?: string } | null>;
+    setOpenRule: (path: string, exec: string, desktopFile?: string, name?: string) => Promise<boolean>;
+    deleteOpenRule: (path: string) => Promise<boolean>;
     openFileDialog: () => Promise<string | null>;
     pickFile: () => Promise<string | null>;
     pickDirectory: () => Promise<string | null>;

@@ -4,3 +4,65 @@
   outline: 2px solid var(--md-sys-color-primary);
   outline-offset: -2px;
 }
+
+/* 底部固定操作区：勾选行/还原链接（左）+ 取消/打开按钮（右），
+   不随程序列表滚动 */
+.open-with-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.open-with-actions > md-text-button,
+.open-with-actions > md-filled-button {
+  flex-shrink: 0;
+}
+
+/* 「以此应用作为默认打开方式」勾选行 / 「还原默认打开方式」链接行
+   （Tab 停靠于程序列表之后、取消按钮之前） */
+.open-with-default {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--md-sys-color-on-surface);
+  min-width: 0;
+  /* 把取消/打开按钮推到操作区右侧 */
+  margin-right: auto;
+}
+
+.open-with-default[role="checkbox"]:hover {
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.open-with-default[role="checkbox"]:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
+}
+
+/* 窄空间（长文案 locale）下标签换行，不挤压按钮 */
+.open-with-default span {
+  white-space: normal;
+}
+
+/* 「还原默认打开方式」：链接形态（主色 + 下划线） */
+.open-with-restore {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--md-sys-color-primary);
+  text-decoration: underline;
+}
+
+.open-with-restore:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

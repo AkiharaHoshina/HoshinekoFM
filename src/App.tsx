@@ -45,6 +45,7 @@ import {
   compressFiles,
   executeBatchRename,
   openFile,
+  OPEN_NO_HANDLER,
   buildPermanentDeleteMessage,
   openInDefaultTerminal,
 } from "./utils/fileOperations";
@@ -719,6 +720,12 @@ function AppContent() {
    * 被忽略；null = 无弹窗）。
    */
   const [portalNotice, setPortalNotice] = useState<{ title: string; message: string } | null>(null);
+
+  /**
+   * 打开方式对话框「还原默认打开方式」成功后的提示弹窗（带遮罩
+   * AlertDialog）：确认已还原为系统默认——用户显式操作的结果反馈。
+   */
+  const [openRuleNotice, setOpenRuleNotice] = useState(false);
 
   /**
    * portal 后端冲突 → 弹窗警告（每次会话只弹一次）：
@@ -1501,7 +1508,11 @@ function AppContent() {
             if (item.isDirectory) {
               handleSidebarNavigate(item.path);
             } else {
-              openFile(item.path);
+              // 无默认处理程序（xdg-open 会回退浏览器弹「是否保存」）
+              // → 改弹「打开方式」对话框
+              void openFile(item.path).then((err) => {
+                if (err === OPEN_NO_HANDLER) setOpenWithFile(item);
+              });
             }
             closeContextMenu();
           },
@@ -2206,6 +2217,15 @@ function AppContent() {
             onClose={() => setPortalNotice(null)}
           />
 
+          {/* 打开方式「还原默认打开方式」成功提示（带遮罩：标题「已还原」
+              正文「已还原为默认打开方式」） */}
+          <AlertDialog
+            open={openRuleNotice}
+            title={t("open_with.restored_title")}
+            message={t("open_with.restored_notice")}
+            onClose={() => setOpenRuleNotice(false)}
+          />
+
           <DragActionDialog
             open={!!dragAction}
             title={dragAction?.title ?? ""}
@@ -2219,6 +2239,7 @@ function AppContent() {
               open={!!openWithFile}
               path={openWithFile.path}
               onClose={() => setOpenWithFile(null)}
+              onRestored={() => setOpenRuleNotice(true)}
               onSelect={async (exec, desktopFile) => {
                 if (openWithFile) {
                   const result = await window.electron.openWith(

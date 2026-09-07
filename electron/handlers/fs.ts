@@ -5,6 +5,8 @@ import { promisify } from 'util';
 import { exec, execFile, spawn, type ChildProcess } from 'child_process';
 import { detectMimeBatch, detectMime } from '../fsUtils';
 import { getMountMap, resolveAccessibleParent, getExecError } from '../shared';
+import { readOpenRule } from '../openRules';
+import { launchWithApp } from '../openLaunch';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -729,6 +731,14 @@ async function listDirectoryContents(targetPath: string): Promise<{
   }[];
 }
 
+/**
+ * fs:open 的「无默认处理程序」哨兵：MIME 未注册默认应用时
+ * xdg-open 会按 octet-stream 回退交给浏览器弹「是否保存」，
+ * 渲染层收到该值应弹出「打开方式」对话框而非 toast。
+ * 与 src/utils/fileOperations.ts 的 OPEN_NO_HANDLER 保持同值。
+ */
+export const OPEN_NO_HANDLER = 'NO_HANDLER';
+
 export function registerFsHandlers() {
   // List directory contents. Falls back to nearest accessible parent on permission errors.
   ipcMain.handle('fs:list-dir', async (_, dirPath: string) => {
@@ -1004,6 +1014,21 @@ export function registerFsHandlers() {
   ]);
 
   /**
+   * 查询 MIME 的默认处理程序桌面文件（xdg-mime query default）。
+   * @returns 桌面文件名（有默认）/ null（确认未注册默认程序）/
+   *   undefined（查询工具缺失或执行失败，结果不可知——按「有默认」
+   *   fail-open 处理，保持旧行为）。
+   */
+  async function queryDefaultHandler(mime: string): Promise<string | null | undefined> {
+    try {
+      const { stdout } = await execFileAsync('xdg-mime', ['query', 'default', mime], { timeout: 3000 });
+      return stdout.trim() || null;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Open a file/directory with the system default handler. Returns error string if failed.
    *
    * 不用 shell.openPath：它在 Linux/Wayland 上会为 xdg-activation 令牌
@@ -1017,7 +1042,17 @@ export function registerFsHandlers() {
    * xdg-open 对这类文件常按 octet-stream 交给浏览器（弹出「是否保存
    * 此文件」），不是双击打开的可执行语义。内核拒绝执行（ENOEXEC，
    * 无 shebang 的文本等）时回退 xdg-open。
-   */
+   *
+    * 无默认处理程序检测：MIME 未注册默认应用（xdg-mime query default
+    * 为空）时返回 OPEN_NO_HANDLER，渲染层改弹「打开方式」对话框——
+    * 避免 xdg-open 按 octet-stream 交给浏览器弹「是否保存」。检测失败
+    * /工具缺失时按原行为直接 spawn xdg-open（fail-open）。
+    *
+    * 手动默认规则（DefaultOpenRule）优先级最高：用户曾在「打开方式」
+    * 对话框勾选「以此应用作为默认打开方式」时，直接经 launchWithApp
+    * 启动规则应用——覆盖系统默认（含「无系统默认」的情形：有规则则
+    * 不返回 NO_HANDLER）。
+    */
   ipcMain.handle('fs:open', async (_, filePath: string) => {
     if (typeof filePath !== 'string' || !filePath) return 'Invalid path';
 
@@ -1038,6 +1073,36 @@ export function registerFsHandlers() {
           resolve(getExecError(e).message);
         }
       });
+
+    /**
+     * 带默认规则/无 handler 检测的 xdg-open：普通文件优先走手动默认
+     * 规则（DefaultOpenRule）；无规则且 MIME 未注册默认程序时返回
+     * OPEN_NO_HANDLER（渲染层弹「打开方式」对话框）；目录不做检测
+     * （inode/directory 恒有默认）。stat/detectMime 失败时按原行为
+     * 直接 spawn xdg-open。
+     */
+    const openWithXdgChecked = async (): Promise<string> => {
+      try {
+        const stats2 = await fs.stat(filePath);
+        if (stats2.isFile()) {
+          const mime = await detectMime(filePath).catch(() => null);
+          if (mime) {
+            // 用户手动默认优先于系统默认（无系统默认时也不弹对话框）
+            const rule = await readOpenRule(mime);
+            if (rule) {
+              const res = await launchWithApp(rule.exec, filePath, rule.desktopFile);
+              return res === true ? '' : res;
+            }
+            if ((await queryDefaultHandler(mime)) === null) {
+              return OPEN_NO_HANDLER;
+            }
+          }
+        }
+      } catch {
+        // 检测失败：按原行为交给 xdg-open
+      }
+      return openWithXdg();
+    };
 
     try {
       const stats = await fs.stat(filePath);
@@ -1071,7 +1136,7 @@ export function registerFsHandlers() {
             child.on('error', (err: Error) => {
               // 无 shebang 的文本等被内核拒绝执行：回退默认打开
               if ((err as NodeJS.ErrnoException).code === 'ENOEXEC') {
-                resolve(openWithXdg());
+                resolve(openWithXdgChecked());
               } else {
                 resolve(err.message);
               }
@@ -1085,7 +1150,7 @@ export function registerFsHandlers() {
       }
     } catch { /* stat 失败（路径不存在等）：交给 xdg-open 报错 */ }
 
-    return openWithXdg();
+    return openWithXdgChecked();
   });
 
   // Extract archives: .zip via unzip, .tar/.gz/.xz via tar. Extracts to archive's parent dir.

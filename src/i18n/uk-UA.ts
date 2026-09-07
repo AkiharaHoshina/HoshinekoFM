@@ -180,6 +180,10 @@ const ukUA = {
   'open_with.search': 'Пошук програм...',
   'open_with.recommended': 'Рекомендовані програми',
   'open_with.all': 'Усі програми',
+  'open_with.set_default': 'Завжди використовувати цей застосунок для цього типу файлів',
+  'open_with.restore_default': 'Відновити спосіб відкриття за замовчуванням',
+  'open_with.restored_notice': 'Спосіб відкриття за замовчуванням відновлено',
+  'open_with.restored_title': 'Відновлено',
 
   // ── 设置弹窗 ──
   'settings.title': 'Налаштування',

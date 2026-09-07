@@ -22,6 +22,7 @@ import {
   openInDefaultTerminal,
   importFiles,
   openFile,
+  OPEN_NO_HANDLER,
   copyToClipboard,
   cutToClipboard,
 } from '../utils/fileOperations';
@@ -598,9 +599,13 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     } else if (file.mime === 'inode/blockdevice') {
       showToast(t('device.cannot_mount'), 'warning');
     } else {
-      openFile(file.path);
+      // 无默认处理程序（xdg-open 会回退浏览器弹「是否保存」）→ 改弹
+      // 「打开方式」对话框（双击/回车打开同语义）
+      void openFile(file.path).then((err) => {
+        if (err === OPEN_NO_HANDLER) onOpenWithFile(file);
+      });
     }
-  }, [loadPath, onMountDevice]);
+  }, [loadPath, onMountDevice, onOpenWithFile]);
 
   const handleRename = useCallback(async (file: IFile, newName: string) => {
     const lastSlash = file.path.lastIndexOf('/');
@@ -1658,7 +1663,10 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
             if (file.isDirectory) {
               loadPath(file.path, true);
             } else {
-              openFile(file.path);
+              // 无默认处理程序 → 改弹「打开方式」对话框
+              void openFile(file.path).then((err) => {
+                if (err === OPEN_NO_HANDLER) onOpenWithFile(file);
+              });
             }
           },
         },
@@ -1719,7 +1727,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     }
 
     onContextMenu(e, file, selected);
-  }, [onContextMenu, searchActive, currentPath, onRevealFile, onBgMenuItems, onPropertiesFile, copy, cut, loadPath, handleSearch]);
+  }, [onContextMenu, searchActive, currentPath, onRevealFile, onBgMenuItems, onPropertiesFile, copy, cut, loadPath, handleSearch, onOpenWithFile]);
 
   const handleDeselectAll = useCallback(() => {
     setSelectedFiles(new Set());
@@ -1886,7 +1894,22 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
           <Dashboard
             onNavigate={(p: string) => loadPath(p, true)}
-            onOpenFile={(p: string) => openFile(p)}
+            onOpenFile={(p: string) => {
+              void openFile(p).then((err) => {
+                // Dashboard 只给出路径串——无默认处理程序时构造最小
+                // IFile 交给「打开方式」对话框（与右键/双击同语义）
+                if (err === OPEN_NO_HANDLER) {
+                  onOpenWithFile({
+                    name: p.split('/').pop() || p,
+                    path: p,
+                    isDirectory: false,
+                    size: 0,
+                    mtime: new Date(),
+                    mime: null,
+                  });
+                }
+              });
+            }}
             pinnedItems={dashboardPinned}
             onPinItem={onDashboardPinItem}
             onRemovePin={onDashboardRemovePin}

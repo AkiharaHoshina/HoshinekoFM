@@ -104,6 +104,10 @@ contextBridge.exposeInMainWorld('electron', {
   compress: (params: { paths: string[]; destPath: string; format: 'zip' | 'tar.gz' }) => ipcRenderer.invoke('fs:compress', params),
   getApps: () => ipcRenderer.invoke('system:get-apps'),
   openWith: (exec: string, path: string, desktopFile?: string) => ipcRenderer.invoke('system:open-with', exec, path, desktopFile),
+  /** 手动默认打开方式规则（DefaultOpenRule 目录，按 MIME 键，覆盖系统默认） */
+  getOpenRule: (path: string) => ipcRenderer.invoke('system:get-open-rule', path),
+  setOpenRule: (path: string, exec: string, desktopFile?: string, name?: string) => ipcRenderer.invoke('system:set-open-rule', path, exec, desktopFile, name),
+  deleteOpenRule: (path: string) => ipcRenderer.invoke('system:delete-open-rule', path),
   openFileDialog: () => ipcRenderer.invoke('dialog:open-file'),
   pickFile: () => ipcRenderer.invoke('dialog:pick-file'),
   pickDirectory: () => ipcRenderer.invoke('dialog:pick-directory'),

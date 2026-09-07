@@ -141,6 +141,10 @@ const zhCT = {
   'open_with.search': '搜尋應用程式...',
   'open_with.recommended': '推薦程式',
   'open_with.all': '所有應用程式',
+  'open_with.set_default': '以此應用程式作為預設開啟方式',
+  'open_with.restore_default': '還原預設開啟方式',
+  'open_with.restored_notice': '已還原為預設開啟方式',
+  'open_with.restored_title': '已還原',
 
   // ── 設定彈窗 ──
   'settings.title': '設定',

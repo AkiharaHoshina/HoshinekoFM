@@ -142,6 +142,10 @@ const koKP = {
   'open_with.search': '프로그램 검색...',
   'open_with.recommended': '추천 프로그램',
   'open_with.all': '모든 프로그램',
+  'open_with.set_default': '이 앱을 이 형식의 기본 프로그램으로 사용',
+  'open_with.restore_default': '기본 연결 프로그램 복원',
+  'open_with.restored_notice': '기본 연결 프로그램을 복원했습니다',
+  'open_with.restored_title': '복원됨',
 
   // ── 설정 팝업 ──
   'settings.title': '설정',

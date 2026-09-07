@@ -2,7 +2,8 @@
  * e2e 27：对话框键盘导航。
  *
  * - 27a 打开方式弹窗：Tab 顺序 = 搜索框 → 程序列表第一项（↑/↓ 细选、
- *   自动选中并启用「打开」）→ 取消 → 打开 → 循环回搜索框。
+ *   自动选中并启用「打开」）→ 设为默认勾选行 → 取消 → 打开 → 循环回
+ *   搜索框。
  * - 27b 设置弹窗：Tab 可停靠「主题颜色」入口行（role=button + tabindex），
  *   Enter 显式激活打开二级主题颜色对话框（注入键盘事件不合成原生点击）。
  * - 27c 对话框键盘选择滚动量：打开方式列表 ↓ 细选滚动增量 ≤ 条目高度
@@ -82,7 +83,13 @@ const h = require('./harness.cjs');
     })()`);
     h.assert.strictEqual(st.value.kb, '0', 'Up 应回到第一项');
 
-    // Tab → 取消；Tab → 打开；Tab → 循环回搜索框
+    // Tab → 设为默认勾选行（role=checkbox）；Tab → 取消；Tab → 打开；
+    // Tab → 循环回搜索框
+    await h.key(win, 'Tab');
+    await h.sleep(100);
+    st = await h.js(win, `({ role: document.activeElement ? document.activeElement.getAttribute('role') : null })`);
+    h.assert.strictEqual(st.value.role, 'checkbox', 'Tab 后应聚焦「设为默认」勾选行');
+
     await h.key(win, 'Tab');
     await h.sleep(100);
     st = await h.js(win, `({ text: (document.activeElement ? document.activeElement.textContent : '').trim() })`);

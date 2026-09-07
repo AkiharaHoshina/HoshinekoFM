@@ -8,6 +8,7 @@ import type { IFile } from "../types/files";
 import { useDrag } from "../contexts/DragContext";
 import { createAddressBarDropHandler } from "../utils/addressBarDrop";
 import { t } from "../i18n";
+import { expandAddressPath, looksLikePathInput } from "../utils/addressPath";
 import "./Omnibar.css";
 
 interface OmnibarProps {
@@ -136,22 +137,22 @@ export const Omnibar: React.FC<OmnibarProps> = ({
     }]
     : [];
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setIsEditing(false);
     const trimmed = inputValue.trim();
 
     if (!trimmed) return;
 
     // Logic:
-    // If starts with '/' or contains separator -> Path Navigation
+    // If starts with '/' or '~' or contains separator, or is '.'/'..'
+    // (relative syntax) -> Path Navigation
     // Else -> Search
 
-    if (
-      trimmed.startsWith("/") ||
-      trimmed.startsWith("~") ||
-      trimmed.includes("/")
-    ) {
-      onNavigate(trimmed);
+    if (looksLikePathInput(trimmed)) {
+      // `~`/`./`/`../` 语法展开：相对地址栏当前显示路径（回收站浏览时
+      // 为 trash://… 虚拟形态），`~` 展开为家目录
+      const home = await window.electron.getHomePath();
+      onNavigate(expandAddressPath(trimmed, currentPath, home));
     } else {
       // It's a search!
       onSearch(trimmed);
@@ -160,7 +161,7 @@ export const Omnibar: React.FC<OmnibarProps> = ({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
-      handleSubmit();
+      void handleSubmit();
     }
     if (e.key === "Escape") {
       setIsEditing(false);
@@ -174,9 +175,7 @@ export const Omnibar: React.FC<OmnibarProps> = ({
         <div className="omnibar-input-wrapper">
           <Icon
             name={
-              inputValue.startsWith("/") ||
-              inputValue.startsWith("trash://") ||
-              inputValue.startsWith("dashboard://")
+              looksLikePathInput(inputValue)
                 ? "folder_open"
                 : "search"
             }

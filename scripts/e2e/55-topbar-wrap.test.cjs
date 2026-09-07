@@ -7,9 +7,10 @@
  * - 选择器/保存器顶栏同款换行（picker-topbar flex-wrap）；
  * - 换行时底部分界线着色（距控件行 8px），未换行透明。
  * 判定：排序分区矩形顶边是否低于地址栏分区矩形底边（wrapped）。
- * 宽度驱动：隐藏/恢复侧边栏改变内容区宽度（顶栏随内容区伸缩）——窗口级
- * resize 在平铺 WM 下不可靠（本机实测 setSize 无效、窗口被 tiler 固定），
- * 侧边栏隐藏与「窗口变宽」对顶栏可用宽度同机制（纯 flex 布局实时响应）。
+ * 宽度驱动：顶栏容器 style.maxWidth 注入（宽 1200 单行 / 窄 500 换行，
+ * 与「窗口变宽/变窄」对 flex 换行同机制、纯布局实时响应）——窗口级
+ * resize 在平铺 WM 下不可靠，侧边栏显隐依赖「窗口被 tiler 固定为窄宽」
+ * 的环境前提（窗口未被平铺时失效），故全部宽度驱动统一走 maxWidth。
  */
 const h = require('./harness.cjs');
 
@@ -46,17 +47,6 @@ async function assertDivider(win, visible, msg) {
     visible ? (c !== 'transparent' && c !== 'rgba(0, 0, 0, 0)') : (c === 'transparent' || c === 'rgba(0, 0, 0, 0)'),
     `${msg}（实际 ${c}）`,
   );
-}
-
-/** 隐藏/恢复侧边栏（改变内容区宽度，顶栏随内容区伸缩） */
-async function setSidebarHidden(win, hidden) {
-  const ok = await h.js(win, `(() => {
-    const sb = document.querySelector('.sidebar');
-    if (!sb) return false;
-    sb.style.display = ${hidden ? "'none'" : "''"};
-    return true;
-  })()`);
-  h.assert.ok(ok.ok && ok.value, '应找到侧边栏');
 }
 
 /** 设置/清除顶栏容器 maxWidth（px 传 null 恢复自然宽度） */
@@ -142,23 +132,23 @@ async function waitClosed(picker) {
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
 
     // ── 主窗口展开态：内容区变宽单行 / 变窄换行（实时往返） ──
-    await setSidebarHidden(win, true);
+    // 宽度经顶栏容器 maxWidth 注入（窗口宽度无关：1200 单行 / 500 换行）
+    await setTopbarMaxWidth(win, 1200);
     await waitWrapped(win, false);
     h.assert.strictEqual((await h.js(win, rowStateExpr)).value.wrapped, false, '宽内容区展开态应为单行');
     await assertDivider(win, false, '未换行不应显示分界线');
 
-    await setSidebarHidden(win, false);
+    await setTopbarMaxWidth(win, 500);
     await waitWrapped(win, true);
     h.assert.strictEqual((await h.js(win, rowStateExpr)).value.wrapped, true, '窄内容区展开态应换行（地址栏独占第一行）');
     await assertDivider(win, true, '换行后应显示底部分界线');
     h.assert.strictEqual((await h.js(win, dividerGapExpr)).value, '8px', '换行时分界线应下移 8px');
 
-    await setSidebarHidden(win, true);
+    await setTopbarMaxWidth(win, 1200);
     await waitWrapped(win, false);
     h.assert.strictEqual((await h.js(win, rowStateExpr)).value.wrapped, false, '恢复宽内容区应实时回到单行');
     await assertDivider(win, false, '回到单行后分界线应消失');
     h.assert.strictEqual((await h.js(win, dividerGapExpr)).value, '0px', '未换行时分界线不应下移');
-    await setSidebarHidden(win, false);
 
     // ── 折叠态：地址栏可低于阈值压缩、永不换行 ──
     await clickZoneIcon(win, 'chevron_right');
@@ -178,14 +168,20 @@ async function waitClosed(picker) {
     await waitWrapped(win, true);
     h.assert.strictEqual((await h.js(win, rowStateExpr)).value.wrapped, true, '极窄顶栏展开后应立即换行');
     await assertDivider(win, true, '展开后换行应显示分界线');
-    await setTopbarMaxWidth(win, null);
+    // 宽度振荡（300 → 1200 → 500）后仍按容器宽度实时换行
+    await setTopbarMaxWidth(win, 1200);
+    await waitWrapped(win, false);
+    await setTopbarMaxWidth(win, 500);
     await waitWrapped(win, true);
+    await setTopbarMaxWidth(win, null);
 
     // ── 回收站视图（无返回上级键）：同语义 ──
     await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 1 });
     await h.waitFor(win, `!!document.querySelector('[data-kb-zone="topbar-omnibar"]')`);
     await h.sleep(500);
-    h.assert.strictEqual((await h.js(win, rowStateExpr)).value.wrapped, true, '回收站视图窄内容区（无上级键）也应换行');
+    await setTopbarMaxWidth(win, 500);
+    await waitWrapped(win, true);
+    h.assert.strictEqual((await h.js(win, rowStateExpr)).value.wrapped, true, '回收站视图窄容器（无上级键）也应换行');
     // 回到原目录视图（重载：启动路径仍指向沙箱目录）
     await h.js(win, `location.reload(); true`);
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`, 10000);

@@ -141,6 +141,10 @@ const zhAC = {
   'open_with.search': '搜索应用程序...',
   'open_with.recommended': '推荐程序',
   'open_with.all': '所有应用程序',
+  'open_with.set_default': '以此应用作为默认打开方式',
+  'open_with.restore_default': '还原默认打开方式',
+  'open_with.restored_notice': '已还原为默认打开方式',
+  'open_with.restored_title': '已还原',
 
   // ── 设置弹窗 ──
   'settings.title': '设置',

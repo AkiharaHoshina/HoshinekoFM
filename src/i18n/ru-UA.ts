@@ -183,6 +183,10 @@ const ruUA = {
   'open_with.search': 'Поиск приложений...',
   'open_with.recommended': 'Рекомендованные приложения',
   'open_with.all': 'Все приложения',
+  'open_with.set_default': 'Всегда использовать это приложение для этого типа файлов',
+  'open_with.restore_default': 'Восстановить способ открытия по умолчанию',
+  'open_with.restored_notice': 'Способ открытия по умолчанию восстановлен',
+  'open_with.restored_title': 'Восстановлено',
 
   // ── 设置弹窗 ──
   'settings.title': 'Настройки',

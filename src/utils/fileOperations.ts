@@ -572,16 +572,30 @@ export async function pasteFiles(
   });
 }
 
+/**
+ * fs:open 的「无默认处理程序」哨兵值，与 electron/handlers/fs.ts 的
+ * OPEN_NO_HANDLER 同值：系统未注册该文件类型默认程序时（xdg-open 会
+ * 回退交给浏览器弹「是否保存」），调用方应弹出「打开方式」对话框。
+ */
+export const OPEN_NO_HANDLER = 'NO_HANDLER';
+
+/**
+ * 用系统默认程序打开文件。
+ * @returns 空串 = 已发起打开；'NO_HANDLER' = 无默认处理程序（调用方
+ *  应弹出「打开方式」对话框）；其他非空字符串 = 错误信息（内部已 toast）。
+ */
 export async function openFile(
   filePath: string,
-): Promise<void> {
+): Promise<string> {
   try {
     const err = await window.electron.openPath(filePath);
-    if (err) {
+    if (err && err !== OPEN_NO_HANDLER) {
       showToast(t('error.file_open_failed', fileName(filePath), err), 'error');
     }
+    return err;
   } catch (e) {
     showToast(formatFileOpError(t('operation.open_op'), fileName(filePath), e), 'error');
+    return String(e);
   }
 }
 

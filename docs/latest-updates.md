@@ -1,5 +1,52 @@
 # 更新日志
 
+## v0.11.46 — 打开方式默认规则 + 无默认处理程序跳转 + 地址栏路径语法
+
+- **无默认处理程序打开 → 「打开方式」对话框（A 组）**：文件 MIME 未注册
+  系统默认应用时，双击/右键「打开」不再经 xdg-open 按 octet-stream 交给
+  浏览器弹「是否保存」——`fs:open` 先用 `detectMime` 取 MIME、经
+  `xdg-mime query default` 查询默认处理程序（3s 超时；工具缺失/检测失败
+  fail-open 按原行为），确无默认时返回哨兵 `OPEN_NO_HANDLER`
+  （electron/handlers/fs.ts 与 src/utils/fileOperations.ts 同值），渲染层
+  四处打开入口（App 右键菜单 / ExplorerTab 双击与 Enter / 搜索态菜单 /
+  仪表盘最近访问）收到哨兵后直接弹出「打开方式」对话框。可执行文件
+  直接执行路径不受影响（含 ENOEXEC 回退——回退也走同款检测）。
+- **「以此应用作为默认打开方式」（B 组）**：打开方式对话框底部固定
+  操作区（与取消/打开按钮同排、左对齐，不随程序列表滚动）新增勾选行
+  （md-checkbox 纯展示化 + 外层 role=checkbox 接管交互，与三态开关
+  同款防受控竞争模式）——勾选并打开成功后按 **MIME 键**写入
+  `~/.config/HoshinekoFM/DefaultOpenRule/<mime转义>.json`
+  （`electron/openRules.ts`：原子写 + 读取字段校验，损坏视为无规则）。
+  `fs:open` 打开文件时**规则优先于系统默认**（也优先于无 handler 检测：
+  有规则不弹对话框）——规则应用与「打开方式」共用同一条启动链路
+  （`electron/openLaunch.ts` 抽出的 `launchWithApp`：gio launch 优先 +
+  Exec 字段码回退，system:open-with 同源）。所选程序已是手动默认时
+  勾选行换「还原默认打开方式」链接（无图标）——点击删除规则文件、
+  关闭打开方式对话框并弹带遮罩 AlertDialog（标题「已还原」、正文
+  「已还原为默认打开方式」）。新增 IPC：system:get/set/delete-open-rule
+  （按文件路径参数，主进程检测 MIME）。
+- **地址栏路径语法（C 组）**：`~` / `~/…` 展开家目录（经 fs:get-home）、
+  `.` / `..` / `./x` / `../x` 相对地址栏当前显示路径做 POSIX 词法折叠、
+  绝对路径同样折叠 `.`/`..`/重复斜杠——`src/utils/addressPath.ts`
+  （normalizePosixPath / resolveRelativePath / expandAddressPath /
+  looksLikePathInput，Omnibar handleSubmit 改 async 先取 home；编辑图标
+  判定同源）。语义：软链接按词法父级（地址栏惯例，与 shell 逻辑 PWD
+  不同）；`trash://…` 与仪表盘视为根级虚拟目录，`..` 越过根回落 `/`
+  （仪表盘不渲染地址栏，无 UI 入口）；**波浪号开头的文件名**（如
+  `~file.txt`）不算 `~` 语法，按搜索处理——修复输入文件名被误判为
+  目录并弹「目录不存在」。
+- **e2e 61/62/63**：61（无默认处理程序双击/右键弹打开方式对话框 + 有
+  默认仍走 xdg-open 回归——PATH 假 xdg-mime/xdg-open）；62（勾选设为
+  默认 → 规则落盘 + 双击走规则覆盖系统默认 / 还原链接删除规则 + 关闭
+  对话框 + 提示弹窗 + 双击回落系统默认 / 规则优先于无系统默认——
+  system:get-apps 换假应用 + 规则目录在沙箱 userData）；63（真实目录
+  相对解析、`~` 家目录、trash:// 上 `..` 回落 `/`、无斜杠与带 `~` 文件
+  名走搜索回归）。**e2e 55 修复**：主窗口换行断言从侧边栏显隐驱动改
+  为顶栏容器 maxWidth 注入（窗口未被平铺 WM 固定为窄宽时侧边栏驱动
+  永不触发换行，环境无关化）。e2e 27a 更新 Tab 序（勾选行停靠）。
+- **i18n**：新增 `open_with.set_default` / `open_with.restore_default` /
+  `open_with.restored_notice` / `open_with.restored_title`（12 语言文件）。
+
 ## v0.11.45.14 — 自定义新标签页目录 + 回收站子目录虚拟路径地址栏
 
 - **自定义新标签页目录（设置 → 行为）**：新增「新建标签页目录」行

@@ -141,6 +141,10 @@ const jaJP = {
   'open_with.search': 'アプリケーションを検索...',
   'open_with.recommended': '推奨プログラム',
   'open_with.all': 'すべてのアプリケーション',
+  'open_with.set_default': 'このアプリをこの種類のファイルの既定として使用',
+  'open_with.restore_default': '既定の開く方法を復元',
+  'open_with.restored_notice': '既定の開く方法を復元しました',
+  'open_with.restored_title': '復元しました',
 
   // ── 设置弹窗 ──
   'settings.title': '設定',

@@ -7,6 +7,8 @@ import { promisify } from 'util';
 import dbus from 'dbus-next';
 import { getMountMap, invalidateMountMapCache, getExecError } from '../shared';
 import { getThumbnailCacheInfo, clearThumbnailCache, detectMime } from '../fsUtils';
+import { readOpenRule, writeOpenRule, deleteOpenRule, type OpenRule } from '../openRules';
+import { launchWithApp } from '../openLaunch';
 import { getLastBackendRegistration } from '../backends';
 import { PORTAL_BUS_NAME, PORTAL_FILE_CHOOSER_PATH, PORTAL_FILE_CHOOSER_IFACE } from './portalFileChooser';
 import { FILE_MANAGER1_NAME, FILE_MANAGER1_PATH, FILE_MANAGER1_IFACE } from './fileManager1';
@@ -1443,62 +1445,49 @@ export function registerSystemHandlers(
    *
    * Falls back to spawning the Exec line with proper field-code substitution
    * when GIO is unavailable or no desktop file was provided.
+   *
+   * 执行体在 openLaunch.ts 共享：fs:open 的 DefaultOpenRule 覆盖路径
+   * 走同一函数，两条打开链路语义必须一致。
    */
   ipcMain.handle('system:open-with', async (_, execPath: string, filePath: string, desktopFile?: string) => {
-    if (desktopFile) {
-      try {
-        await execFileAsync('gio', ['launch', desktopFile, filePath]);
-        return true;
-      } catch (gioErr) {
-        console.warn('gio launch failed, falling back to direct spawn:', getExecError(gioErr).message);
-      }
-    }
+    return launchWithApp(execPath, filePath, desktopFile);
+  });
 
-    let cwd: string | undefined;
-    if (desktopFile) {
-      try {
-        const content = await fs.readFile(desktopFile, 'utf-8');
-        const pathMatch = content.match(/^Path=(.*)$/m);
-        if (pathMatch && pathMatch[1].trim()) {
-          cwd = pathMatch[1].trim().replace(/^~(?=$|\/)/, os.homedir());
-        }
-      } catch { /* continue */ }
-    }
+  /**
+   * 查询文件的「手动默认打开方式」规则（DefaultOpenRule，按 MIME 键）。
+   * 返回规则对象或 null（无规则/检测失败）。
+   */
+  ipcMain.handle('system:get-open-rule', async (_, filePath: string) => {
+    if (typeof filePath !== 'string' || !filePath) return null;
+    const mime = await detectMime(filePath).catch(() => null);
+    if (!mime) return null;
+    return readOpenRule(mime);
+  });
 
-    // Substitute Desktop Entry field codes per spec: %f/%F/%u/%U become the
-    // file path, the remaining codes (%d/%D/%n/%N/%i/%c/%k/%v/%m) are removed.
-    // `%%` is escaped to a literal `%`.
-    const quotedPath = `"${filePath.replace(/"/g, '\\"')}"`;
-    let cmdLine: string;
-    if (execPath.includes('%')) {
-      cmdLine = execPath.replace(/%%|%[fFuUdDnNickvm]/g, (match, code) => {
-        if (match === '%%') return '%';
-        return (code === 'f' || code === 'F' || code === 'u' || code === 'U') ? quotedPath : '';
-      });
-    } else {
-      cmdLine = `${execPath} ${quotedPath}`;
-    }
+  /**
+   * 写入文件的「手动默认打开方式」规则（打开方式对话框勾选「设为默认」）。
+   * MIME 检测失败或参数缺失返回 false。
+   */
+  ipcMain.handle('system:set-open-rule', async (_, filePath: string, execPath: string, desktopFile?: string, name?: string) => {
+    if (typeof filePath !== 'string' || !filePath || typeof execPath !== 'string' || !execPath) return false;
+    const mime = await detectMime(filePath).catch(() => null);
+    if (!mime) return false;
+    const rule: OpenRule = { mime, exec: execPath };
+    if (typeof desktopFile === 'string' && desktopFile) rule.desktopFile = desktopFile;
+    if (typeof name === 'string' && name) rule.name = name;
+    await writeOpenRule(rule);
+    return true;
+  });
 
-    return new Promise((resolve) => {
-      try {
-        const child = spawn(cmdLine, [], {
-          detached: true,
-          stdio: 'ignore',
-          shell: true,
-          cwd,
-          env: { ...process.env }
-        });
-        child.on('error', (err: Error) => {
-          resolve(err.message);
-        });
-        child.on('spawn', () => {
-          child.unref();
-          resolve(true);
-        });
-      } catch (e) {
-        resolve(getExecError(e).message);
-      }
-    });
+  /**
+   * 删除文件的「手动默认打开方式」规则（打开方式对话框「还原默认
+   * 打开方式」链接）。文件不存在视为成功。
+   */
+  ipcMain.handle('system:delete-open-rule', async (_, filePath: string) => {
+    if (typeof filePath !== 'string' || !filePath) return false;
+    const mime = await detectMime(filePath).catch(() => null);
+    if (!mime) return false;
+    return deleteOpenRule(mime);
   });
 
   /**
