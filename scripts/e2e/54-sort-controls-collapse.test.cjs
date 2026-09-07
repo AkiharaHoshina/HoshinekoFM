@@ -153,6 +153,59 @@ async function waitClosed(picker) {
     await h.waitFor(win, `!(${menuOpenExpr})`, 5000);
     await h.waitFor(win, `localStorage.getItem('settings.groupingEnabled') === 'false'`, 5000);
 
+    // ── 键盘激活：Enter/Space 走 close-menu 通道执行动作 ──
+    // md-menu-item 键盘激活只派发 close-menu、不合成 click（见
+    // @material/web MenuItemController.onKeydown）——动作经 onCloseMenu
+    // 按 reason.key 过滤执行；Escape 派发的 close-menu 必须被忽略
+    // 打开菜单：md-menu 打开后焦点落到首个条目（defaultFocus FIRST_ITEM；
+    // 聚焦发生在打开动画之后，须 waitFor——否则 Enter/Down 落在锚点上）。
+    // **上一轮关闭动画未结束时重开菜单，md-menu 不落焦点**（实测 600ms
+    // 内重开 activeElement 留在 body）——键盘段落每次重开前等关闭动画收尾
+    const openMenuAndFocus = async () => {
+      await h.sleep(700);
+      await openMenu(win);
+      await h.waitFor(win, `(() => {
+        const a = document.activeElement;
+        return a ? (a.tagName.toLowerCase() === 'md-menu-item' || !!a.closest?.('md-menu-item')) : false;
+      })()`, 8000);
+    };
+    // Enter 激活分组项：分组 false → true（此前鼠标链路翻到 false）
+    await openMenuAndFocus();
+    await h.key(win, 'Enter');
+    await h.waitFor(win, `!(${menuOpenExpr})`, 5000);
+    await h.waitFor(win, `localStorage.getItem('settings.groupingEnabled') === 'true'`, 5000);
+
+    // 方向键移动 + Enter 激活视图切换项（第二项）：列表 → 网格
+    await openMenuAndFocus();
+    await h.key(win, 'Down');
+    await h.sleep(300);
+    await h.key(win, 'Enter');
+    await h.waitFor(win, `!(${menuOpenExpr})`, 5000);
+    await h.waitFor(win, `localStorage.getItem('settings.viewMode') === '"grid"'`, 5000);
+
+    // Escape 关闭不执行任何动作（分组保持 true、视图保持网格）
+    const beforeEsc = await h.js(win, `JSON.stringify({
+      g: localStorage.getItem('settings.groupingEnabled'),
+      v: localStorage.getItem('settings.viewMode'),
+    })`);
+    await openMenuAndFocus();
+    await h.key(win, 'Escape');
+    await h.waitFor(win, `!(${menuOpenExpr})`, 5000);
+    const afterEsc = await h.js(win, `JSON.stringify({
+      g: localStorage.getItem('settings.groupingEnabled'),
+      v: localStorage.getItem('settings.viewMode'),
+    })`);
+    h.assert.strictEqual(afterEsc.value, beforeEsc.value, 'Escape 关闭菜单不应执行任何动作');
+
+    // 方向键 ×2 + Enter 激活名称排序项（第三项）：同字段翻转方向 asc → desc
+    await openMenuAndFocus();
+    await h.key(win, 'Down');
+    await h.key(win, 'Down');
+    await h.sleep(300);
+    await h.key(win, 'Enter');
+    await h.waitFor(win, `!(${menuOpenExpr})`, 5000);
+    await h.waitFor(win, `localStorage.getItem('settings.sortOrder') === '"desc"'`, 5000);
+
     // 溢出菜单执行排序：切换到大小排序（默认名称升序 → 大小降序）
     await openMenu(win);
     await clickMenuItem(win, 'straighten');

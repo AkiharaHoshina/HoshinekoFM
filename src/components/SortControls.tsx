@@ -100,6 +100,25 @@ export const SortControls: React.FC<SortControlsProps> = ({
    *  派发 closed，先行同步 state 避免 open prop 停留在 true） */
   const closeMenu = () => setMenuOpen(false);
 
+  /**
+   * 菜单项键盘激活（Enter/Space）统一通道：md-menu-item 的键盘激活
+   * 只派发 close-menu（reason.kind='keydown' + detail.reason.key 区分
+   * 按键）、**不合成 click 事件**（见 @material/web
+   * MenuItemController.onKeydown），故动作另挂 onCloseMenu 处理；
+   * Escape 同样派发 close-menu（key='Escape'）——不执行动作；
+   * 鼠标点击走 onClick（click 也派发 close-menu reason='click-selection'，
+   * 不在本处理器执行，避免双触发）。
+   */
+  const handleMenuKeydownActivate = (
+    e: CustomEvent<{ reason?: { kind?: string; key?: string } }>,
+    action: () => void,
+  ) => {
+    const { reason } = e.detail ?? {};
+    if (reason?.kind === 'keydown' && (reason.key === 'Enter' || reason.key === 'Space')) {
+      action();
+    }
+  };
+
   return (
     <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
       {collapsed ? (
@@ -122,6 +141,7 @@ export const SortControls: React.FC<SortControlsProps> = ({
             <MenuItem
               disabled={groupingForced}
               onClick={() => { onGroupingToggle(); closeMenu(); }}
+              onCloseMenu={(e) => handleMenuKeydownActivate(e, () => { onGroupingToggle(); closeMenu(); })}
             >
               <Icon name="view_agenda" slot="start" />
               <span slot="headline">{t('sort.grouping')}</span>
@@ -132,6 +152,10 @@ export const SortControls: React.FC<SortControlsProps> = ({
                 onViewModeChange(viewMode === 'grid' ? 'list' : 'grid');
                 closeMenu();
               }}
+              onCloseMenu={(e) => handleMenuKeydownActivate(e, () => {
+                onViewModeChange(viewMode === 'grid' ? 'list' : 'grid');
+                closeMenu();
+              })}
             >
               <Icon name={viewMode === 'grid' ? 'view_list' : 'grid_view'} slot="start" />
               <span slot="headline">
@@ -145,6 +169,7 @@ export const SortControls: React.FC<SortControlsProps> = ({
                 <MenuItem
                   key={s.by}
                   onClick={() => { handleSortClick(s.by); closeMenu(); }}
+                  onCloseMenu={(e) => handleMenuKeydownActivate(e, () => { handleSortClick(s.by); closeMenu(); })}
                 >
                   <Icon name={s.icon} slot="start" />
                   <span slot="headline">{t(s.labelKey)}</span>
@@ -160,6 +185,7 @@ export const SortControls: React.FC<SortControlsProps> = ({
             <Divider />
             <MenuItem
               onClick={() => { onCollapsedChange(false); closeMenu(); }}
+              onCloseMenu={(e) => handleMenuKeydownActivate(e, () => { onCollapsedChange(false); closeMenu(); })}
             >
               <Icon name="chevron_left" slot="start" />
               <span slot="headline">{t('sort.expand')}</span>

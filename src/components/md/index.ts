@@ -301,10 +301,29 @@ export const Menu = createComponent({
   },
 });
 
+/**
+ * md-menu-item 的 close-menu 事件 detail（与 @material/web
+ * internal/controllers/shared.js 的 createCloseMenuEvent 同步）：
+ * initiator = 激活条目、itemPath = [initiator]；
+ * reason.kind：'click-selection'（鼠标点击）/ 'keydown'（键盘
+ * Enter/Space/Escape——**键盘激活不合成 click 事件**，动作需挂
+ * close-menu 并按 reason.key 过滤，见 SortControls）
+ */
+export interface MenuItemCloseMenuDetail {
+  initiator: unknown;
+  reason: { kind: 'click-selection' | 'keydown'; key?: string };
+  itemPath: unknown[];
+}
+
 export const MenuItem = createComponent({
   react: React,
   tagName: 'md-menu-item',
   elementClass: MdMenuItem,
+  events: {
+    // lit-react 不自动映射自定义事件：显式声明 close-menu
+    //（鼠标点击与键盘激活统一通道）
+    onCloseMenu: 'close-menu' as EventName<CustomEvent<MenuItemCloseMenuDetail>>,
+  },
 });
 
 // ─── Tabs ───────────────────────────────────────────────────────────────────────

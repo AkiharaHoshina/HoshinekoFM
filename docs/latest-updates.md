@@ -43,7 +43,13 @@
   与右键菜单同款，缺省 56px 太宽松）；「更多」按钮仅搜索强制分组时
   filled（分组开关自身状态不改变按钮高亮，避免被误读为激活态），
   菜单分组项文案用 `sort.grouping`（「分组」，按钮 tooltip 仍是
-  「切换分组」）。
+  「切换分组」）。**菜单项键盘激活修复**：md-menu-item 键盘 Enter/Space
+  只派发 `close-menu`、不合成 click（@material/web
+  MenuItemController.onKeydown）——动作另挂 `onCloseMenu`
+  （md/index.ts 的 MenuItem 包装显式声明事件），按
+  `detail.reason.kind === 'keydown'` + `reason.key` 过滤执行（Escape
+  同样派发 close-menu 必须忽略），鼠标点击仍走 onClick（click 也派发
+  close-menu reason='click-selection'，不重复执行）。
 - i18n：新增 `sort.collapse` / `sort.more` / `sort.expand` /
   `sort.grouping`（12 语言文件）。
 - e2e 54（`54-sort-controls-collapse.test.cjs`）：主窗口折叠/菜单执行
