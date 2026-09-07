@@ -192,6 +192,16 @@ contextBridge.exposeInMainWorld('electron', {
   clearThumbnailCache: () => ipcRenderer.invoke('system:clear-thumbnail-cache'),
   getStartupPath: () => ipcRenderer.invoke('app:get-startup-path'),
   getStartupRequest: () => ipcRenderer.invoke('app:get-startup-request'),
+  /**
+   * 确保启动器条目存在（桌面快捷方式 / 应用程序菜单条目）：
+   * 主进程经 marker 实现「创建一次，删掉不补」，已存在绝不覆盖。
+   */
+  ensureLauncherEntry: (kind: 'desktop' | 'appmenu') => ipcRenderer.invoke('app:ensure-launcher-entry', kind),
+  /**
+   * 删除启动器条目（开关关闭并确定时调用）：删除 .desktop 并清除
+   * marker，开关重新打开并确定时可再次创建。
+   */
+  removeLauncherEntry: (kind: 'desktop' | 'appmenu') => ipcRenderer.invoke('app:remove-launcher-entry', kind),
   getVersion: () => ipcRenderer.invoke('app:get-version'),
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   exists: (path: string) => ipcRenderer.invoke('fs:exists', path),

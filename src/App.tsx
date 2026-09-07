@@ -558,6 +558,68 @@ function AppContent() {
     true,
   );
 
+  /**
+   * 自动创建启动器条目开关（默认开启，设置 → 行为，**确定时生效**）：
+   * - desktop = 桌面快捷方式（~/Desktop 或本地化桌面目录）；
+   * - appmenu = 应用程序菜单条目（~/.local/share/applications）。
+   * 语义（见 launcherEntry.ts）：
+   * - 开关**打开并确定** → 经 app:ensure-launcher-entry 创建（主进程 marker
+   *   保证「创建一次，删掉不补」——用户手动删文件不重建，已存在不覆盖）；
+   * - 开关**关闭并确定** → 经 app:remove-launcher-entry 删除条目并清 marker
+   *   （重新打开并确定时可再次创建）。
+   * 首次挂载按当前开关值创建（默认开启 → 首启即建）；其他窗口的值经
+   * storage 事件同步后，effect 只会触发幂等的 ensure（删除只发生在
+   * 确定操作的窗口，见 handleAutoCreateDesktopEntryChange）。
+   */
+  const [autoCreateDesktopEntry, setAutoCreateDesktopEntry] = useLocalStorage<boolean>(
+    "settings.autoCreateDesktopEntry",
+    true,
+  );
+  const [autoCreateAppMenuEntry, setAutoCreateAppMenuEntry] = useLocalStorage<boolean>(
+    "settings.autoCreateAppMenuEntry",
+    true,
+  );
+
+  /**
+   * 桌面条目开关确定时的处理：写持久化值 + 按新值创建/删除条目。
+   * 只有确定操作的窗口执行删除（storage 同步到其他窗口时其 effect
+   * 只走 ensure 幂等路径，不会重复删除）。
+   */
+  const handleAutoCreateDesktopEntryChange = useCallback((value: boolean) => {
+    setAutoCreateDesktopEntry(value);
+    void (value
+      ? window.electron.ensureLauncherEntry("desktop")
+      : window.electron.removeLauncherEntry("desktop")
+    ).catch(() => {
+      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
+    });
+  }, [setAutoCreateDesktopEntry]);
+
+  /** 应用程序菜单条目开关确定时的处理（同桌面条目语义） */
+  const handleAutoCreateAppMenuEntryChange = useCallback((value: boolean) => {
+    setAutoCreateAppMenuEntry(value);
+    void (value
+      ? window.electron.ensureLauncherEntry("appmenu")
+      : window.electron.removeLauncherEntry("appmenu")
+    ).catch(() => {
+      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
+    });
+  }, [setAutoCreateAppMenuEntry]);
+
+  useEffect(() => {
+    if (!autoCreateDesktopEntry) return;
+    void window.electron.ensureLauncherEntry("desktop").catch(() => {
+      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
+    });
+  }, [autoCreateDesktopEntry]);
+
+  useEffect(() => {
+    if (!autoCreateAppMenuEntry) return;
+    void window.electron.ensureLauncherEntry("appmenu").catch(() => {
+      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
+    });
+  }, [autoCreateAppMenuEntry]);
+
   /** 标题栏可见性 + 模式 + 窗口管理器检测（状态由 useTitleBar 独占持有，
    *  同窗口多实例同键不同步——设置变更须经其 setter 立即生效） */
   const {
@@ -1137,7 +1199,8 @@ function AppContent() {
    * 默认参数一致，见 docs/进度.md 默认配置表）——语言跟随系统、
    * 显示隐藏文件开、列表模式、图标 48px、UI 100%、实心图标关、
    * 主题颜色与明暗跟随系统、标题栏跟随系统、完整路径关、滚动文本
-   * 关、搜索分类开、home 存储占用关、文件预览关、计算目录大小开。
+   * 关、搜索分类开、home 存储占用关、文件预览关、计算目录大小开、
+   * 自动创建桌面图标与应用程序菜单条目开。
    * 各 setter 写 localStorage 触发跨窗口 storage 同步，快照上报
    * effect 随状态变化自动落盘（选择器/保存器同步跟随）。
    */
@@ -1158,6 +1221,16 @@ function AppContent() {
     setFilePreviewEnabled(false);
     setCalculateDirSize(true);
     setSortControlsCollapsed(false);
+    setAutoCreateDesktopEntry(true);
+    setAutoCreateAppMenuEntry(true);
+    // 恢复默认 = 开关回到开：显式补一次创建意图（marker 幂等；若此前
+    // 开关关闭并确定删除过条目/清过 marker，恢复后立即重建）
+    void window.electron.ensureLauncherEntry("desktop").catch(() => {
+      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
+    });
+    void window.electron.ensureLauncherEntry("appmenu").catch(() => {
+      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
+    });
   }, [
     handleLocaleChange,
     setShowHiddenFiles,
@@ -1175,6 +1248,8 @@ function AppContent() {
     setFilePreviewEnabled,
     setCalculateDirSize,
     setSortControlsCollapsed,
+    setAutoCreateDesktopEntry,
+    setAutoCreateAppMenuEntry,
   ]);
 
   const hasInitialized = useRef(false);
@@ -2158,6 +2233,10 @@ function AppContent() {
             onFilePreviewChange={setFilePreviewEnabled}
             calculateDirSize={calculateDirSize}
             onToggleCalculateDirSize={() => setCalculateDirSize(!calculateDirSize)}
+            autoCreateDesktopEntry={autoCreateDesktopEntry}
+            onAutoCreateDesktopEntryChange={handleAutoCreateDesktopEntryChange}
+            autoCreateAppMenuEntry={autoCreateAppMenuEntry}
+            onAutoCreateAppMenuEntryChange={handleAutoCreateAppMenuEntryChange}
             isDefaultFileManager={isDefaultFileManager}
             fmBusy={fmBusy}
             onSetDefaultFm={() => void handleSetDefaultFm()}

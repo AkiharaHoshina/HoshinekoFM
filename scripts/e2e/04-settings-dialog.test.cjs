@@ -17,6 +17,9 @@ const h = require('./harness.cjs');
     const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
     await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
     await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some(d => d.open === true)`);
+    // 打开动画未完成时点击会落在错位坐标（Wayland 软件渲染下动画更慢，
+    // rect 带亚像素小数即动画中）——须等动画收尾再交互（见 AGENTS.md 坑点）
+    await h.waitDialogAnim();
 
     // 系统集成描述副标题：长文本换行完整显示（不加省略号）
     const integSub = await h.js(win, `(() => {

@@ -385,6 +385,28 @@ export interface IElectronAPI {
     onClipboardChange: (callback: (data: ClipboardData | null) => void) => () => void;
     getStartupPath: () => Promise<string | null>;
     /**
+     * 确保启动器条目存在（桌面快捷方式 / 应用程序菜单条目）。
+     * 主进程经 marker 实现「创建一次，删掉不补」，已存在绝不覆盖；
+     * 返回 created 指示本次是否真正创建，code 为失败原因码。
+     */
+    ensureLauncherEntry: (kind: 'desktop' | 'appmenu') => Promise<{
+      success: boolean;
+      created: boolean;
+      entryPath?: string;
+      code?: 'WRITE_FAILED' | 'INVALID_KIND';
+    }>;
+    /**
+     * 删除启动器条目（开关关闭并确定时调用）：删除 .desktop 并清除
+     * marker（开关重新打开并确定时可再次创建）；removed 指示本次是否
+     * 真正删除了文件（不存在视为成功）。
+     */
+    removeLauncherEntry: (kind: 'desktop' | 'appmenu') => Promise<{
+      success: boolean;
+      removed: boolean;
+      entryPath?: string;
+      code?: 'INVALID_KIND';
+    }>;
+    /**
      * 启动请求（路径 + 定位/属性提示）：FileManager1 ShowItems/
      * ShowItemProperties 经此让窗口打开目录后选中条目（必要时弹属性）。
      * selectFileName 为 undefined 表示无定位提示。

@@ -27,7 +27,8 @@
  * app:get-startup-path、picker:get-config、fs:watch-dir
  * 等）均为主进程实现的手工复制——修改 main.ts 时须同步更新这里。
  * **例外**：D-Bus 服务后端（portal FileChooser / FileManager1）已抽成
- * electron/backends.ts 共享模块，main.ts 与 harness 走同一条接线
+ * electron/backends.ts 共享模块、启动器条目创建抽成
+ * electron/launcherEntry.ts 共享模块——main.ts 与 harness 走同一条接线
  * （无手工副本，改坏注册接线 e2e 直接失败）；后端总线名用进程级
  * 随机名隔离（见 E2E_PORTAL_BUS_NAME）。
  */
@@ -418,6 +419,40 @@ function registerIpc() {
     for (const w of windows) {
       if (!w.isDestroyed()) w.webContents.send('picker:settings-changed', pickerSettingsCache);
     }
+  });
+
+  // 与 main.ts 的 app:ensure-launcher-entry 同一接线：核心逻辑在
+  // launcherEntry.js 共享模块（编译产物），**不做手工副本**——仅环境
+  // 路径不同（沙箱目录）。main.ts 用真实路径（app.getPath('desktop') /
+  // XDG_DATA_HOME / APPIMAGE / resourcesPath 图标），harness 用沙箱
+  // userData 下目录 + 环境变量覆盖（测试可改 exec 路径测转义）。gio
+  // 传 null 跳过 metadata::trusted（沙箱无意义且不依赖系统 glib）。
+  const launcherEntry = require(path.join(DIST_ELECTRON, 'launcherEntry.js'));
+  const launcherEnv = () => {
+    const userData = app.getPath('userData');
+    const dataHome = path.join(userData, 'xdg-data');
+    return {
+      desktopDir: process.env.HOSHINEKO_E2E_DESKTOP_DIR || path.join(userData, 'Desktop'),
+      applicationsDir: process.env.HOSHINEKO_E2E_APPMENU_DIR || path.join(dataHome, 'applications'),
+      iconsDir: path.join(dataHome, 'icons', 'hicolor', '512x512'),
+      userDataDir: userData,
+      execPath: process.env.HOSHINEKO_E2E_LAUNCHER_EXEC || '/opt/HoshinekoFM/HoshinekoFM',
+      appImage: process.env.HOSHINEKO_E2E_LAUNCHER_APPIMAGE || null,
+      iconSource: path.join(__dirname, '..', '..', 'assets', 'icon.png'),
+      gioExecutable: null,
+    };
+  };
+  ipcMain.handle('app:ensure-launcher-entry', async (_event, kind) => {
+    if (kind !== 'desktop' && kind !== 'appmenu') {
+      return { success: false, created: false, code: 'INVALID_KIND' };
+    }
+    return launcherEntry.ensureLauncherEntry(kind, launcherEnv());
+  });
+  ipcMain.handle('app:remove-launcher-entry', async (_event, kind) => {
+    if (kind !== 'desktop' && kind !== 'appmenu') {
+      return { success: false, removed: false, code: 'INVALID_KIND' };
+    }
+    return launcherEntry.removeLauncherEntry(kind, launcherEnv());
   });
 }
 

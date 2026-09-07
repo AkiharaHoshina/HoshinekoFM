@@ -14,6 +14,7 @@ import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers, startColorSchemeWatcher, stopColorSchemeWatcher } from './handlers/theme';
 import { registerPickerHandlers, type PickerConfig, type PinnedDirEntry, type PickerViewPrefs, type PickerThemeSnapshot, type PickerSettings } from './handlers/picker';
 import { registerServiceBackends } from './backends';
+import { ensureLauncherEntry, removeLauncherEntry, type LauncherEntryEnv, type LauncherEntryKind } from './launcherEntry';
 import { initJobHandlers } from './jobs';
 
 /**
@@ -631,12 +632,65 @@ if (!SERVICE_ONLY_MODE) {
 
 ipcMain.handle('theme:get-css', async () => {
   const homeDir = os.homedir();
-  const themePath = path.join(homeDir, '.config/matugen/theme.css');
+  const themePath = path.join(homeDir, '.config', 'matugen', 'theme.css');
   try {
     return await fs.readFile(themePath, 'utf-8');
   } catch {
     return null;
   }
+});
+
+/**
+ * 构造启动器条目环境（真实路径）：桌面目录经 Electron XDG 解析
+ * （中文「桌面」等本地化目录可用），菜单目录走 XDG_DATA_HOME，
+ * 图标源在打包产物 extraResources（AppImage 挂载路径每次随机，
+ * Icon= 必须引用复制到 hicolor 的稳定落点，见 launcherEntry.ts）。
+ */
+function buildLauncherEnv(): LauncherEntryEnv {
+  let desktopDir = '';
+  try {
+    desktopDir = app.getPath('desktop');
+  } catch {
+    /* 解析失败：保持空字符串，走 ~/Desktop 回落 */
+  }
+  if (!desktopDir) desktopDir = path.join(os.homedir(), 'Desktop');
+  const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+  return {
+    desktopDir,
+    applicationsDir: path.join(dataHome, 'applications'),
+    iconsDir: path.join(dataHome, 'icons', 'hicolor', '512x512'),
+    userDataDir: app.getPath('userData'),
+    execPath: process.execPath,
+    appImage: process.env.APPIMAGE ?? null,
+    iconSource: app.isPackaged
+      ? path.join(process.resourcesPath, 'assets', 'icon.png')
+      : path.resolve(__dirname, '../assets/icon.png'),
+  };
+}
+
+/**
+ * 确保启动器条目存在（桌面快捷方式 / 应用程序菜单条目，GUI 设置
+ * 「自动创建」开关开启并确定时由渲染进程调用，首次挂载亦按当前
+ * 开关值创建）。核心逻辑在 launcherEntry.ts 共享模块（与 e2e harness
+ * 同一代码路径，无手工副本）——marker 保证「创建一次，删掉不补」，
+ * 已存在绝不覆盖。
+ */
+ipcMain.handle('app:ensure-launcher-entry', (_event, kind: unknown) => {
+  if (kind !== 'desktop' && kind !== 'appmenu') {
+    return { success: false, created: false, code: 'INVALID_KIND' };
+  }
+  return ensureLauncherEntry(kind as LauncherEntryKind, buildLauncherEnv());
+});
+
+/**
+ * 删除启动器条目（开关关闭并确定时调用）：删除 .desktop 并清除 marker
+ * （开关重新打开并确定时可再次创建）。共享模块同一代码路径。
+ */
+ipcMain.handle('app:remove-launcher-entry', (_event, kind: unknown) => {
+  if (kind !== 'desktop' && kind !== 'appmenu') {
+    return { success: false, removed: false, code: 'INVALID_KIND' };
+  }
+  return removeLauncherEntry(kind as LauncherEntryKind, buildLauncherEnv());
 });
 
 /**

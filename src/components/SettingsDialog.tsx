@@ -39,6 +39,13 @@ interface SettingsDialogProps {
   /** 目录大小计算开关（默认开启；关闭后不再 du 遍历目录，减轻磁盘压力） */
   calculateDirSize: boolean;
   onToggleCalculateDirSize: () => void;
+  /** 自动创建桌面快捷方式（默认开启；确定时生效——打开并确定创建
+   *  （主进程 marker 保证创建一次删掉不补），关闭并确定删除条目） */
+  autoCreateDesktopEntry: boolean;
+  onAutoCreateDesktopEntryChange: (value: boolean) => void;
+  /** 自动创建应用程序菜单条目（默认开启；同上，确定时生效） */
+  autoCreateAppMenuEntry: boolean;
+  onAutoCreateAppMenuEntryChange: (value: boolean) => void;
   /** 默认文件管理器状态（xdg-mime inode/directory 关联） */
   isDefaultFileManager: boolean;
   fmBusy: boolean;
@@ -109,6 +116,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onFilePreviewChange,
   calculateDirSize,
   onToggleCalculateDirSize,
+  autoCreateDesktopEntry,
+  onAutoCreateDesktopEntryChange,
+  autoCreateAppMenuEntry,
+  onAutoCreateAppMenuEntryChange,
   isDefaultFileManager,
   fmBusy,
   onSetDefaultFm,
@@ -276,6 +287,13 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
    * 才应用，避免面板在用户犹豫时反复展开/收起。
    */
   const [pendingFilePreview, setPendingFilePreview] = useState<boolean>(filePreviewEnabled);
+  /**
+   * 自动创建启动器条目（桌面/菜单）的应用时机：同上——开关只更新本地
+   * 预览，确定/退出时才真正创建或删除条目，避免用户犹豫时反复写盘/
+   * 删除系统文件。
+   */
+  const [pendingAutoCreateDesktopEntry, setPendingAutoCreateDesktopEntry] = useState<boolean>(autoCreateDesktopEntry);
+  const [pendingAutoCreateAppMenuEntry, setPendingAutoCreateAppMenuEntry] = useState<boolean>(autoCreateAppMenuEntry);
   /** 恢复默认设置确认对话框（带背景遮罩的 ConfirmDialog） */
   const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
 
@@ -288,6 +306,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       setPendingSearchGroupByDir(searchGroupByDir);
       setPendingMarquee(marqueeEnabled);
       setPendingFilePreview(filePreviewEnabled);
+      setPendingAutoCreateDesktopEntry(autoCreateDesktopEntry);
+      setPendingAutoCreateAppMenuEntry(autoCreateAppMenuEntry);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 open 变化时同步
   }, [open]);
@@ -304,11 +324,14 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setPendingSearchGroupByDir(searchGroupByDir);
     setPendingMarquee(marqueeEnabled);
     setPendingFilePreview(filePreviewEnabled);
-  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, marqueeEnabled, filePreviewEnabled]);
+    setPendingAutoCreateDesktopEntry(autoCreateDesktopEntry);
+    setPendingAutoCreateAppMenuEntry(autoCreateAppMenuEntry);
+  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, marqueeEnabled, filePreviewEnabled, autoCreateDesktopEntry, autoCreateAppMenuEntry]);
 
   /**
-   * 应用语言 + 界面缩放 + 标题栏/完整路径/搜索分类/滚动文本/文件预览
-   * 等 pending 设置并关闭：确定与关闭走同一路径（退出设置等于确定）。
+   * 应用语言 + 界面缩放 + 标题栏/完整路径/搜索分类/滚动文本/文件预览 +
+   * 自动创建启动器条目等 pending 设置并关闭：确定与关闭走同一路径
+   * （退出设置等于确定）。
    */
   const handleApply = () => {
     if (pendingLocale !== locale) onLocaleChange(pendingLocale);
@@ -318,6 +341,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     if (pendingSearchGroupByDir !== searchGroupByDir) onSearchGroupByDirChange(pendingSearchGroupByDir);
     if (pendingMarquee !== marqueeEnabled) onMarqueeChange(pendingMarquee);
     if (pendingFilePreview !== filePreviewEnabled) onFilePreviewChange(pendingFilePreview);
+    if (pendingAutoCreateDesktopEntry !== autoCreateDesktopEntry) onAutoCreateDesktopEntryChange(pendingAutoCreateDesktopEntry);
+    if (pendingAutoCreateAppMenuEntry !== autoCreateAppMenuEntry) onAutoCreateAppMenuEntryChange(pendingAutoCreateAppMenuEntry);
     onClose();
   };
 
@@ -585,6 +610,40 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 </div>
               </div>
               <Switch selected={calculateDirSize} onClick={onToggleCalculateDirSize} />
+            </div>
+
+            {/* 自动创建启动器条目（桌面快捷方式 / 应用程序菜单）：
+              确定时生效开关（与搜索分类/滚动文本同款 pending）——打开
+              并确定 = 创建（marker 保证创建一次删掉不补）、关闭并确定 =
+              删除条目（重新打开并确定可再建） */}
+            <div className="settings-row" onClick={() => setPendingAutoCreateDesktopEntry(!pendingAutoCreateDesktopEntry)}>
+              <div className="settings-row__start">
+                <Icon name="desktop_windows" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.desktop_entry")}
+                  </div>
+                  <div className="settings-row__sub settings-row__sub--wrap">
+                    {t("settings.desktop_entry_desc")}
+                  </div>
+                </div>
+              </div>
+              <Switch selected={pendingAutoCreateDesktopEntry} onClick={() => setPendingAutoCreateDesktopEntry(!pendingAutoCreateDesktopEntry)} />
+            </div>
+
+            <div className="settings-row" onClick={() => setPendingAutoCreateAppMenuEntry(!pendingAutoCreateAppMenuEntry)}>
+              <div className="settings-row__start">
+                <Icon name="apps" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.app_menu_entry")}
+                  </div>
+                  <div className="settings-row__sub settings-row__sub--wrap">
+                    {t("settings.app_menu_entry_desc")}
+                  </div>
+                </div>
+              </div>
+              <Switch selected={pendingAutoCreateAppMenuEntry} onClick={() => setPendingAutoCreateAppMenuEntry(!pendingAutoCreateAppMenuEntry)} />
             </div>
 
             {/* 默认文件管理器（xdg-mime inode/directory 关联，写用户级配置） */}

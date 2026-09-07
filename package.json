@@ -1,7 +1,7 @@
 {
   "name": "hoshineko-fm",
   "private": true,
-  "version": "0.11.43",
+  "version": "0.11.44",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -69,6 +69,12 @@
       "dist/**/*",
       "packaging/**/*",
       "scripts/system-integration/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/icon.png",
+        "to": "assets/icon.png"
+      }
     ],
     "asarUnpack": [
       "packaging/**/*",

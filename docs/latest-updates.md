@@ -1,5 +1,37 @@
 # 更新日志
 
+## v0.11.44 — 自动创建启动器条目（桌面快捷方式 / 应用程序菜单）
+
+- **两个独立开关（设置 → 行为，默认开启，确定时生效）**：`settings.autoCreateDesktopEntry`
+  （桌面快捷方式）与 `settings.autoCreateAppMenuEntry`（应用程序菜单条目）——
+  **打开并确定 → 创建**（首次挂载按当前开关值创建，默认开 → 首启即建；主进程
+  marker（userData 的 `launcher-entries.json`）保证**创建一次，删掉不补**——
+  手动删文件不重建，已存在（用户自建/系统集成装过）绝不覆盖只补 marker）；
+  **关闭并确定 → 删除条目并清 marker**（重新打开并确定 = 新的创建意图，可再建）；
+  恢复默认设置补一次创建意图。删除只发生在确定操作的窗口（其他窗口经 storage
+  同步后只走 ensure 幂等路径）。
+- **条目内容**：`Type=Application / Name=HoshinekoFM / Exec="<路径>" %U /
+  Terminal=false / Categories=Utility;FileTools;FileManager; /
+  StartupWMClass=HoshinekoFM`——Exec 优先 `APPIMAGE` 环境变量（AppImage 形态
+  稳定入口），回落进程路径；路径经桌面条目规范转义（反斜杠/引号）；
+  `chmod 755` + `gio set metadata::trusted true`（GNOME 双击信任，best-effort）。
+- **图标**：`assets/icon.png` 经 extraResources 进打包产物，启动时复制到
+  `~/.local/share/icons/hicolor/512x512/hoshineko-fm.png` 稳定落点（AppImage
+  挂载路径每次随机，Icon= 必须引用不随版本变化的路径）；复制失败/源缺失
+  省略 Icon 行（通用图标兜底）。
+- **目录解析**：桌面目录走 Electron XDG 解析（中文「桌面」等本地化目录可用，
+  回落 `~/Desktop`）；菜单目录走 `XDG_DATA_HOME`/`~/.local/share/applications`。
+- **共享模块**：核心逻辑抽成 `electron/launcherEntry.ts`（同 backends.ts 模式，
+  main.ts 与 e2e harness 同一代码路径，无手工副本）——`ensureLauncherEntry`
+  （创建）与 `removeLauncherEntry`（删除 + 清 marker）两个入口；**marker
+  读-改-写竞态**修复——desktop/appmenu 两路调用并行时后写者用旧快照整体
+  替换会丢另一 kind 的标志，全部 ensure/remove 调用经进程内串行链排队执行。
+- e2e 56 覆盖：默认开启创建两份条目（Exec 转义/图标复制/chmod/内容断言）、
+  marker 幂等（手动删除后重载不重建）、确定时生效开关往返（关闭并确定 →
+  实际删除文件并清 marker、重新打开并确定 → 再次创建）、APPIMAGE 优先、
+  非法 kind 拒绝（ensure/remove 两通道）。
+  i18n 新增 4 键 × 12 语言文件。
+
 ## v0.11.43 — 顶栏布局调整 + 右上角控件组折叠 + 地址栏压缩自动换行
 
 - **顶栏布局调整**：左右 padding 统一 8px——返回上级键距左侧分界线与距
