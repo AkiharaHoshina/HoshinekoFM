@@ -1,6 +1,7 @@
 /**
  * e2e 17：org.freedesktop.FileManager1 D-Bus 接口（第三方程序调用）。
- * 模拟外部程序：OpenFolders 开窗口、ShowItems 开目录并选中条目、
+ * 模拟外部程序：OpenFolders 开窗口、ShowItems 开目录并选中条目
+ * （含大目录定位——目标在首屏之外时文件区滚动到视口内）、
  * ShowItemProperties 弹属性对话框；非法 URI 忽略。
  * 后端由 harness 经 backends.js 注册（与 main.ts 同一条接线），
  * 总线名用进程级随机名——不抢真实应用/残留进程的标准名，不误判。
@@ -103,6 +104,43 @@ const FM1_IFACE = 'org.freedesktop.FileManager1';
     await iface.ShowItems(['http://example.com/x.txt', 'not-a-path'], 'startup-id');
     await h.sleep(600);
     h.assert.strictEqual(h.getWindows().length, countBefore, '非法 URI 不应创建窗口');
+
+    // ShowItems 大目录定位：目标条目在首屏之外时，新窗口的文件区应
+    // 滚动到该条目（启动定位的冷缓存竞态回归——scrollToRow 曾按未
+    // 测量的边界缓存外推、落到中途，目标行不在视口内）
+    const dirE = h.tempDir();
+    for (let i = 0; i < 300; i++) {
+      h.makeFileTree(dirE, { [`file${String(i).padStart(3, '0')}.txt`]: 'x' });
+    }
+    await iface.ShowItems([`file://${dirE}/file250.txt`], 'startup-id');
+    let winE = null;
+    {
+      const t0 = Date.now();
+      while (Date.now() - t0 < 10000) {
+        const wins = h.getWindows().filter((w) => w !== winA && w !== winB && w !== winC && w !== winD);
+        if (wins.length > 0) { winE = wins[0]; break; }
+        await h.sleep(100);
+      }
+    }
+    h.assert.ok(winE, '大目录 ShowItems 应打开目标所在目录');
+    // 目标条目渲染（滚动到视口内）且被选中
+    await h.waitFor(
+      winE,
+      `document.querySelector('.file-list-item[data-path="${dirE}/file250.txt"]')?.className.includes('selected')`,
+      15000,
+    );
+    const inViewport = await h.js(
+      winE,
+      `(() => {
+        const cont = document.querySelector('.file-list-container');
+        const el = cont?.querySelector('.file-list-item[data-path="${dirE}/file250.txt"]');
+        if (!cont || !el) return false;
+        const cr = cont.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        return r.top >= cr.top - 1 && r.bottom <= cr.bottom + 1;
+      })()`,
+    );
+    h.assert.strictEqual(inViewport.value, true, '目标条目应滚动到文件区视口内');
 
     bus.disconnect();
   });

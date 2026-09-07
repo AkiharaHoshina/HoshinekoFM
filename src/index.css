@@ -1,25 +1,17 @@
 @import './theme/fallback.css';
 @import '@fontsource-variable/material-symbols-rounded/full.css';
-@import '@fontsource/roboto/100.css';
-@import '@fontsource/roboto/100-italic.css';
-@import '@fontsource/roboto/200.css';
-@import '@fontsource/roboto/200-italic.css';
-@import '@fontsource/roboto/300.css';
-@import '@fontsource/roboto/300-italic.css';
-@import '@fontsource/roboto/400.css';
-@import '@fontsource/roboto/400-italic.css';
-@import '@fontsource/roboto/500.css';
-@import '@fontsource/roboto/500-italic.css';
-@import '@fontsource/roboto/600.css';
-@import '@fontsource/roboto/600-italic.css';
-@import '@fontsource/roboto/700.css';
-@import '@fontsource/roboto/700-italic.css';
-@import '@fontsource/roboto/800.css';
-@import '@fontsource/roboto/800-italic.css';
-@import '@fontsource/roboto/900.css';
-@import '@fontsource/roboto/900-italic.css';
 @import '@fontsource/noto-sans-sc/chinese-simplified-400.css';
 @import '@fontsource/noto-sans-sc/chinese-simplified-700.css';
+
+/* UI 显示字体：Google Sans（可变字体，wght 400–700）——中文/日文/韩文
+   无 Google Sans 字形，自动回落 Noto Sans SC（与以往 Roboto 行为一致）。
+   由 fonts/GoogleSans-Var.ttf 经 fonttools 转 woff2（4.8MB → 1.5MB）。 */
+@font-face {
+  font-family: 'Google Sans VF';
+  src: url('./assets/fonts/GoogleSans-Var.woff2') format('woff2-variations');
+  font-weight: 400 700;
+  font-display: swap;
+}
 
 @keyframes fadeIn {
   from {
@@ -49,10 +41,10 @@ md-icon[filled] {
 }
 
 :root {
-  --md-ref-typeface-plain: 'Roboto', 'Noto Sans SC', sans-serif;
-  --md-ref-typeface-brand: 'Roboto', 'Noto Sans SC', sans-serif;
+  --md-ref-typeface-plain: 'Google Sans VF', 'Noto Sans SC', sans-serif;
+  --md-ref-typeface-brand: 'Google Sans VF', 'Noto Sans SC', sans-serif;
 
-  font-family: 'Roboto', 'Noto Sans SC', 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Google Sans VF', 'Noto Sans SC', 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 

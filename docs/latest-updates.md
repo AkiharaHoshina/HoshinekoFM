@@ -96,6 +96,30 @@
   sidecar 戳更新 / 重命名新 key 生成 + 旧孤儿保留 / 旧路径重建重新
   生成 / 删除回退不崩溃）；e2e 30/34/35 回归通过（35 滚动风暴为
   环境性 flake，stash 对照与改动无关）。
+- **外部应用「在文件管理器中显示」大目录定位（FileList scrollToRow
+  冷缓存竞态修复）**：FileManager1 ShowItems 打开新窗口时文件区定位
+  到目标文件（夹）——本仓库的 react-window 是定制版（rowHeight 可传
+  函数），`scrollToRow` 按「最后已测量行」外推总高度：列表刚挂载时
+  边界缓存只有已渲染行（容器未测量时仅 48px 分组头），外推总高严重
+  偏小（48×301 ≈ 真实 60%）——滚动落点错且被过矮的 spacer 钳制，
+  目标行不在视口内（此前 ShowItems/「定位到所在文件夹」对大目录停在
+  半途、目标选不中）。修复：第一次 `scrollToRow` 同步把边界缓存扩展
+  到目标行（行高按 rowHeight 精确计算），下一次渲染按扩展后的缓存
+  重建 spacer 高度，**双 rAF 后再滚一次**按正确总高落位——两次调用
+  必须隔一次渲染（实测双同步调用无效，第二次仍被旧 spacer 钳制）。
+  e2e 17 补大目录 ShowItems 断言（300 文件目标第 250 个 → 选中 +
+  条目在文件区视口内）；回归 01/21/25/42/57 通过。
+- **UI 字体改用 Google Sans**：`src/index.css` 新增 `@font-face`
+  （`'Google Sans VF'`，可变字体 wght 400–700，`font-display: swap`），
+  `:root font-family` 与 `--md-ref-typeface-plain/brand` 首位换为
+  Google Sans——中文/日文/韩文无 Google Sans 字形自动回落
+  `Noto Sans SC`（与以往 Roboto 行为一致）；Roboto 20 个 @fontsource
+  import 移除（bundle 减小约 1MB）。字体文件
+  `src/assets/fonts/GoogleSans-Var.woff2` 由仓库根
+  `fonts/GoogleSans-Var.ttf` 经 fonttools（`flavor='woff2'`，需
+  brotli）转换（4.8MB → 1.5MB）——更新字体须重新转 woff2；图标字体
+  （Material Symbols）与终端/预览等宽字体不受影响。回归 04/15/57
+  通过。
 
 ## v0.11.45 — 标题栏 v 菜单「新建窗口」
 

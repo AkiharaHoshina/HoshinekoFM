@@ -289,7 +289,25 @@ const FileListComponent: React.FC<FileListProps> = ({
     }
 
     if (flattenedIdx !== -1) {
+      // 冷缓存竞态（react-window v2 边界缓存 + 挂载期测量）：
+      // 列表刚挂载时边界缓存只有已渲染行（容器未测量时仅分组头），
+      // scrollToRow 按「最后已测量行」外推总高度——spacer 高度与滚动
+      // 落点都严重偏小（48px 头 × 301 行 ≈ 只有真实总高的 60%），且
+      // 滚到错误位置的 scrollTop 会被过矮的 spacer 钳制，目标行不在
+      // 视口内（启动定位 ShowItems / 定位到所在文件夹停在半途）。
+      // 第一次调用同步把边界缓存扩展到目标行（行高按 rowHeight 精确
+      // 计算）；下一次渲染按扩展后的缓存重建 spacer 高度；下一帧再滚
+      // 一次即按正确总高落位——双击调用间必须隔一次渲染，否则第二次
+      // 仍被旧的 spacer 高度钳制（实测双同步调用无效）。
       listElNow.scrollToRow({ index: flattenedIdx, align: "smart" });
+      const scrollEl = listElNow.element;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (scrollEl?.isConnected) {
+            listElNow.scrollToRow({ index: flattenedIdx, align: "smart" });
+          }
+        });
+      });
     }
 
     const targetFile = files[idx];
