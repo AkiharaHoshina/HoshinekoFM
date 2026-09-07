@@ -402,6 +402,7 @@ const ruUA = {
   'window.restore': 'Восстановить',
   'window.quit': 'Выход',
   'window.title_bar_menu': 'Меню окна',
+  'window.new': 'Новое окно',
   'dashboard.unpin_tooltip': 'Открепить',
 
   // ── 选择模式 ──

@@ -892,7 +892,9 @@ const reRegisterBackends = () => {
   void registerBackends().then(handleBackendsResult);
 };
 registerSystemHandlers(reRegisterBackends, reRegisterBackends);
-registerWindowHandlers(getWindows);
+registerWindowHandlers(getWindows, () => {
+  void createWindow();
+});
 registerThemeHandlers();
 registerPickerHandlers((config, parent) =>
   createWindow(process.argv, { picker: true, pickerConfig: config, parent }),

@@ -360,6 +360,7 @@ const zhTW = {
   'window.restore': '還原',
   'window.quit': '結束',
   'window.title_bar_menu': '視窗選單',
+  'window.new': '新視窗',
   'dashboard.unpin_tooltip': '取消釘選',
 
   // ── 選擇模式 ──

@@ -225,7 +225,11 @@ function registerIpc() {
   // 编译产物注册段（与 main.ts 相同的模块集合）
   require(path.join(DIST_ELECTRON, 'handlers', 'fs.js')).registerFsHandlers();
   require(path.join(DIST_ELECTRON, 'handlers', 'system.js')).registerSystemHandlers();
-  require(path.join(DIST_ELECTRON, 'handlers', 'window.js')).registerWindowHandlers(getWindows);
+  require(path.join(DIST_ELECTRON, 'handlers', 'window.js')).registerWindowHandlers(
+    getWindows,
+    // 与 main.ts 同款接线：标题栏 v 菜单「新建窗口」工厂
+    () => { void createTestWindow({ argv: [] }); },
+  );
   require(path.join(DIST_ELECTRON, 'handlers', 'theme.js')).registerThemeHandlers();
   require(path.join(DIST_ELECTRON, 'handlers', 'picker.js')).registerPickerHandlers(
     (config, parent) => createTestWindow({ picker: true, pickerConfig: config, parent }),

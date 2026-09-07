@@ -370,6 +370,7 @@ const koCN = {
   'window.restore': '복원',
   'window.quit': '종료',
   'window.title_bar_menu': '창 메뉴',
+  'window.new': '새 창',
   'dashboard.unpin_tooltip': '고정 해제',
 
   // ── 선택 모드 ──

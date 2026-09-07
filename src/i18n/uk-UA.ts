@@ -399,6 +399,7 @@ const ukUA = {
   'window.restore': 'Відновити',
   'window.quit': 'Вийти',
   'window.title_bar_menu': 'Меню вікна',
+  'window.new': 'Нове вікно',
   'dashboard.unpin_tooltip': 'Відкріпити',
 
   // ── 选择模式 ──

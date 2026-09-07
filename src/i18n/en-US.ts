@@ -371,6 +371,7 @@ const enUS = {
   'window.restore': 'Restore',
   'window.quit': 'Quit',
   'window.title_bar_menu': 'Window menu',
+  'window.new': 'New window',
   'dashboard.unpin_tooltip': 'Unpin',
 
   // ── 选择模式 ──

@@ -160,6 +160,8 @@ contextBridge.exposeInMainWorld('electron', {
   toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggle-maximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
   isWindowMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+  /** 新建窗口（标题栏 v 菜单项；共享同一主进程后端） */
+  newWindow: () => ipcRenderer.invoke('window:new'),
   onWindowMaximizeChange: (callback: (maximized: boolean) => void) => {
     const handler = (_event: unknown, maximized: boolean) => callback(maximized);
     ipcRenderer.on('window:maximized-changed', handler);

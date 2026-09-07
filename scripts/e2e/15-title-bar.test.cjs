@@ -116,13 +116,13 @@ const h = require('./harness.cjs');
     await h.waitDialogAnim();
     await h.waitFor(win, `document.querySelectorAll('.title-bar').length === 1`);
 
-    // v 菜单：平铺 WM 下只有 最大化 / 退出 两项（无最小化），
-    // 图标字号与右侧按钮一致（18/22）
+    // v 菜单：平铺 WM 下三条目（新建窗口 / 最大化 / 退出，无最小化），
+    // 图标字号与右侧按钮一致（18/18/22）
     await h.clickEl(win, '.title-bar-menu-btn');
-    await h.waitFor(win, `document.querySelectorAll('.context-menu md-list-item').length === 2`);
+    await h.waitFor(win, `document.querySelectorAll('.context-menu md-list-item').length === 3`);
     const menuIconSizes = await h.js(win, `Array.from(document.querySelectorAll('.context-menu .context-menu-icon')).map((i) => getComputedStyle(i).fontSize)`);
-    h.assert.deepStrictEqual(menuIconSizes.value, ['18px', '22px'], 'v 菜单图标字号应与右侧按钮一致');
-    // 对齐：两个条目的文字（headline）起始 x 应一致（图标字号不同但前导槽定宽居中）
+    h.assert.deepStrictEqual(menuIconSizes.value, ['18px', '18px', '22px'], 'v 菜单图标字号应与右侧按钮一致');
+    // 对齐：各条目的文字（headline）起始 x 应一致（图标字号不同但前导槽定宽居中）
     const headlineXs = await h.js(win, `Array.from(document.querySelectorAll('.context-menu md-list-item span[slot="headline"]')).map((s) => Math.round(s.getBoundingClientRect().left))`);
     h.assert.strictEqual(new Set(headlineXs.value).size, 1, `菜单文字应左对齐，实际 x: ${JSON.stringify(headlineXs.value)}`);
 
@@ -138,9 +138,10 @@ const h = require('./harness.cjs');
     })();
     await h.waitFor(win, `document.querySelectorAll('.title-bar-controls .title-bar-btn')[0].textContent.includes('filter_none')`);
 
-    // v 菜单「最大化」在最大化状态下切换为「还原」（取消最大化）
+    // v 菜单「最大化」在最大化状态下切换为「还原」（取消最大化）；
+    // 首项已改为「新建窗口」，按第二项断言
     await h.clickEl(win, '.title-bar-menu-btn');
-    await h.waitFor(win, `/还原|Restore/.test(document.querySelector('.context-menu md-list-item span[slot="headline"]')?.textContent ?? '')`);
+    await h.waitFor(win, `/还原|Restore/.test(document.querySelectorAll('.context-menu md-list-item span[slot="headline"]')[1]?.textContent ?? '')`);
 
     await h.clickEl(win, '.title-bar-controls .title-bar-btn', { index: 0 });
     await (async () => {
@@ -162,9 +163,27 @@ const h = require('./harness.cjs');
     const stackingSizes = await h.js(win, `Array.from(document.querySelectorAll('.title-bar-controls .title-bar-btn md-icon')).map((i) => getComputedStyle(i).fontSize)`);
     h.assert.deepStrictEqual(stackingSizes.value, ['22px', '18px', '22px'], '堆叠环境下最小化按钮应恢复（22/18/22）');
 
-    // v 菜单：堆叠环境下三条目（最大化/最小化/退出）
+    // v 菜单：堆叠环境下四条目（新建窗口/最大化/最小化/退出）
     await h.clickEl(win, '.title-bar-menu-btn');
-    await h.waitFor(win, `document.querySelectorAll('.context-menu md-list-item').length === 3`);
+    await h.waitFor(win, `document.querySelectorAll('.context-menu md-list-item').length === 4`);
+
+    // 「新建窗口」：点击后菜单关闭且创建新窗口（同进程共享后端）
+    await h.clickEl(win, `.context-menu md-list-item`, { index: 0 });
+    await h.waitFor(win, `document.querySelectorAll('.context-menu').length === 0`);
+    await (async () => {
+      const t0 = Date.now();
+      while (Date.now() - t0 < 5000) {
+        if (h.getWindows().length === 2) return;
+        await h.sleep(100);
+      }
+      throw new Error('点击「新建窗口」后应创建第二个窗口');
+    })();
+    const newWin = h.getWindows().find((w) => w !== win);
+    // 新窗口无启动路径 → 仪表盘（标题异步解析，waitFor 兜底）
+    await h.waitFor(newWin, `!!document.querySelector('.title-bar')`);
+    await h.waitFor(newWin, `document.querySelector('.title-bar-title .marquee-container')?.title === 'Hoshineko Nya~'`);
+    newWin.close();
+    await h.sleep(300);
 
     // 最小化：主进程状态；随后由主进程恢复
     await h.clickEl(win, '.title-bar-controls .title-bar-btn', { index: 0 });

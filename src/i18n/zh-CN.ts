@@ -360,6 +360,7 @@ const zhCN = {
   'window.restore': '还原',
   'window.quit': '退出',
   'window.title_bar_menu': '窗口菜单',
+  'window.new': '新建窗口',
   'dashboard.unpin_tooltip': '取消固定',
 
   // ── 选择模式 ──

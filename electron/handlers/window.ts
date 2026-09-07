@@ -173,8 +173,18 @@ ipcMain.handle('clipboard:clear', () => {
   broadcastClipboard();
 });
 
-/** 窗口级处理器：窗口图标等设置会应用到所有窗口（多窗口共享一个后端） */
-export function registerWindowHandlers(getWindows: () => BrowserWindow[]) {
+/**
+ * 窗口级处理器：窗口图标等设置会应用到所有窗口（多窗口共享一个后端）。
+ *
+ * @param getWindows - 返回当前全部窗口集合的工厂
+ * @param createNewWindow - 新建窗口工厂（标题栏菜单「新建窗口」用）。
+ *   createWindow 定义在 main.ts（此处无法直接引用），由 main.ts 注入；
+ *   e2e harness 不传（其测试不触发 window:new，处理器不注册）。
+ */
+export function registerWindowHandlers(
+  getWindows: () => BrowserWindow[],
+  createNewWindow?: () => void,
+) {
   /**
    * 界面缩放（整页缩放，Electron zoom factor）。
    *
@@ -300,6 +310,15 @@ export function registerWindowHandlers(getWindows: () => BrowserWindow[]) {
   ipcMain.handle('window:is-maximized', (event) => {
     return BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false;
   });
+
+  // 标题栏 v 菜单「新建窗口」：与 second-instance 路径同源的
+  // createWindow 工厂（共享同一主进程后端，无单实例锁语义——
+  // 锁只拦截第二次进程启动，这里始终在同一进程内开窗）
+  if (createNewWindow) {
+    ipcMain.handle('window:new', () => {
+      createNewWindow();
+    });
+  }
 
   ipcMain.handle('window:set-icon', async (_, iconType: 'light' | 'dark' | string) => {
     const apply = (iconPath: string) => {

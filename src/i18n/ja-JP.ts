@@ -360,6 +360,7 @@ const jaJP = {
   'window.restore': '元に戻す',
   'window.quit': '終了',
   'window.title_bar_menu': 'ウィンドウメニュー',
+  'window.new': '新しいウィンドウ',
   'dashboard.unpin_tooltip': 'ピン留めを外す',
 
   // ── 选择模式 ──

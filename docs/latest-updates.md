@@ -1,5 +1,25 @@
 # 更新日志
 
+## v0.11.45 — 标题栏 v 菜单「新建窗口」
+
+- **菜单项**：标题栏左侧 v 菜单顶部新增「新建窗口」（`open_in_new` 图标）——
+  点击后菜单由 ContextMenu 统一关闭，主进程创建新窗口（与
+  second-instance「再次启动开新窗口」共用同一 `createWindow` 工厂，
+  同一主进程共享后端；新窗口无启动路径，打开于仪表盘）。
+- **菜单结构**：新建窗口 /（分隔线）/ 最大化（最大化时切「还原」）/
+  最小化（平铺 WM 下隐藏）/（分隔线）/ 退出——平铺三条目（图标字号
+  18/18/22）、堆叠四条目（18/18/22/22），与右侧按钮图标字号同源。
+- **IPC 接线**：`registerWindowHandlers` 新增第二个可选参数
+  `createNewWindow` 工厂（`createWindow` 定义在 main.ts，无法在
+  window.ts 直接引用）——main.ts 注入 `() => void createWindow()`；
+  工厂未注入时不注册 `window:new` 处理器（e2e harness 不触发时不受影响）。
+  preload 暴露 `newWindow()`（`window:new`），`electron.d.ts` 同步声明。
+- **i18n**：新增 `window.new` 键（12 语言文件）。
+- **e2e 15 更新**：菜单条目数/图标字号断言按新结构更新（平铺三条目
+  18/18/22、堆叠四条目，「还原」断言改按第二项），并新增「新建窗口」
+  点击回归——点击后菜单关闭 + 创建第二窗口（打开于仪表盘标题
+  「Hoshineko Nya~」）。
+
 ## v0.11.44 — 自动创建启动器条目（桌面快捷方式 / 应用程序菜单）
 
 - **两个独立开关（设置 → 行为，默认开启，确定时生效）**：`settings.autoCreateDesktopEntry`

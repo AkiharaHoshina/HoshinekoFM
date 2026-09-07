@@ -24,7 +24,7 @@ interface TitleBarProps {
 /**
  * 自定义 M3 标题栏（frameless 窗口）：
  * - 整条可拖动（-webkit-app-region: drag，按钮区 no-drag）；
- * - 左侧「v」菜单按钮（展开：最大化 / 最小化 / 退出）；
+ * - 左侧「v」菜单按钮（展开：新建窗口 / 最大化 / 最小化 / 退出）；
  * - v 按钮右侧窗口标题：超长截断尾部 …，开启滚动文本时滚动显示；
  * - 右侧 最小化 / 最大化（最大化时显示还原图标）/ 关闭 三按钮；
  *   `hideMinimize` 时最小化按钮与菜单项一并隐藏（平铺 WM）。
@@ -50,10 +50,19 @@ export const TitleBar: React.FC<TitleBarProps> = ({ title, marqueeEnabled, hideM
     },
   };
 
-  /** v 菜单：最大化 / 最小化 / 退出（图标字号与右侧三按钮一致：18/22/22）；
-   *  `hideMinimize`（平铺 WM）时不含最小化项；最大化时首项切换为
+  /** v 菜单：新建窗口 / 最大化 / 最小化 / 退出（图标字号与右侧三按钮一致：18/22/22）；
+   *  `hideMinimize`（平铺 WM）时不含最小化项；最大化时「最大化」项切换为
    *  还原（「取消最大化」，图标与右侧还原按钮一致） */
   const menuItems: ContextMenuItem[] = [
+    {
+      label: t('window.new'),
+      icon: 'open_in_new',
+      iconSize: 18,
+      action: () => {
+        void window.electron?.newWindow();
+      },
+    },
+    { label: '', divider: true, action: () => {} },
     {
       label: isMaximized ? t('window.restore') : t('window.maximize'),
       icon: isMaximized ? 'filter_none' : 'crop_square',
