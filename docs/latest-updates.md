@@ -1,5 +1,60 @@
 # 更新日志
 
+## v0.11.43 — 顶栏布局调整 + 右上角控件组折叠 + 地址栏压缩自动换行
+
+- **顶栏布局调整**：左右 padding 统一 8px——返回上级键距左侧分界线与距
+  地址栏间隙（gap 8px）一致；排序控件组/收起把手贴紧右边界（与标签页栏
+  新建标签按钮 8px 同款，左右对称）。
+- **SortControls 控件组折叠（A1 方案）**：主窗口/选择器/保存器三处共用的
+  右上角排序/分组控件组支持收起与展开——展开态五按钮右端加「收起」把手
+  （chevron_right 指向折叠方向，与排序键之间加分隔线）；折叠态仅剩「更多」
+  按钮（tune，**仅搜索强制分组时 filled**——分组开关自身状态不改变按钮
+  高亮，避免「更多」被误读为激活态），点击弹出 `md-menu` 溢出菜单
+  （`positioning="popover"` 锚定「更多」按钮），6 个条目：分组（勾选标记，
+  搜索强制分组时禁用）、视图切换、三项排序（当前项勾选 + 升/降箭头，
+  点当前项翻转方向）、「展开控件」——折叠后无需展开即可完成全部操作，
+  展开只是让常用操作少一次点击。
+- **持久化与同步**：新键 `settings.sortControlsCollapsed`（默认展开，
+  恢复默认设置重置）属**立即同步组**——`PickerViewPrefs` 扩展
+  `sortControlsCollapsed`（sanitize 可选向后兼容旧快照，缺省 false；
+  main.ts / harness 手工副本 / electron/handlers/picker.ts 同源类型三处
+  同步），主窗口一变即广播；选择器/保存器经快照注入继承 + 实时跟随，
+  选择器内切换走 `sortControlsCollapsedOverride` 会话覆盖（与
+  viewModeOverride 同款语义：GUI 模式只写共享 localStorage 双向同步，
+  服务模式注入优先时写覆盖、收到广播即清除，主窗口为权威）。
+- **顶栏控件组自动换行**：地址栏压缩过度（低于
+  `OMNIBAR_MIN_WIDTH_EXPANDED`=240px）且控件组为展开态时，右上角按钮
+  自动换到第二行（`margin-left: auto` 右对齐）、地址栏独占第一行；
+  折叠态地址栏 min-width 0 可无限收缩、永不换行。纯 flex 实现（顶栏
+  容器 `flex-wrap: wrap` + 地址栏分区条件 min-width），窗口/内容区宽度
+  变化实时往返，无 JS 状态、无振荡风险；主窗口顶栏与选择器/保存器
+  `picker-topbar` 同款。**换行底部分界线**：`useTopBarWrap`（hooks/）
+  ResizeObserver 实时检测换行（排序分区顶边 ≥ 地址栏分区底边），
+  换行时顶栏底部画 outline-variant 分界线（常驻 1px 占位、未换行
+  透明防跳动；换行时 padding-bottom 8px 让分界线下移 8px）；检测仅
+  驱动装饰样式不参与布局，无反馈回路；选择器 config 异步到达时经
+  `active` 依赖重挂观察器。
+- **技术细节**：`md/index.ts` 的 Menu 包装补 events（`onOpened`/`onClosed`
+  ——lit-react 不会自动映射自定义事件，不声明则 TS 直接拒绝）；open 受控
+  时菜单项 onClick 内先同步关菜单（md-menu 内部关闭经动画异步派发
+  closed）；键盘分区 TOP_BAR_BTN_SELECTOR 通用选择器自动纳入把手/更多
+  按钮，折叠态分区 ←/→ 退化为自循环（无害）。溢出菜单条目紧凑化
+  （`SortControls.css`：`--md-menu-item-one-line-container-height` 40px
+  与右键菜单同款，缺省 56px 太宽松）；「更多」按钮仅搜索强制分组时
+  filled（分组开关自身状态不改变按钮高亮，避免被误读为激活态），
+  菜单分组项文案用 `sort.grouping`（「分组」，按钮 tooltip 仍是
+  「切换分组」）。
+- i18n：新增 `sort.collapse` / `sort.more` / `sort.expand` /
+  `sort.grouping`（12 语言文件）。
+- e2e 54（`54-sort-controls-collapse.test.cjs`）：主窗口折叠/菜单执行
+  分组与排序/「展开控件」恢复/重载保持 + 选择器继承与广播实时跟随 +
+  选择器内折叠会话覆盖与权威恢复 + GUI 模式（关闭注入）storage 双向
+  同步 + 保存器同款折叠按钮（按钮/菜单项按图标 ligature 定位 locale
+  无关）；e2e 55（`55-topbar-wrap.test.cjs`）：内容区变窄换行/变宽回
+  单行实时往返 + 折叠态不换行（地址栏压缩低于 240px 断言）+ 回收站
+  视图 + 选择器/保存器同款（宽度驱动经侧边栏隐藏与顶栏 maxWidth 注入
+  ——平铺 WM 下 `win.setSize` 无效）。e2e 25/26/41/42/51 回归通过。
+
 ## v0.11.42 — 固定项排序拖拽误导高亮修复 + 选择器/保存器拒绝拖放
 
 - **固定项排序拖拽不触发文件落点误导高亮**：侧边栏固定区排序拖拽是

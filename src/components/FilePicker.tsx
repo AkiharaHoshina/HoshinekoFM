@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ToastContainer } from 'react-toastify';
 import { FileList } from './FileList';
 import { Omnibar } from './Omnibar';
-import { SortControls } from './SortControls';
+import { SortControls, OMNIBAR_MIN_WIDTH_EXPANDED } from './SortControls';
+import { useTopBarWrap } from '../hooks/useTopBarWrap';
 import { Sidebar, type SidebarPinnedItem } from './Sidebar';
 import { Button } from './Button';
 import { Icon } from './Icon';
@@ -167,12 +168,21 @@ const FilePicker: React.FC = () => {
    * settings.viewMode，经 storage 事件与主窗口双向同步。
    */
   const [viewModeOverride, setViewModeOverride] = useState<'grid' | 'list' | null>(null);
+  /**
+   * 控件组折叠会话覆盖：与 iconSizeOverride 同款语义——服务模式下
+   * 注入的 viewPrefs 优先，折叠把手/「展开控件」切换时经覆盖值让
+   * 当前窗口立即生效；收到新广播即清除（主窗口重新权威）。GUI 模式
+   * 无注入，只写本地 settings.sortControlsCollapsed，经 storage 事件
+   * 与主窗口双向同步。
+   */
+  const [sortControlsCollapsedOverride, setSortControlsCollapsedOverride] = useState<boolean | null>(null);
 
   useEffect(() => {
     const offPrefs = window.electron?.onPickerViewPrefsChanged?.((prefs) => {
       // 主窗口变化重新权威：清除本窗口的 Ctrl+滚轮缩放覆盖
       setIconSizeOverride(null);
       setViewModeOverride(null);
+      setSortControlsCollapsedOverride(null);
       setLiveViewPrefs(prefs);
     });
     const offPinned = window.electron?.onPickerPinnedDirsChanged?.((dirs) => {
@@ -215,6 +225,14 @@ const FilePicker: React.FC = () => {
   const sortBy = viewPrefs?.sortBy ?? localSortBy;
   const sortOrder = viewPrefs?.sortOrder ?? localSortOrder;
   const groupingEnabled = viewPrefs?.groupingEnabled ?? localGroupingEnabled;
+  /** 控件组折叠：会话覆盖 > 注入快照 > 本地 localStorage（GUI 模式共享） */
+  const [localSortControlsCollapsed, setLocalSortControlsCollapsed] = useLocalStorage<boolean>('settings.sortControlsCollapsed', false);
+  const sortControlsCollapsed = sortControlsCollapsedOverride ?? viewPrefs?.sortControlsCollapsed ?? localSortControlsCollapsed;
+  /** 顶栏容器（picker-topbar flex-wrap 行）：换行后底部分界线装饰用 */
+  const topBarRef = useRef<HTMLDivElement | null>(null);
+  /** 顶栏是否已换行（地址栏压缩过度、控件组落到第二行）——
+   *  仅驱动底部分界线样式，布局为纯 CSS 换行（见 useTopBarWrap） */
+  const topBarWrapped = useTopBarWrap(topBarRef, omnibarZoneRef, sortZoneRef, sortControlsCollapsed, Boolean(config));
 
   /**
    * Ctrl+滚轮缩放：在文件区（.file-list-container）上按 Ctrl+滚轮
@@ -242,6 +260,17 @@ const FilePicker: React.FC = () => {
     setLocalViewMode(mode);
     if (viewPrefs) setViewModeOverride(mode);
   }, [setLocalViewMode, viewPrefs]);
+
+  /**
+   * 控件组折叠切换（顶栏收起把手 / 溢出菜单「展开控件」项）：写本地
+   * settings.sortControlsCollapsed（GUI 模式经 storage 事件与主窗口
+   * 双向同步）；服务模式注入 viewPrefs 优先，同时写会话覆盖让当前
+   * 窗口立即生效（下一次主窗口变化即清除）。
+   */
+  const handleSortControlsCollapsedChange = useCallback((collapsed: boolean) => {
+    setLocalSortControlsCollapsed(collapsed);
+    if (viewPrefs) setSortControlsCollapsedOverride(collapsed);
+  }, [setLocalSortControlsCollapsed, viewPrefs]);
 
   useEffect(() => {
     const handler = (e: WheelEvent) => {
@@ -1094,12 +1123,22 @@ const FilePicker: React.FC = () => {
         />
 
         <main className="picker-main">
-          <div className="picker-topbar">
+          <div
+            className="picker-topbar"
+            ref={topBarRef}
+            style={{
+              /* 换行时底部分界线着色，未换行透明（常驻 1px 占位防跳动）；
+                 换行时分界线下移 8px（padding-bottom 8）与控件行留间距 */
+              borderBottom: '1px solid',
+              borderBottomColor: topBarWrapped ? 'var(--md-sys-color-outline-variant)' : 'transparent',
+              paddingBottom: topBarWrapped ? 8 : 0,
+            }}
+          >
             <div
               ref={omnibarZoneRef}
               data-kb-zone="topbar-omnibar"
               onKeyDown={handleTopBarKeyDown}
-              style={{ flex: 1, overflow: 'hidden', minWidth: 0 }}
+              style={{ flex: 1, overflow: 'hidden', minWidth: sortControlsCollapsed ? 0 : OMNIBAR_MIN_WIDTH_EXPANDED }}
             >
               <Omnibar
                 currentPath={currentPath}
@@ -1111,7 +1150,7 @@ const FilePicker: React.FC = () => {
               ref={sortZoneRef}
               data-kb-zone="topbar-sort"
               onKeyDown={handleTopBarKeyDown}
-              style={{ flexShrink: 0 }}
+              style={{ flexShrink: 0, marginLeft: 'auto' }}
             >
               <SortControls
                 sortBy={sortBy}
@@ -1119,6 +1158,8 @@ const FilePicker: React.FC = () => {
                 groupingEnabled={groupingEnabled}
                 groupingForced={searchActive && searchGroupByDir}
                 viewMode={viewMode}
+                collapsed={sortControlsCollapsed}
+                onCollapsedChange={handleSortControlsCollapsedChange}
                 onSortByChange={setLocalSortBy}
                 onSortOrderChange={setLocalSortOrder}
                 onGroupingToggle={() => setLocalGroupingEnabled(!groupingEnabled)}

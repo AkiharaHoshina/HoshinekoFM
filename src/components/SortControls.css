@@ -1,0 +1,12 @@
+/* 溢出菜单条目紧凑化：与右键菜单（ContextMenu.css 的 .context-menu-list）
+ * 同款 40px 条目高度与内边距——md-menu-item 默认 one-line 高度 56px、
+ * 上下空间各 12px，太宽松；custom properties 经 md-menu 级联进
+ * 光 DOM 的 slotted md-menu-item */
+.sort-controls-menu {
+    --md-menu-item-one-line-container-height: 40px;
+    --md-menu-item-label-text-size: 14px;
+    --md-menu-item-top-space: 4px;
+    --md-menu-item-bottom-space: 4px;
+    --md-menu-item-leading-space: 10px;
+    --md-menu-item-trailing-space: 10px;
+}

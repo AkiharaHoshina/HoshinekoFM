@@ -35,6 +35,10 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    /* 与主窗口顶栏同款：展开态地址栏低于 OMNIBAR_MIN_WIDTH_EXPANDED 时
+     * 排序控件组换到第二行（margin-left auto 右对齐）、地址栏独占第一行；
+     * 折叠态地址栏 min-width 0 不换行 */
+    flex-wrap: wrap;
 }
 
 /* Omnibar 占满剩余宽度，排序/分组控件靠右（与主窗口顶栏同构） */

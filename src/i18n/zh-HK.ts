@@ -384,6 +384,10 @@ const zhHK = {
   'sort.by_name': '按名稱',
   'sort.by_size': '按大小',
   'sort.by_date': '按修改日期',
+  'sort.collapse': '收合控制項',
+  'sort.more': '更多控制項',
+  'sort.expand': '展開控制項',
+  'sort.grouping': '分組',
 
   // ── 狀態列 ──
   'status.items': (n: number) => `${n} 個項目`,

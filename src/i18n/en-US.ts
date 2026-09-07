@@ -395,6 +395,10 @@ const enUS = {
   'sort.by_name': 'Sort by Name',
   'sort.by_size': 'Sort by Size',
   'sort.by_date': 'Sort by Date Modified',
+  'sort.collapse': 'Collapse Controls',
+  'sort.more': 'More Controls',
+  'sort.expand': 'Expand Controls',
+  'sort.grouping': 'Grouping',
 
   // ── 状态栏 ──
   'status.items': (n: number) => n === 1 ? '1 item' : `${n} items`,

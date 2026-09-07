@@ -471,6 +471,13 @@ function AppContent() {
     "settings.groupingEnabled",
     true,
   );
+  /** 右上角排序/分组控件组折叠（仅「更多」按钮 + 溢出菜单）：
+   *  settings.sortControlsCollapsed 持久化，与选择器/保存器同步
+   *  （立即同步组，随 viewPrefs 快照注入继承） */
+  const [sortControlsCollapsed, setSortControlsCollapsed] = useLocalStorage<boolean>(
+    "settings.sortControlsCollapsed",
+    false,
+  );
   /** 搜索分类：搜索结果按同目录分组（组头 = 完整目录路径；
    *  设置确定时生效——搜索态下强制右上角分类按钮高亮且点击无效） */
   const [searchGroupByDir, setSearchGroupByDir] = useLocalStorage<boolean>(
@@ -520,10 +527,11 @@ function AppContent() {
       sortBy,
       sortOrder,
       groupingEnabled,
+      sortControlsCollapsed,
     }).catch(() => {
       /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
     });
-  }, [viewMode, iconSize, showHiddenFiles, filledIcons, marqueeEnabled, sortBy, sortOrder, groupingEnabled]);
+  }, [viewMode, iconSize, showHiddenFiles, filledIcons, marqueeEnabled, sortBy, sortOrder, groupingEnabled, sortControlsCollapsed]);
 
   /**
    * 界面缩放（整页缩放，百分比）。持久化于 settings.uiScale，
@@ -1149,6 +1157,7 @@ function AppContent() {
     setShowHomeStorageUsage(false);
     setFilePreviewEnabled(false);
     setCalculateDirSize(true);
+    setSortControlsCollapsed(false);
   }, [
     handleLocaleChange,
     setShowHiddenFiles,
@@ -1165,6 +1174,7 @@ function AppContent() {
     setShowHomeStorageUsage,
     setFilePreviewEnabled,
     setCalculateDirSize,
+    setSortControlsCollapsed,
   ]);
 
   const hasInitialized = useRef(false);
@@ -1762,6 +1772,8 @@ function AppContent() {
                   onSortOrderChange={setSortOrder}
                   onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}
                   onViewModeChange={setViewMode}
+                  sortControlsCollapsed={sortControlsCollapsed}
+                  onSortControlsCollapsedChange={setSortControlsCollapsed}
                   refreshSignal={tab.version}
                   scrollToFileName={tab.pendingSelectFile}
                   onScrollToComplete={handleScrollToComplete}

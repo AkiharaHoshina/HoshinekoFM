@@ -30,7 +30,7 @@ resolvePicker: (paths: string[] | null) => Promise<void>;
 | `defaultFileName` | `string`? | 保存模式默认文件名（portal `current_name`/`current_file`；纯文件名，主进程已剔除路径分隔符与控制字符） |
 | `acceptLabel` | `string`? | 保存模式确定按钮文案覆盖（portal `accept_label`；缺省用 i18n「确定」） |
 | `pinnedDirs` | `PinnedDirEntry[]`? | **仅主进程注入**：侧边栏固定目录（`{ name, path, isDir }`）。服务模式（`--portal`/`--filemanager1` 常驻进程）的 userData 与 GUI 隔离、读不到 GUI 的 localStorage，主进程从 GUI userData 下的 `sidebar-pinned.json` 快照补齐此字段；调用方经 `picker:open` 传入的该字段被白名单校验忽略（不可伪造固定项） |
-| `viewPrefs` | `PickerViewPrefs`? | **仅主进程注入**：选择器显示偏好（`viewMode` 网格/列表、`iconSize`、`showHiddenFiles`、`filledIcons`、`marqueeEnabled`、**sortBy / sortOrder / groupingEnabled**）。服务模式从 GUI userData 下的 `picker-prefs.json` 快照补齐；调用方传入一律丢弃。**立即同步组**：主窗口变化即经 `onPickerViewPrefsChanged` 广播，打开中的选择器即时跟随（主窗口为权威——选择器内对分类/排序的本地调整写入常驻进程自己的 localStorage，下一次主窗口变化即覆盖；GUI 模式无注入，选择器回落共享 session 的 localStorage，storage 事件实时同步） |
+| `viewPrefs` | `PickerViewPrefs`? | **仅主进程注入**：选择器显示偏好（`viewMode` 网格/列表、`iconSize`、`showHiddenFiles`、`filledIcons`、`marqueeEnabled`、**sortBy / sortOrder / groupingEnabled / sortControlsCollapsed**）。服务模式从 GUI userData 下的 `picker-prefs.json` 快照补齐；调用方传入一律丢弃。**立即同步组**：主窗口变化即经 `onPickerViewPrefsChanged` 广播，打开中的选择器即时跟随（主窗口为权威——选择器内对分类/排序的本地调整写入常驻进程自己的 localStorage，下一次主窗口变化即覆盖；控件组折叠走会话覆盖同语义；GUI 模式无注入，选择器回落共享 session 的 localStorage，storage 事件实时同步） |
 | `theme` | `PickerThemeSnapshot`? | **仅主进程注入**：主题快照（颜色主题 `config` + 明暗 `darkMode`）。服务模式从 GUI userData 下的 `theme-snapshot.json` 补齐（否则选择器/保存器永远显示默认主题）；调用方传入一律丢弃。变化经 `onPickerThemeChanged` 广播实时跟随；明暗跟随系统走与主窗口同一条后端检测链 |
 | `settings` | `PickerSettings`? | **仅主进程注入**：选择器设置快照（确认时同步组——`searchGroupByDir` 搜索结果按所在目录分组、`showFullPathTitle` 标题栏显示完整路径、`locale` 语言）。服务模式从 GUI userData 下的 `picker-settings.json` 补齐；调用方传入一律丢弃。主窗口设置按下确定/退出时上报，经 `onPickerSettingsChanged` 广播实时跟随；GUI 模式回落共享 localStorage（`localSearchGroupByDir`/`localShowFullPathTitle`，语言走 i18n 模块自身的 storage 事件）。规则详见 `同步规则.md` |
 
@@ -114,6 +114,7 @@ const picked = await window.electron.openPicker({
 跨窗口 `storage` 事件；服务模式经快照注入 + 广播，见「同步规则.md」）：
 
 - 排序 / 分组设置（`settings.sortBy`、`settings.sortOrder`、`settings.groupingEnabled`）——立即同步组，读写双向同步（服务模式注入值优先、主窗口为权威）；
+- 右上角控件组折叠（`settings.sortControlsCollapsed`）——立即同步组，主窗口/选择器/保存器同步（选择器内切换为会话覆盖，下一次主窗口变化清除）；
 - 视图模式、图标大小、隐藏文件、实心图标、跑马灯——立即同步组，只读跟随主窗口；
 - 搜索分类（`searchGroupByDir`）、标题栏完整路径（`showFullPathTitle`）、语言（`locale`）——确认时同步组（主窗口设置按下确定/退出才生效并同步）；
 - 主题颜色（`settings.theme`）与明暗实时同步，且主窗口主题设置预览时经主进程广播即时变色；
@@ -131,4 +132,5 @@ const picked = await window.electron.openPicker({
 - v0.11.38：平铺 WM（i3/sway/hyprland/niri 等）下选择器/保存器标题栏隐藏最小化入口（`TitleBar hideMinimize`，与主窗口一致；主进程 `window:minimize` 同条件 no-op 兜底）；侧边栏 位置/固定文件夹/设备 区块标题上方增加间隔（与主窗口一致）。
 - v0.11.39：侧边栏固定目录顺序——选择器/保存器固定区**只读**（条目不可拖拽、无移除按钮，不允许改变顺序）；主窗口排序后经既有 `app:set-pinned-dirs` 快照 + `picker:pinned-dirs-changed` 广播，**打开中的选择器/保存器实时跟随新顺序**（GUI 模式选择器另经共享 session 的 storage 事件兜底）。
 - v0.11.41：选择器/保存器内 **Ctrl+滚轮图标缩放**与**右上角视图模式切换按钮**——与主窗口同款手势（范围/步进与设置滑条同源 16–128±8）；GUI 模式写共享 localStorage（`settings.iconSize`/`settings.viewMode`）经 storage 事件与主窗口**双向**同步；服务模式（userData 隔离、注入 viewPrefs 优先）经 `iconSizeOverride`/`viewModeOverride` **会话覆盖**立即生效，收到 `picker:view-prefs-changed` 广播即清除覆盖（主窗口为权威，「选择器内调整被下一次主窗口变化覆盖」语义）。
+- v0.11.43：`viewPrefs` 扩展 **sortControlsCollapsed**（右上角控件组折叠，立即同步组）——选择器/保存器经快照注入继承 + 广播跟随；选择器内切换（收起把手/「展开控件」项）走 `sortControlsCollapsedOverride` 会话覆盖（同 viewModeOverride 语义）；GUI 模式写共享 localStorage 双向同步；sanitize 可选向后兼容旧快照（缺省展开）。顶栏同款行为：地址栏压缩过度（<240px）时右上角控件组自动换到第二行（flex-wrap 纯布局），换行时底部分界线着色。
 - v0.11.42：**选择器/保存器不接收任何拖放**——拖动任何可拖动控件（固定项/文件条目/外部文件）经过窗口时不再出现误导性高亮或光标提示：FileList 文件夹落点按 `onDropOnFolder` 门控（选择器不传）、Omnibar/Breadcrumbs 落点回调改为可选（选择器不传 → 落点管线为 null → dragover/dragenter/drop 全早退不 preventDefault）；主窗口行为不变。

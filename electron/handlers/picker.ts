@@ -60,6 +60,12 @@ export interface PickerViewPrefs {
   sortOrder: 'asc' | 'desc';
   /** 语义分组（文件夹/媒体/文档等分类显示） */
   groupingEnabled: boolean;
+  /**
+   * 右上角排序/分组控件组是否折叠（仅「更多」按钮 + 溢出菜单）——
+   * 随主窗口立即同步，选择器/保存器经快照注入继承（本地切换为
+   * 会话覆盖，下一次主窗口变化即清除，见 FilePicker）
+   */
+  sortControlsCollapsed: boolean;
 }
 
 /**

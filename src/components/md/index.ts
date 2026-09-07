@@ -294,6 +294,11 @@ export const Menu = createComponent({
   react: React,
   tagName: 'md-menu',
   elementClass: MdMenu,
+  events: {
+    // md-menu 打开/关闭状态机事件（open 受控时经 onClosed 同步回 React state）
+    onOpened: 'opened' as EventName<Event>,
+    onClosed: 'closed' as EventName<Event>,
+  },
 });
 
 export const MenuItem = createComponent({

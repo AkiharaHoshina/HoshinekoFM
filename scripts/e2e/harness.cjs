@@ -354,7 +354,9 @@ function registerIpc() {
       typeof it.marqueeEnabled === 'boolean' &&
       (it.sortBy === 'name' || it.sortBy === 'size' || it.sortBy === 'date') &&
       (it.sortOrder === 'asc' || it.sortOrder === 'desc') &&
-      typeof it.groupingEnabled === 'boolean';
+      typeof it.groupingEnabled === 'boolean' &&
+      // 与 main.ts sanitizePickerViewPrefs 同步：可选向后兼容旧快照
+      (it.sortControlsCollapsed === undefined || typeof it.sortControlsCollapsed === 'boolean');
     pickerViewPrefsCache = valid
       ? {
           viewMode: it.viewMode,
@@ -365,6 +367,7 @@ function registerIpc() {
           sortBy: it.sortBy,
           sortOrder: it.sortOrder,
           groupingEnabled: it.groupingEnabled,
+          sortControlsCollapsed: it.sortControlsCollapsed ?? false,
         }
       : null;
     try {

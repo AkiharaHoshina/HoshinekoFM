@@ -384,6 +384,10 @@ const zhCT = {
   'sort.by_name': '按名稱排序',
   'sort.by_size': '按大細排序',
   'sort.by_date': '按修改時間排序',
+  'sort.collapse': '收合控制項',
+  'sort.more': '更多控制項',
+  'sort.expand': '展開控制項',
+  'sort.grouping': '分組',
 
   // ── 狀態欄 ──
   'status.items': (n: number) => `${n} 個項目`,

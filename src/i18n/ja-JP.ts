@@ -384,6 +384,10 @@ const jaJP = {
   'sort.by_name': '名前順',
   'sort.by_size': 'サイズ順',
   'sort.by_date': '更新日時順',
+  'sort.collapse': 'コントロールを折りたたむ',
+  'sort.more': 'その他のコントロール',
+  'sort.expand': 'コントロールを展開',
+  'sort.grouping': 'グループ化',
 
   // ── 状态栏 ──
   'status.items': (n: number) => `${n} 個の項目`,

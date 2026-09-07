@@ -28,7 +28,8 @@ import {
 
 import { Omnibar } from './Omnibar';
 import { Dashboard, type PinnedItem } from './Dashboard';
-import { SortControls } from './SortControls';
+import { SortControls, OMNIBAR_MIN_WIDTH_EXPANDED } from './SortControls';
+import { useTopBarWrap } from '../hooks/useTopBarWrap';
 import { FilePreviewPanel } from './FilePreviewPanel';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useDrag } from '../contexts/DragContext';
@@ -92,6 +93,11 @@ interface ExplorerTabProps {
     /** 切换视图模式（App 写入持久化键 settings.viewMode，跨窗口同步；
      *  与设置对话框的网格/列表按钮同源） */
     onViewModeChange: (mode: 'grid' | 'list') => void;
+    /** 右上角排序/分组控件组是否折叠（受控：App 持有
+     *  settings.sortControlsCollapsed，与选择器/保存器同步） */
+    sortControlsCollapsed: boolean;
+    /** 切换控件组折叠（App 写入持久化键，跨窗口同步） */
+    onSortControlsCollapsedChange: (collapsed: boolean) => void;
     refreshSignal: number;
     scrollToFileName?: string;
     onScrollToComplete?: () => void;
@@ -139,7 +145,7 @@ interface ExplorerTabProps {
     terminalOpen?: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, onSortControlsCollapsedChange, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -761,6 +767,11 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   const upZoneRef = useRef<HTMLSpanElement | null>(null);
   const omnibarZoneRef = useRef<HTMLDivElement | null>(null);
   const sortZoneRef = useRef<HTMLDivElement | null>(null);
+  /** 顶栏容器（flex-wrap 行）：换行后底部分界线装饰用 */
+  const topBarRef = useRef<HTMLDivElement | null>(null);
+  /** 顶栏是否已换行（地址栏压缩过度、控件组落到第二行）——
+   *  仅驱动底部分界线样式，布局为纯 CSS 换行（见 useTopBarWrap） */
+  const topBarWrapped = useTopBarWrap(topBarRef, omnibarZoneRef, sortZoneRef, sortControlsCollapsed, currentPath !== 'app://dashboard');
 
   /** 顶栏分区通用按钮选择器（含活动态 filled 变体） */
   const TOP_BAR_BTN_SELECTOR =
@@ -1714,7 +1725,29 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     <div style={{ display: isActive ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
       {/* Top Bar（键盘分区三站：topbar-up 返回上级键 / topbar-omnibar 地址栏内 / topbar-sort 分类排序） */}
       {(currentPath !== 'app://dashboard') && (
-        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', padding: '8px 24px 0' }}>
+        /* 左右 padding 8px：返回上级键距左侧分界线与距地址栏间隙（gap 8px）一致；
+           右侧分类排序/收起把手贴紧右边界（与标签页栏新建标签按钮 8px 同款）。
+           flex-wrap：展开态地址栏低于 OMNIBAR_MIN_WIDTH_EXPANDED 时右上角
+           控件组自动换到第二行（地址栏独占第一行）；折叠态地址栏 min-width 0
+           可无限收缩、永不换行——纯 flex 布局实时响应窗口宽度。
+           底部分界线：换行时着色（outline-variant），未换行透明——常驻
+           1px 占位避免着色切换引起内容行 1px 跳动；换行时分界线下移 8px
+           （padding-bottom 8，与控件行留出呼吸间距） */
+        <div
+          ref={topBarRef}
+          style={{
+            flexShrink: 0,
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '16px',
+            padding: '8px 8px 0',
+            paddingBottom: topBarWrapped ? 8 : 0,
+            borderBottom: '1px solid',
+            borderBottomColor: topBarWrapped ? 'var(--md-sys-color-outline-variant)' : 'transparent',
+          }}
+        >
           {currentPath !== 'trash://' && (
             <span ref={upZoneRef} data-kb-zone="topbar-up" onKeyDown={handleTopBarKeyDown} style={{ display: 'inline-flex', flexShrink: 0 }}>
               <IconButton onClick={handleUp} variant="standard">
@@ -1722,7 +1755,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               </IconButton>
             </span>
           )}
-          <div ref={omnibarZoneRef} data-kb-zone="topbar-omnibar" onKeyDown={handleTopBarKeyDown} style={{ flex: 1, overflow: 'hidden' }}>
+          <div ref={omnibarZoneRef} data-kb-zone="topbar-omnibar" onKeyDown={handleTopBarKeyDown} style={{ flex: 1, overflow: 'hidden', minWidth: sortControlsCollapsed ? 0 : OMNIBAR_MIN_WIDTH_EXPANDED }}>
             <Omnibar
               currentPath={currentPath}
               onNavigate={(p: string) => loadPath(p, true)}
@@ -1731,13 +1764,15 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               onDropExternalFiles={handleExternalDropOnBreadcrumb}
             />
           </div>
-          <div ref={sortZoneRef} data-kb-zone="topbar-sort" onKeyDown={handleTopBarKeyDown} style={{ flexShrink: 0 }}>
+          <div ref={sortZoneRef} data-kb-zone="topbar-sort" onKeyDown={handleTopBarKeyDown} style={{ flexShrink: 0, marginLeft: 'auto' }}>
             <SortControls
               sortBy={sortBy}
               sortOrder={sortOrder}
               groupingEnabled={groupingEnabled}
               groupingForced={searchGroupActive}
               viewMode={viewMode}
+              collapsed={sortControlsCollapsed}
+              onCollapsedChange={onSortControlsCollapsedChange}
               onSortByChange={onSortByChange}
               onSortOrderChange={onSortOrderChange}
               onGroupingToggle={onGroupingToggle}

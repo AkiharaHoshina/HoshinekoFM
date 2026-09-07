@@ -384,6 +384,10 @@ const zhCN = {
   'sort.by_name': '按名称排序',
   'sort.by_size': '按大小排序',
   'sort.by_date': '按修改时间排序',
+  'sort.collapse': '收起控件',
+  'sort.more': '更多控件',
+  'sort.expand': '展开控件',
+  'sort.grouping': '分组',
 
   // ── 状态栏 ──
   'status.items': (n: number) => `${n} 个项目`,

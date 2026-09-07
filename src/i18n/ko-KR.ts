@@ -385,6 +385,10 @@ const koKR = {
   'sort.by_name': '이름순 정렬',
   'sort.by_size': '크기순 정렬',
   'sort.by_date': '수정일순 정렬',
+  'sort.collapse': '컨트롤 접기',
+  'sort.more': '컨트롤 더보기',
+  'sort.expand': '컨트롤 펼치기',
+  'sort.grouping': '그룹화',
 
   // ── 상태 표시줄 ──
   'status.items': (n: number) => `${n}개 항목`,

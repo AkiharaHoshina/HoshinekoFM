@@ -193,6 +193,8 @@ function sanitizePickerViewPrefs(input: unknown): PickerViewPrefs | null {
   if (typeof it.sortBy !== 'string' || !['name', 'size', 'date'].includes(it.sortBy)) return null;
   if (typeof it.sortOrder !== 'string' || (it.sortOrder !== 'asc' && it.sortOrder !== 'desc')) return null;
   if (typeof it.groupingEnabled !== 'boolean') return null;
+  // 可选向后兼容旧快照：控件组折叠状态缺省视为展开
+  if (it.sortControlsCollapsed !== undefined && typeof it.sortControlsCollapsed !== 'boolean') return null;
   return {
     viewMode: it.viewMode as PickerViewPrefs['viewMode'],
     iconSize: Math.min(128, Math.max(16, Math.round(it.iconSize))),
@@ -202,6 +204,7 @@ function sanitizePickerViewPrefs(input: unknown): PickerViewPrefs | null {
     sortBy: it.sortBy as PickerViewPrefs['sortBy'],
     sortOrder: it.sortOrder as PickerViewPrefs['sortOrder'],
     groupingEnabled: it.groupingEnabled,
+    sortControlsCollapsed: it.sortControlsCollapsed ?? false,
   };
 }
 
