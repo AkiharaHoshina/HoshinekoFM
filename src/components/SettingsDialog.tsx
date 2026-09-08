@@ -708,25 +708,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               )}
             </div>
 
-            {/* 打开方式配置管理：二级对话框（用户配置 + 系统配置的默认
-              打开方式规则管理），右侧「进入」按钮打开 */}
-            <div className="settings-row">
-              <div className="settings-row__start">
-                <Icon name="open_with" />
-                <div className="settings-row__label-col">
-                  <div className="settings-row__label">
-                    {t("settings.open_rule_manager")}
-                  </div>
-                  <div className="settings-row__sub settings-row__sub--wrap">
-                    {t("settings.open_rule_manager_desc")}
-                  </div>
-                </div>
-              </div>
-              <Button variant="outlined" onClick={onOpenRuleManager}>
-                {t("settings.open_rule_manager_enter")}
-              </Button>
-            </div>
-
             {/* 系统集成一键安装/卸载：portal 配置 + D-Bus 激活文件（需授权）；
               已安装时按钮变为卸载，避免重复安装的误导性失败提示。
               后端名冲突（旧版常驻/无响应）时副标题改为冲突提示 */}
@@ -754,6 +735,25 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                   {t("settings.install_integration")}
                 </Button>
               )}
+            </div>
+
+            {/* 打开方式配置管理：二级对话框（用户配置 + 系统配置的默认
+              打开方式规则管理），右侧「进入」按钮打开 */}
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="open_with" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.open_rule_manager")}
+                  </div>
+                  <div className="settings-row__sub settings-row__sub--wrap">
+                    {t("settings.open_rule_manager_desc")}
+                  </div>
+                </div>
+              </div>
+              <Button variant="outlined" onClick={onOpenRuleManager}>
+                {t("settings.open_rule_manager_enter")}
+              </Button>
             </div>
 
             {/* 重启会话总线（常驻入口）：unresponsive（僵尸占名）冲突态下
