@@ -1,5 +1,70 @@
 # 更新日志
 
+## v0.11.47 — 打开方式配置管理 + 对话框 Tab 滚动闪烁修复
+
+- **打开方式配置管理（设置 → 行为）**：新增「打开方式配置管理」行
+  （副标题常驻）→「进入」按钮打开二级对话框 `OpenRuleManagerDialog`
+  （与设置同宽 512px、固定高 480px、带遮罩；列表区内部滚动，
+  **底部提示在 actions 行与「完成」按钮同行、常驻不滚动**）。内容
+  两段**用户配置先系统配置后**：
+  - **用户配置**：列出全部 DefaultOpenRule 规则——标题 = 文件类型
+    （`getMimeDisplayName`，附**常见文件后缀**如 `.txt, .log`，最多 6
+    个加 …，主进程 `getExtensionsForMime` 由 EXT_TO_MIME 反向映射）、
+    副标题 = `打开方式：exec`；悬停/聚焦显示编辑图标，点击进内联
+    编辑——「编辑」+ 路径输入 + 清除配置/快速导入/取消/确认；
+    **清除配置** = 草稿清空（含快速导入带入的 desktopFile/name 隐藏
+    字段）；**快速导入** = 复用打开方式对话框（导入模式：`mime` prop
+    直传按 MIME 查推荐程序——无文件路径场景；按钮文案「确认/OK」、
+    隐藏设为默认行，确认把所选应用写入草稿不启动）；**输入为空确认
+    = 删除配置回归系统默认**；`~`/`~/…` 展开家目录、`~file` 波浪号
+    开头文件名保持字面量（组件内 `expandTilde` 只做前缀展开，不用
+    expandAddressPath——它折叠整条 `..`/重复斜杠会破坏 exec 命令行
+    参数）。段头「清除全部用户配置」按钮（遮罩确认 → 批量删除）。
+  - **系统配置（只读）**：各层 mimeapps.list `[Default Applications]`
+    合并（过滤 `inode/`/`x-scheme-handler/`/`x-content/`——fs:open 规则
+    应用有 `stats.isFile()` 守卫，这些条目写用户规则永不生效；目录
+    默认程序由「默认文件管理器」行独立管理）——标题 = 文件类型 +
+    后缀、副标题 = 应用名（exec 为绝对路径时 `名称 · 路径`），悬停
+    复制图标，**点击把配置按 DefaultOpenRule 格式写入用户配置目录**；
+    被用户配置覆盖的条目显示 X（title「已被用户配置覆盖」）且点击
+    无效；**无法解析 Exec 的条目**（桌面文件缺失——多为 mimeapps.list
+    残留已卸载应用/未找到 snap 目录，或无 Exec 行）无图标、点击无效
+    （title「无法复制」解释）——桌面文件搜索目录含 snap
+    （`/var/lib/snapd/desktop/applications`）。
+  - **恢复默认设置不清空用户规则**（规则是数据非设置，与固定项/
+    最近文件同类——批量清空走对话框内「清除全部」）。
+  - 后端：`openRules.ts` 加 `listOpenRules`/`clearAllOpenRules`；
+    system.ts 加 `system:list-open-rules`（附 extensions）/
+    `list-system-defaults`/`set-open-rule-mime`/`delete-open-rule-mime`/
+    `clear-all-open-rules`/`get-recommended-apps-mime`（mime 入参校验
+    合法形态防 shell 注入；推荐程序按 MIME 直查从 get-recommended-apps
+    抽出共享 `getRecommendedAppsForMime`）。
+- **对话框 Tab 遍历滚动闪烁修复（Dialog 焦点滚动校正）**：Chromium
+  对移出视口的焦点目标默认居中滚动，旧实现 fixed 20ms 只校正一次——
+  校正发生在首帧绘制之后 → 居中位置先绘制一帧再跳回（打开方式/
+  打开方式管理对话框 Tab 遍历可见闪烁）。新实现：focusin 登记待校正
+  目标 → 每个 scroll 事件 0ms 尾部 debounce 校正（滚动落定后、渲染前
+  校正，只绘制终态）→ 校正后保持武装 400ms（浏览器焦点滚动会迟到
+  回放——首段滚动后立即校正，约 50–100ms 后浏览器按原居中量再次
+  滚动把校正顶掉；回放滚动事件再次触发校正，幂等）→ 滚轮/触摸/
+  键盘（keydown 挂 window 捕获）立即放弃待校正，不与用户主动滚动
+  争夺位置（彩蛋对话框 PgDn/PgUp 翻页不受干扰；Tab 引发的 keydown
+  后紧跟 focusin 会重新登记）。校正语义不变（视口外贴顶/贴底、
+  已完整可见且刚被焦点滚动时按方向回滚最小滚动）。
+- **e2e 64**：设置入口 → 管理对话框打开（两段顺序/actions 行提示/
+  后缀展示/复制图标/无 Exec 条目不可复制 + 悬停标题）→ 复制系统配置
+  落盘 DefaultOpenRule + X 标记覆盖无效化 → 编辑（清除配置/`~` 展开/
+  `~file` 字面量/空 = 删除恢复可复制）→ 快速导入（导入模式确定按钮/
+  无设为默认行/草稿回写）→ 清除全部（遮罩确认）→「完成」返回设置。
+  隔离：list-system-defaults/get-apps/get-recommended-apps-mime 换假
+  handler；规则落盘断言主进程侧 waitRule 轮询。**回归**：27c 最小滚动
+  校正、49 彩蛋翻页、62 打开规则、04/44 设置对话框全通过。
+- **i18n**：新增 `settings.open_rule_manager`/`_desc`/`_enter` 与
+  `openrule.title`/`user_section`/`system_section`/`user_empty`/
+  `system_empty`/`user_subtitle`/`edit_title`/`exec_label`/`clear`/
+  `quick_import`/`clear_all`/`clear_all_confirm`/`overridden`/
+  `copy_unavailable`/`hint`（12 语言文件）。
+
 ## v0.11.46 — 打开方式默认规则 + 无默认处理程序跳转 + 地址栏路径语法
 
 - **无默认处理程序打开 → 「打开方式」对话框（A 组）**：文件 MIME 未注册

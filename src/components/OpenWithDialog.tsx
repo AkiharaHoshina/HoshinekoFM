@@ -12,12 +12,26 @@ import './OpenWithDialog.css';
 interface OpenWithDialogProps {
     open: boolean;
     onClose: () => void;
-    onSelect: (exec: string, desktopFile?: string) => void;
+    /**
+     * 选中应用确认回调：exec 为清洗后的 Exec 行、desktopFile 为原始
+     * .desktop 路径（可选）、name 为程序显示名（可选，快速导入写草稿用）。
+     */
+    onSelect: (exec: string, desktopFile?: string, name?: string) => void;
     /**
      * 还原默认打开方式成功的回调：对话框随即关闭，由上层弹出
      * 「已还原」提示弹窗（带遮罩 AlertDialog）。
      */
     onRestored?: () => void;
+    /**
+     * 按 MIME 直查推荐程序（打开方式配置管理「快速导入」：无文件路径
+     * 场景）。与 path 互斥——mime 优先，存在时不调 path 版查询。
+     */
+    mime?: string;
+    /**
+     * 快速导入模式：按钮文案 打开 → 确定、隐藏「设为默认/还原」行；
+     * onSelect 由调用方写入草稿而非启动程序。
+     */
+    importMode?: boolean;
 }
 
 interface AppEntry {
@@ -31,6 +45,7 @@ const labelToKey: Record<string, string> = {
   'Open With...': 'open_with.title',
   'Cancel': 'dialog.button.cancel',
   'Open': 'dialog.button.open',
+  'Confirm': 'dialog.button.confirm',
   'Search applications...': 'open_with.search',
   'Recommended': 'open_with.recommended',
   'All Applications': 'open_with.all'
@@ -42,7 +57,7 @@ const tOpenWith = (text: string) => {
   return key ? (ti as any)(key) : text;
 };
 
-export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = ({ open, onClose, onSelect, onRestored, path }) => {
+export const OpenWithDialog: React.FC<OpenWithDialogProps & { path?: string }> = ({ open, onClose, onSelect, onRestored, path, mime, importMode }) => {
   const [allApps, setAllApps] = useState<AppEntry[]>([]);
   const [recommendedApps, setRecommendedApps] = useState<AppEntry[]>([]);
   const [search, setSearch] = useState('');
@@ -50,6 +65,7 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
   /**
    * 该文件类型的「手动默认打开方式」规则（DefaultOpenRule 目录，
    * 按 MIME 键）。选中应用与规则匹配时展示「还原默认打开方式」链接。
+   * 快速导入模式（mime 直传、无文件路径）不查询也不展示。
    */
   const [currentRule, setCurrentRule] = useState<{ exec: string; desktopFile?: string } | null>(null);
   /** 「以此应用作为默认打开方式」勾选草稿（确认打开时写入规则） */
@@ -75,18 +91,24 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
   useEffect(() => {
     if (open) {
       window.electron.getApps().then(setAllApps);
-      if (path) {
+      if (mime) {
+        // 快速导入：按 MIME 直查推荐程序（无文件路径）；不查既有规则
+        window.electron.getRecommendedAppsMime(mime).then(apps =>
+          setRecommendedApps(apps.map(a => ({ name: a.name, icon: a.icon, exec: a.exec, desktopFile: a.path })))
+        );
+        setCurrentRule(null); // eslint-disable-line react-hooks/set-state-in-effect -- 快速导入模式不查询既有规则
+      } else if (path) {
         window.electron.getRecommendedApps(path).then(apps =>
           setRecommendedApps(apps.map(a => ({ name: a.name, icon: a.icon, exec: a.exec, desktopFile: a.path })))
         );
         // 查询该文件类型的手动默认规则：决定勾选框与「还原」链接的形态
         window.electron.getOpenRule(path).then(setCurrentRule);
       } else {
-        setRecommendedApps([]); // eslint-disable-line react-hooks/set-state-in-effect
+        setRecommendedApps([]);
         setCurrentRule(null);
       }
     }
-  }, [open, path]);
+  }, [open, path, mime]);
 
   const filteredAllApps = useMemo(() => {
     return allApps.filter(app => app.name.toLowerCase().includes(search.toLowerCase()));
@@ -138,6 +160,7 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
 
   /** 还原默认打开方式：删除该文件类型的手动默认规则文件 */
   const handleRestoreDefault = async () => {
+    if (!path) return;
     try {
       await window.electron.deleteOpenRule(path);
       // 还原成功：关闭打开方式界面，由上层弹「已还原为默认打开方式」
@@ -158,8 +181,8 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
         // （与「打开」按钮行为绑定——仅打开动作落定规则，取消/关窗不写）
         const writeRule = setDefault && !isCurrentDefault;
         // 执行打开操作
-        await onSelect(selectedApp.exec, selectedApp.desktopFile);
-        if (writeRule) {
+        await onSelect(selectedApp.exec, selectedApp.desktopFile, selectedApp.name);
+        if (writeRule && path) {
           await window.electron.setOpenRule(path, selectedApp.exec, selectedApp.desktopFile, selectedApp.name);
         }
         onClose();
@@ -287,11 +310,17 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path: string }> = 
       title={tOpenWith('Open With...')}
       open={open}
       onClose={onClose}
+      backdrop={!!importMode}
       actions={
         <div className="open-with-actions">
-          {renderDefaultControl()}
+          {importMode ? (
+            // 快速导入模式：无「设为默认/还原」行——空占位把按钮推到右侧
+            <div className="open-with-default" style={{ cursor: 'default' }} aria-hidden="true" />
+          ) : (
+            renderDefaultControl()
+          )}
           <Button onClick={onClose} variant="text">{tOpenWith('Cancel')}</Button>
-          <Button onClick={handleConfirm} variant="filled" disabled={!selectedApp}>{tOpenWith('Open')}</Button>
+          <Button onClick={handleConfirm} variant="filled" disabled={!selectedApp}>{tOpenWith(importMode ? 'Confirm' : 'Open')}</Button>
         </div>
       }
     >

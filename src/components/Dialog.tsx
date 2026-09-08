@@ -265,6 +265,10 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
     let rafId = 0;
     const onShadowScrollerScroll = () => {
       if (scrollerEl) scrollerLastScrollAt.set(scrollerEl, performance.now());
+      // shadow 滚动事件不穿透到 window 捕获监听：同样参与焦点滚动校正
+      // 的尾部 debounce（对话框主 scroller 被焦点居中滚动时）
+      if (!pending) return;
+      scheduleCorrection(0);
     };
     const tryAttachScroller = () => {
       if (scrollerEl) return;
@@ -280,28 +284,87 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
       }
     };
     tryAttachScroller();
+    /**
+     * 焦点滚动校正（Tab 遍历/程序聚焦时的最小滚动）：
+     * Chromium 对移出视口的焦点目标默认做**居中滚动**，且该滚动可能在
+     * 校正之后**迟到回放**（实测：焦点居中滚动分两阶段——首段 scroll
+     * 事件比 focusin 晚约 2ms；若在首段后立即校正 scrollTop，浏览器
+     * 约 50–100ms 后会按原居中量再次滚动，把校正顶掉）。旧实现固定
+     * 延迟 20ms 只校正一次：校正发生在首帧绘制之后 → 居中位置先绘制
+     * 一帧再跳回（Tab 遍历闪烁）。
+     *
+     * 新实现：
+     * - focusin 登记待校正目标；窗口内每个 scroll 事件调度 0ms 尾部
+     *   debounce 校正（首段滚动落定后、渲染前校正——只绘制终态，无闪烁）；
+     * - 校正后**保持武装**（CORRECTION_HOLD_MS 内迟到回放滚动再次触发
+     *   校正，幂等；超时自动放弃）；
+     * - 滚轮/触摸/键盘等用户主动滚动立即放弃待校正（不与用户争夺
+     *   滚动位置；Tab 引发的 keydown 后紧跟 focusin 会重新登记）。
+     */
+    const CORRECTION_HOLD_MS = 400;
+    interface PendingCorrection {
+      host: HTMLElement;
+      target: HTMLElement;
+      related: HTMLElement | null;
+      timer: ReturnType<typeof setTimeout>;
+    }
+    let pending: PendingCorrection | null = null;
+    const cancelPending = () => {
+      if (pending) clearTimeout(pending.timer);
+      pending = null;
+    };
+    const scheduleCorrection = (delayMs: number) => {
+      if (!pending) return;
+      const p = pending;
+      clearTimeout(p.timer);
+      p.timer = setTimeout(() => {
+        if (pending !== p) return;
+        correctDialogFocusScroll(p.host, p.target, p.related);
+        // 校正后重新武装：迟到回放滚动可再次校正；超时/用户滚动则放弃
+        p.timer = setTimeout(() => {
+          if (pending === p) pending = null;
+        }, CORRECTION_HOLD_MS);
+      }, delayMs);
+    };
     const onScrollCapture = (e: Event) => {
       const scroller = e.composedPath()[0] as HTMLElement | null;
       if (scroller) scrollerLastScrollAt.set(scroller, performance.now());
+      if (!pending) return;
+      scheduleCorrection(0);
+    };
+    /** 用户主动滚动（滚轮/触摸/键盘）：放弃待校正，不与用户争夺滚动位置 */
+    const onUserScroll = () => {
+      cancelPending();
     };
     const onFocusIn = (e: FocusEvent) => {
       const target = e.target as HTMLElement | null;
       if (!target || typeof target.getBoundingClientRect !== 'function') return;
       const related = (e.relatedTarget as HTMLElement | null) || null;
-      // 焦点滚动的 scroll 事件实测比 focusin 晚约 2ms 派发（晚于一个
-      // setTimeout(0) 任务），校正延迟 20ms 确保滚动时间表已写入；
-      // 期间可能有下一次聚焦，各自按捕获的目标/related 独立校正，
-      // 后入队者最后执行、终态一致
-      setTimeout(() => {
-        correctDialogFocusScroll(host, target, related);
-      }, 20);
+      // 新聚焦覆盖旧待校正（连续 Tab 各自独立校正）
+      pending = {
+        host,
+        target,
+        related,
+        timer: setTimeout(() => {}, 0),
+      };
+      scheduleCorrection(20);
     };
     window.addEventListener('scroll', onScrollCapture, true);
+    window.addEventListener('wheel', onUserScroll, true);
+    window.addEventListener('touchmove', onUserScroll, true);
+    // keydown 也挂 window 捕获（而非 host）：键盘滚动（PgUp/PgDn/方向键）
+    // 无论派发目标在哪都立即放弃待校正——组件内拦截键手动滚动 shadow
+    // scroller 的场景（彩蛋对话框翻页）不会与焦点校正争夺滚动位置
+    window.addEventListener('keydown', onUserScroll, true);
     host.addEventListener('focusin', onFocusIn);
     return () => {
+      cancelPending();
       cancelAnimationFrame(rafId);
       scrollerEl?.removeEventListener('scroll', onShadowScrollerScroll);
       window.removeEventListener('scroll', onScrollCapture, true);
+      window.removeEventListener('wheel', onUserScroll, true);
+      window.removeEventListener('touchmove', onUserScroll, true);
+      window.removeEventListener('keydown', onUserScroll, true);
       host.removeEventListener('focusin', onFocusIn);
     };
   }, [visible, backdrop]);

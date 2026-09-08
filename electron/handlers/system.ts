@@ -7,7 +7,8 @@ import { promisify } from 'util';
 import dbus from 'dbus-next';
 import { getMountMap, invalidateMountMapCache, getExecError } from '../shared';
 import { getThumbnailCacheInfo, clearThumbnailCache, detectMime } from '../fsUtils';
-import { readOpenRule, writeOpenRule, deleteOpenRule, type OpenRule } from '../openRules';
+import { getExtensionsForMime } from '../mimeMap';
+import { readOpenRule, writeOpenRule, deleteOpenRule, listOpenRules, clearAllOpenRules, type OpenRule } from '../openRules';
 import { launchWithApp } from '../openLaunch';
 import { getLastBackendRegistration } from '../backends';
 import { PORTAL_BUS_NAME, PORTAL_FILE_CHOOSER_PATH, PORTAL_FILE_CHOOSER_IFACE } from './portalFileChooser';
@@ -932,6 +933,108 @@ export function resetBackendConflictCache(): void {
 }
 
 /**
+ * 打开方式配置管理：单条系统默认打开方式（各层 mimeapps.list 合并）。
+ */
+export interface SystemDefaultEntry {
+  /** MIME 类型（如 text/plain） */
+  mime: string;
+  /** 桌面文件 id（如 org.gnome.TextEditor.desktop） */
+  desktopId: string;
+  /** 程序显示名（桌面文件 Name=；解析失败回落 desktopId） */
+  name: string;
+  /** 桌面文件绝对路径（找到时；未找到为 null） */
+  desktopFile: string | null;
+  /** 清洗后的 Exec 行（绝对路径命令时以 / 开头） */
+  exec: string;
+  /** 该文件类型的常见扩展名（如 ['.txt', '.log']，供条目展示后缀） */
+  extensions: string[];
+}
+
+/**
+ * 枚举全部系统默认打开方式：按 XDG 优先级从低到高遍历各层
+ * mimeapps.list 的 `[Default Applications]` 段（低层先写入 map、
+ * 高层覆盖，`~/.config/mimeapps.list` 最终生效）。
+ *
+ * 过滤规则（决策：目录/协议/内容类型不走 fs:open 的 DefaultOpenRule
+ * 查询——fs:open 规则应用有 `stats.isFile()` 守卫，这些条目写入用户
+ * 规则永不生效，展示会误导用户）：
+ * - `inode/`：目录与设备节点（目录默认程序由设置「默认文件管理器」
+ *   独立管理）；
+ * - `x-scheme-handler/`：URL 协议（不经过文件打开链路）；
+ * - `x-content/`：媒体内容类型伪 MIME（同理）。
+ */
+async function listSystemDefaultHandlers(): Promise<SystemDefaultEntry[]> {
+  const dataDirs = (process.env.XDG_DATA_DIRS ?? '/usr/local/share:/usr/share').split(':').filter(Boolean);
+  const mimeappsFiles: string[] = [];
+  for (const dir of dataDirs) mimeappsFiles.push(path.join(dir, 'applications', 'mimeapps.list'));
+  mimeappsFiles.push(path.join(os.homedir(), '.local', 'share', 'applications', 'mimeapps.list'));
+  mimeappsFiles.push(path.join(os.homedir(), '.config', 'mimeapps.list'));
+
+  const defaults = new Map<string, string>(); // mime → desktop id
+  for (const file of mimeappsFiles) {
+    try {
+      const content = await fs.readFile(file, 'utf-8');
+      let inSection = false;
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('[')) {
+          inSection = trimmed === '[Default Applications]';
+          continue;
+        }
+        if (!inSection || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
+        const eq = trimmed.indexOf('=');
+        const mime = trimmed.slice(0, eq).trim();
+        const value = trimmed.slice(eq + 1).trim().split(';')[0].trim();
+        if (!mime || !value) continue;
+        if (mime.startsWith('inode/') || mime.startsWith('x-scheme-handler/') || mime.startsWith('x-content/')) continue;
+        defaults.set(mime, value);
+      }
+    } catch {
+      /* 该层文件不存在：跳过 */
+    }
+  }
+
+  const searchDirs = [
+    path.join(os.homedir(), '.local', 'share', 'applications'),
+    path.join(os.homedir(), '.local', 'share', 'flatpak', 'exports', 'share', 'applications'),
+    '/var/lib/flatpak/exports/share/applications',
+    '/var/lib/snapd/desktop/applications',
+    '/usr/local/share/applications',
+    '/usr/share/applications',
+  ];
+
+  const entries: SystemDefaultEntry[] = [];
+  for (const [mime, desktopId] of defaults) {
+    let desktopFile: string | null = null;
+    for (const dir of searchDirs) {
+      const candidate = path.join(dir, desktopId);
+      try {
+        await fs.access(candidate);
+        desktopFile = candidate;
+        break;
+      } catch {
+        /* 该目录无此桌面文件：继续找 */
+      }
+    }
+    let name = desktopId;
+    let exec = '';
+    if (desktopFile) {
+      try {
+        const content = await fs.readFile(desktopFile, 'utf-8');
+        const nameMatch = content.match(/^Name=(.*)$/m);
+        const execMatch = content.match(/^Exec=(.*)$/m);
+        if (nameMatch && nameMatch[1]) name = nameMatch[1];
+        if (execMatch) exec = execMatch[1].replace(/%[fFuUikc]/g, '').trim();
+      } catch {
+        /* 解析失败：回落 desktopId */
+      }
+    }
+    entries.push({ mime, desktopId, name, desktopFile, exec, extensions: getExtensionsForMime(mime) });
+  }
+  return entries;
+}
+
+/**
  * 注册 system 相关 IPC handler。
  *
  * @param onSessionBusRestarted - 会话总线重启成功后的回调（main.ts 注入：
@@ -1491,6 +1594,52 @@ export function registerSystemHandlers(
   });
 
   /**
+   * 打开方式配置管理：列出全部用户手动默认规则（DefaultOpenRule
+   * 目录，按 MIME 键）。文件损坏/缺失跳过（与 readOpenRule 同语义）；
+   * 每条附 extensions（常见扩展名，供条目展示文件后缀）。
+   */
+  ipcMain.handle('system:list-open-rules', async () => {
+    const rules = await listOpenRules();
+    return rules.map((rule) => ({ ...rule, extensions: getExtensionsForMime(rule.mime) }));
+  });
+
+  /**
+   * 打开方式配置管理：列出全部系统默认打开方式（各层 mimeapps.list
+   * [Default Applications] 合并解析；inode//x-scheme-handler//x-content/
+   * 过滤，见 listSystemDefaultHandlers 注释）。
+   */
+  ipcMain.handle('system:list-system-defaults', () => listSystemDefaultHandlers());
+
+  /**
+   * 打开方式配置管理：按 MIME 直写用户规则（无文件路径可检测 MIME 的
+   * 场景——配置管理编辑确认/复制系统配置；与 system:set-open-rule
+   * 同存储同语义，仅 MIME 来源不同）。
+   */
+  ipcMain.handle('system:set-open-rule-mime', async (_, mime: string, execPath: string, desktopFile?: string, name?: string) => {
+    if (typeof mime !== 'string' || !mime || typeof execPath !== 'string' || !execPath) return false;
+    const rule: OpenRule = { mime, exec: execPath };
+    if (typeof desktopFile === 'string' && desktopFile) rule.desktopFile = desktopFile;
+    if (typeof name === 'string' && name) rule.name = name;
+    await writeOpenRule(rule);
+    return true;
+  });
+
+  /**
+   * 打开方式配置管理：按 MIME 删除用户规则（编辑确认输入框为空 =
+   * 回归系统默认）。文件不存在视为成功。
+   */
+  ipcMain.handle('system:delete-open-rule-mime', async (_, mime: string) => {
+    if (typeof mime !== 'string' || !mime) return false;
+    return deleteOpenRule(mime);
+  });
+
+  /**
+   * 打开方式配置管理：清除全部用户规则（对话框内「清除全部用户配置」
+   * 按钮，带确认）。返回删除条数。
+   */
+  ipcMain.handle('system:clear-all-open-rules', () => clearAllOpenRules());
+
+  /**
    * 在系统默认终端中打开目录。
    *
    * 实现为「在终端里执行 `sh -c 'cd "$1" && exec "$SHELL"' sh <dir>`」：
@@ -1756,55 +1905,80 @@ export function registerSystemHandlers(
     }
   });
 
+  /**
+   * 查询指定 MIME 的推荐程序（打开方式对话框 / 打开方式配置管理
+   * 快速导入共用）。搜索各应用目录下声明了该 MIME 的 .desktop 文件
+   * （grep -l 固定串；mime 由调用方保证为 xdg-mime 产出或经合法
+   * 形态校验的字符串，含引号会被转义）。
+   */
+  const getRecommendedAppsForMime = async (mime: string): Promise<{ name: string; icon: string | null; exec: string; path: string }[]> => {
+    const safeMime = mime.replace(/"/g, '\\"');
+
+    const searchPaths = [
+      '/usr/share/applications',
+      path.join(os.homedir(), '.local/share/applications'),
+      '/var/lib/flatpak/exports/share/applications',
+      path.join(os.homedir(), '.local/share/flatpak/exports/share/applications')
+    ];
+
+    const appFiles = new Set<string>();
+    for (const searchPath of searchPaths) {
+      try {
+        await fs.access(searchPath);
+        const { stdout: grepOut } = await execAsync(`grep -l "${safeMime}" "${searchPath}"/*.desktop || true`);
+        grepOut.split('\n').filter(Boolean).forEach(f => appFiles.add(f));
+      } catch {
+        // continue
+      }
+    }
+
+    const apps: { name: string; icon: string | null; exec: string; path: string }[] = [];
+    for (const file of appFiles) {
+      try {
+        const content = await fs.readFile(file, 'utf-8');
+        const nameMatch = content.match(/^Name=(.*)$/m);
+        const iconMatch = content.match(/^Icon=(.*)$/m);
+        const execMatch = content.match(/^Exec=(.*)$/m);
+        const noDisplayMatch = content.match(/^NoDisplay=(.*)$/m);
+        if (noDisplayMatch && noDisplayMatch[1].toLowerCase() === 'true') continue;
+
+        if (nameMatch && execMatch) {
+          const execCmd = execMatch[1].replace(/%[fFuUikc]/g, '').trim();
+          apps.push({
+            name: nameMatch[1],
+            icon: iconMatch ? iconMatch[1] : null,
+            exec: execCmd,
+            path: file
+          });
+        }
+      } catch { /* continue */ }
+    }
+    return apps;
+  };
+
   ipcMain.handle('system:get-recommended-apps', async (_, filePath: string) => {
     try {
       const safePath = filePath.replace(/"/g, '\\"');
       const { stdout: mimeOut } = await execAsync(`xdg-mime query filetype "${safePath}"`);
       const mime = mimeOut.trim();
       if (!mime) return [];
-
-      const searchPaths = [
-        '/usr/share/applications',
-        path.join(os.homedir(), '.local/share/applications'),
-        '/var/lib/flatpak/exports/share/applications',
-        path.join(os.homedir(), '.local/share/flatpak/exports/share/applications')
-      ];
-
-      const appFiles = new Set<string>();
-      for (const searchPath of searchPaths) {
-        try {
-          await fs.access(searchPath);
-          const { stdout: grepOut } = await execAsync(`grep -l "${mime}" "${searchPath}"/*.desktop || true`);
-          grepOut.split('\n').filter(Boolean).forEach(f => appFiles.add(f));
-        } catch {
-          // continue
-        }
-      }
-
-      const apps: { name: string; icon: string | null; exec: string; path: string }[] = [];
-      for (const file of appFiles) {
-        try {
-          const content = await fs.readFile(file, 'utf-8');
-          const nameMatch = content.match(/^Name=(.*)$/m);
-          const iconMatch = content.match(/^Icon=(.*)$/m);
-          const execMatch = content.match(/^Exec=(.*)$/m);
-          const noDisplayMatch = content.match(/^NoDisplay=(.*)$/m);
-          if (noDisplayMatch && noDisplayMatch[1].toLowerCase() === 'true') continue;
-
-          if (nameMatch && execMatch) {
-            const execCmd = execMatch[1].replace(/%[fFuUikc]/g, '').trim();
-            apps.push({
-              name: nameMatch[1],
-              icon: iconMatch ? iconMatch[1] : null,
-              exec: execCmd,
-              path: file
-            });
-          }
-        } catch { /* continue */ }
-      }
-      return apps;
+      return await getRecommendedAppsForMime(mime);
     } catch (err) {
       console.error('Error getting recommended apps:', err);
+      return [];
+    }
+  });
+
+  /**
+   * 打开方式配置管理「快速导入」：按 MIME 直查推荐程序（无文件路径
+   * 的场景）。mime 为 IPC 入参，须校验合法形态（防 shell 注入）。
+   */
+  ipcMain.handle('system:get-recommended-apps-mime', async (_, mime: string) => {
+    if (typeof mime !== 'string' || !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(mime)) return [];
+    try {
+      return await getRecommendedAppsForMime(mime);
+    } catch (err) {
+      console.error('Error getting recommended apps by mime:', err);
       return [];
     }
   });

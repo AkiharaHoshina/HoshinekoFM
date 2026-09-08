@@ -19,6 +19,7 @@ import { ContextMenu } from "./components/ContextMenu";
 import type { ContextMenuItem } from "./components/ContextMenu";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { ThemeColorDialog } from "./components/ThemeColorDialog";
+import { OpenRuleManagerDialog } from "./components/OpenRuleManagerDialog";
 import { HoshinekoNyaDialog } from "./components/HoshinekoNyaDialog";
 import { TerminalPanel, DEFAULT_TERMINAL_HEIGHT } from "./components/TerminalPanel";
 import { TitleBar } from "./components/TitleBar";
@@ -1194,6 +1195,8 @@ function AppContent() {
   }, [darkMode]);
   /** 主题颜色二级对话框开关 */
   const [themeColorOpen, setThemeColorOpen] = useState(false);
+  /** 打开方式配置管理二级对话框开关 */
+  const [openRuleManagerOpen, setOpenRuleManagerOpen] = useState(false);
 
   /** 主题配置变化时（含首次挂载）应用主题颜色 */
   useEffect(() => {
@@ -2309,6 +2312,7 @@ function AppContent() {
             onThemeColor={() => setThemeColorOpen(true)}
             themeSeedColor={themeConfig?.seed}
             onRestoreDefaults={handleRestoreDefaults}
+            onOpenRuleManager={() => setOpenRuleManagerOpen(true)}
           />
 
           <ThemeColorDialog
@@ -2318,6 +2322,11 @@ function AppContent() {
             onClose={() => setThemeColorOpen(false)}
             darkMode={darkMode}
             onDarkModeChange={setDarkMode}
+          />
+
+          <OpenRuleManagerDialog
+            open={openRuleManagerOpen}
+            onClose={() => setOpenRuleManagerOpen(false)}
           />
 
           <HoshinekoNyaDialog

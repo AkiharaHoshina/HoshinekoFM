@@ -1,0 +1,172 @@
+/* 打开方式配置管理对话框：与设置对话框同宽（512px 内容），固定高度
+   ——列表区内部滚动；底部提示在 actions 行（与完成按钮同行、常驻不滚动） */
+.openrule-content {
+  min-width: 512px;
+  height: 480px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 可滚动列表区：用户配置 + 系统配置 */
+.openrule-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 底部固定操作区：左侧常驻提示（不随列表滚动） + 右侧完成按钮 */
+.openrule-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.openrule-actions > md-filled-button {
+  flex-shrink: 0;
+}
+
+/* 底部常驻提示：系统配置只读 / 用户配置优先 */
+.openrule-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* 分组标题（用户配置 / 系统配置），右侧可放清除全部按钮 */
+.openrule-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--md-sys-color-primary);
+  margin: 8px 0 4px;
+}
+
+.openrule-section-header md-text-button {
+  font-size: 12px;
+}
+
+/* 单个配置条目：标题（文件类型）+ 副标题（打开方式/应用名） */
+.openrule-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.openrule-item:hover {
+  background: rgba(128, 128, 128, 0.08);
+}
+
+.openrule-item:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
+}
+
+/* 被用户配置覆盖 / 无法复制的系统条目：不可点击、无悬停高亮 */
+.openrule-item--inactive {
+  cursor: default;
+}
+
+.openrule-item--inactive:hover {
+  background: transparent;
+}
+
+.openrule-item__start {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.openrule-item__label {
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 文件类型名：超长省略 */
+.openrule-item__mime {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* 常见文件后缀（如 .txt, .log）：弱化显示，不参与省略 */
+.openrule-item__ext {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.openrule-item__sub {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 悬停/键盘聚焦时显示的右侧动作图标（编辑 / 复制） */
+.openrule-item__action {
+  opacity: 0;
+  transition: opacity 0.12s;
+  color: var(--md-sys-color-on-surface-variant);
+  flex-shrink: 0;
+}
+
+.openrule-item:hover .openrule-item__action,
+.openrule-item:focus-visible .openrule-item__action {
+  opacity: 1;
+}
+
+/* 覆盖标记 X：常驻显示（非悬停图标） */
+.openrule-item__x {
+  color: var(--md-sys-color-on-surface-variant);
+  flex-shrink: 0;
+}
+
+/* 内联编辑界面：标题 + 路径输入 + 四按钮行 */
+.openrule-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 12px 8px;
+}
+
+.openrule-edit__title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.openrule-edit__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 空列表占位 */
+.openrule-empty {
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+  padding: 8px 12px;
+}

@@ -76,3 +76,53 @@ export async function deleteOpenRule(mime: string): Promise<boolean> {
   }
   return true;
 }
+
+/**
+ * 枚举全部用户手动默认打开规则（打开方式配置管理对话框「用户配置」
+ * 段）。逐个读取规则文件并净化解析；目录不存在视为空列表，单个文件
+ * 损坏/读取失败跳过（与 readOpenRule 的 fail-open 语义一致）。
+ */
+export async function listOpenRules(): Promise<OpenRule[]> {
+  let files: string[];
+  try {
+    files = await fs.readdir(openRuleDir());
+  } catch {
+    return [];
+  }
+  const rules: OpenRule[] = [];
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    try {
+      const raw = await fs.readFile(path.join(openRuleDir(), file), 'utf-8');
+      const rule = sanitizeRule(JSON.parse(raw));
+      if (rule) rules.push(rule);
+    } catch {
+      /* 损坏文件跳过 */
+    }
+  }
+  return rules;
+}
+
+/**
+ * 删除全部用户手动默认打开规则（打开方式配置管理「清除全部用户
+ * 配置」）。逐文件删除，返回删除条数（目录不存在视为 0）。
+ */
+export async function clearAllOpenRules(): Promise<number> {
+  let files: string[];
+  try {
+    files = await fs.readdir(openRuleDir());
+  } catch {
+    return 0;
+  }
+  let removed = 0;
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    try {
+      await fs.unlink(path.join(openRuleDir(), file));
+      removed++;
+    } catch {
+      /* 删除失败跳过 */
+    }
+  }
+  return removed;
+}

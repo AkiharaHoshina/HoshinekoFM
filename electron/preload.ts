@@ -108,6 +108,13 @@ contextBridge.exposeInMainWorld('electron', {
   getOpenRule: (path: string) => ipcRenderer.invoke('system:get-open-rule', path),
   setOpenRule: (path: string, exec: string, desktopFile?: string, name?: string) => ipcRenderer.invoke('system:set-open-rule', path, exec, desktopFile, name),
   deleteOpenRule: (path: string) => ipcRenderer.invoke('system:delete-open-rule', path),
+  /** 打开方式配置管理（按 MIME 键，无文件路径场景）：列表/系统默认枚举/直写/直删/清空/推荐程序 */
+  listOpenRules: () => ipcRenderer.invoke('system:list-open-rules'),
+  listSystemDefaultHandlers: () => ipcRenderer.invoke('system:list-system-defaults'),
+  setOpenRuleMime: (mime: string, exec: string, desktopFile?: string, name?: string) => ipcRenderer.invoke('system:set-open-rule-mime', mime, exec, desktopFile, name),
+  deleteOpenRuleMime: (mime: string) => ipcRenderer.invoke('system:delete-open-rule-mime', mime),
+  clearAllOpenRules: () => ipcRenderer.invoke('system:clear-all-open-rules'),
+  getRecommendedAppsMime: (mime: string) => ipcRenderer.invoke('system:get-recommended-apps-mime', mime),
   openFileDialog: () => ipcRenderer.invoke('dialog:open-file'),
   pickFile: () => ipcRenderer.invoke('dialog:pick-file'),
   pickDirectory: () => ipcRenderer.invoke('dialog:pick-directory'),

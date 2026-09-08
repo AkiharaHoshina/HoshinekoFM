@@ -207,6 +207,22 @@ export interface IElectronAPI {
     getOpenRule: (path: string) => Promise<{ mime: string; exec: string; desktopFile?: string; name?: string } | null>;
     setOpenRule: (path: string, exec: string, desktopFile?: string, name?: string) => Promise<boolean>;
     deleteOpenRule: (path: string) => Promise<boolean>;
+    /**
+     * 打开方式配置管理（按 MIME 键操作，无需文件路径）。
+     * listOpenRules 返回全部用户规则（含 extensions 常见扩展名）；
+     * listSystemDefaultHandlers 返回各层 mimeapps.list 合并的系统默认
+     * （inode//x-scheme-handler//x-content/ 已过滤）；clearAllOpenRules
+     * 返回删除条数。
+     */
+    listOpenRules: () => Promise<{ mime: string; exec: string; desktopFile?: string; name?: string; extensions: string[] }[]>;
+    listSystemDefaultHandlers: () => Promise<{
+      mime: string; desktopId: string; name: string; desktopFile: string | null; exec: string; extensions: string[];
+    }[]>;
+    setOpenRuleMime: (mime: string, exec: string, desktopFile?: string, name?: string) => Promise<boolean>;
+    deleteOpenRuleMime: (mime: string) => Promise<boolean>;
+    clearAllOpenRules: () => Promise<number>;
+    /** 按 MIME 查询推荐程序（打开方式配置管理快速导入；返回空数组 = 无/非法） */
+    getRecommendedAppsMime: (mime: string) => Promise<{ name: string; icon: string | null; exec: string; path: string }[]>;
     openFileDialog: () => Promise<string | null>;
     pickFile: () => Promise<string | null>;
     pickDirectory: () => Promise<string | null>;

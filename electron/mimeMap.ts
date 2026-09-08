@@ -434,3 +434,24 @@ export const EXT_PREFERRED = new Set([
   // ZIP-based project formats (magic says ZIP, ext is more precise)
   '.kra', '.sb3',
 ]);
+
+/** MIME → 扩展名反向映射缓存（由 EXT_TO_MIME 惰性构建） */
+let mimeToExtsCache: Record<string, string[]> | null = null;
+
+/**
+ * 查询 MIME 的常见扩展名（打开方式配置管理条目展示「文件后缀」用）。
+ * 由 EXT_TO_MIME 反向构建：同一 MIME 的扩展名按字母序、去重——
+ * 展示仅示意，不追求完整（未知 MIME 返回空数组）。
+ */
+export function getExtensionsForMime(mime: string): string[] {
+  if (!mimeToExtsCache) {
+    const map: Record<string, string[]> = {};
+    for (const ext of Object.keys(EXT_TO_MIME)) {
+      const m = EXT_TO_MIME[ext];
+      (map[m] ??= []).push(ext);
+    }
+    for (const key of Object.keys(map)) map[key].sort();
+    mimeToExtsCache = map;
+  }
+  return mimeToExtsCache[mime] ?? [];
+}
