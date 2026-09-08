@@ -4,10 +4,12 @@
  * 一、自定义新标签页目录（settings.newTabPath）：
  * - 绝对路径：localStorage 预置目录 → 新建标签页（+ 按钮）打开于该目录；
  * - 设置对话框 UI 链路：行为区「新建标签页目录」行 → 「自定义」按钮 →
- *   二级对话框（重命名样式 + 背景遮罩）——非法输入（非绝对/非 dashboard/
- *   非 trash）显示错误态且确认禁用；trash://（回收站本身）与 dashboard://
- *   均合法；输入 dashboard:// → 确认归一化为内部形态 app://dashboard
- *   （localStorage 断言）→ 新建标签页打开仪表盘（.dashboard-container）；
+ *   二级对话框（重命名样式 + 背景遮罩）——非法输入（非绝对/非 ~/非
+ *   dashboard/非 trash）显示错误态且确认禁用；trash://（回收站本身）、
+ *   dashboard:// 与 ~ 均合法；输入 dashboard:// → 确认归一化为内部形态
+ *   app://dashboard（localStorage 断言）→ 新建标签页打开仪表盘
+ *   （.dashboard-container）；输入 ~ / ~/xxx → 确认展开为家目录下的
+ *   绝对路径存储 → 新建标签页打开家目录/该目录；
  * - dashboard:// 别名（localStorage 直接预置裸别名）→ 新建标签页也打开
  *   仪表盘（loadPath 别名归一）；
  * - trash:// 与 trash://文件夹名 → 新建标签页打开回收站根/回收站中的目录。
@@ -35,6 +37,7 @@ const fs = require('fs');
   const trashName = `e2e-newtab-${Date.now()}`;
   const trashFilesDir = path.join(os.homedir(), '.local/share/Trash', 'files');
   const trashFolderPath = path.join(trashFilesDir, trashName);
+  let tildeDir = null;
 
   try {
     await h.run('57 自定义新标签页目录 + 回收站子目录虚拟路径地址栏', async () => {
@@ -215,6 +218,112 @@ const fs = require('fs');
       await h.waitFor(win, scoped(`!!act.querySelector('.dashboard-container')`));
       await closeActiveTab();
 
+      // ── 二·五、~ / ~/xxx 家目录展开（确认时展开为绝对路径存储）──
+      tildeDir = fs.mkdtempSync(path.join(os.homedir(), 'e2e-tilde-'));
+      fs.writeFileSync(path.join(tildeDir, 'tilde.txt'), 'x');
+
+      // 打开设置 → 自定义对话框：输入 `~` → 合法（错误消失、确认可用）
+      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
+      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
+      await h.waitDialogAnim();
+      await h.js(
+        win,
+        `(() => {
+          const rows = Array.from(document.querySelectorAll('.settings-row'));
+          const idx = rows.findIndex((row) => /新建标签页目录|New tab directory/.test(row.textContent ?? ''));
+          if (idx === -1) return false;
+          rows[idx].scrollIntoView({ block: 'center' });
+          window.__newtabRowIdx = idx;
+          return true;
+        })()`,
+      );
+      await h.sleep(300);
+      await h.js(
+        win,
+        `(() => {
+          const rows = Array.from(document.querySelectorAll('.settings-row'));
+          rows[window.__newtabRowIdx].querySelector('md-outlined-button').click();
+          return true;
+        })()`,
+        true,
+      );
+      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length >= 2`);
+      await h.waitDialogAnim();
+
+      // 全角 ～（IME 输入）合法：错误消失、确认可用
+      await h.setReactInput(win, 'md-dialog[open] md-outlined-text-field', '～');
+      await h.waitFor(
+        win,
+        `(() => {
+          const dlgs = Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true);
+          const dlg = dlgs[dlgs.length - 1];
+          const tf = dlg.querySelector('md-outlined-text-field');
+          const btn = dlg.querySelector('md-filled-button');
+          return (tf?.error === false) && (btn?.disabled === false);
+        })()`,
+      );
+
+      await h.setReactInput(win, 'md-dialog[open] md-outlined-text-field', '~');
+      await h.waitFor(
+        win,
+        `(() => {
+          const dlgs = Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true);
+          const dlg = dlgs[dlgs.length - 1];
+          const tf = dlg.querySelector('md-outlined-text-field');
+          const btn = dlg.querySelector('md-filled-button');
+          return (tf?.error === false) && (btn?.disabled === false);
+        })()`,
+      );
+      await h.js(
+        win,
+        `(() => {
+          const dlgs = Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true);
+          dlgs[dlgs.length - 1].querySelector('md-filled-button').click();
+          return true;
+        })()`,
+        true,
+      );
+      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
+      await h.waitDialogAnim();
+      const storedTilde = await h.js(win, `localStorage.getItem('settings.newTabPath')`);
+      h.assert.strictEqual(storedTilde.value, JSON.stringify(os.homedir()), '~ 应展开为家目录绝对路径');
+
+      // 再开对话框：输入 ~/<临时目录名> → 确认存家目录下绝对路径 → 新建标签页打开该目录
+      await h.js(
+        win,
+        `(() => {
+          const rows = Array.from(document.querySelectorAll('.settings-row'));
+          rows[window.__newtabRowIdx].querySelector('md-outlined-button').click();
+          return true;
+        })()`,
+        true,
+      );
+      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length >= 2`);
+      await h.waitDialogAnim();
+      await h.setReactInput(win, 'md-dialog[open] md-outlined-text-field', `~/${path.basename(tildeDir)}`);
+      await h.js(
+        win,
+        `(() => {
+          const dlgs = Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true);
+          dlgs[dlgs.length - 1].querySelector('md-filled-button').click();
+          return true;
+        })()`,
+        true,
+      );
+      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
+      await h.waitDialogAnim();
+      const storedTildeSub = await h.js(win, `localStorage.getItem('settings.newTabPath')`);
+      h.assert.strictEqual(storedTildeSub.value, JSON.stringify(tildeDir), '~/xxx 应展开为家目录下的绝对路径');
+
+      await h.key(win, 'Escape');
+      await h.waitDialogAnim();
+      await clickNewTab();
+      await h.waitFor(
+        win,
+        scoped(`Array.from(act.querySelectorAll('.file-list-item')).some((el) => (el.dataset.path || '').endsWith('/tilde.txt'))`),
+      );
+      await closeActiveTab();
+
       // ── 三、回收站子目录地址栏（混合路径模型）──
       // 切到回收站（活动项为 Files → 标准按钮下标 0..3 = 仪表盘/回收站/终端/设置）
       await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 1 });
@@ -278,8 +387,9 @@ const fs = require('fs');
       await h.waitFor(win, scoped(`!!act.querySelector('.dashboard-container')`));
     });
   } finally {
-    // 清理真实回收站中的测试文件夹
+    // 清理真实回收站中的测试文件夹与家目录下的 ~ 展开临时目录
     fs.rmSync(trashFolderPath, { recursive: true, force: true });
+    if (tildeDir) fs.rmSync(tildeDir, { recursive: true, force: true });
   }
 
   h.finish();

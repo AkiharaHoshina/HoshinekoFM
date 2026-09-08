@@ -64,6 +64,19 @@
   `system_empty`/`user_subtitle`/`edit_title`/`exec_label`/`clear`/
   `quick_import`/`clear_all`/`clear_all_confirm`/`overridden`/
   `copy_unavailable`/`hint`（12 语言文件）。
+- **自定义新标签页目录 `~` 支持与提示修正（v0.11.47 补充）**：二级
+  对话框提示与错误文案中 `dashboard://` 改为 `app://dashboard`（12
+  语言文件，含 `~` 支持说明；`dashboard://` 仍可作为旧别名输入并
+  归一化，展示形态同样统一为 `app://dashboard`）。输入框新增接受
+  `~` / `~/…`：确认时经 `getHomePath` 展开为家目录下绝对路径存储
+  （词法折叠与地址栏 `expandAddressPath` 同源；取不到家目录时保持
+  原样、打开时由 loadPath 报错，与不存在的目录同语义）；中文/日文
+  IME 输入的全角 `～`（U+FF5E）前缀归一为 `~` 后被接受。校验
+  `src/utils/newTabPath.ts`（`normalizeTildePrefix`/
+  `expandNewTabPathTilde`），e2e 57 补 `~`/`~/xxx` 全链路断言（合法
+  态 → 确认展开落盘 → 新标签页打开该目录）与全角 `～` 合法态；并以
+  真实键盘事件注入（sendInputEvent char）额外验证非程序化输入路径。
+
 
 ## v0.11.46 — 打开方式默认规则 + 无默认处理程序跳转 + 地址栏路径语法
 

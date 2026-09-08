@@ -3,7 +3,7 @@ import { Dialog } from './Dialog';
 import { Button } from './Button';
 import { OutlinedTextField } from './md';
 import { t } from '../i18n';
-import { isValidNewTabPath, normalizeNewTabPath, formatNewTabPath } from '../utils/newTabPath';
+import { isValidNewTabPath, normalizeNewTabPath, formatNewTabPath, expandNewTabPathTilde } from '../utils/newTabPath';
 import './NewTabPathDialog.css';
 
 interface NewTabPathDialogProps {
@@ -16,8 +16,9 @@ interface NewTabPathDialogProps {
 
 /**
  * 自定义新标签页目录对话框（样式与重命名对话框一致）：
- * 用户输入绝对路径或 `dashboard://` / `trash://` 虚拟路径，
- * 确认时校验合法性（校验规则见 utils/newTabPath）。
+ * 用户输入绝对路径、`~/…`（确认时展开为家目录下的绝对路径）或
+ * `app://dashboard` / `trash://` 虚拟路径，确认时校验合法性
+ * （校验规则见 utils/newTabPath）。
  */
 export const NewTabPathDialog: React.FC<NewTabPathDialogProps> = ({
   currentPath,
@@ -39,20 +40,30 @@ export const NewTabPathDialog: React.FC<NewTabPathDialogProps> = ({
     setInvalid(v.trim().length > 0 && !isValidNewTabPath(v.trim()));
   }, []);
 
-  const handleConfirm = useCallback(() => {
+  const handleConfirm = useCallback(async () => {
     const v = value.trim();
     if (!v) return;
     if (!isValidNewTabPath(v)) {
       setInvalid(true);
       return;
     }
-    onConfirm(normalizeNewTabPath(v));
+    let final = normalizeNewTabPath(v);
+    if (final === '~' || final.startsWith('~/')) {
+      try {
+        // `~`/`~/…` 展开为家目录下的绝对路径后存储
+        const home = await window.electron.getHomePath();
+        final = expandNewTabPathTilde(final, home);
+      } catch {
+        // 家目录获取失败：~ 不展开（打开时由 loadPath 报错提示，与不存在的目录同语义）
+      }
+    }
+    onConfirm(final);
   }, [value, onConfirm]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      handleConfirm();
+      void handleConfirm();
     }
   }, [handleConfirm]);
 

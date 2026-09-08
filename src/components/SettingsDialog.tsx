@@ -48,7 +48,8 @@ interface SettingsDialogProps {
   /** 自动创建应用程序菜单条目（默认开启；同上，确定时生效） */
   autoCreateAppMenuEntry: boolean;
   onAutoCreateAppMenuEntryChange: (value: boolean) => void;
-  /** 自定义新标签页目录（绝对路径或 dashboard:// / trash:// 虚拟路径，
+  /** 自定义新标签页目录（绝对路径或 app://dashboard（旧别名 dashboard://）/
+   *  trash:// 虚拟路径；`~/…` 在二级对话框确认时展开为家目录下绝对路径；
    *  内部形态：仪表盘为 app://dashboard；经二级对话框修改，确认即生效） */
   newTabPath: string;
   onNewTabPathChange: (path: string) => void;
@@ -659,9 +660,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               <Switch selected={pendingAutoCreateAppMenuEntry} onClick={() => setPendingAutoCreateAppMenuEntry(!pendingAutoCreateAppMenuEntry)} />
             </div>
 
-            {/* 自定义新标签页目录：二级对话框输入（绝对路径 / dashboard:// /
-              trash:// 虚拟路径），确认即生效（对话框本身即草稿机制，无
-              pending 开关）——副标题常驻展示当前值 */}
+            {/* 自定义新标签页目录：二级对话框输入（绝对路径 / ~/…（家目录展开）/
+              app://dashboard（旧别名 dashboard://）/ trash:// 虚拟路径），确认即
+              生效（对话框本身即草稿机制，无 pending 开关）——副标题常驻展示当前值 */}
             <div className="settings-row">
               <div className="settings-row__start">
                 <Icon name="tab" />
