@@ -164,7 +164,8 @@ const koKP = {
 
   // ── 설정 팝업 ──
   'settings.title': '설정',
-  'settings.done': '완료',
+  'settings.done': '확인',
+  'settings.apply': '적용',
   'settings.show_hidden': '숨김 화일 표시',
   'settings.appearance': '겉모양',
   'settings.view_mode': '보기 방식',
@@ -173,6 +174,9 @@ const koKP = {
   'settings.icon_size': '화상기호 크기',
   'settings.ui_scale': 'UI 배률',
   'settings.filled_icons': '채워진 화상기호',
+  'settings.sort_auto_collapse': '주소줄 단추 자동 접기',
+  'settings.preview_collapse': '미리보기 접기',
+  'settings.preview_expand': '미리보기 펼치기',
   'settings.behavior': '동작',
   'settings.language': '언어',
   'settings.marquee_text': '흐르는 원문',

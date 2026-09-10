@@ -559,6 +559,26 @@ function AppContent() {
     "settings.sortControlsCollapsed",
     false,
   );
+  /**
+   * 地址栏按钮自动收缩（设置 → 外观，默认关闭）：开启时隐藏控件组
+   * 手动切换入口（收起把手 /「展开控件」项），窗口过窄自动折叠、
+   * 宽度正常自动展开（判定与展开态自动换行同条件，见
+   * useAutoSortCollapse）——settings.sortControlsAutoCollapsed 持久化，
+   * 与选择器/保存器同步（立即同步组，随 viewPrefs 快照注入继承）。
+   */
+  const [sortControlsAutoCollapse, setSortControlsAutoCollapse] = useLocalStorage<boolean>(
+    "settings.sortControlsAutoCollapse",
+    false,
+  );
+  /**
+   * 外观预览收起状态（设置对话框 sticky 预览区，默认展开 = false）：
+   * 与其他设置同款持久化（useLocalStorage 跨窗口 storage 同步），
+   * 恢复默认设置重置为展开。
+   */
+  const [previewCollapsed, setPreviewCollapsed] = useLocalStorage<boolean>(
+    "settings.previewCollapsed",
+    false,
+  );
   /** 搜索分类：搜索结果按同目录分组（组头 = 完整目录路径；
    *  设置确定时生效——搜索态下强制右上角分类按钮高亮且点击无效） */
   const [searchGroupByDir, setSearchGroupByDir] = useLocalStorage<boolean>(
@@ -609,10 +629,11 @@ function AppContent() {
       sortOrder,
       groupingEnabled,
       sortControlsCollapsed,
+      sortControlsAutoCollapse,
     }).catch(() => {
       /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
     });
-  }, [viewMode, iconSize, showHiddenFiles, filledIcons, marqueeEnabled, sortBy, sortOrder, groupingEnabled, sortControlsCollapsed]);
+  }, [viewMode, iconSize, showHiddenFiles, filledIcons, marqueeEnabled, sortBy, sortOrder, groupingEnabled, sortControlsCollapsed, sortControlsAutoCollapse]);
 
   /**
    * 界面缩放（整页缩放，百分比）。持久化于 settings.uiScale，
@@ -731,10 +752,10 @@ function AppContent() {
 
   /**
    * 选择器设置快照上报（确认时同步组）：设置对话框里开关的个性化
-   * 设置（搜索分类、标题栏完整路径、语言）本身即在主窗口设置按下
-   * 确定/退出时生效（见 SettingsDialog），此处在其生效后同步到服务
-   * 模式选择器/保存器。settingsDialogOpen 关闭即视为确定（退出设置
-   * 等于确定，见 SettingsDialog）；初始挂载也上报一次（种子值）。
+   * 设置（搜索分类、标题栏完整路径、语言）本身即在主窗口设置点
+   * 「应用」/「确定」时生效（见 SettingsDialog），此处在其生效后同步
+   * 到服务模式选择器/保存器。settingsDialogOpen 关闭即上报（取消时
+   * 应用值未变、重复上报同值为幂等）；初始挂载也上报一次（种子值）。
    */
   useEffect(() => {
     if (settingsDialogOpen) return;
@@ -871,14 +892,29 @@ function AppContent() {
 
   /**
    * 彩蛋：设置对话框打开期间按 Ctrl+PgDn → 打开「Hoshineko Nya~」
-   * 对话框（叠层遮罩盖在设置之上）。仅在设置打开时挂监听；portal
-   * 版本弹窗打开期间不生效（其 PgDn 有独立的开发详情切换语义）。
+   * 对话框（叠层遮罩盖在设置之上）；Ctrl+PgUp → 打开 portal 运行时
+   * 信息（PortalVersionDialog 开发详情视图，标题「Portal 运行时
+   * 状态」——运行时诊断调试入口，现拉现取）。仅在设置打开时挂监听；
+   * portal 版本弹窗打开期间不生效（其 PgDn 有独立的开发详情切换语义）。
    */
   useEffect(() => {
     if (!settingsDialogOpen || portalVersionDialog) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.key !== 'PageDown') return;
-      setNyaDialogOpen(true);
+      if (!e.ctrlKey) return;
+      if (e.key === 'PageDown') {
+        setNyaDialogOpen(true);
+      } else if (e.key === 'PageUp') {
+        // 现拉 runtime 信息后打开开发详情视图；失败也打开（详情区空值）
+        void window.electron
+          .getPortalRuntimeInfo()
+          .then((info) => {
+            setPortalRuntimeInfo(info);
+            setPortalVersionDialog({ mode: 'dev' });
+          })
+          .catch(() => {
+            setPortalVersionDialog({ mode: 'dev' });
+          });
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -1332,6 +1368,8 @@ function AppContent() {
     setFilePreviewEnabled(false);
     setCalculateDirSize(true);
     setSortControlsCollapsed(false);
+    setSortControlsAutoCollapse(false);
+    setPreviewCollapsed(false);
     setAutoCreateDesktopEntry(true);
     setAutoCreateAppMenuEntry(true);
     setNewTabPath("/");
@@ -1360,6 +1398,8 @@ function AppContent() {
     setFilePreviewEnabled,
     setCalculateDirSize,
     setSortControlsCollapsed,
+    setSortControlsAutoCollapse,
+    setPreviewCollapsed,
     setAutoCreateDesktopEntry,
     setAutoCreateAppMenuEntry,
     setNewTabPath,
@@ -2210,6 +2250,7 @@ function AppContent() {
                   onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}
                   onViewModeChange={setViewMode}
                   sortControlsCollapsed={sortControlsCollapsed}
+                  sortControlsAutoCollapse={sortControlsAutoCollapse}
                   onSortControlsCollapsedChange={setSortControlsCollapsed}
                   refreshSignal={tab.version}
                   scrollToFileName={tab.pendingSelectFile}
@@ -2606,7 +2647,7 @@ function AppContent() {
             open={settingsDialogOpen}
             onClose={() => setSettingsDialogOpen(false)}
             showHiddenFiles={showHiddenFiles}
-            onToggleHiddenFiles={() => setShowHiddenFiles(!showHiddenFiles)}
+            onShowHiddenFilesChange={setShowHiddenFiles}
             iconSize={iconSize}
             onIconSizeChange={setIconSize}
             uiScale={uiScale}
@@ -2614,17 +2655,19 @@ function AppContent() {
             viewMode={viewMode}
             onViewModeChange={setViewMode}
             filledIcons={filledIcons}
-            onToggleFilledIcons={() => setFilledIcons(!filledIcons)}
+            onFilledIconsChange={setFilledIcons}
+            sortControlsAutoCollapse={sortControlsAutoCollapse}
+            onSortControlsAutoCollapseChange={setSortControlsAutoCollapse}
             locale={locale}
             onLocaleChange={handleLocaleChange}
             marqueeEnabled={marqueeEnabled}
             onMarqueeChange={setMarqueeEnabled}
             showHomeStorageUsage={showHomeStorageUsage}
-            onToggleShowHomeStorageUsage={() => setShowHomeStorageUsage(!showHomeStorageUsage)}
+            onShowHomeStorageUsageChange={setShowHomeStorageUsage}
             filePreviewEnabled={filePreviewEnabled}
             onFilePreviewChange={setFilePreviewEnabled}
             calculateDirSize={calculateDirSize}
-            onToggleCalculateDirSize={() => setCalculateDirSize(!calculateDirSize)}
+            onCalculateDirSizeChange={setCalculateDirSize}
             autoCreateDesktopEntry={autoCreateDesktopEntry}
             onAutoCreateDesktopEntryChange={handleAutoCreateDesktopEntryChange}
             autoCreateAppMenuEntry={autoCreateAppMenuEntry}
@@ -2654,6 +2697,9 @@ function AppContent() {
             detectedWm={detectedWm}
             onThemeColor={() => setThemeColorOpen(true)}
             themeSeedColor={themeConfig?.seed}
+            groupingEnabled={groupingEnabled}
+            previewCollapsed={previewCollapsed}
+            onPreviewCollapsedChange={setPreviewCollapsed}
             onRestoreDefaults={handleRestoreDefaults}
             onOpenRuleManager={() => setOpenRuleManagerOpen(true)}
           />

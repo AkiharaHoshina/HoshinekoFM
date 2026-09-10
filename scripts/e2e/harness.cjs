@@ -361,7 +361,8 @@ function registerIpc() {
       (it.sortOrder === 'asc' || it.sortOrder === 'desc') &&
       typeof it.groupingEnabled === 'boolean' &&
       // 与 main.ts sanitizePickerViewPrefs 同步：可选向后兼容旧快照
-      (it.sortControlsCollapsed === undefined || typeof it.sortControlsCollapsed === 'boolean');
+      (it.sortControlsCollapsed === undefined || typeof it.sortControlsCollapsed === 'boolean') &&
+      (it.sortControlsAutoCollapse === undefined || typeof it.sortControlsAutoCollapse === 'boolean');
     pickerViewPrefsCache = valid
       ? {
           viewMode: it.viewMode,
@@ -373,6 +374,7 @@ function registerIpc() {
           sortOrder: it.sortOrder,
           groupingEnabled: it.groupingEnabled,
           sortControlsCollapsed: it.sortControlsCollapsed ?? false,
+          sortControlsAutoCollapse: it.sortControlsAutoCollapse ?? false,
         }
       : null;
     try {
@@ -718,15 +720,72 @@ async function sendMouse(win, type, x, y, opts = {}) {
 }
 
 /** 滚动元素进入视野（对话框内容超出视口时点击前必须滚动） */
-async function scrollIntoView(win, selector, index = 0) {
-  const r = await js(win, `(() => {
+/**
+ * 在打开对话框的 shadow scroller 内把元素滚到视口中央（并避开吸顶
+ * sticky 区）——原生 scrollIntoView 不滚动 shadow 内 scroller（实测
+ * 无效）。md-dialog 打开动画收尾后会聚焦首个元素（语言选择）并把
+ * 它滚回视野，可能晚于本滚动——循环「滚动 → 几何验证」直到元素
+ * 确实位于 scroller 视口内（在 sticky 区下方），幂等自愈。
+ * 验证用几何矩形（elementFromPoint 在本环境软件渲染下不可靠）。
+ */
+const shadowScrollExpr = (selector, index) => `(() => {
     const el = document.querySelectorAll(${JSON.stringify(selector)})[${index}];
     if (!el) return false;
-    el.scrollIntoView({ block: 'center' });
+    const d = [...document.querySelectorAll('md-dialog')].find((x) => x.open === true);
+    const sc = d ? d.shadowRoot.querySelector('.scroller') : null;
+    if (!sc || sc.scrollHeight <= sc.clientHeight) {
+      el.scrollIntoView({ block: 'center' });
+      return true;
+    }
+    const sr = sc.getBoundingClientRect();
+    let er = el.getBoundingClientRect();
+    sc.scrollTop += (er.top - sr.top) - (sr.height - er.height) / 2;
+    // 吸顶 sticky 区（外观预览/主题固定区）会盖住居中位置（e2e 69
+    // 预览区加高后 04/15 曾因此点击落空）：元素被遮时滚到 sticky 区
+    // 下方（scrollTop 增加 = 内容上移 = 元素顶边减小）
+    const sticky = document.querySelector('.settings-preview-fixed, .theme-color-fixed');
+    if (sticky) {
+      const pr = sticky.getBoundingClientRect();
+      const stuck = pr.top <= sr.top + 1 && pr.bottom > sr.top;
+      if (stuck) {
+        er = el.getBoundingClientRect();
+        if (er.top < pr.bottom) sc.scrollTop += er.top - (pr.bottom + 8);
+      }
+    }
     return true;
-  })()`);
-  if (!r.ok || !r.value) throw new Error(`scrollIntoView not found: ${selector}[${index}]`);
-  await sleep(300);
+  })()`;
+
+const shadowScrollVisibleExpr = (selector, index) => `(() => {
+    const el = document.querySelectorAll(${JSON.stringify(selector)})[${index}];
+    if (!el) return false;
+    const d = [...document.querySelectorAll('md-dialog')].find((x) => x.open === true);
+    const sc = d ? d.shadowRoot.querySelector('.scroller') : null;
+    if (!sc) return true;
+    const sr = sc.getBoundingClientRect();
+    const er = el.getBoundingClientRect();
+    if (er.top < sr.top || er.bottom > sr.bottom) return false;
+    const sticky = document.querySelector('.settings-preview-fixed, .theme-color-fixed');
+    if (sticky) {
+      const pr = sticky.getBoundingClientRect();
+      if (pr.top <= sr.top + 1 && pr.bottom > sr.top && er.top < pr.bottom) return false;
+    }
+    return true;
+  })()`;
+
+async function scrollIntoView(win, selector, index = 0) {
+  const exists = await js(win, `!!document.querySelectorAll(${JSON.stringify(selector)})[${index}]`);
+  if (!exists.ok || !exists.value) throw new Error(`scrollIntoView not found: ${selector}[${index}]`);
+  // 等 Dialog 的焦点滚动校正解除武装（focusin 后武装 400ms）——立即
+  // 滚动会被校正顶回顶部，与其互搏产生滚动风暴（曾致测试挂起）
+  await sleep(500);
+  const start = Date.now();
+  while (Date.now() - start < 4000) {
+    await js(win, shadowScrollExpr(selector, index));
+    await sleep(250);
+    const v = await js(win, shadowScrollVisibleExpr(selector, index));
+    if (v.ok && v.value === true) return;
+  }
+  throw new Error(`scrollIntoView 无法使 ${selector}[${index}] 进入 scroller 视口`);
 }
 
 /**
@@ -844,6 +903,30 @@ async function waitDialogAnim() {
 }
 
 /**
+ * js 点击设置对话框底部「确定」按钮（应用全部草稿并关闭）。
+ * v0.11.48 起 Escape/遮罩关闭语义改为「取消」（丢弃草稿不保存退出，
+ * 与主题颜色对话框一致）——e2e 里「应用并退出」必须显式点击确定
+ * 按钮。查询限定在 open 且含 .settings-content 的 md-dialog（关闭的
+ * 对话框常驻 DOM，见 AGENTS.md 坑点；内容区还有视图模式按钮等
+ * md-filled-button，故必须限定在 actions 槽内）。
+ */
+async function clickSettingsConfirm(win) {
+  const r = await js(
+    win,
+    `(() => {
+      const d = [...document.querySelectorAll('md-dialog')].find((x) => x.open === true && !!x.querySelector('.settings-content'));
+      if (!d) return false;
+      const btn = d.querySelector('[slot="actions"] md-filled-button');
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`,
+    true,
+  );
+  if (!r.ok || !r.value) throw new Error('clickSettingsConfirm: 未找到打开的设置对话框确定按钮');
+}
+
+/**
  * 运行单个测试：捕获异常并记录失败，最后 finish() 汇总退出码。
  */
 let failures = 0;
@@ -950,6 +1033,7 @@ module.exports = {
   scrollIntoView,
   selectOption,
   waitDialogAnim,
+  clickSettingsConfirm,
   run,
   finish,
   tempDir,

@@ -1,0 +1,179 @@
+设计功能：外观设置预览（设置对话框外观区 sticky 预览区）
+==================================================
+
+一、需求
+--------
+设置对话框「外观」区顶部新增**不可滚动预览区**（sticky 钉在对话框
+顶部），预览一个文件区样例；滚动区不在顶部时预览区底部分界线着色。
+
+- 样例 = 三个项目：`.example.txt`（隐藏文件）、
+  `a_looooong_filename_picture.png`（图标 = `src/icon.svg`）、
+  `folder`（文件夹）。
+- 以下设置变化时预览**即时跟随草稿**（与「全部设置项确定时生效」
+  自洽——预览即草稿可视化，确定才全局应用）：显示隐藏文件、视图
+  样式（网格/列表）、图标大小、实心图标、滚动文本。
+- 分类（`settings.groupingEnabled`，顶栏开关，非设置对话框项）开启
+  时预览显示语义分组头（文件夹/图片/文档）。
+- 「滚动文本」设置行从「行为」区移到「外观」区（pending 逻辑不变）。
+- 设置对话框高度适度增加（560px → 680px，随内容自适应预览区需要）。
+
+二、现状可复用
+--------------
+- **sticky 预览 + 滚动分界线**：ThemeColorDialog 整套模式——
+  `.theme-color-fixed` sticky（top 0 + 背景 + margin 0 -24px）+
+  `--scrolled` 类驱动底部透明 1px 分界线着色 + Dialog
+  `onScrollerReady` 拿当前打开周期 scroller 挂 scroll 监听 +
+  `md-dialog:has(.theme-color-fixed) > div[slot="content"] {
+  padding: 0 !important }`（sticky 直接父级 padding 归零）+ 对话框
+  加高 `md-dialog:has(...) { max-height: min(...) !important }`
+  （CSS Scoping：shadow :host 规则须文档级 !important 压制）。
+- **渲染保真**：FileList/Row.tsx 的 `file-icon`/`file-thumbnail`/
+  `file-name`/`file-size`/`file-grid-item`/`file-group-header` 类 +
+  `getFileIconFromMime`（`FileList/utils.ts`）+
+  `listSpacing(iconSize)`（列表行高/间距精确复用）+ `getSemanticGroup`
+  /`GROUP_ORDER`/`tGroup`（分组语义与 i18n 名，与真实文件区同源）。
+- **跑马灯**：`MarqueeText enabled` 直接复用（启用时溢出滚动）。
+- **png = src/icon.svg**：`types: ["vite/client"]` 已配置 →
+  `import previewSvg from '../icon.svg'` 类型可用；dev/build 均经
+  Vite 处理（base './' 兼容 file://）。列表/网格模式都显示缩略图
+  （与真实图片文件 `FileIconDisplay` 的 isImg 行为一致）。
+
+三、设计
+--------
+### 新组件 SettingsPreview（src/components/）
+- props：showHiddenFiles / viewMode / iconSize / filledIcons /
+  marqueeEnabled / groupingEnabled（全部为设置对话框草稿值）。
+- 样例数据（组件内常量 IFile[]，虚拟路径 /preview/…，固定 size/
+  mtime）：`.example.txt`（text/plain）、
+  `a_looooong_filename_picture.png`（image/png）、
+  `folder`（inode/directory）。未分组时按用户列举顺序；分组时按
+  GROUP_ORDER（文件夹 → 图片 → 文档）。
+- 隐藏过滤：showHiddenFiles=false 时不渲染 `.example.txt`。
+- 列表模式：`file-list-item` 行（图标 + 名称 + size 列），间距经
+  `listSpacing(iconSize)`；网格模式：`file-grid-item`（图标 + 居中
+  名称，一行三格）。png 条目用 import 的 svg 作 `file-thumbnail`；
+  其余条目 `Icon name={getFileIconFromMime(...)} filled={filledIcons}`
+  fontSize=iconSize。
+- 名称统一走 `MarqueeText enabled={marqueeEnabled}`（长名溢出滚动，
+  与真实文件区同款）。
+- 分组头复用 `file-group-header` 类（标签经 tGroup 取 i18n）。
+- 预览区高度**随内容自适应**（用户确认）：网格 = 图标 + 名称 + 内边
+  距；列表 = 行高×条目数（+ 分组头 48px×组数）。
+
+### SettingsDialog 集成
+- 外观 section 顶部插入 sticky 容器 `.settings-preview-fixed`
+  （包预览组件）；`onScrollerReady` 挂 scroller scroll 监听 →
+  scrolled 状态 → `--scrolled` 类（分界线着色，scrollTop > 1）。
+- 预览传 pending 草稿：pendingShowHiddenFiles / pendingViewMode /
+  pendingIconSize / pendingFilledIcons / pendingMarquee +
+  groupingEnabled（应用值，非草稿——分组无设置行）。
+- 「滚动文本」行从行为区移到外观区（实心图标之后、自动收缩之前）。
+- CSS（SettingsDialog.css）：
+  - `md-dialog:has(.settings-preview-fixed) > div[slot="content"] {
+    padding: 0 !important }`；
+  - `.settings-content { padding: 8px 24px 8px; min-width: 560px }`
+    （内容槽 padding 自管；min-width 从 512 → 560 保持对话框 560px
+    总宽不变——原 24(slot)+8(content)=32 侧边距、slot 宽 512 口径
+    平移为 content 自管）；
+  - `.settings-preview-fixed` sticky + `margin: 0 -24px` +
+    `background: surface-container-high` + 透明 1px 底部分界线；
+    `--scrolled` 时着色；
+  - `md-dialog:has(.settings-preview-fixed) { max-height: min(680px,
+    calc(100% - 48px)) !important }`（560 → 680，适度增加）。
+- App.tsx：SettingsDialog 传 `groupingEnabled`（新增 prop；无其他
+  变化——滚动文本 setter 已传）。
+
+四、边界与风险
+--------------
+- **content padding 归零波及整个设置对话框**：语言区/全部行 padding
+  改 `.settings-content` 自管——纯 CSS；e2e 04 对话框宽度 560 断言
+  口径需回归（md-dialog 宽度含 slot padding，归零后由 content
+  min-width 560 补偿，理论不变）。
+- **内置底部分界线 subpixel 坑**（theme 对话框踩过）：设置行均为
+  整数行高、预览区整数 px，理论安全；若复现再套
+  `--md-divider-color: transparent` + 自绘。
+- **sticky 在 md-dialog shadow scroller 内**：slotted 内容 flat tree
+  中 sticky 定位有效（theme 对话框已实证）；预览区在设置内容中段
+  （外观区顶部），sticky 生效区间 = 外观 section 的父边界内——滚动
+  越过外观区后预览随内容滚走（与 theme 对话框「整区固定」不同，
+  属预期语义）。
+- **e2e 行序影响**：预览容器不是 `.settings-row`，04 下标 1 仍为
+  实心图标；15/27/44 已文本匹配；42/56/64/57 均文本匹配——滚动
+  文本行迁移无影响。新增 e2e 69 覆盖预览六联动 + 分组头 + 分界线
+  显隐。
+- **大图标列表模式**：iconSize 128 时 3 行预览 ~500px + 分组头，预览
+  区占对话框大半——自适应高度已按用户确认，属预期（真实文件区同款
+  行高）。
+
+五、改动清单
+------------
+- src/components/SettingsPreview.tsx / .css（新建）
+- src/components/SettingsDialog.tsx（预览接入 + scrolled 监听 +
+  滚动文本行迁移 + 草稿传参）
+- src/components/SettingsDialog.css（padding 自管 + sticky + 分界线
+  + max-height）
+- src/App.tsx（传 groupingEnabled）
+- scripts/e2e/69-settings-appearance-preview.test.cjs（新建）
+- 文档：AGENTS.md 坑点、进度、latest-updates、9月10日、本设计文档
+
+六、工作量
+----------
+纯前端（无后端/IPC/快照改动），约 1 天；主风险在 sticky CSS 细节与
+e2e 行序回归。
+
+七、实现后精修（用户反馈）
+--------------------------
+1. **预览背景卡**：`.settings-preview-body` 包裹——`border-radius: 16px`
+   + `overflow: hidden`（裁切跑马灯）+ `color-mix(in srgb,
+   surface-container-high 85%, black)`（明暗模式都「深一点」，M3
+   surface 色阶暗色反转、纯 token 不可两模式通用）。
+2. **全面复用文件区样式**：预览条目/分组头/网格容器改用真实类——
+   `.file-list-container` / `.file-group-header`（Row.tsx 同款内联样式
+   逐字复制）/ `.grid-row-container`（`repeat(3, 1fr)` + gap 16 +
+   padding 8px 16px）/ `.file-grid-item`（替换自定义类）；列表行
+   内联覆盖补 `height: auto`（类默认 52px 会裁掉大图标）。
+3. **界面缩放滑杆穿透预览区**：md-slider 内部 `.onTop { z-index: 1 }`
+   且宿主不建 stacking context——滚动时画在 z-index 1 的固定区之上；
+   修复 = `.settings-preview-fixed` z-index 1 → 2（主题颜色对话框
+   无滑杆无此坑）。
+4. **对话框加宽适配截断按钮**：md-dialog `:host { max-width:
+   min(560px, …) }` 卡死 560，长语言按钮（俄/乌 ~230px）被挤压
+   截断——`md-dialog:has(.settings-preview-fixed) { max-width:
+   min(640px, calc(100% - 48px)) !important }`（与 max-height 680
+   同款文档级 important 压 shadow 规则）+ `.settings-content`
+   min-width 640 + `.settings-row` 右侧按钮 `flex-shrink: 0`（按钮
+   不缩、标签让位截断）；e2e 04 宽度断言 560 → 640。
+   **二次修复（截断仍存在）**：根因 = 全局无 box-sizing、content-box
+   下 `.settings-content` min-width 640 + 侧 padding 48 = 688 总宽
+   > 对话框 640 上限——右侧溢出 48px 被对话框 overflow hidden 裁掉、
+   右缘按钮截断（e2e 的按钮 scrollWidth 判定测不到对话框边缘裁剪，
+   首次修复未被 e2e 发现）——`.settings-content` 补
+   `box-sizing: border-box`（min-width 即总宽）；另补窄窗口上限
+   `min-width: min(640px, calc(100vw - 48px))`（窗口 < 688px 时内容
+   随视口收缩，标签 ellipsis、按钮完整）。探针验证：窗口 1200 →
+   对话框 640 无溢出按钮；窗口 560 → 对话框 512、内容 512 无溢出。
+5. **预览区高度封顶**（44 回归暴露）：uiScale 150% 时布局视口变小，
+   自适应预览区（462px）高过整个 scroller 视口（445px）——吸顶
+   预览遮住全部设置行、helper 无法把任何行滚入视野（真实 UX 缺陷，
+   非仅测试问题）——`.settings-preview-body { max-height:
+   calc(45vh - 24px) }` 封顶（100% 缩放自然高度不受影响，超出裁切）。
+
+八、后续精修（用户反馈累计）
+--------------------------
+- 预览卡最大高度最终定为 **200px** + 卡内二级滚动（45vh → 260px →
+  240px → 210px → 200px；`overflow-y: auto`，滚动条为 Dialog 注入的
+  M3 样式）。
+- 「显示隐藏文件」设置行移入外观区、置于预览区下方（语言区下方
+  独立行移除）。
+- 设置打开期间 **Ctrl+PgUp** 打开 portal 运行信息（PortalVersionDialog
+  开发详情视图）。
+- 展开/收起预览状态持久化 `settings.previewCollapsed`（默认展开）。
+- 开发模式（未打包）下 .desktop 自动操作无效化
+  （`launcherOpsDisabled`，e2e 经 HOSHINEKO_E2E_LAUNCHER_EXEC 启用）。
+- **预览区 open 守卫（previewMounted，e2e 42 回归暴露）**：预览样例
+  复用真实文件区类（.file-list-item 等），而关闭的设置对话框常驻
+  DOM（display:none）——关闭后仍渲染会污染全局 .file-list-item 查询
+  （e2e 全套「文件区已加载」信号等首命中预览样例：窗口首帧即匹配、
+  顶栏尚未挂载时点击落空，e2e 42 实测复现）。SettingsDialog 新增
+  `previewMounted` 状态：打开立即挂载、关闭延迟 300ms 卸载（覆盖
+  md-dialog 关闭动画的内容可见收尾期，预览区不在动画中提前消失）。

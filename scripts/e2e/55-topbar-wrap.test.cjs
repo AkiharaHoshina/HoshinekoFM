@@ -7,10 +7,11 @@
  * - 选择器/保存器顶栏同款换行（picker-topbar flex-wrap）；
  * - 换行时底部分界线着色（距控件行 8px），未换行透明。
  * 判定：排序分区矩形顶边是否低于地址栏分区矩形底边（wrapped）。
- * 宽度驱动：顶栏容器 style.maxWidth 注入（宽 1200 单行 / 窄 500 换行，
+ * 宽度驱动：顶栏容器 style.width 注入（宽 1200 单行 / 窄 500 换行，
  * 与「窗口变宽/变窄」对 flex 换行同机制、纯布局实时响应）——窗口级
- * resize 在平铺 WM 下不可靠，侧边栏显隐依赖「窗口被 tiler 固定为窄宽」
- * 的环境前提（窗口未被平铺时失效），故全部宽度驱动统一走 maxWidth。
+ * resize 在平铺 WM 下不可靠，且窗口可能被 WM 固定为任意窄宽
+ * （maxWidth 在窗口本身窄于目标宽时失效，曾致整段失败），故全部
+ * 宽度驱动统一走显式 width（content-box，容器独立于窗口宽度）。
  */
 const h = require('./harness.cjs');
 
@@ -49,13 +50,14 @@ async function assertDivider(win, visible, msg) {
   );
 }
 
-/** 设置/清除顶栏容器 maxWidth（px 传 null 恢复自然宽度） */
+/** 设置/清除顶栏容器 width（px 传 null 恢复自然宽度）；
+ *  显式宽度而非 maxWidth——窗口本身可能被 WM 固定为窄宽 */
 async function setTopbarMaxWidth(win, px) {
   const ok = await h.js(win, `(() => {
     const omni = document.querySelector('[data-kb-zone="topbar-omnibar"]');
     const bar = omni ? omni.parentElement : null;
     if (!bar) return false;
-    bar.style.maxWidth = ${px === null ? "''" : JSON.stringify(`${px}px`)};
+    bar.style.width = ${px === null ? "''" : JSON.stringify(`${px}px`)};
     return true;
   })()`);
   h.assert.ok(ok.ok && ok.value, '应找到顶栏容器');

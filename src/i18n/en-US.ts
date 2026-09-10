@@ -174,7 +174,8 @@ const enUS = {
 
   // ── 设置弹窗 ──
   'settings.title': 'Settings',
-  'settings.done': 'Done',
+  'settings.done': 'OK',
+  'settings.apply': 'Apply',
   'settings.show_hidden': 'Show hidden files',
   'settings.appearance': 'Appearance',
   'settings.view_mode': 'View mode',
@@ -183,6 +184,9 @@ const enUS = {
   'settings.icon_size': 'Icon size',
   'settings.ui_scale': 'UI Scale',
   'settings.filled_icons': 'Filled icons',
+  'settings.sort_auto_collapse': 'Auto-collapse address bar buttons',
+  'settings.preview_collapse': 'Collapse preview',
+  'settings.preview_expand': 'Expand preview',
   'settings.behavior': 'Behavior',
   'settings.language': 'Language',
   'settings.marquee_text': 'Marquee text',

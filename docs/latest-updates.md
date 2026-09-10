@@ -43,22 +43,128 @@
   属性位置行 `trash://` + 大小行非「无法获取」+ 修改时间非 1970）。
   无新 i18n 键（打开/属性均复用既有键）。
 - **回收站背景右键菜单「属性」（v0.11.48）**：文件区回收站
-  （trash://）空白处右键菜单此前只有「清空回收站/刷新」，现补
-  「属性」第三项（两组分界线）——与普通目录背景菜单「属性」同款
-  语义（回收站自身属性）：ExplorerTab `handleBackgroundContextMenu`
-  的 trash:// 分支构造最小 IFile（名称 = `trash.title`、路径 =
-  `trash://`）经 `onPropertiesFile` 上报。**App 属性补全链路统一**：
-  原 `handlePropertiesFile`（直接开对话框）与位置菜单
-  `openPlaceProperties` 合并为共享 `openPropertiesWithStat(file)`
-  ——先 `fs:stat` 补全真实 mtime/size（背景菜单/搜索菜单/回收站
-  背景菜单构造的最小 IFile 无真实元数据会显示 1970 时间戳），
-  `trash://` stat 返回 null 改经 `fs:get-dir-info` 取回收站 files
-  目录真实 mtime，都拿不到时保留传入值；大小行仍由 PropertiesGrid
-  经 get-directory-size（含 trash 映射）异步计算。副作用改进：普通
-  目录背景菜单「属性」此前 `mtime: new Date()` 假值，现为真实 stat
-  mtime。e2e 67 覆盖：菜单结构（3 项 2 分界线）+ 属性对话框（位置
-  行 `trash://`、修改时间非 1970、大小行非「无法获取」）。无新
-  i18n 键。
+   （trash://）空白处右键菜单此前只有「清空回收站/刷新」，现补
+   「属性」第三项（两组分界线）——与普通目录背景菜单「属性」同款
+   语义（回收站自身属性）：ExplorerTab `handleBackgroundContextMenu`
+   的 trash:// 分支构造最小 IFile（名称 = `trash.title`、路径 =
+   `trash://`）经 `onPropertiesFile` 上报。**App 属性补全链路统一**：
+   原 `handlePropertiesFile`（直接开对话框）与位置菜单
+   `openPlaceProperties` 合并为共享 `openPropertiesWithStat(file)`
+   ——先 `fs:stat` 补全真实 mtime/size（背景菜单/搜索菜单/回收站
+   背景菜单构造的最小 IFile 无真实元数据会显示 1970 时间戳），
+   `trash://` stat 返回 null 改经 `fs:get-dir-info` 取回收站 files
+   目录真实 mtime，都拿不到时保留传入值；大小行仍由 PropertiesGrid
+   经 get-directory-size（含 trash 映射）异步计算。副作用改进：普通
+   目录背景菜单「属性」此前 `mtime: new Date()` 假值，现为真实 stat
+   mtime。e2e 67 覆盖：菜单结构（3 项 2 分界线）+ 属性对话框（位置
+   行 `trash://`、修改时间非 1970、大小行非「无法获取」）。无新
+   i18n 键。
+- **地址栏按钮自动收缩（v0.11.48 补充）**：设置 → 外观新增「地址栏
+   按钮自动收缩」开关（默认关闭，**确定时生效**——与全部设置项统一
+   pending 草稿机制）——`settings.
+   sortControlsAutoCollapse` 持久化（恢复默认设置重置）。
+   **关（默认）= 现状**：右上角控件组收起把手与溢出菜单「展开控件」
+   项都在、可手动切换，窄窗口自动换行（e2e 55 行为不变）；**开 =
+   隐藏手动切换入口**（SortControls 新增 `autoCollapse` prop：展开态
+   不渲染收起把手、折叠态溢出菜单不渲染「展开控件」项及其上方
+   分界线——自动模式
+   菜单 5 项、尾部无悬空分界线），控件组状态**自动推导**：窗口过窄自动切折叠菜单、
+   宽度正常自动展开，判定条件与既有「展开态自动换行」相同（地址栏
+   低于 240px）。**防振荡单向状态机**（`useAutoSortCollapse` hooks/）
+   ——「换行即折叠、不换行即展开」会死循环（折叠后控件组 ~40px vs
+   展开 ~286px，行能放下 → 解除换行 → 自动展开 → 又换行）：收缩 =
+   展开态下 `wrapped === true`（与换行严格同源）；展开 = 折叠态下
+   改测容器宽度 `clientWidth ≥ up(实测) + 8 + 240 + 8 + 展开态控件宽
+   (实测，首启即折叠回落 286) + padding(实测——主窗口 16、选择器
+   32) + 4(回差)`——两条件互斥无振荡。自动模式折叠态地址栏 min-width
+   0（「更多」按钮与地址栏同行挤压、永不换行）；换行装饰线在自动
+   模式抑制（换行只存在折叠前 1 帧）；SortControls 菜单残留守卫
+   （折叠→展开切换时 menuOpen 渲染期归零，防止下次折叠凭空弹菜单）。
+   选择器/保存器经 viewPrefs 快照注入继承（主窗口为权威，无会话
+   覆盖——选择器无该设置的写入口）；自动模式开时手动折叠值被忽略、
+   关闭自动恢复手动值。i18n 新增 `settings.sort_auto_collapse`
+   （12 语言文件）。e2e 68 覆盖：默认关回归、设置开启立即生效（行
+   click 即写 localStorage）、窄折叠/宽展开实时往返、折叠态地址栏
+   低于 240px 压缩、溢出菜单 5 项无「展开控件」、选择器继承、恢复
+   默认设置重置回手动模式。**e2e 55 宽度注入改为显式 `width`**：
+   maxWidth 在窗口被 WM 固定窄于目标宽时完全失效（曾两度环境变化后
+   整段失败），显式宽度使顶栏容器独立于窗口宽度。
+- **全部设置项应用/确定时生效（v0.11.48 补充）**：设置对话框**全部**
+   设置项统一 pending 草稿机制——对话框内更改（开关/视图模式按钮/
+   图标大小滑条/下拉）只更新本地预览，底部三按钮（与主题颜色对话框
+   同款）**取消**（text，丢弃草稿直接关闭）/ **应用**（tonal，保存
+   不关闭，应用值变化经 props 同步 effect 把草稿重置为已应用值）/
+   **确定**（filled，应用并关闭——原「完成」改名，`settings.done`
+   × 12 语言 + 新键 `settings.apply` × 12）才写 localStorage（storage
+   事件同步其余窗口）并经快照广播（选择器/保存器跟随）；**Escape/
+   遮罩关闭 = 取消**（丢弃草稿不保存，「退出 = 确定」旧语义废弃）。
+   覆盖此前立即生效的显示隐藏文件/视图模式/图标大小/实心图标/主页
+   存储占用/计算目录大小/地址栏按钮自动收缩，以及二级对话框「新建
+   标签页目录」（二级确认只写草稿，副标题展示草稿，外层应用/确定才
+   应用）。打开对话框重置全部草稿 + 应用值外部变化时重置草稿（恢复
+   默认设置/其他窗口变化后「确定」不把旧预览盖回）。**顶栏直接控件**
+   （视图模式切换按钮/Ctrl+滚轮缩放/控件组收起把手/排序分组按钮）
+   不在设置对话框内、无确定步骤，保持立即生效与立即同步。e2e
+   04/57/68 补草稿断言（确定前不写持久化键）；04 补 Escape=取消回归
+   （关闭 + 草稿丢弃、持久化键不变）；15/42/44/56/57/68/69 的
+   「Escape = 确定」改走 harness `clickSettingsConfirm`（js 点击 open
+   且含 `.settings-content` 的 md-dialog 的 `[slot="actions"]
+   md-filled-button`——限定 actions 槽，内容区有视图模式等 filled
+   按钮）；e2e 15/27 的 `.settings-row` 绝对下标定位改标签文本精确
+   匹配（外观区新增行会移动下标，「标题栏」须精确匹配避免命中
+   「标题栏显示完整路径」行）。
+- **打开方式对话框确认即关窗（v0.11.48 补充）**：`OpenWithDialog
+  handleConfirm` 原为等启动 IPC 完成（`await onSelect`）后才关窗——
+  启动挂起/被拒时文件已打开但对话框残留不关。改为**先 `onClose()`
+  再 `await onSelect`**（启动与关闭解耦）：确认即关闭（与 GNOME 等
+  文件管理器同款语义），启动失败只经 toast 呈现；打开方式配置管理
+  「快速导入」同链路不受影响。e2e 62/64 通过 + 挂起探针验证。
+- **外观设置预览（v0.11.48 补充）**：设置对话框外观区顶部新增
+  sticky 不可滚动预览区——文件区样例（隐藏 `.example.txt` / 长名
+  `a_looooong_filename_picture.png`（缩略图 = 应用图标 `src/icon.svg`，
+  Vite 资产导入）/ 文件夹 `folder`）随外观**草稿**即时变化：显示
+  隐藏文件（关闭后隐藏条目消失）、视图样式（网格三列/列表行）、
+  图标大小（图标/缩略图尺寸）、实心图标（filled 变体）、滚动文本
+  （长名跑马灯容器出现）；分组开启时显示语义分组头（文件夹/图片/
+  文档，与真实文件区分组同源）。滚动区离开顶部时预览区底部分界线
+  着色（`--scrolled` 由 scroller 监听驱动）；sticky 与分界线机制
+  复用主题颜色对话框同款（content slot padding 归零 + `.settings-
+  content` 自管 + `:has() !important` 加高）。对话框高度 560→680→
+  710（用户要求再增 30px）、
+  宽度 560→640（长语言按钮不再被挤压截断，行内按钮 flex-shrink 0；
+  **截断二次修复**——content-box 下 min-width 640 + padding 48 =
+  688 超出对话框 640 上限被边缘裁剪，补 `box-sizing: border-box` +
+  窄窗口上限 `min(640px, 100vw - 48px)`）。
+  「滚动文本」设置行自行为区移入外观区（实心图标之后）。**精修**：
+  预览背景卡（圆角 16px + `color-mix` 加深，明暗通用）；条目/组头/
+  网格容器全面复用真实文件区类（`.file-list-container`/`.file-group-
+  header`/`.grid-row-container`/`.file-grid-item`）；固定区 z-index 2
+  （界面缩放滑杆内部 z-index 1 不得穿透覆盖）；预览高度 `45vh` 封顶
+  （uiScale 放大时自适应预览曾高过整个 scroller 视口、遮住全部设置
+  行）。e2e 69 覆盖：初始三条目+分组头+svg 缩略图、草稿五联动
+  （确定前不写 localStorage）、吸顶与分界线显隐、分组关闭后无组头、
+  背景卡/z-index 断言、预览卡 200px 二级滚动、「展开/收起预览」
+  开关往返。**v0.11.48 再精修**：对话框高度 740px（两度 +30px）；
+  sticky 固定区顶部「展开/收起预览」开关（三角指向切换目标，收起
+  后固定区只剩开关细条、展开入口始终可达；状态持久化
+  `settings.previewCollapsed` 默认展开、跨窗口同步、恢复默认设置
+  重置）；
+  预览卡固定 max-height 200px + 卡内二级滚动（替换 45vh 封顶，
+  滚动条为 Dialog 注入的 M3 样式；用户再调低 240 → 210 → 200）。**v0.11.48 再精修（二）**：
+  「显示隐藏文件」行移入外观区预览区下方（语言区下方独立行移除）；
+  设置打开期间 **Ctrl+PgUp** 打开 portal 运行信息（PortalVersionDialog
+  开发详情视图，标题「Portal 运行时状态」，现拉 getPortalRuntimeInfo，
+  失败也打开）；**开发模式（未打包）下 .desktop 自动操作无效化**——
+  `launcherOpsDisabled()`（`!app.isPackaged && !HOSHINEKO_E2E_
+  LAUNCHER_EXEC`）使 ensure/remove 直接 no-op（不创建/删除 .desktop、
+  不写 marker，开关值照常持久化），e2e 56 经该 env 显式启用覆盖链路。
+  **预览区 previewMounted 守卫（e2e 42 回归暴露）**：预览样例复用
+  `.file-list-item` 等真实文件区类，而关闭的设置对话框常驻 DOM——
+  关闭后仍渲染会污染全局 `.file-list-item` 查询（e2e 全套「文件区
+  已加载」信号首命中预览样例、真实顶栏未挂载时点击落空）——
+  SettingsDialog 打开立即挂载、关闭延迟 300ms 卸载（覆盖关闭动画
+  收尾期）；e2e 64 底部按钮断言随 settings.done 改名 完成|Done →
+  确定|OK。
 
 
 ## v0.11.47 — 打开方式配置管理 + 对话框 Tab 滚动闪烁修复

@@ -31,6 +31,7 @@ import { Omnibar } from './Omnibar';
 import { Dashboard, type PinnedItem } from './Dashboard';
 import { SortControls, OMNIBAR_MIN_WIDTH_EXPANDED } from './SortControls';
 import { useTopBarWrap } from '../hooks/useTopBarWrap';
+import { useAutoSortCollapse } from '../hooks/useAutoSortCollapse';
 import { FilePreviewPanel } from './FilePreviewPanel';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useDrag } from '../contexts/DragContext';
@@ -101,6 +102,12 @@ interface ExplorerTabProps {
     /** 右上角排序/分组控件组是否折叠（受控：App 持有
      *  settings.sortControlsCollapsed，与选择器/保存器同步） */
     sortControlsCollapsed: boolean;
+    /**
+     * 地址栏按钮自动收缩（受控：App 持有 settings.sortControlsAutoCollapse，
+     * 与选择器/保存器同步）——开启时隐藏手动切换入口，控件组按窗口
+     * 宽度自动折叠/展开（useAutoSortCollapse），手动折叠值被忽略。
+     */
+    sortControlsAutoCollapse: boolean;
     /** 切换控件组折叠（App 写入持久化键，跨窗口同步） */
     onSortControlsCollapsedChange: (collapsed: boolean) => void;
     refreshSignal: number;
@@ -150,7 +157,7 @@ interface ExplorerTabProps {
     terminalOpen?: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, onSortControlsCollapsedChange, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, sortControlsAutoCollapse, onSortControlsCollapsedChange, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -868,9 +875,16 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   const sortZoneRef = useRef<HTMLDivElement | null>(null);
   /** 顶栏容器（flex-wrap 行）：换行后底部分界线装饰用 */
   const topBarRef = useRef<HTMLDivElement | null>(null);
+  /** 地址栏按钮自动收缩（设置开关）：窗口过窄自动折叠控件组、
+   *  宽度正常自动展开（判定与展开态自动换行同条件，见 hook） */
+  const autoSortCollapsed = useAutoSortCollapse(topBarRef, omnibarZoneRef, sortZoneRef, sortControlsAutoCollapse, currentPath !== 'app://dashboard');
+  /** 生效折叠态：自动收缩开启时按窗口宽度推导，否则取手动值 */
+  const effectiveSortCollapsed = sortControlsAutoCollapse ? autoSortCollapsed : sortControlsCollapsed;
   /** 顶栏是否已换行（地址栏压缩过度、控件组落到第二行）——
-   *  仅驱动底部分界线样式，布局为纯 CSS 换行（见 useTopBarWrap） */
-  const topBarWrapped = useTopBarWrap(topBarRef, omnibarZoneRef, sortZoneRef, sortControlsCollapsed, currentPath !== 'app://dashboard');
+   *  仅驱动底部分界线样式，布局为纯 CSS 换行（见 useTopBarWrap）。
+   *  自动收缩模式下换行不是稳定态（过窄即折叠、折叠态 min-width 0
+   *  永不换行），抑制分界线装饰避免折叠前 1 帧的闪动 */
+  const topBarWrapped = useTopBarWrap(topBarRef, omnibarZoneRef, sortZoneRef, effectiveSortCollapsed, currentPath !== 'app://dashboard') && !sortControlsAutoCollapse;
 
   /** 顶栏分区通用按钮选择器（含活动态 filled 变体） */
   const TOP_BAR_BTN_SELECTOR =
@@ -1873,7 +1887,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               </IconButton>
             </span>
           )}
-          <div ref={omnibarZoneRef} data-kb-zone="topbar-omnibar" onKeyDown={handleTopBarKeyDown} style={{ flex: 1, overflow: 'hidden', minWidth: sortControlsCollapsed ? 0 : OMNIBAR_MIN_WIDTH_EXPANDED }}>
+          <div ref={omnibarZoneRef} data-kb-zone="topbar-omnibar" onKeyDown={handleTopBarKeyDown} style={{ flex: 1, overflow: 'hidden', minWidth: effectiveSortCollapsed ? 0 : OMNIBAR_MIN_WIDTH_EXPANDED }}>
             <Omnibar
               currentPath={displayPath}
               onNavigate={(p: string) => loadPath(p, true)}
@@ -1889,7 +1903,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               groupingEnabled={groupingEnabled}
               groupingForced={searchGroupActive}
               viewMode={viewMode}
-              collapsed={sortControlsCollapsed}
+              collapsed={effectiveSortCollapsed}
+              autoCollapse={sortControlsAutoCollapse}
               onCollapsedChange={onSortControlsCollapsedChange}
               onSortByChange={onSortByChange}
               onSortOrderChange={onSortOrderChange}

@@ -110,6 +110,7 @@ const fs = require('fs');
 
       // ── 二、设置对话框 UI 链路 ──
       const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
+      const newTabBefore = await h.js(win, `localStorage.getItem('settings.newTabPath')`);
       await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
       await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
       await h.waitDialogAnim();
@@ -206,12 +207,14 @@ const fs = require('fs');
       h.assert.ok(confirmed.value, '确认按钮应可点击');
       await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
       await h.waitDialogAnim();
-      const stored = await h.js(win, `localStorage.getItem('settings.newTabPath')`);
-      h.assert.strictEqual(stored.value, '"app://dashboard"', 'dashboard:// 应归一化为内部形态 app://dashboard');
+      // 二级对话框确认只写草稿：外层未点确定时持久化键不变
+      const newTabDraft = await h.js(win, `localStorage.getItem('settings.newTabPath')`);
+      h.assert.strictEqual(newTabDraft.value, newTabBefore.value, '二级对话框确认后未确定不应写持久化键');
 
-      // 退出设置（Escape = 确定退出）
-      await h.key(win, 'Escape');
+      // 点「确定」退出 → 草稿应用落盘
+      await h.clickSettingsConfirm(win);
       await h.waitDialogAnim();
+      await h.waitFor(win, `localStorage.getItem('settings.newTabPath') === '"app://dashboard"'`, 5000);
 
       // 新建标签页 → 仪表盘
       await clickNewTab();
@@ -285,10 +288,28 @@ const fs = require('fs');
       );
       await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
       await h.waitDialogAnim();
-      const storedTilde = await h.js(win, `localStorage.getItem('settings.newTabPath')`);
-      h.assert.strictEqual(storedTilde.value, JSON.stringify(os.homedir()), '~ 应展开为家目录绝对路径');
+      // 草稿未应用：点确定后 ~ 才展开为家目录绝对路径落盘
+      await h.clickSettingsConfirm(win);
+      await h.waitDialogAnim();
+      await h.waitFor(win, `localStorage.getItem('settings.newTabPath') === ${JSON.stringify(JSON.stringify(os.homedir()))}`, 5000);
 
-      // 再开对话框：输入 ~/<临时目录名> → 确认存家目录下绝对路径 → 新建标签页打开该目录
+      // 重新打开设置 → 自定义：输入 ~/<临时目录名> → 确认 → 点确定
+      // 落盘家目录下绝对路径 → 新建标签页打开该目录
+      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
+      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
+      await h.waitDialogAnim();
+      await h.js(
+        win,
+        `(() => {
+          const rows = Array.from(document.querySelectorAll('.settings-row'));
+          const idx = rows.findIndex((row) => /新建标签页目录|New tab directory/.test(row.textContent ?? ''));
+          if (idx === -1) return false;
+          rows[idx].scrollIntoView({ block: 'center' });
+          window.__newtabRowIdx = idx;
+          return true;
+        })()`,
+      );
+      await h.sleep(300);
       await h.js(
         win,
         `(() => {
@@ -312,11 +333,10 @@ const fs = require('fs');
       );
       await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
       await h.waitDialogAnim();
-      const storedTildeSub = await h.js(win, `localStorage.getItem('settings.newTabPath')`);
-      h.assert.strictEqual(storedTildeSub.value, JSON.stringify(tildeDir), '~/xxx 应展开为家目录下的绝对路径');
 
-      await h.key(win, 'Escape');
+      await h.clickSettingsConfirm(win);
       await h.waitDialogAnim();
+      await h.waitFor(win, `localStorage.getItem('settings.newTabPath') === ${JSON.stringify(JSON.stringify(tildeDir))}`, 5000);
       await clickNewTab();
       await h.waitFor(
         win,

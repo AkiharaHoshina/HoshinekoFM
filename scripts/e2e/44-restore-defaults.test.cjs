@@ -5,7 +5,7 @@
  *   首次使用默认值（语言跟随系统/隐藏文件开/列表/图标 48/UI 100%/
  *   实心图标关/主题与明暗跟随系统/标题栏跟随系统/完整路径关/滚动
  *   文本关/搜索分类开/home 占用关/文件预览关/目录大小计算开），且
- *   确定（退出）不会把旧的对话框内预览盖回去；
+ *   确定（点底部确定按钮退出）不会把旧的对话框内预览盖回去；
  * - 滚动文本/文件预览开关确认时生效（对话框内切换只改预览）；
  * - 选择器语言同步：pickerSettings.locale 注入 + 广播，标题实时切换
  *   语言（渲染期派生，不再停留在挂载时语言）。
@@ -48,6 +48,9 @@ const h = require('./harness.cjs');
     const openSettings = async () => {
       await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
       await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
+      // 打开动画收尾后焦点校正才解除武装——不等动画直接 scrollIntoView
+      // 会与其互搏（滚动被顶回，helper 重试 4s 后抛错）
+      await h.waitDialogAnim();
     };
     const BUTTONS = 'md-filled-button, md-outlined-button, md-text-button, md-filled-tonal-button';
 
@@ -76,9 +79,9 @@ const h = require('./harness.cjs');
     // 未确定：跑马灯仍在（预览未生效）
     const stillMarquee = await h.js(win, `!!document.querySelector('.title-bar-title .marquee-container')`);
     h.assert.ok(stillMarquee.value, '滚动文本开关切换后未确定时跑马灯不应立即消失');
-    await h.key(win, 'Escape');
+    await h.clickSettingsConfirm(win);
     await h.waitDialogAnim();
-    // 确定（退出）后生效：跑马灯容器消失（enabled=false 分支无该类）
+    // 确定后生效：跑马灯容器消失（enabled=false 分支无该类）
     await h.waitFor(win, `!document.querySelector('.title-bar-title .marquee-container')`, 8000);
 
     // ── 文件预览开关确认时生效（对话框内切换只改预览）──
@@ -106,9 +109,9 @@ const h = require('./harness.cjs');
     // 未确定：预览面板仍在（预览未生效）
     const stillPreview = await h.js(win, `!!document.querySelector('.file-preview-panel')`);
     h.assert.ok(stillPreview.value, '文件预览开关切换后未确定时面板不应立即消失');
-    await h.key(win, 'Escape');
+    await h.clickSettingsConfirm(win);
     await h.waitDialogAnim();
-    // 确定（退出）后生效：预览面板消失
+    // 确定后生效：预览面板消失
     await h.waitFor(win, `!document.querySelector('.file-preview-panel')`, 8000);
 
     // ── 恢复默认设置：取消不变 / 确认生效（旧预览不盖回）──
@@ -224,8 +227,8 @@ const h = require('./harness.cjs');
       newTab: '"/"',
     };
     h.assert.deepStrictEqual(JSON.parse(ls.value), expected, `恢复后设置应为默认值：${ls.value}`);
-    // 确定（退出）：恢复前拖到 200% 的 UI 缩放预览不得盖回
-    await h.key(win, 'Escape');
+    // 确定（点底部确定按钮退出）：恢复前拖到 200% 的 UI 缩放预览不得盖回
+    await h.clickSettingsConfirm(win);
     await h.waitDialogAnim();
     await h.sleep(400);
     const uiScaleAfter = await h.js(win, `localStorage.getItem('settings.uiScale')`);

@@ -4,6 +4,7 @@ import { FileList } from './FileList';
 import { Omnibar } from './Omnibar';
 import { SortControls, OMNIBAR_MIN_WIDTH_EXPANDED } from './SortControls';
 import { useTopBarWrap } from '../hooks/useTopBarWrap';
+import { useAutoSortCollapse } from '../hooks/useAutoSortCollapse';
 import { Sidebar, type SidebarPinnedItem } from './Sidebar';
 import { Button } from './Button';
 import { Icon } from './Icon';
@@ -238,11 +239,24 @@ const FilePicker: React.FC = () => {
   /** 控件组折叠：会话覆盖 > 注入快照 > 本地 localStorage（GUI 模式共享） */
   const [localSortControlsCollapsed, setLocalSortControlsCollapsed] = useLocalStorage<boolean>('settings.sortControlsCollapsed', false);
   const sortControlsCollapsed = sortControlsCollapsedOverride ?? viewPrefs?.sortControlsCollapsed ?? localSortControlsCollapsed;
+  /**
+   * 地址栏按钮自动收缩（设置 → 外观，立即同步组）：注入快照优先
+   * （主窗口为权威），GUI 模式回落共享 localStorage——选择器无该
+   * 设置的写入口，无会话覆盖（与 sortControlsCollapsed 不同）。
+   */
+  const [localSortControlsAutoCollapse] = useLocalStorage<boolean>('settings.sortControlsAutoCollapse', false);
+  const sortControlsAutoCollapse = viewPrefs?.sortControlsAutoCollapse ?? localSortControlsAutoCollapse;
   /** 顶栏容器（picker-topbar flex-wrap 行）：换行后底部分界线装饰用 */
   const topBarRef = useRef<HTMLDivElement | null>(null);
+  /** 地址栏按钮自动收缩：窗口过窄自动折叠控件组、宽度正常自动展开
+   *  （判定与展开态自动换行同条件，见 useAutoSortCollapse） */
+  const autoSortCollapsed = useAutoSortCollapse(topBarRef, omnibarZoneRef, sortZoneRef, sortControlsAutoCollapse, Boolean(config));
+  /** 生效折叠态：自动收缩开启时按窗口宽度推导，否则取手动值 */
+  const effectiveSortControlsCollapsed = sortControlsAutoCollapse ? autoSortCollapsed : sortControlsCollapsed;
   /** 顶栏是否已换行（地址栏压缩过度、控件组落到第二行）——
-   *  仅驱动底部分界线样式，布局为纯 CSS 换行（见 useTopBarWrap） */
-  const topBarWrapped = useTopBarWrap(topBarRef, omnibarZoneRef, sortZoneRef, sortControlsCollapsed, Boolean(config));
+   *  仅驱动底部分界线样式，布局为纯 CSS 换行（见 useTopBarWrap）。
+   *  自动收缩模式下换行不是稳定态，抑制分界线装饰 */
+  const topBarWrapped = useTopBarWrap(topBarRef, omnibarZoneRef, sortZoneRef, effectiveSortControlsCollapsed, Boolean(config)) && !sortControlsAutoCollapse;
 
   /**
    * Ctrl+滚轮缩放：在文件区（.file-list-container）上按 Ctrl+滚轮
@@ -1189,7 +1203,7 @@ const FilePicker: React.FC = () => {
               ref={omnibarZoneRef}
               data-kb-zone="topbar-omnibar"
               onKeyDown={handleTopBarKeyDown}
-              style={{ flex: 1, overflow: 'hidden', minWidth: sortControlsCollapsed ? 0 : OMNIBAR_MIN_WIDTH_EXPANDED }}
+              style={{ flex: 1, overflow: 'hidden', minWidth: effectiveSortControlsCollapsed ? 0 : OMNIBAR_MIN_WIDTH_EXPANDED }}
             >
               <Omnibar
                 currentPath={currentPath}
@@ -1209,7 +1223,8 @@ const FilePicker: React.FC = () => {
                 groupingEnabled={groupingEnabled}
                 groupingForced={searchActive && searchGroupByDir}
                 viewMode={viewMode}
-                collapsed={sortControlsCollapsed}
+                collapsed={effectiveSortControlsCollapsed}
+                autoCollapse={sortControlsAutoCollapse}
                 onCollapsedChange={handleSortControlsCollapsedChange}
                 onSortByChange={setLocalSortBy}
                 onSortOrderChange={setLocalSortOrder}

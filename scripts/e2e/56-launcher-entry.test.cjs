@@ -103,11 +103,12 @@ const path = require('path');
     h.assert.ok(!fs.existsSync(desktopFile), '手动删除桌面条目后重载不得重建');
     h.assert.ok(!fs.existsSync(appmenuFile), '手动删除菜单条目后重载不得重建');
 
-    // ── 确定时生效：关闭并确定 → 删除条目并清 marker；重开并确定 → 再建 ──
+    // ── 应用/确定时生效：点确定 → 删除条目并清 marker；重开点确定 → 再建 ──
     const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
     const openSettings = async () => {
       await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
       await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
+      await h.waitDialogAnim();
     };
     const toggleDesktopSwitch = async () => {
       const rowIdx = await h.js(
@@ -129,31 +130,31 @@ const path = require('path');
       );
       await h.sleep(400);
     };
-    const applyByClose = async () => {
-      await h.key(win, 'Escape');
+    const applyByConfirm = async () => {
+      await h.clickSettingsConfirm(win);
       await h.waitDialogAnim();
     };
 
-    // 关闭并确定（文件此前已被手动删除 + marker 有 desktop 标志）：
+    // 点确定（文件此前已被手动删除 + marker 有 desktop 标志）：
     // 删除为 no-op 但 marker 被清除
     await openSettings();
     await toggleDesktopSwitch();
-    await applyByClose();
+    await applyByConfirm();
     await h.waitFor(win, `localStorage.getItem('settings.autoCreateDesktopEntry') === 'false'`, 8000);
     h.assert.deepStrictEqual(readMarker(), { appmenu: true }, '关闭并确定应清除桌面条目 marker');
 
-    // 重新打开并确定：marker 已清 → 再次创建（显式往返 = 新创建意图）
+    // 重新打开点确定：marker 已清 → 再次创建（显式往返 = 新创建意图）
     await openSettings();
     await toggleDesktopSwitch();
-    await applyByClose();
+    await applyByConfirm();
     await h.waitFor(win, `localStorage.getItem('settings.autoCreateDesktopEntry') === 'true'`, 8000);
     await waitForFile(desktopFile);
     h.assert.deepStrictEqual(readMarker(), { desktop: true, appmenu: true }, '重开并确定应再次创建并记录 marker');
 
-    // 再关闭并确定：这次文件真实存在 → 实际删除断言
+    // 再点确定：这次文件真实存在 → 实际删除断言
     await openSettings();
     await toggleDesktopSwitch();
-    await applyByClose();
+    await applyByConfirm();
     await h.waitFor(win, `localStorage.getItem('settings.autoCreateDesktopEntry') === 'false'`, 8000);
     const removePoll = async () => {
       const start = Date.now();
@@ -194,6 +195,23 @@ const path = require('path');
       { success: false, code: 'INVALID_KIND' },
       '非法 kind 应被 remove 拒绝',
     );
+
+    // ── 开发模式（无 HOSHINEKO_E2E_LAUNCHER_EXEC）下 .desktop 自动
+    // 操作无效化：删 env 后重载（挂载自动 ensure 触发）不得创建文件 ──
+    fs.rmSync(markerFile, { force: true });
+    fs.rmSync(desktopFile, { force: true });
+    const devDesktopDir = h.tempDir('hoshineko-e2e-dev-desktop-');
+    process.env.HOSHINEKO_E2E_DESKTOP_DIR = devDesktopDir;
+    delete process.env.HOSHINEKO_E2E_LAUNCHER_EXEC;
+    await h.js(win, `localStorage.setItem('settings.autoCreateDesktopEntry', 'true'); true`);
+    win.webContents.reload();
+    await h.waitFor(win, `!!document.querySelector('.m3-navigation-rail')`, 15000);
+    await h.sleep(800);
+    const devEntry = path.join(devDesktopDir, 'HoshinekoFM.desktop');
+    h.assert.strictEqual(fs.existsSync(devEntry), false, '开发模式挂载自动 ensure 不得创建 .desktop');
+    h.assert.strictEqual(fs.existsSync(markerFile), false, '开发模式 ensure 不得写 marker');
+    // 恢复 env（后续用例不受影响）
+    process.env.HOSHINEKO_E2E_LAUNCHER_EXEC = '/tmp/hoshi "dir"/HoshinekoFM';
   });
 
   h.finish();

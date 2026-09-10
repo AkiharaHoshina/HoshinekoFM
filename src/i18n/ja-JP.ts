@@ -163,7 +163,8 @@ const jaJP = {
 
   // ── 设置弹窗 ──
   'settings.title': '設定',
-  'settings.done': '完了',
+  'settings.done': '決定',
+  'settings.apply': '適用',
   'settings.show_hidden': '隠しファイルを表示',
   'settings.appearance': '外観',
   'settings.view_mode': '表示モード',
@@ -172,6 +173,9 @@ const jaJP = {
   'settings.icon_size': 'アイコンのサイズ',
   'settings.ui_scale': 'UI スケール',
   'settings.filled_icons': '塗りつぶしアイコン',
+  'settings.sort_auto_collapse': 'アドレスバーのボタンを自動で折りたたむ',
+  'settings.preview_collapse': 'プレビューを折りたたむ',
+  'settings.preview_expand': 'プレビューを展開',
   'settings.behavior': '動作',
   'settings.language': '言語',
   'settings.marquee_text': 'スクロールテキスト',

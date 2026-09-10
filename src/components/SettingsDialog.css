@@ -1,9 +1,88 @@
+/* 设置对话框内容槽包装层（Dialog 组件的 div[slot="content"]）：
+ * md-dialog shadow 规则会给 slotted 内容加 padding（scrollable+headline
+ * 时为 8px 顶 / 24px 侧 / 8px 底）——它是外观预览 sticky 固定区的
+ * 直接父级 padding，会导致固定区随滚动先位移再吸附（与主题颜色
+ * 对话框同坑）。归零改由 .settings-content 自管（!important 压过
+ * shadow 普通规则）。 */
+md-dialog:has(.settings-preview-fixed) > div[slot="content"] {
+  padding: 0 !important;
+}
+
 .settings-content {
-  padding: 0 8px;
-  /* md-dialog 上限 560px - 48px（slot 左右各 24px 内边距）= 512px：
-   * 保证长描述（如系统集成说明）换行完整显示，且安装/未安装状态
-   * 对话框宽度保持一致（不随状态切换忽宽忽窄）。 */
-  min-width: 512px;
+  /* border-box：min-width 即元素总宽（含 padding 48）——content-box
+   * 下 min-width 640 + padding 48 = 688 超出对话框 640 上限，右侧
+   * 溢出 48px 被对话框 overflow hidden 裁掉、行内右缘按钮截断
+   * （截断根因之一） */
+  box-sizing: border-box;
+  /* 原 slot 内边距（24 侧）平移至此自管：总侧边距保持 32px 不变；
+   * min-width 640 补偿归零的 slot 侧 padding 并驱动对话框加宽到
+   * 640px（长语言按钮如「Перезапустити сеансову шину」不再被
+   * 挤压截断；e2e 04 断言口径同步为 640）。**窄窗口上限**：
+   * min(640px, 100vw - 48px)——窗口比 688px 更窄时对话框被
+   * max-width（100% - 48px）按视口钳制，若内容仍强制 640px 会
+   * 横向溢出、行内右缘按钮被裁掉——此时内容跟随视口收缩，
+   * flex 行让标签让位截断（ellipsis）、按钮 flex-shrink 0 保持完整 */
+  padding: 8px 24px 8px;
+  min-width: min(640px, calc(100vw - 48px));
+}
+
+/* 行内右侧按钮不得被 flex 收缩挤压（长文案标签让位截断，按钮保持
+ * 完整——按钮截断的根因即默认 flex-shrink 1） */
+.settings-row > md-outlined-button,
+.settings-row > md-text-button,
+.settings-row > md-filled-button,
+.settings-row > md-filled-tonal-button {
+  flex-shrink: 0;
+}
+
+/* 设置对话框高度适度增加（560px → 740px）且宽度加宽（560px →
+ * 640px，适配长按钮）：md-dialog 的 max-height/max-width 定义在
+ * shadow :host 上（min(560px, 100% - 48px)），文档级普通规则压
+ * 不过 shadow 规则，必须 !important（文档级 important 优先于
+ * shadow 普通规则）；:has() 限定仅含外观预览的设置对话框。 */
+md-dialog:has(.settings-preview-fixed) {
+  max-height: min(740px, calc(100% - 48px)) !important;
+  max-width: min(640px, calc(100% - 48px)) !important;
+}
+
+/* ── 外观预览固定区（sticky）：文件区样例钉在对话框顶部，其余外观
+ * 设置从下方滚过。滚动容器是 md-dialog shadow 内的 .scroller；
+ * slotted 内容在 flat tree 中做 sticky 定位，滚出时吸附在 scroller
+ * 顶部。负外边距扩进内容层侧 padding：固定区背景横向铺满、遮住从
+ * 下方滚过的内容；sticky 保留布局占位。底部分隔线仅滚动后显示：
+ * 透明 1px 常驻占位（无布局位移），--scrolled 时着色。
+ * z-index 2：md-slider 内部 .onTop（label/handle）为 z-index 1 且
+ * 宿主不建 stacking context——滚动时界面缩放滑杆会画在 z-index 1
+ * 的固定区之上（主题颜色对话框无滑杆无此坑），固定区须更高。 */
+.settings-preview-fixed {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 -24px;
+  padding: 4px 24px 12px;
+  background: var(--md-sys-color-surface-container-high);
+  border-bottom: 1px solid transparent;
+}
+
+.settings-preview-fixed--scrolled {
+  border-bottom-color: var(--md-sys-color-outline-variant);
+}
+
+/* 展开/收起预览开关（sticky 固定区顶部整行）：收起后固定区只剩本行
+ * （细条仍吸顶，展开入口始终可达）；三角方向指向切换目标 */
+.settings-preview-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 2px 0 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 14px;
+  font-family: inherit;
+  user-select: none;
 }
 
 .settings-section {

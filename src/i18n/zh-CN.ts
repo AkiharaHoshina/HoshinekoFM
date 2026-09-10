@@ -163,7 +163,8 @@ const zhCN = {
 
   // ── 设置弹窗 ──
   'settings.title': '设置',
-  'settings.done': '完成',
+  'settings.done': '确定',
+  'settings.apply': '应用',
   'settings.show_hidden': '显示隐藏文件',
   'settings.appearance': '外观',
   'settings.view_mode': '视图模式',
@@ -172,6 +173,9 @@ const zhCN = {
   'settings.icon_size': '图标大小',
   'settings.ui_scale': '界面缩放',
   'settings.filled_icons': '实心图标',
+  'settings.sort_auto_collapse': '地址栏按钮自动收缩',
+  'settings.preview_collapse': '收起预览',
+  'settings.preview_expand': '展开预览',
   'settings.behavior': '行为',
   'settings.language': '语言',
   'settings.marquee_text': '滚动文本',

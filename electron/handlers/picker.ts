@@ -66,6 +66,12 @@ export interface PickerViewPrefs {
    * 会话覆盖，下一次主窗口变化即清除，见 FilePicker）
    */
   sortControlsCollapsed: boolean;
+  /**
+   * 地址栏按钮自动收缩（设置 → 外观，默认关闭）——开启时隐藏控件组
+   * 手动切换入口，窗口过窄自动折叠菜单、宽度正常自动展开。选择器/
+   * 保存器经快照注入只读继承（无本地写入口，无会话覆盖）。
+   */
+  sortControlsAutoCollapse: boolean;
 }
 
 /**

@@ -126,19 +126,25 @@ const h = require('./harness.cjs');
     await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
     await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some(d => d.open === true && !!d.querySelector('.settings-content'))`);
 
-    // 主题颜色行 = .settings-row 下标 2（0 隐藏文件 / 1 实心图标 / 2 主题颜色）
+    // 主题设置行按标签文本精确匹配（外观区新增「地址栏按钮自动收缩」
+    // 行会移动绝对下标——0 隐藏文件 / 1 实心图标 / 2 自动收缩 / 3 主题设置）
+    const themeRowIdxExpr = `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => {
+      const label = row.querySelector('.settings-row__label');
+      return !!label && /^(主题设置|Theme Settings)$/.test((label.textContent ?? '').trim());
+    })`;
     const rowReady = await h.js(win, `(() => {
       const rows = document.querySelectorAll('md-dialog .settings-row');
-      const theme = rows[2];
-      return { role: theme ? theme.getAttribute('role') : null, tabIndex: theme ? theme.getAttribute('tabindex') : null };
+      const idx = ${themeRowIdxExpr};
+      const theme = rows[idx];
+      return { idx, role: theme ? theme.getAttribute('role') : null, tabIndex: theme ? theme.getAttribute('tabindex') : null };
     })()`);
-    h.assert.strictEqual(rowReady.value.role, 'button', '主题颜色行应有 role=button');
-    h.assert.strictEqual(rowReady.value.tabIndex, '0', '主题颜色行应进入 Tab 序');
+    h.assert.strictEqual(rowReady.value.role, 'button', '主题设置行应有 role=button');
+    h.assert.strictEqual(rowReady.value.tabIndex, '0', '主题设置行应进入 Tab 序');
 
-    // 焦点放在前一停靠（实心图标行的 Switch），Tab 应落到主题颜色行
+    // 焦点放在前一停靠（主题设置上方一行的 Switch），Tab 应落到主题设置行
     await h.js(win, `(() => {
       const rows = document.querySelectorAll('md-dialog .settings-row');
-      const sw = rows[1] ? rows[1].querySelector('md-switch') : null;
+      const sw = rows[${rowReady.value.idx} - 1] ? rows[${rowReady.value.idx} - 1].querySelector('md-switch') : null;
       if (sw) sw.focus();
       return !!sw;
     })()`);
@@ -146,9 +152,9 @@ const h = require('./harness.cjs');
     await h.sleep(150);
     const onTheme = await h.js(win, `(() => {
       const rows = document.querySelectorAll('md-dialog .settings-row');
-      return document.activeElement === rows[2];
+      return document.activeElement === rows[${rowReady.value.idx}];
     })()`);
-    h.assert.strictEqual(onTheme.value, true, 'Tab 应聚焦主题颜色入口行');
+    h.assert.strictEqual(onTheme.value, true, 'Tab 应聚焦主题设置入口行');
 
     // Enter 显式激活打开主题颜色二级对话框（应用内 onKeyDown，非原生合成点击）
     await h.key(win, 'Enter');

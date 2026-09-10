@@ -30,24 +30,54 @@ const h = require('./harness.cjs');
     h.assert.ok(integSub.value, '应找到系统集成描述副标题');
     h.assert.strictEqual(integSub.value.whiteSpace, 'normal', '系统集成描述应为换行显示');
 
-    // 对话框宽度稳定为 560px（md-dialog 上限，与 portal 安装状态无关）
+    // 对话框宽度稳定为 640px（外观预览加宽适配长语言按钮；md-dialog
+    // max-width 经文档级 !important 覆盖，与 portal 安装状态无关）
     const dialogW = await h.js(win, `(() => {
       const d = [...document.querySelectorAll('md-dialog')].find(x => x.open === true);
       return d ? d.shadowRoot.querySelector('dialog').getBoundingClientRect().width : -1;
     })()`);
-    h.assert.ok(Math.abs(dialogW.value - 560) < 1, `设置对话框宽度应稳定为 560px，实际 ${dialogW.value}`);
+    h.assert.ok(Math.abs(dialogW.value - 640) < 1, `设置对话框宽度应稳定为 640px，实际 ${dialogW.value}`);
 
-    // 实心图标开关行（settings.filledIcons 持久化键变化即生效；
+    // 实心图标开关行（全部设置项应用/确定时生效：对话框内切换只改
+    // 草稿、不写持久化键；点「确定」（应用并关闭）后才生效——
     // .settings-row 按列表取第 2 个 = 实心图标行，nth-of-type 会数进
     // 区块标题等 div，不可用；点击前滚动入视野）
     const before = await h.js(win, `localStorage.getItem('settings.filledIcons')`);
     await h.scrollIntoView(win, '.settings-row', 1);
-    await h.clickEl(win, '.settings-row', { index: 1 });
-    await h.waitFor(win, `localStorage.getItem('settings.filledIcons') !== ${JSON.stringify(before.value)}`);
+    // js click 落在行元素上（行 onClick 单次切换）——本环境程序化滚动
+    // shadow scroller 后真实指针命中间歇性落在 md-dialog 宿主上
+    await h.js(win, `(() => {
+      const row = document.querySelectorAll('.settings-row')[1];
+      if (!row) return false;
+      row.click();
+      return true;
+    })()`, true);
+    await h.sleep(400);
+    const draft = await h.js(win, `localStorage.getItem('settings.filledIcons')`);
+    h.assert.strictEqual(draft.value, before.value, '确定前切换开关不应写持久化键（仅草稿）');
 
-    // 关闭对话框（Escape）并等待关闭动画 + 串行化间隔
+    // Escape = 取消（v0.11.48 起：不保存退出，与主题颜色对话框一致）：
+    // 关闭对话框且草稿被丢弃、持久化键不变
     await h.key(win, 'Escape');
     await h.waitDialogAnim();
+    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).every(d => d.open === false)`);
+    const afterCancel = await h.js(win, `localStorage.getItem('settings.filledIcons')`);
+    h.assert.strictEqual(afterCancel.value, before.value, 'Escape 取消后草稿应被丢弃（不写持久化键）');
+
+    // 重开设置 → 切换开关 → 点「确定」按钮（应用并关闭）→ 落盘
+    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
+    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some(d => d.open === true)`);
+    await h.waitDialogAnim();
+    await h.scrollIntoView(win, '.settings-row', 1);
+    await h.js(win, `(() => {
+      const row = document.querySelectorAll('.settings-row')[1];
+      if (!row) return false;
+      row.click();
+      return true;
+    })()`, true);
+    await h.clickSettingsConfirm(win);
+    await h.waitDialogAnim();
+    await h.waitFor(win, `localStorage.getItem('settings.filledIcons') !== ${JSON.stringify(before.value)}`);
     const stillOpen = await h.js(win, `Array.from(document.querySelectorAll('md-dialog')).some(d => d.open === true)`);
     h.assert.strictEqual(stillOpen.value, false, '设置对话框应已关闭');
   });

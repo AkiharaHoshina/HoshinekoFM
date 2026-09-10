@@ -1,0 +1,29 @@
+/* 外观设置预览：文件区样例（设置对话框外观区 sticky 预览的内容层）。
+ * 条目/分组头/网格容器全部复用真实文件区的类（FileList.css 全局
+ * 注入：file-group-header / grid-row-container / file-grid-item /
+ * file-list-item / file-icon / file-thumbnail / file-name / file-size），
+ * 此处只补预览背景卡与列表条目的非交互微调。 */
+
+/* 预览背景卡：比设置对话框表面深一点的圆角方形——color-mix 加黑
+ * 在明暗模式下都「深一点」（M3 surface 色阶暗色模式反转，纯 token
+ * 无法两模式通用；用户要求「再深一点」后为 85% 混合）。
+ * max-height 200px + 内部二级滚动：预览内容（列表大图标/分组头）
+ * 超过 200px 时卡内滚动（滚动条样式由 Dialog 注入的 ::slotted(*)
+ * 规则统一为 M3 样式）——固定上限同时规避 uiScale 放大时吸顶预览
+ * 高过整个 scroller 视口、遮住全部设置行的缺陷（200px < 视口上限） */
+.settings-preview-body {
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 85%, black);
+  border-radius: 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 200px;
+}
+
+/* 列表条目：无交互的纯展示行（hover/选中等交互样式不适用） */
+.settings-preview-list-item {
+  cursor: default;
+}
+
+.settings-preview-list-item:hover {
+  background-color: transparent;
+}

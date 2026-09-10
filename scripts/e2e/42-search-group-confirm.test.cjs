@@ -1,8 +1,8 @@
 /**
- * e2e 42：搜索分类（settings.searchGroupByDir）确定时生效 + 搜索态强制分组按钮。
+ * e2e 42：搜索分类（settings.searchGroupByDir）应用/确定时生效 + 搜索态强制分组按钮。
  * - 设置项名称为「搜索结果按所在目录分类」（中英文双匹配定位）；
- * - 设置对话框内切换开关只改预览（搜索结果分组不变），按下确定/退出
- *  （Escape = 确定）才生效；
+ * - 设置对话框内切换开关只改预览（搜索结果分组不变），点「确定」
+ *  （应用并关闭）才生效；
  * - 生效且搜索页面打开时：右上角分类按钮强制高亮（filled 变体）且点击
  *   无效（分组开关 localStorage 不变）；退出搜索后恢复可点。
  */
@@ -52,6 +52,7 @@ const h = require('./harness.cjs');
     const openSettings = async () => {
       await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
       await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
+      await h.waitDialogAnim();
     };
     const searchRowIdx = async () => {
       const r = await h.js(
@@ -83,7 +84,7 @@ const h = require('./harness.cjs');
     // 对话框内切换只是预览：搜索结果仍按目录分组
     const stillGrouped = await h.js(win, dirHeaders);
     h.assert.ok(stillGrouped.value, '未确定时搜索分类不应立即生效');
-    await h.key(win, 'Escape');
+    await h.clickSettingsConfirm(win);
     await h.waitDialogAnim();
     // 确定后生效：搜索结果不再按目录分组（分组开关已关 → 无目录组头）
     await h.waitFor(win, `!(${dirHeaders})`, 8000);
@@ -93,7 +94,7 @@ const h = require('./harness.cjs');
     // 再打开设置切回开启 → 确定 → 搜索态重新分组且按钮再次强制高亮
     await openSettings();
     await toggleSearchGroupSwitch();
-    await h.key(win, 'Escape');
+    await h.clickSettingsConfirm(win);
     await h.waitDialogAnim();
     await h.waitFor(win, dirHeaders, 8000);
     const forcedTag2 = await h.js(win, groupBtnTag);

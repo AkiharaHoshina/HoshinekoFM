@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { MdSwitch as MdSwitchElement } from '@material/web/switch/switch.js';
 import { Dialog } from "./Dialog";
 import { Button } from "./Button";
@@ -6,6 +6,7 @@ import { Icon } from "./Icon";
 import { Switch, Slider, Divider, OutlinedSelect, SelectOption } from "./md";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { NewTabPathDialog } from "./NewTabPathDialog";
+import { SettingsPreview } from "./SettingsPreview";
 import { formatNewTabPath } from "../utils/newTabPath";
 import { t, getLanguageOptions, type Locale } from '../i18n';
 import { ICON_SIZE_MIN, ICON_SIZE_MAX, ICON_SIZE_STEP } from '../utils/iconZoom';
@@ -16,7 +17,7 @@ interface SettingsDialogProps {
   open: boolean;
   onClose: () => void;
   showHiddenFiles: boolean;
-  onToggleHiddenFiles: () => void;
+  onShowHiddenFilesChange: (value: boolean) => void;
   iconSize: number;
   onIconSizeChange: (size: number) => void;
   /** 界面缩放（整页缩放百分比，50–200） */
@@ -26,7 +27,11 @@ interface SettingsDialogProps {
   viewMode: "grid" | "list";
   onViewModeChange: (mode: "grid" | "list") => void;
   filledIcons: boolean;
-  onToggleFilledIcons: () => void;
+  onFilledIconsChange: (value: boolean) => void;
+  /** 地址栏按钮自动收缩（默认关闭；确定时生效——开启时隐藏控件组手动
+   *  切换入口，窗口过窄自动折叠菜单、宽度正常自动展开） */
+  sortControlsAutoCollapse: boolean;
+  onSortControlsAutoCollapseChange: (value: boolean) => void;
   locale: Locale;
   onLocaleChange: (locale: Locale) => void;
   /** 滚动文本（跑马灯标题）开关；确定时生效 */
@@ -34,13 +39,13 @@ interface SettingsDialogProps {
   onMarqueeChange: (value: boolean) => void;
   /** 是否显示主页（/home）子区域的存储占用（默认关闭） */
   showHomeStorageUsage: boolean;
-  onToggleShowHomeStorageUsage: () => void;
+  onShowHomeStorageUsageChange: (value: boolean) => void;
   /** 文件预览面板开关（默认关闭；确定时生效） */
   filePreviewEnabled: boolean;
   onFilePreviewChange: (value: boolean) => void;
   /** 目录大小计算开关（默认开启；关闭后不再 du 遍历目录，减轻磁盘压力） */
   calculateDirSize: boolean;
-  onToggleCalculateDirSize: () => void;
+  onCalculateDirSizeChange: (value: boolean) => void;
   /** 自动创建桌面快捷方式（默认开启；确定时生效——打开并确定创建
    *  （主进程 marker 保证创建一次删掉不补），关闭并确定删除条目） */
   autoCreateDesktopEntry: boolean;
@@ -98,6 +103,13 @@ interface SettingsDialogProps {
   onOpenRuleManager: () => void;
   /** 当前主题种子色（入口行的色点展示，可为空） */
   themeSeedColor?: string;
+  /** 语义分组开关（settings.groupingEnabled 应用值——顶栏开关，非设置
+   *  对话框项）：外观预览区按其显示分组头，无设置行 */
+  groupingEnabled: boolean;
+  /** 外观预览收起状态（settings.previewCollapsed 持久化，默认展开：
+   *  false = 展开；跨窗口 storage 同步，恢复默认设置重置为展开） */
+  previewCollapsed: boolean;
+  onPreviewCollapsedChange: (collapsed: boolean) => void;
   /** 恢复默认设置（确认后把全部个性化设置重置为首次使用的默认值） */
   onRestoreDefaults: () => void;
 }
@@ -106,7 +118,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   open,
   onClose,
   showHiddenFiles,
-  onToggleHiddenFiles,
+  onShowHiddenFilesChange,
   iconSize,
   onIconSizeChange,
   uiScale,
@@ -114,17 +126,19 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   viewMode,
   onViewModeChange,
   filledIcons,
-  onToggleFilledIcons,
+  onFilledIconsChange,
+  sortControlsAutoCollapse,
+  onSortControlsAutoCollapseChange,
   locale,
   onLocaleChange,
   marqueeEnabled,
   onMarqueeChange,
   showHomeStorageUsage,
-  onToggleShowHomeStorageUsage,
+  onShowHomeStorageUsageChange,
   filePreviewEnabled,
   onFilePreviewChange,
   calculateDirSize,
-  onToggleCalculateDirSize,
+  onCalculateDirSizeChange,
   autoCreateDesktopEntry,
   onAutoCreateDesktopEntryChange,
   autoCreateAppMenuEntry,
@@ -154,6 +168,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   detectedWm,
   onThemeColor,
   themeSeedColor,
+  groupingEnabled,
+  previewCollapsed,
+  onPreviewCollapsedChange,
   onRestoreDefaults,
   onOpenRuleManager,
 }) => {
@@ -218,8 +235,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
   /**
    * 语言选择的应用时机：选择时只更新本地预览（pendingLocale），
-   * 点击「确定」或关闭对话框（退出 = 确定）时才调用 onLocaleChange
-   * 真正应用并同步到所有窗口，避免其他窗口在用户犹豫选择时立即响应。
+   * 点击「应用」/「确定」时才调用 onLocaleChange 真正应用并同步到
+   * 所有窗口，避免其他窗口在用户犹豫选择时立即响应；「取消」/
+   * Escape/遮罩关闭 = 丢弃草稿不保存。
    */
   const [pendingLocale, setPendingLocale] = useState<Locale>(locale);
 
@@ -231,10 +249,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
   /**
    * 界面缩放的应用时机：与语言一致——拖动滑条时只更新本地预览
-   * （pendingUiScale），点击「完成」或关闭对话框（退出 = 确定）时才
-   * 调用 onUiScaleChange 真正应用并同步到所有窗口。整页缩放实时生效
-   * 会让用户在拖拽过程中反复重排整个界面（含正在操作它的对话框），
-   * 体验很差，故改为确定后一次性生效。
+   * （pendingUiScale），点击「应用」/「确定」时才调用 onUiScaleChange
+   * 真正应用并同步到所有窗口。整页缩放实时生效会让用户在拖拽过程中
+   * 反复重排整个界面（含正在操作它的对话框），体验很差，故改为
+   * 应用/确定后一次性生效。
    */
   const [pendingUiScale, setPendingUiScale] = useState<number>(uiScale);
 
@@ -246,8 +264,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
   /**
    * 标题栏与完整路径的应用时机：与语言一致——开关只更新本地预览，
-   * 点「完成」或关闭对话框（退出 = 确定）时才真正应用并同步到所有
-   * 窗口，避免标题栏在用户犹豫时反复出现/消失。
+   * 点「应用」/「确定」时才真正应用并同步到所有窗口，避免标题栏在
+   * 用户犹豫时反复出现/消失。
    */
   const [pendingTitleBar, setPendingTitleBar] = useState<boolean | null>(titleBarMode);
   const [pendingFullPath, setPendingFullPath] = useState<boolean>(showFullPathTitle);
@@ -284,32 +302,97 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     if (input && input.tabIndex !== -1) input.tabIndex = -1;
   });
   /**
-   * 搜索分类的应用时机：同上——开关只更新本地预览，确定/退出时才真正
-   * 应用。生效时若搜索页面打开，右上角分类按钮强制高亮且点击无效
-   * （退出搜索恢复），故不能开关即改（会打断正在浏览的搜索结果）。
+   * 搜索分类的应用时机：同上——开关只更新本地预览，应用/确定时才
+   * 真正应用。生效时若搜索页面打开，右上角分类按钮强制高亮且点击
+   * 无效（退出搜索恢复），故不能开关即改（会打断正在浏览的搜索结果）。
    */
   const [pendingSearchGroupByDir, setPendingSearchGroupByDir] = useState<boolean>(searchGroupByDir);
   /**
    * 滚动文本（跑马灯标题）的应用时机：同上——开关只更新本地预览，
-   * 确定/退出时才应用，避免标题跑马灯在用户犹豫时反复滚动/静止。
+   * 应用/确定时才应用，避免标题跑马灯在用户犹豫时反复滚动/静止。
    */
   const [pendingMarquee, setPendingMarquee] = useState<boolean>(marqueeEnabled);
   /**
-   * 文件预览面板的应用时机：同上——开关只更新本地预览，确定/退出时
-   * 才应用，避免面板在用户犹豫时反复展开/收起。
+   * 文件预览面板的应用时机：同上——开关只更新本地预览，应用/确定
+   * 时才应用，避免面板在用户犹豫时反复展开/收起。
    */
   const [pendingFilePreview, setPendingFilePreview] = useState<boolean>(filePreviewEnabled);
   /**
-   * 自动创建启动器条目（桌面/菜单）的应用时机：同上——开关只更新本地
-   * 预览，确定/退出时才真正创建或删除条目，避免用户犹豫时反复写盘/
-   * 删除系统文件。
+   * 自动创建启动器条目（桌面/菜单）的应用时机：同上——开关只更新
+   * 本地预览，应用/确定时才真正创建或删除条目，避免用户犹豫时
+   * 反复写盘/删除系统文件。
    */
   const [pendingAutoCreateDesktopEntry, setPendingAutoCreateDesktopEntry] = useState<boolean>(autoCreateDesktopEntry);
   const [pendingAutoCreateAppMenuEntry, setPendingAutoCreateAppMenuEntry] = useState<boolean>(autoCreateAppMenuEntry);
+  /**
+   * 全部设置项统一「应用/确定时生效」：以下草稿与语言/界面缩放同款
+   * 语义——对话框内更改只更新本地预览（草稿），点「应用」/「确定」
+   * 时才真正应用并同步到所有窗口，其他窗口不会在用户犹豫选择时
+   * 立即响应；「取消」/Escape/遮罩关闭丢弃草稿不保存。
+   */
+  const [pendingShowHiddenFiles, setPendingShowHiddenFiles] = useState<boolean>(showHiddenFiles);
+  const [pendingViewMode, setPendingViewMode] = useState<'grid' | 'list'>(viewMode);
+  const [pendingIconSize, setPendingIconSize] = useState<number>(iconSize);
+  const [pendingFilledIcons, setPendingFilledIcons] = useState<boolean>(filledIcons);
+  const [pendingSortControlsAutoCollapse, setPendingSortControlsAutoCollapse] = useState<boolean>(sortControlsAutoCollapse);
+  const [pendingShowHomeStorageUsage, setPendingShowHomeStorageUsage] = useState<boolean>(showHomeStorageUsage);
+  const [pendingCalculateDirSize, setPendingCalculateDirSize] = useState<boolean>(calculateDirSize);
+  /** 新建标签页目录草稿：二级对话框确认只写入草稿，外层确定才应用 */
+  const [pendingNewTabPath, setPendingNewTabPath] = useState<string>(newTabPath);
   /** 恢复默认设置确认对话框（带背景遮罩的 ConfirmDialog） */
   const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
   /** 自定义新标签页目录二级对话框开关 */
   const [newTabDialogOpen, setNewTabDialogOpen] = useState(false);
+
+  /**
+   * 外观预览区挂载状态：打开时立即挂载；关闭后延迟 300ms 卸载——
+   * 覆盖 md-dialog 关闭动画（内容仍可见的收尾期），预览区不在动画中
+   * 提前消失（内容高度突变）。不能直接按 `open` 渲染：预览样例复用
+   * 真实文件区类（.file-list-item/.file-group-header 等），而关闭的
+   * 对话框常驻 DOM（display:none）——若关闭后仍渲染，全局
+   * .file-list-item 查询（e2e「文件区已加载」信号等）会先命中预览
+   * 样例（e2e 42 实测复现：首帧即匹配、顶栏尚未挂载时点击落空）。
+   */
+  const [previewMounted, setPreviewMounted] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setPreviewMounted(true); // eslint-disable-line react-hooks/set-state-in-effect -- open 变化时同步预览区挂载
+      return;
+    }
+    const timer = setTimeout(() => setPreviewMounted(false), 300);
+    return () => clearTimeout(timer);
+  }, [open]);
+
+  /**
+   * 外观预览区 sticky 分界线：滚动区离开顶部（scrollTop > 1）时
+   * `.settings-preview-fixed--scrolled` 着色——有内容被预览区遮住。
+   * 与主题颜色对话框固定区同款机制（scroller 经 onScrollerReady 拿
+   * 当前打开周期实例，切换周期摘旧监听挂新监听）。
+   */
+  const [previewScrolled, setPreviewScrolled] = useState(false);
+  const previewScrollerRef = useRef<HTMLElement | null>(null);
+  const previewOnScrollRef = useRef<() => void>(() => { /* 占位 */ });
+  useEffect(() => {
+    previewOnScrollRef.current = () => {
+      const sc = previewScrollerRef.current;
+      if (!sc) return;
+      setPreviewScrolled(sc.scrollTop > 1);
+    };
+  });
+  const handlePreviewScrollerReady = useCallback((sc: HTMLElement) => {
+    const prev = previewScrollerRef.current;
+    if (prev && prev !== sc) prev.removeEventListener('scroll', previewOnScrollRef.current);
+    previewScrollerRef.current = sc;
+    sc.addEventListener('scroll', previewOnScrollRef.current, { passive: true });
+    previewOnScrollRef.current();
+  }, []);
+  // 关闭时复位滚动态（下次打开重新从顶部开始）
+  useEffect(() => {
+    if (!open) {
+      setPreviewScrolled(false); // eslint-disable-line react-hooks/set-state-in-effect -- 关闭时复位滚动态
+      previewScrollerRef.current = null;
+    }
+  }, [open]);
 
   // 每次打开对话框时把预览重置为当前已应用的值
   useEffect(() => {
@@ -322,12 +405,20 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       setPendingFilePreview(filePreviewEnabled);
       setPendingAutoCreateDesktopEntry(autoCreateDesktopEntry);
       setPendingAutoCreateAppMenuEntry(autoCreateAppMenuEntry);
+      setPendingShowHiddenFiles(showHiddenFiles);
+      setPendingViewMode(viewMode);
+      setPendingIconSize(iconSize);
+      setPendingFilledIcons(filledIcons);
+      setPendingSortControlsAutoCollapse(sortControlsAutoCollapse);
+      setPendingShowHomeStorageUsage(showHomeStorageUsage);
+      setPendingCalculateDirSize(calculateDirSize);
+      setPendingNewTabPath(newTabPath);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 open 变化时同步
   }, [open]);
 
-  // 恢复默认设置后（应用值整体变化）把预览重置为新值，避免「确定」
-  // 时把旧预览重新盖回去
+  // 恢复默认设置后（应用值整体变化）把预览重置为新值，避免「应用」
+  // /「确定」时把旧预览重新盖回去
   useEffect(() => {
     if (!open) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 应用值变化时同步预览
@@ -340,14 +431,23 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setPendingFilePreview(filePreviewEnabled);
     setPendingAutoCreateDesktopEntry(autoCreateDesktopEntry);
     setPendingAutoCreateAppMenuEntry(autoCreateAppMenuEntry);
-  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, marqueeEnabled, filePreviewEnabled, autoCreateDesktopEntry, autoCreateAppMenuEntry]);
+    setPendingShowHiddenFiles(showHiddenFiles);
+    setPendingViewMode(viewMode);
+    setPendingIconSize(iconSize);
+    setPendingFilledIcons(filledIcons);
+    setPendingSortControlsAutoCollapse(sortControlsAutoCollapse);
+    setPendingShowHomeStorageUsage(showHomeStorageUsage);
+    setPendingCalculateDirSize(calculateDirSize);
+    setPendingNewTabPath(newTabPath);
+  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, marqueeEnabled, filePreviewEnabled, autoCreateDesktopEntry, autoCreateAppMenuEntry, showHiddenFiles, viewMode, iconSize, filledIcons, sortControlsAutoCollapse, showHomeStorageUsage, calculateDirSize, newTabPath]);
 
   /**
-   * 应用语言 + 界面缩放 + 标题栏/完整路径/搜索分类/滚动文本/文件预览 +
-   * 自动创建启动器条目等 pending 设置并关闭：确定与关闭走同一路径
-   * （退出设置等于确定）。
+   * 应用全部 pending 设置（不关闭对话框）：「应用」与「确定」共用
+   * 的保存路径——所有设置项只在此时真正生效并同步到其余窗口。
+   * 调用后父组件应用值变化，props 同步 effect 会把草稿重置为
+   * 已应用值（对话框保持打开、可继续调整）。
    */
-  const handleApply = () => {
+  const applyPending = () => {
     if (pendingLocale !== locale) onLocaleChange(pendingLocale);
     if (pendingUiScale !== uiScale) onUiScaleChange(pendingUiScale);
     if (pendingTitleBar !== titleBarMode) onTitleBarChange(pendingTitleBar);
@@ -357,6 +457,28 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     if (pendingFilePreview !== filePreviewEnabled) onFilePreviewChange(pendingFilePreview);
     if (pendingAutoCreateDesktopEntry !== autoCreateDesktopEntry) onAutoCreateDesktopEntryChange(pendingAutoCreateDesktopEntry);
     if (pendingAutoCreateAppMenuEntry !== autoCreateAppMenuEntry) onAutoCreateAppMenuEntryChange(pendingAutoCreateAppMenuEntry);
+    if (pendingShowHiddenFiles !== showHiddenFiles) onShowHiddenFilesChange(pendingShowHiddenFiles);
+    if (pendingViewMode !== viewMode) onViewModeChange(pendingViewMode);
+    if (pendingIconSize !== iconSize) onIconSizeChange(pendingIconSize);
+    if (pendingFilledIcons !== filledIcons) onFilledIconsChange(pendingFilledIcons);
+    if (pendingSortControlsAutoCollapse !== sortControlsAutoCollapse) onSortControlsAutoCollapseChange(pendingSortControlsAutoCollapse);
+    if (pendingShowHomeStorageUsage !== showHomeStorageUsage) onShowHomeStorageUsageChange(pendingShowHomeStorageUsage);
+    if (pendingCalculateDirSize !== calculateDirSize) onCalculateDirSizeChange(pendingCalculateDirSize);
+    if (pendingNewTabPath !== newTabPath) onNewTabPathChange(pendingNewTabPath);
+  };
+
+  /** 确定：应用全部 pending 设置并关闭对话框 */
+  const handleConfirm = () => {
+    applyPending();
+    onClose();
+  };
+
+  /**
+   * 取消：丢弃全部草稿直接关闭（Escape/遮罩关闭同路径——不保存
+   * 退出；草稿在下次打开时经 open effect 重置为当前已应用值）。
+   * 与主题颜色对话框语义一致。
+   */
+  const handleCancel = () => {
     onClose();
   };
 
@@ -365,11 +487,21 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       <Dialog
         title={t("settings.title")}
         open={open}
-        onClose={handleApply}
+        onClose={handleCancel}
+        onScrollerReady={handlePreviewScrollerReady}
         actions={
-          <Button onClick={handleApply} variant="filled">
-            {t("settings.done")}
-          </Button>
+          <>
+            <Button variant="text" onClick={handleCancel}>
+              {t("dialog.button.cancel")}
+            </Button>
+            <div style={{ flex: 1 }} />
+            <Button variant="tonal" onClick={applyPending}>
+              {t("settings.apply")}
+            </Button>
+            <Button variant="filled" onClick={handleConfirm}>
+              {t("settings.done")}
+            </Button>
+          </>
         }
       >
         <div className="settings-content">
@@ -396,23 +528,55 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
           <Divider />
 
-          {/* Show Hidden Files */}
-          <div className="settings-row" onClick={onToggleHiddenFiles}>
-            <div className="settings-row__start">
-              <Icon name={showHiddenFiles ? "visibility" : "visibility_off"} />
-              <div className="settings-row__label">
-                {t("settings.show_hidden")}
-              </div>
-            </div>
-            <Switch selected={showHiddenFiles} onClick={onToggleHiddenFiles} />
-          </div>
-
-          <Divider />
-
           {/* Appearance */}
           <div className="settings-section">
             <div className="settings-section-header">
               {t("settings.appearance")}
+            </div>
+
+            {/* 外观设置预览（sticky 不可滚动区）：文件区样例随外观草稿
+              即时变化；滚动区离开顶部时底部分界线着色（--scrolled 类
+              由 scroller 监听写入，见 handlePreviewScrollerReady）。
+              顶部整行为「展开/收起预览」开关（三角指向切换目标，状态
+              持久化于 settings.previewCollapsed，默认展开）——收起后
+              固定区只剩开关细条，展开入口始终可达。
+              渲染按 previewMounted（见其声明：关闭后延迟卸载覆盖关闭
+              动画，同时避免关闭的对话框常驻 DOM 污染全局 .file-list-item
+              查询） */}
+            {previewMounted && (
+              <div className={`settings-preview-fixed${previewScrolled ? " settings-preview-fixed--scrolled" : ""}`}>
+                <button
+                  type="button"
+                  className="settings-preview-toggle"
+                  onClick={() => onPreviewCollapsedChange(!previewCollapsed)}
+                >
+                  <span>
+                    {t(previewCollapsed ? "settings.preview_expand" : "settings.preview_collapse")}
+                  </span>
+                  <Icon name={previewCollapsed ? "expand_more" : "expand_less"} style={{ fontSize: "20px" }} />
+                </button>
+                {!previewCollapsed && (
+                  <SettingsPreview
+                    showHiddenFiles={pendingShowHiddenFiles}
+                    viewMode={pendingViewMode}
+                    iconSize={pendingIconSize}
+                    filledIcons={pendingFilledIcons}
+                    marqueeEnabled={pendingMarquee}
+                    groupingEnabled={groupingEnabled}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Show Hidden Files（预览区下方；确定时生效：开关只改草稿） */}
+            <div className="settings-row" onClick={() => setPendingShowHiddenFiles(!pendingShowHiddenFiles)}>
+              <div className="settings-row__start">
+                <Icon name={pendingShowHiddenFiles ? "visibility" : "visibility_off"} />
+                <div className="settings-row__label">
+                  {t("settings.show_hidden")}
+                </div>
+              </div>
+              <Switch selected={pendingShowHiddenFiles} onClick={() => setPendingShowHiddenFiles(!pendingShowHiddenFiles)} />
             </div>
 
             <div className="settings-view-mode">
@@ -421,37 +585,38 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               </div>
               <div className="settings-view-mode__buttons">
                 <Button
-                  variant={viewMode === "grid" ? "filled" : "outlined"}
-                  onClick={() => onViewModeChange("grid")}
+                  variant={pendingViewMode === "grid" ? "filled" : "outlined"}
+                  onClick={() => setPendingViewMode("grid")}
                 >
                   <Icon name="grid_view" /> {t("settings.grid")}
                 </Button>
                 <Button
-                  variant={viewMode === "list" ? "filled" : "outlined"}
-                  onClick={() => onViewModeChange("list")}
+                  variant={pendingViewMode === "list" ? "filled" : "outlined"}
+                  onClick={() => setPendingViewMode("list")}
                 >
                   <Icon name="view_list" /> {t("settings.list")}
                 </Button>
               </div>
             </div>
 
+            {/* 图标大小（确定时生效：拖拽仅改草稿，与界面缩放同款） */}
             <div className="settings-icon-size">
               <div className="settings-icon-size__header">
                 <span>{t("settings.icon_size")}</span>
-                <span className="settings-icon-size__value">{iconSize}px</span>
+                <span className="settings-icon-size__value">{pendingIconSize}px</span>
               </div>
               <Slider
                 min={ICON_SIZE_MIN}
                 max={ICON_SIZE_MAX}
                 step={ICON_SIZE_STEP}
-                value={iconSize}
-                onInput={(e) => onIconSizeChange(Number((e.target as HTMLInputElement).value))}
+                value={pendingIconSize}
+                onInput={(e) => setPendingIconSize(Number((e.target as HTMLInputElement).value))}
                 style={{ width: "100%" }}
               />
             </div>
 
             {/* 界面缩放：整页缩放（50%–200%），与图标大小滑条同款样式；
-              拖拽仅改预览，点「完成」/关闭对话框才应用 */}
+              拖拽仅改预览，点「应用」/「确定」才应用 */}
             <div className="settings-icon-size">
               <div className="settings-icon-size__header">
                 <span>{t("settings.ui_scale")}</span>
@@ -467,14 +632,37 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               />
             </div>
 
-            <div className="settings-row" onClick={onToggleFilledIcons}>
+            <div className="settings-row" onClick={() => setPendingFilledIcons(!pendingFilledIcons)}>
               <div className="settings-row__start">
-                <Icon name="favorite" filled={filledIcons} />
+                <Icon name="favorite" filled={pendingFilledIcons} />
                 <div className="settings-row__label">
                   {t("settings.filled_icons")}
                 </div>
               </div>
-              <Switch selected={filledIcons} onClick={onToggleFilledIcons} />
+              <Switch selected={pendingFilledIcons} onClick={() => setPendingFilledIcons(!pendingFilledIcons)} />
+            </div>
+
+            {/* 滚动文本（跑马灯标题，自行为区移入外观——预览区实时展示） */}
+            <div className="settings-row" onClick={() => setPendingMarquee(!pendingMarquee)}>
+              <div className="settings-row__start">
+                <Icon name="play_arrow" />
+                <div className="settings-row__label">
+                  {t("settings.marquee_text")}
+                </div>
+              </div>
+              <Switch selected={pendingMarquee} onClick={() => setPendingMarquee(!pendingMarquee)} />
+            </div>
+
+            {/* 地址栏按钮自动收缩（确定时生效）：开启时隐藏右上角控件组
+              手动切换入口，窗口过窄自动折叠菜单、宽度正常自动展开 */}
+            <div className="settings-row" onClick={() => setPendingSortControlsAutoCollapse(!pendingSortControlsAutoCollapse)}>
+              <div className="settings-row__start">
+                <Icon name="compress" />
+                <div className="settings-row__label">
+                  {t("settings.sort_auto_collapse")}
+                </div>
+              </div>
+              <Switch selected={pendingSortControlsAutoCollapse} onClick={() => setPendingSortControlsAutoCollapse(!pendingSortControlsAutoCollapse)} />
             </div>
 
             {/* 主题颜色入口：打开二级颜色设置对话框。
@@ -566,16 +754,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               {t("settings.behavior")}
             </div>
 
-            <div className="settings-row" onClick={() => setPendingMarquee(!pendingMarquee)}>
-              <div className="settings-row__start">
-                <Icon name="play_arrow" />
-                <div className="settings-row__label">
-                  {t("settings.marquee_text")}
-                </div>
-              </div>
-              <Switch selected={pendingMarquee} onClick={() => setPendingMarquee(!pendingMarquee)} />
-            </div>
-
             <div className="settings-row" onClick={() => setPendingSearchGroupByDir(!pendingSearchGroupByDir)}>
               <div className="settings-row__start">
                 <Icon name="account_tree" />
@@ -591,14 +769,14 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               <Switch selected={pendingSearchGroupByDir} onClick={() => setPendingSearchGroupByDir(!pendingSearchGroupByDir)} />
             </div>
 
-            <div className="settings-row" onClick={onToggleShowHomeStorageUsage}>
+            <div className="settings-row" onClick={() => setPendingShowHomeStorageUsage(!pendingShowHomeStorageUsage)}>
               <div className="settings-row__start">
                 <Icon name="home" />
                 <div className="settings-row__label">
                   {t("settings.show_home_storage")}
                 </div>
               </div>
-              <Switch selected={showHomeStorageUsage} onClick={onToggleShowHomeStorageUsage} />
+              <Switch selected={pendingShowHomeStorageUsage} onClick={() => setPendingShowHomeStorageUsage(!pendingShowHomeStorageUsage)} />
             </div>
 
             <div className="settings-row" onClick={() => setPendingFilePreview(!pendingFilePreview)}>
@@ -611,7 +789,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               <Switch selected={pendingFilePreview} onClick={() => setPendingFilePreview(!pendingFilePreview)} />
             </div>
 
-            <div className="settings-row" onClick={onToggleCalculateDirSize}>
+            <div className="settings-row" onClick={() => setPendingCalculateDirSize(!pendingCalculateDirSize)}>
               <div className="settings-row__start">
                 <Icon name="calculate" />
                 <div className="settings-row__label-col">
@@ -623,7 +801,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                   </div>
                 </div>
               </div>
-              <Switch selected={calculateDirSize} onClick={onToggleCalculateDirSize} />
+              <Switch selected={pendingCalculateDirSize} onClick={() => setPendingCalculateDirSize(!pendingCalculateDirSize)} />
             </div>
 
             {/* 自动创建启动器条目（桌面快捷方式 / 应用程序菜单）：
@@ -661,8 +839,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             </div>
 
             {/* 自定义新标签页目录：二级对话框输入（绝对路径 / ~/…（家目录展开）/
-              app://dashboard（旧别名 dashboard://）/ trash:// 虚拟路径），确认即
-              生效（对话框本身即草稿机制，无 pending 开关）——副标题常驻展示当前值 */}
+              app://dashboard（旧别名 dashboard://）/ trash:// 虚拟路径）——二级
+              对话框确认只写入草稿，外层「应用」/「确定」才应用（与其余设置项
+              同款应用/确定时生效）；副标题展示当前草稿值 */}
             <div className="settings-row">
               <div className="settings-row__start">
                 <Icon name="tab" />
@@ -671,7 +850,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                     {t("settings.new_tab_path")}
                   </div>
                   <div className="settings-row__sub settings-row__sub--wrap">
-                    {formatNewTabPath(newTabPath)}
+                    {formatNewTabPath(pendingNewTabPath)}
                   </div>
                 </div>
               </div>
@@ -865,10 +1044,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
 
       {newTabDialogOpen && (
         <NewTabPathDialog
-          currentPath={newTabPath}
+          currentPath={pendingNewTabPath}
           onConfirm={(path) => {
             setNewTabDialogOpen(false);
-            onNewTabPathChange(path);
+            setPendingNewTabPath(path);
           }}
           onCancel={() => setNewTabDialogOpen(false)}
         />

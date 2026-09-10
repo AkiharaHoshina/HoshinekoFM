@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { app } from 'electron';
 
 const execFileAsync = promisify(execFile);
 
@@ -154,6 +155,15 @@ async function ensureIcon(env: LauncherEntryEnv): Promise<string | null> {
 let entryChain: Promise<unknown> = Promise.resolve();
 
 /**
+ * 开发模式（未打包）下禁用 .desktop 自动操作（创建/移除）——开发运行
+ * 不应读写真实桌面/应用菜单条目（用户要求）。e2e harness（e2e 56）经
+ * HOSHINEKO_E2E_LAUNCHER_EXEC 环境变量显式启用以覆盖该链路。
+ */
+function launcherOpsDisabled(): boolean {
+  return !app.isPackaged && !process.env.HOSHINEKO_E2E_LAUNCHER_EXEC;
+}
+
+/**
  * 确保启动器条目存在（核心逻辑，main.ts 与 e2e harness 共用——单一来源，
  * 无手工副本；改坏此处 e2e 立即失败，见 AGENTS.md）：
  *
@@ -172,6 +182,9 @@ export function ensureLauncherEntry(
   kind: LauncherEntryKind,
   env: LauncherEntryEnv,
 ): Promise<LauncherEntryResult> {
+  if (launcherOpsDisabled()) {
+    return Promise.resolve({ success: true, created: false });
+  }
   const result = entryChain.then(() => ensureLauncherEntryLocked(kind, env));
   entryChain = result.then(
     () => undefined,
@@ -205,6 +218,9 @@ export function removeLauncherEntry(
   kind: LauncherEntryKind,
   env: LauncherEntryEnv,
 ): Promise<LauncherEntryRemoveResult> {
+  if (launcherOpsDisabled()) {
+    return Promise.resolve({ success: true, removed: false });
+  }
   const result = entryChain.then(() => removeLauncherEntryLocked(kind, env));
   entryChain = result.then(
     () => undefined,

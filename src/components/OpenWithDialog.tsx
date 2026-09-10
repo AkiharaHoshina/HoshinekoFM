@@ -180,12 +180,15 @@ export const OpenWithDialog: React.FC<OpenWithDialogProps & { path?: string }> =
         // 勾选「设为默认」且所选应用不是既有默认：打开成功后写入规则
         // （与「打开」按钮行为绑定——仅打开动作落定规则，取消/关窗不写）
         const writeRule = setDefault && !isCurrentDefault;
-        // 执行打开操作
+        // 先关窗再启动：确认即关闭对话框（与 GNOME 等文件管理器同款
+        // 语义），启动与关闭解耦——若 await 启动 IPC 完成后再关窗，
+        // 启动挂起/被拒时对话框会一直残留（用户看到文件已打开但
+        // 对话框不关）。启动失败只经 toast 呈现。
+        onClose();
         await onSelect(selectedApp.exec, selectedApp.desktopFile, selectedApp.name);
         if (writeRule && path) {
           await window.electron.setOpenRule(path, selectedApp.exec, selectedApp.desktopFile, selectedApp.name);
         }
-        onClose();
       } catch (error) {
         console.error(ti('toast.launch_failed', selectedApp.exec, String(error)));
         showToast(formatFileOpError(ti('operation.launch_app'), selectedApp.name, error), 'error');

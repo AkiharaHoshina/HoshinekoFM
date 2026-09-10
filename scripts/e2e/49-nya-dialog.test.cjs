@@ -5,7 +5,10 @@
  *   （标题「Hoshineko Nya~」，叠层遮罩盖在设置之上），内容为两张
  *   图片（HoshinekoAkihara.png + Transgender Pride 旗，纵向排列，
  *   大小锁定 ≈293px 宽不随对话框宽度缩放），确定按钮关闭；
- * - 普通 PgDn（无 Ctrl）不触发。
+ * - 普通 PgDn（无 Ctrl）不触发；
+ * - 设置打开期间按 Ctrl+PgUp：打开 portal 运行时信息（PortalVersionDialog
+ *   开发详情视图，标题「Portal 运行时状态」，正文含 appVersion 诊断
+ *   字段），取消关闭。
  */
 const h = require('./harness.cjs');
 
@@ -153,6 +156,26 @@ const h = require('./harness.cjs');
     await h.waitFor(win, `(${nya}) === undefined`, 5000);
     const settingsStillOpen = await h.js(win, `[...document.querySelectorAll('md-dialog')].some(d => d.open)`);
     h.assert.strictEqual(settingsStillOpen.value, true, '关闭彩蛋后设置对话框应保持打开');
+
+    // ── Ctrl+PgUp：打开 portal 运行时信息（开发详情视图，标题
+    // 「Portal 运行时状态」，正文含 appVersion: 字段定位不受 locale 影响）──
+    const portalInfo = `[...document.querySelectorAll('md-dialog')].find(d => d.open && /Portal 运行时状态|Portal runtime status/.test(d.textContent))`;
+    await h.js(win, `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageUp', ctrlKey: true })); true`);
+    await h.waitFor(win, `(${portalInfo}) !== undefined`, 8000);
+    await h.waitDialogAnim();
+    const portalBody = await h.js(win, `(() => {
+      const d = ${portalInfo};
+      return { hasAppVersion: /appVersion:/.test(d.textContent) };
+    })()`);
+    h.assert.strictEqual(portalBody.value.hasAppVersion, true, 'portal 运行时状态正文应含 appVersion 诊断字段');
+    // 取消按钮关闭（设置保持打开）
+    await h.js(win, `(() => {
+      const d = ${portalInfo};
+      [...d.querySelectorAll('md-button, md-filled-button, md-text-button, md-outlined-button')]
+        .find(b => /取消|Cancel/.test(b.textContent))?.click();
+      return true;
+    })()`);
+    await h.waitFor(win, `(${portalInfo}) === undefined`, 5000);
 
     // ── 场景二：矮窗口内容溢出 → PgDn/PgUp 翻页滚动 ──
     // 内容无焦点元素、打开时焦点在 scroller 外的确定按钮上，Chromium

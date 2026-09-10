@@ -164,7 +164,8 @@ const koKR = {
 
   // ── 설정 팝업 ──
   'settings.title': '설정',
-  'settings.done': '완료',
+  'settings.done': '확인',
+  'settings.apply': '적용',
   'settings.show_hidden': '숨김 파일 표시',
   'settings.appearance': '외관',
   'settings.view_mode': '보기 모드',
@@ -173,6 +174,9 @@ const koKR = {
   'settings.icon_size': '아이콘 크기',
   'settings.ui_scale': 'UI 배율',
   'settings.filled_icons': '채워진 아이콘',
+  'settings.sort_auto_collapse': '주소 표시줄 버튼 자동 접기',
+  'settings.preview_collapse': '미리보기 접기',
+  'settings.preview_expand': '미리보기 펼치기',
   'settings.behavior': '동작',
   'settings.language': '언어',
   'settings.marquee_text': '스크롤 텍스트',

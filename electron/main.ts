@@ -196,6 +196,8 @@ function sanitizePickerViewPrefs(input: unknown): PickerViewPrefs | null {
   if (typeof it.groupingEnabled !== 'boolean') return null;
   // 可选向后兼容旧快照：控件组折叠状态缺省视为展开
   if (it.sortControlsCollapsed !== undefined && typeof it.sortControlsCollapsed !== 'boolean') return null;
+  // 可选向后兼容旧快照：地址栏按钮自动收缩缺省关闭
+  if (it.sortControlsAutoCollapse !== undefined && typeof it.sortControlsAutoCollapse !== 'boolean') return null;
   return {
     viewMode: it.viewMode as PickerViewPrefs['viewMode'],
     iconSize: Math.min(128, Math.max(16, Math.round(it.iconSize))),
@@ -206,6 +208,7 @@ function sanitizePickerViewPrefs(input: unknown): PickerViewPrefs | null {
     sortOrder: it.sortOrder as PickerViewPrefs['sortOrder'],
     groupingEnabled: it.groupingEnabled,
     sortControlsCollapsed: it.sortControlsCollapsed ?? false,
+    sortControlsAutoCollapse: it.sortControlsAutoCollapse ?? false,
   };
 }
 

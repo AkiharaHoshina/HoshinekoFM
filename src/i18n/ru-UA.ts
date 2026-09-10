@@ -205,7 +205,8 @@ const ruUA = {
 
   // ── 设置弹窗 ──
   'settings.title': 'Настройки',
-  'settings.done': 'Готово',
+  'settings.done': 'ОК',
+  'settings.apply': 'Применить',
   'settings.show_hidden': 'Показывать скрытые файлы',
   'settings.appearance': 'Внешний вид',
   'settings.view_mode': 'Режим просмотра',
@@ -214,6 +215,9 @@ const ruUA = {
   'settings.icon_size': 'Размер значков',
   'settings.ui_scale': 'Масштаб интерфейса',
   'settings.filled_icons': 'Залитые значки',
+  'settings.sort_auto_collapse': 'Автосворачивание кнопок адресной строки',
+  'settings.preview_collapse': 'Свернуть предпросмотр',
+  'settings.preview_expand': 'Развернуть предпросмотр',
   'settings.behavior': 'Поведение',
   'settings.language': 'Язык',
   'settings.marquee_text': 'Бегущая строка',

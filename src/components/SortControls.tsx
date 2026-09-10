@@ -34,6 +34,13 @@ interface SortControlsProps {
   viewMode: 'grid' | 'list';
   /** 控件组是否折叠（仅「更多」按钮 + 溢出菜单） */
   collapsed: boolean;
+  /**
+   * 自动收缩模式（设置「地址栏按钮自动收缩」开启）：收缩/展开由
+   * 调用方按窗口宽度自动推导（useAutoSortCollapse），隐藏手动切换
+   * 入口——展开态「收起」把手与折叠态溢出菜单「展开控件」项均不
+   * 渲染，用户无法手动切换；窗口过窄自动折叠、宽度正常自动展开。
+   */
+  autoCollapse?: boolean;
   /** 折叠状态切换（展开态右端收起把手 / 溢出菜单「展开控件」项） */
   onCollapsedChange: (collapsed: boolean) => void;
   /** 切换排序字段（再次点击同一字段时由组件内部翻转方向） */
@@ -67,6 +74,7 @@ export const SortControls: React.FC<SortControlsProps> = ({
   groupingForced = false,
   viewMode,
   collapsed,
+  autoCollapse = false,
   onCollapsedChange,
   onSortByChange,
   onSortOrderChange,
@@ -77,6 +85,18 @@ export const SortControls: React.FC<SortControlsProps> = ({
   const [menuOpen, setMenuOpen] = useState(false);
   /** 「更多」按钮元素 id（md-menu popover 定位锚点） */
   const moreButtonId = useId();
+
+  /**
+   * 折叠→展开切换时溢出菜单的「更多」按钮 anchor 随折叠分支卸载，
+   * 若 menuOpen 残留 true，下次自动折叠渲染的菜单会凭空开着——
+   * 渲染期调整（官方 adjusting-state-during-render 模式，见 Omnibar）：
+   * 当前渲染的展开分支没有菜单，直接把残留状态归零，避免 effect 内
+   * 同步 setState 的额外渲染；自动收缩模式展开不由菜单项点击触发
+   * （「展开控件」项不渲染），手动路径的菜单项点击已先行 closeMenu。
+   */
+  if (!collapsed && menuOpen) {
+    setMenuOpen(false);
+  }
 
   /** 点击排序条目（展开态按钮与溢出菜单共用）：同字段翻转方向，
    *  切换字段回落到字段默认方向（名称升序/大小降序/日期降序） */
@@ -182,14 +202,18 @@ export const SortControls: React.FC<SortControlsProps> = ({
                 </MenuItem>
               );
             })}
-            <Divider />
-            <MenuItem
-              onClick={() => { onCollapsedChange(false); closeMenu(); }}
-              onCloseMenu={(e) => handleMenuKeydownActivate(e, () => { onCollapsedChange(false); closeMenu(); })}
-            >
-              <Icon name="chevron_left" slot="start" />
-              <span slot="headline">{t('sort.expand')}</span>
-            </MenuItem>
+            {!autoCollapse && (
+              <>
+                <Divider />
+                <MenuItem
+                  onClick={() => { onCollapsedChange(false); closeMenu(); }}
+                  onCloseMenu={(e) => handleMenuKeydownActivate(e, () => { onCollapsedChange(false); closeMenu(); })}
+                >
+                  <Icon name="chevron_left" slot="start" />
+                  <span slot="headline">{t('sort.expand')}</span>
+                </MenuItem>
+              </>
+            )}
           </Menu>
         </>
       ) : (
@@ -218,13 +242,17 @@ export const SortControls: React.FC<SortControlsProps> = ({
               <Icon name={s.icon} />
             </IconButton>
           ))}
-          <div style={{ width: '1px', background: 'var(--md-sys-color-outline-variant)', margin: '0 4px' }} />
-          <IconButton
-            onClick={() => onCollapsedChange(true)}
-            title={t('sort.collapse')}
-          >
-            <Icon name="chevron_right" />
-          </IconButton>
+          {!autoCollapse && (
+            <>
+              <div style={{ width: '1px', background: 'var(--md-sys-color-outline-variant)', margin: '0 4px' }} />
+              <IconButton
+                onClick={() => onCollapsedChange(true)}
+                title={t('sort.collapse')}
+              >
+                <Icon name="chevron_right" />
+              </IconButton>
+            </>
+          )}
         </>
       )}
     </div>

@@ -163,7 +163,8 @@ const zhCT = {
 
   // ── 設定彈窗 ──
   'settings.title': '設定',
-  'settings.done': '完成',
+  'settings.done': '確定',
+  'settings.apply': '套用',
   'settings.show_hidden': '顯示隱藏檔案',
   'settings.appearance': '外觀',
   'settings.view_mode': '檢視模式',
@@ -172,6 +173,9 @@ const zhCT = {
   'settings.icon_size': '圖示大小',
   'settings.ui_scale': '界面縮放',
   'settings.filled_icons': '實心圖示',
+  'settings.sort_auto_collapse': '網址列按鈕自動收縮',
+  'settings.preview_collapse': '收合預覽',
+  'settings.preview_expand': '展開預覽',
   'settings.behavior': '行為',
   'settings.language': '語言',
   'settings.marquee_text': '跑馬燈文字',

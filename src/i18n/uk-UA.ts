@@ -202,7 +202,8 @@ const ukUA = {
 
   // ── 设置弹窗 ──
   'settings.title': 'Налаштування',
-  'settings.done': 'Готово',
+  'settings.done': 'ОК',
+  'settings.apply': 'Застосувати',
   'settings.show_hidden': 'Показувати приховані файли',
   'settings.appearance': 'Вигляд',
   'settings.view_mode': 'Режим перегляду',
@@ -211,6 +212,9 @@ const ukUA = {
   'settings.icon_size': 'Розмір піктограм',
   'settings.ui_scale': 'Масштаб інтерфейсу',
   'settings.filled_icons': 'Залиті піктограми',
+  'settings.sort_auto_collapse': 'Автозгортання кнопок адресного рядка',
+  'settings.preview_collapse': 'Згорнути попередній перегляд',
+  'settings.preview_expand': 'Розгорнути попередній перегляд',
   'settings.behavior': 'Поведінка',
   'settings.language': 'Мова',
   'settings.marquee_text': 'Біжучий текст',

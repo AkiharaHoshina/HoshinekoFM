@@ -2,7 +2,7 @@
  * e2e 64：设置「打开方式配置管理」二级对话框（打开方式规则管理）。
  * - 64a 设置入口行「进入」按钮打开二级对话框（带遮罩、与设置同宽）：
  *   用户配置/系统配置两段（用户先系统后）、底部 actions 行常驻提示
- *   （与完成按钮同行）、条目显示文件类型 + 常见文件后缀、系统条目
+ *   （与确定按钮同行）、条目显示文件类型 + 常见文件后缀、系统条目
  *   复制图标（悬停）/无 Exec 条目不可复制（悬停标题解释）；
  * - 64b 点击系统条目复制配置到用户配置目录（DefaultOpenRule 格式），
  *   复制后系统条目显示 X 标记且点击无效（被用户配置覆盖）；
@@ -154,7 +154,7 @@ const { ipcMain, app } = require('electron');
       );
       const empty = await inManager(win, `return (d.querySelector('.openrule-empty')?.textContent) || null;`);
       h.assert.ok(empty.value && /暂无用户配置|No user rules/.test(empty.value), '无用户规则时应显示空占位');
-      // 底部 actions 行常驻提示（与完成按钮同行、不在滚动区内）
+      // 底部 actions 行常驻提示（与确定按钮同行、不在滚动区内）
       const actionsInfo = await inManager(
         win,
         `const actions = d.querySelector('[slot="actions"]');
@@ -168,7 +168,7 @@ const { ipcMain, app } = require('electron');
         };`,
       );
       h.assert.ok(actionsInfo.value && /只读|read-only/.test(actionsInfo.value.hint), '底部 actions 行应有「系统配置只读」常驻提示');
-      h.assert.ok(actionsInfo.value && /完成|Done/.test(actionsInfo.value.doneText), '提示应与「完成」按钮同行');
+      h.assert.ok(actionsInfo.value && /确定|OK/.test(actionsInfo.value.doneText), '提示应与「确定」按钮同行');
       h.assert.strictEqual(actionsInfo.value.hintInScroll, false, '提示不得出现在可滚动区内');
 
       // 系统条目：TextEditor 可复制（复制图标 + 文件后缀展示）；
@@ -440,8 +440,8 @@ const { ipcMain, app } = require('electron');
       );
       h.assert.strictEqual(restored.value, true, '清除全部后系统条目应恢复可复制');
 
-      // 「完成」关闭管理对话框返回设置
-      await clickInManagerByText(win, 'md-filled-button', /完成|Done/);
+      // 「确定」关闭管理对话框返回设置
+      await clickInManagerByText(win, 'md-filled-button', /确定|OK/);
       await h.waitFor(
         win,
         `![...document.querySelectorAll('md-dialog')].some((d) => d.open === true && !!d.querySelector('.openrule-content'))`,

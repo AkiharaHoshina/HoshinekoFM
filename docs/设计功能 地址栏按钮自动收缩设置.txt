@@ -1,0 +1,95 @@
+设计功能：地址栏按钮自动收缩设置（settings.sortControlsAutoCollapse）
+==================================================================
+
+一、需求
+--------
+设置（外观区）新增「地址栏按钮自动收缩」开关，默认**关**：
+
+- 关（默认）：保持现状——右上角排序/分组控件组（SortControls）
+  展开态右端有「收起」把手、折叠态溢出菜单有「展开控件」项，用户
+  可手动切换两种状态；展开态地址栏被压缩到 240px 以下时控件组经
+  flex-wrap 自动换到第二行（既有行为，e2e 55 覆盖）。
+- 开：隐藏手动切换入口（展开态「收起」把手、折叠态溢出菜单
+  「展开控件」项均不渲染）——控件组状态改为**自动推导**：窗口过窄
+  时自动切折叠菜单（仅「更多」按钮 + 溢出菜单），窗口宽度正常时
+  自动展开。过窄的判定条件与既有「展开态自动换行」条件相同
+  （地址栏低于 OMNIBAR_MIN_WIDTH_EXPANDED = 240px）。
+
+与全部设置项一致，该开关**应用/确定时生效**（对话框内切换只改草稿，
+点「应用」/「确定」才应用并同步到其余窗口；「取消」/Escape 丢弃草稿）。
+
+选择器/保存器顶栏（picker-topbar）与主窗口同款控件组，同样跟随
+该设置（经 viewPrefs 快照注入继承，选择器无设置入口）。
+
+二、判定机制（核心）
+--------------------
+自动换行是纯 CSS（地址栏展开态 min-width: 240 强制换行），因此
+直接复用既有 useTopBarWrap 的换行判定（排序分区顶边 >= 地址栏
+分区底边）作为「窄」信号——条件天然同源，零新阈值。
+
+但「wrapped 即折叠、不 wrapped 即展开」会振荡：折叠后控件组只剩
+「更多」按钮（约 40px vs 展开约 286px），行能放下 → 解除换行 →
+自动展开 → 又换行 → 死循环（振荡带宽约 250px）。
+
+解决方案（useAutoSortCollapse hook，JS 状态机）：
+
+1. 生效折叠态 effectiveCollapsed = auto ? autoDerived : manual。
+   地址栏 min-width 按**生效态**：折叠时 0（折叠态永不换行——
+   「更多」按钮与地址栏同行挤压，而非把单按钮换到第二行）。
+2. 收缩触发：展开态下 wrapped === true → 折叠（与换行条件严格一致）。
+3. 展开触发：折叠态下 wrapped 恒 false 不可用，改测容器宽度：
+   clientWidth >= upWidth(实测，回收站视图无返回上级键时 0) + 8(gap)
+   + 240(地址栏最小) + 8(gap) + expandedSortWidth(实测) + padding(实测
+   ——主窗口 8×2、选择器/保存器 16×2，容器 content-box、clientWidth
+   含 padding) + 4(回差)。展开态控件组宽度在展开期间经 ResizeObserver
+   实测存入 ref；窗口首启即折叠（从未展开过）时回落常数 286。
+4. 振荡证明：收缩发生在 clientWidth < 展开所需宽，展开发生在
+   clientWidth >= 所需宽 + 4，两条件互斥，无振荡带；回差 4px 吸收
+   测量误差。
+5. 自动模式下换行不是稳定态（只有折叠前 1 帧瞬态），顶栏底部分界线
+   装饰在自动模式下直接抑制（wrapDecoration = wrapped && !auto）。
+
+组件细节：
+- SortControls 新 prop autoCollapse：展开分支不渲染「收起」把手及
+  其前置 divider、折叠分支溢出菜单不渲染「展开控件」项及其上方
+  divider（自动模式菜单 5 项、尾部无悬空分界线）；effect 守卫折叠→
+  展开切换时若溢出菜单开着强制关闭（「更多」按钮 anchor 卸载）。
+- useTopBarWrap 的 collapsed 依赖改传生效态（自动切换时重测）。
+
+三、状态与同步链
+----------------
+- settings.sortControlsAutoCollapse：useLocalStorage 布尔，默认 false，
+  与全部设置项一致**应用/确定时生效**（SettingsDialog pending 草稿机制，
+  行 onClick 只改草稿，点「应用」/「确定」才写 localStorage 经 storage
+  事件与快照广播同步其余窗口）；恢复默认设置重置 false。
+- PickerViewPrefs 加 sortControlsAutoCollapse（sanitize 可选、缺省
+  false，向后兼容旧快照）——src/types/picker.ts 与
+  electron/handlers/picker.ts 同源类型、main.ts sanitize、e2e
+  harness.cjs 手工副本四处同步。
+- FilePicker：autoCollapseEnabled = viewPrefs?.sortControlsAutoCollapse
+  ?? local（GUI 模式回落共享 localStorage）；**无 override 机制**——
+  选择器没有写入口（与 sortControlsCollapsed 不同）。
+- 手动折叠态与自动模式并存：自动模式开时手动值被忽略（把手隐藏，
+  生效态纯自动）；关闭自动模式恢复手动值。
+
+四、改动清单
+------------
+- src/hooks/useAutoSortCollapse.ts（新建）
+- src/components/SortControls.tsx（autoCollapse prop + 菜单守卫）
+- src/components/ExplorerTab.tsx / FilePicker.tsx（生效态 + min-width
+  + 装饰抑制 + hook 接入）
+- src/App.tsx（localStorage + 快照上报 + 恢复默认 + props）
+- src/components/SettingsDialog.tsx（外观区新行，立即生效）
+- src/types/picker.ts + electron/handlers/picker.ts + electron/main.ts
+  + scripts/e2e/harness.cjs（PickerViewPrefs 四处）
+- i18n：settings.sort_auto_collapse × 12 语言
+- e2e 68：默认关回归（行为与 55 全同）；开后窄/宽往返自动切换、
+  无把手无「展开控件」项、恢复默认重置、选择器继承、GUI 模式回落
+
+五、边界与风险
+--------------
+- 默认关 = 现有行为逐字节不变，e2e 54/55/41/42/51 应全过。
+- expandedSortWidth 回落常数只影响「首启即折叠」窗口的展开时机
+  （略保守晚一点展开），无功能错误。
+- 测量全部基于 CSS 像素布局实测，uiScale 缩放天然正确。
+- 唯一新增阈值是回差 4px 与回落常数 286px，均带注释。
