@@ -786,6 +786,21 @@ export function registerFsHandlers() {
   }
 
   /**
+   * trash:// 虚拟路径 → 真实回收站 files 目录路径。
+   * 相对段剔除 `.`/`..`/空段防逃逸（与前端 utils/trashPath 同语义）；
+   * 非 trash:// 输入原样返回（调用方自行保证合法）。
+   */
+  function trashVirtualToReal(p: string): string {
+    if (!p.startsWith('trash://')) return p;
+    const filesRoot = path.join(getTrashRoot(), 'files');
+    const segments = p.slice('trash://'.length).split('/')
+      .filter((s) => s !== '' && s !== '.' && s !== '..');
+    return segments.length === 0
+      ? filesRoot
+      : path.join(filesRoot, ...segments);
+  }
+
+  /**
    * 返回回收站 files 目录的真实路径。前端在 trash:// 视图下监听该目录，
    * 外部应用改动回收站时可自动刷新。
    */
@@ -1379,15 +1394,7 @@ export function registerFsHandlers() {
     if (typeof dirPath !== 'string' || (dirPath !== 'trash://' && !dirPath.startsWith('trash://') && !dirPath.startsWith('/'))) {
       return { success: false, code: 'INVALID_PATH' };
     }
-    let realPath = dirPath;
-    if (dirPath.startsWith('trash://')) {
-      const filesRoot = path.join(getTrashRoot(), 'files');
-      const segments = dirPath.slice('trash://'.length).split('/')
-        .filter((s) => s !== '' && s !== '.' && s !== '..');
-      realPath = segments.length === 0
-        ? filesRoot
-        : path.join(filesRoot, ...segments);
-    }
+    const realPath = trashVirtualToReal(dirPath);
     try {
       const stats = await fs.stat(realPath);
       if (!stats.isDirectory()) return { success: false, code: 'NOT_DIR' };
@@ -1542,6 +1549,10 @@ export function registerFsHandlers() {
   //   杀死路径（e2e 22 使用）。sleep 后 exec du（sh 被 SIGKILL 时若已
   //   exec 则杀到的是 du 本身，未 exec 则 du 不会启动，均无孤儿进程）。
   ipcMain.handle('system:get-directory-size', async (_, dirPath: string, requestId?: string) => {
+    // trash:// 虚拟目录映射到真实回收站 files 目录（与 fs:get-dir-info
+    // 同源映射）——位置区回收站「属性」的大小行经此路径计算
+    const targetPath = trashVirtualToReal(dirPath);
+
     // 目录切换：先杀掉上一个仍在跑的 du（旧结果已无意义）
     if (activeDu) {
       try {
@@ -1557,8 +1568,8 @@ export function registerFsHandlers() {
 
     const result = await new Promise<DirSizeResult>((resolve) => {
       const child = stallMs > 0
-        ? spawn('sh', ['-c', `sleep ${stallMs / 1000}; exec du -sb "$1"`, 'sh', dirPath], { stdio: ['ignore', 'pipe', 'ignore'] })
-        : spawn('du', ['-sb', dirPath], { stdio: ['ignore', 'pipe', 'ignore'] });
+        ? spawn('sh', ['-c', `sleep ${stallMs / 1000}; exec du -sb "$1"`, 'sh', targetPath], { stdio: ['ignore', 'pipe', 'ignore'] })
+        : spawn('du', ['-sb', targetPath], { stdio: ['ignore', 'pipe', 'ignore'] });
       activeDu = { child, requestId };
 
       let out = '';

@@ -73,6 +73,19 @@ interface SidebarProps {
    */
   onReorderPin?: (fromIndex: number, toIndex: number) => void;
   /**
+   * 固定项右键回调（仅 default 变体）：App 打开固定项菜单
+   * （第一组复用文件区文件夹右键菜单 + 第二组上移/下移/取消固定）。
+   * picker 变体不传——选择器内固定区只读，无右键菜单。
+   */
+  onPinnedContextMenu?: (e: React.MouseEvent, item: SidebarPinnedItem) => void;
+  /**
+   * Places 条目（仪表盘与位置区）右键回调（仅 default 变体）：App 打开
+   * 位置菜单——仪表盘 = 仅「打开」；回收站 = 「打开 + 属性」；其余位置
+   * = 文件区文件夹菜单裁剪掉复制/剪切/删除/永久删除/重命名/解压/压缩。
+   * picker 变体不传——选择器内位置区只读，无右键菜单。
+   */
+  onPlaceContextMenu?: (e: React.MouseEvent, place: { name: string; path: string; icon: string }) => void;
+  /**
    * 变体：'picker' 用于文件选择器窗口——隐藏仪表盘入口、固定按钮、
    * 固定移除按钮、右键固定菜单与侧边栏拖放路由（选择器只导航不落点）。
    * 默认 'default' 行为不变。
@@ -122,6 +135,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onPinPath,
   onUnpinPath,
   onReorderPin,
+  onPinnedContextMenu,
+  onPlaceContextMenu,
   variant = 'default',
   hideTrash = false,
 }) => {
@@ -804,6 +819,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className={`sidebar-item ${currentPath === "app://dashboard" ? "active" : ""}`}
               tabIndex={-1}
               onClick={() => onNavigate("app://dashboard")}
+              onContextMenu={(e) => {
+                if (!onPlaceContextMenu) return;
+                e.preventDefault();
+                e.stopPropagation();
+                onPlaceContextMenu(e, {
+                  name: "Dashboard",
+                  path: "app://dashboard",
+                  icon: "dashboard",
+                });
+              }}
             >
               <Icon
                 name="dashboard"
@@ -827,6 +852,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   data-sidebar-target={`${TARGET_PREFIX_PLACE}${place.path}`}
                   tabIndex={-1}
                   onClick={() => onNavigate(place.path)}
+                  onContextMenu={(e) => {
+                    if (!onPlaceContextMenu) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onPlaceContextMenu(e, place);
+                  }}
                 >
                   <Icon
                     name={getPlaceIcon(place.name)}
@@ -874,6 +905,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onDragOver={(e) => handlePinReorderDragOver(e, origIndex)}
                   onDrop={(e) => handlePinReorderDrop(e, origIndex)}
                   onDragEnd={handlePinReorderDragEnd}
+                  onContextMenu={(e) => {
+                    if (isPicker || !onPinnedContextMenu) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onPinnedContextMenu(e, item);
+                  }}
                   onClick={() => onNavigate(item.path)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {

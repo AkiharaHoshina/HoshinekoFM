@@ -349,6 +349,8 @@ const koKP = {
   'sidebar.pinned': '고정됨',
   'sidebar.add_pin': '폴더 고정',
   'sidebar.unpin': '고정 해제',
+  'sidebar.pin_move_up': '우로 이동',
+  'sidebar.pin_move_down': '아래로 이동',
   'sidebar.already_pinned': '이미 고정된 폴더입니다',
   'sidebar.pin_via_file_manager': '화일 관리자로 선택',
   'sidebar.pin_single_folder': '폴더 하나를 끌어서 고정하세요',

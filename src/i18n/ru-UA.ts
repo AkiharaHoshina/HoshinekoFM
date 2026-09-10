@@ -381,6 +381,8 @@ const ruUA = {
   'sidebar.pinned': 'Закреплённые',
   'sidebar.add_pin': 'Закрепить папку',
   'sidebar.unpin': 'Открепить',
+  'sidebar.pin_move_up': 'Переместить вверх',
+  'sidebar.pin_move_down': 'Переместить вниз',
   'sidebar.already_pinned': 'Папка уже закреплена',
   'sidebar.pin_via_file_manager': 'Выбрать через файловый менеджер',
   'sidebar.pin_single_folder': 'Перетащите одну папку для закрепления',

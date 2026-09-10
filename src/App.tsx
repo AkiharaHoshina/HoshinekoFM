@@ -74,6 +74,25 @@ import { useTitleBar } from "./hooks/useTitleBar";
 import { attachNativeDragTracker } from "./utils/nativeDragTracker";
 import { focusNextKeyboardZone, trackKeyboardZoneFocus } from "./utils/focusZones";
 
+/**
+ * 折叠菜单条目中的连续/首尾分界线：位置区菜单裁剪掉复制/剪切/删除/
+ * 永久删除/重命名/解压/压缩后，中段条目全部消失会留下两条相邻
+ * divider（固定项菜单的「divider 原样保留」惯例在此失效），构建后
+ * 统一清理——去掉首尾 divider、连续 divider 只保留第一条。
+ */
+function collapseMenuDividers(items: ContextMenuItem[]): ContextMenuItem[] {
+  const result: ContextMenuItem[] = [];
+  for (const item of items) {
+    if (!item.divider) {
+      result.push(item);
+      continue;
+    }
+    const prev = result[result.length - 1];
+    if (prev && !prev.divider) result.push(item);
+  }
+  return result;
+}
+
 function AppContent() {
   const {
     tabs,
@@ -101,15 +120,6 @@ function AppContent() {
     closeDeviceContextMenu,
     closeGvfsContextMenu,
   } = useContextMenu();
-
-  const {
-    renameDialogOpen,
-    setRenameDialogOpen,
-    newName,
-    setNewName,
-    handleRename,
-    openRenameDialog,
-  } = useRenameDialog(refreshActiveTab);
 
   const {
     singleConflict,
@@ -342,6 +352,75 @@ function AppContent() {
     },
     [setPinnedDirs],
   );
+
+  /**
+   * 重命名成功后的固定项同步：路径命中时更新名称与路径（固定项
+   * 按钮显示新名称）。重命名对话框在固定项右键菜单与文件区共用，
+   * 因此文件区重命名固定目录同样同步——行内重命名（ExplorerTab）
+   * 不经此回调，不在同步范围。
+   */
+  const syncPinnedDirsAfterRename = useCallback(
+    (oldPath: string, newPath: string) => {
+      setPinnedDirs((prev) =>
+        prev.map((p) =>
+          p.path === oldPath
+            ? { ...p, path: newPath, name: newPath.split("/").pop() || p.name }
+            : p,
+        ),
+      );
+    },
+    [setPinnedDirs],
+  );
+
+  /**
+   * 删除成功后的固定项销毁：被删路径命中即移除固定项（按钮随之
+   * 销毁）。由固定项右键菜单第一组的删除动作经 onDeleted 回调触发。
+   */
+  const handlePinnedDirDeleted = useCallback(
+    (paths: string[]) => {
+      setPinnedDirs((prev) => prev.filter((p) => !paths.includes(p.path)));
+    },
+    [setPinnedDirs],
+  );
+
+  /** 固定项右键菜单位置与目标项（null = 关闭） */
+  const [pinnedDirMenu, setPinnedDirMenu] = useState<{
+    x: number;
+    y: number;
+    item: SidebarPinnedItem;
+  } | null>(null);
+
+  /** Sidebar 固定项右键：打开固定项菜单（坐标 + 目标项） */
+  const handlePinnedDirContextMenu = useCallback(
+    (e: React.MouseEvent, item: SidebarPinnedItem) => {
+      setPinnedDirMenu({ x: e.clientX, y: e.clientY, item });
+    },
+    [],
+  );
+
+  /** Places 条目右键菜单位置与目标（null = 关闭；含仪表盘与位置区） */
+  const [placeMenu, setPlaceMenu] = useState<{
+    x: number;
+    y: number;
+    place: { name: string; path: string; icon: string };
+  } | null>(null);
+
+  /** Sidebar Places 条目右键：打开位置菜单（坐标 + 目标条目） */
+  const handlePlaceContextMenu = useCallback(
+    (e: React.MouseEvent, place: { name: string; path: string; icon: string }) => {
+      setPlaceMenu({ x: e.clientX, y: e.clientY, place });
+    },
+    [],
+  );
+
+  const {
+    renameDialogOpen,
+    setRenameDialogOpen,
+    newName,
+    setNewName,
+    handleRename,
+    openRenameDialog,
+  } = useRenameDialog(refreshActiveTab, syncPinnedDirsAfterRename);
 
   /**
    * 固定项上报主进程（含首次挂载）：主进程原子落盘快照到 GUI 的
@@ -1430,9 +1509,52 @@ function AppContent() {
     setPropertiesDialogOpen(true);
   }, []);
 
-  const handlePropertiesFile = useCallback((file: IFile) => {
-    openPropertiesDialog(file, null);
-  }, [openPropertiesDialog]);
+  /**
+   * 打开单条目属性对话框：先经 fs:stat 补全真实 mtime/size 再打开——
+   * 文件区背景菜单/搜索菜单/回收站背景菜单构造的最小 IFile 没有真实
+   * 元数据（会显示 1970 时间戳）。trash:// 虚拟路径 stat 返回 null
+   * （fs:stat 无映射）——改经 fs:get-dir-info 取回收站 files 目录真实
+   * mtime；两者都拿不到时保留传入值。目录大小行仍由 PropertiesGrid
+   * 自身经 get-directory-size（含 trash 映射）异步计算，不受影响。
+   */
+  const openPropertiesWithStat = useCallback(
+    async (file: IFile) => {
+      const info = await window.electron.stat(file.path).catch(() => null);
+      let mtime = info?.mtime ?? file.mtime;
+      if (!info && file.path.startsWith("trash://")) {
+        const dirInfo = await window.electron.getDirInfo(file.path).catch(() => null);
+        if (dirInfo?.success && dirInfo.mtime) mtime = new Date(dirInfo.mtime);
+      }
+      openPropertiesDialog(
+        { ...file, size: info?.size ?? file.size, mtime },
+        null,
+      );
+    },
+    [openPropertiesDialog],
+  );
+
+  /** 打开属性对话框（文件区背景菜单/搜索菜单/回收站背景菜单的「属性」） */
+  const handlePropertiesFile = useCallback(
+    (file: IFile) => {
+      void openPropertiesWithStat(file);
+    },
+    [openPropertiesWithStat],
+  );
+
+  /** 位置菜单「属性」：与 handlePropertiesFile 同一条补全链路 */
+  const openPlaceProperties = useCallback(
+    (place: { name: string; path: string }) => {
+      void openPropertiesWithStat({
+        name: place.name,
+        path: place.path,
+        isDirectory: true,
+        size: 0,
+        mtime: new Date(0),
+        mime: "inode/directory",
+      });
+    },
+    [openPropertiesWithStat],
+  );
 
   const handleCopy = (files: IFile[]) => {
     copy(files);
@@ -1456,6 +1578,316 @@ function AppContent() {
       refreshActiveTab,
     );
     closeContextMenu();
+  };
+
+  /**
+   * 单条目右键菜单的可选裁剪项：侧边栏固定项右键复用文件区文件夹
+   * 菜单时去掉无语义/重复的条目；onDeleted 供固定项删除后销毁按钮。
+   */
+  interface BuildItemMenuOptions {
+    /** 隐藏「固定到侧边栏/从侧边栏取消固定」（固定项自身菜单用第二组「取消固定」） */
+    hidePinSidebar?: boolean;
+    /** 隐藏「解压到当前文件夹」 */
+    hideExtract?: boolean;
+    /** 隐藏「压缩」 */
+    hideCompress?: boolean;
+    /** 隐藏「复制」（位置区菜单用——位置条目无复制到自身语义） */
+    hideCopy?: boolean;
+    /** 隐藏「剪切」（位置区菜单用——剪切位置目录极其危险） */
+    hideCut?: boolean;
+    /** 隐藏「删除」（位置区菜单用——不得删除标准目录） */
+    hideDelete?: boolean;
+    /** 隐藏「永久删除」（位置区菜单用——与删除同源） */
+    hideDeletePermanent?: boolean;
+    /** 隐藏「重命名/批量重命名」（位置区菜单用——不得重命名标准目录） */
+    hideRename?: boolean;
+    /** 覆盖「属性」动作（位置区菜单用：先 stat 补全真实 mtime/size 再开对话框） */
+    onProperties?: () => void;
+    /** 删除成功（进回收站/永久删除）后回调，参数为被删路径集合 */
+    onDeleted?: (paths: string[]) => void;
+  }
+
+  /**
+   * 构建单条目（文件/文件夹）右键菜单项。文件区右键与侧边栏固定项
+   * 右键共用：条目与分界线位置完全一致，固定项菜单仅按 opts 裁剪
+   * 条目（divider 对象原样保留不动）。项内动作调用的 closeContextMenu
+   * 只作用于文件区菜单——固定项菜单自身由 ContextMenu 在条目点击后
+   * 经 onClose 关闭，两者互不干扰。
+   *
+   * @param item - 右键命中的条目（固定项菜单为固定项构造的最小 IFile）
+   * @param selectedFiles - 生效的选中集（多选批量操作；固定项恒为 [item]）
+   * @param opts - 可选裁剪（固定项菜单用）
+   */
+  const buildItemContextMenu = (
+    item: IFile,
+    selectedFiles: IFile[],
+    opts?: BuildItemMenuOptions,
+  ): ContextMenuItem[] => {
+    const items: ContextMenuItem[] = [
+      {
+        label: t("context_menu.open"),
+        icon: "open_in_new",
+        action: () => {
+          // 目录内部打开（与双击同款导航）；文件走外部应用打开
+          if (item.isDirectory) {
+            handleSidebarNavigate(item.path);
+          } else {
+            // 无默认处理程序（xdg-open 会回退浏览器弹「是否保存」）
+            // → 改弹「打开方式」对话框
+            void openFile(item.path).then((err) => {
+              if (err === OPEN_NO_HANDLER) setOpenWithFile(item);
+            });
+          }
+          closeContextMenu();
+        },
+      },
+      // 内置终端以目录为 cwd 打开——文件无「终端目录」语义
+      // （chdir(2) failed: Not a directory），仅目录显示此项
+      ...(item.isDirectory
+        ? [{
+          label: t("context_menu.open_terminal"),
+          icon: "terminal",
+          action: () => openTerminalAt(item.path),
+        }]
+        : []),
+      ...(item.isDirectory
+        ? [{
+          label: t("context_menu.open_in_terminal"),
+          icon: "terminal",
+          action: () => {
+            void openInDefaultTerminal(item.path);
+            closeContextMenu();
+          },
+        }]
+        : []),
+      ...(item.isDirectory && !opts?.hidePinSidebar
+        ? [{
+          label: pinnedDirs.some((p) => p.path === item.path)
+            ? t("context_menu.unpin_sidebar")
+            : t("context_menu.pin_sidebar"),
+          icon: "push_pin",
+          action: () => {
+            if (pinnedDirs.some((p) => p.path === item.path)) {
+              unpinSidebarDir(item.path);
+            } else {
+              pinSidebarDir(item.path);
+            }
+            closeContextMenu();
+          },
+        }]
+        : []),
+      ...(item.mime !== "inode/blockdevice"
+        ? [{
+          label: dashboardPinned.some((p) => p.path === item.path)
+            ? t("context_menu.unpin")
+            : t("context_menu.pin"),
+          icon: "push_pin",
+          action: () => {
+            if (dashboardPinned.some((p) => p.path === item.path)) {
+              unpinDashboardItem(item.path);
+            } else {
+              pinDashboardItem(item.name, item.path, item.isDirectory);
+            }
+            closeContextMenu();
+          },
+        }]
+        : []),
+      { divider: true, label: "", action: () => {} },
+      ...(!opts?.hideCopy
+        ? [{
+          label: t("context_menu.copy"),
+          icon: "content_copy",
+          action: () => handleCopy(selectedFiles),
+        }]
+        : []),
+      ...(!opts?.hideCut
+        ? [{
+          label: t("context_menu.cut"),
+          icon: "content_cut",
+          action: () => handleCut(selectedFiles),
+        }]
+        : []),
+      ...(!opts?.hideDelete
+        ? [{
+          label: t("context_menu.delete"),
+          icon: "delete",
+          action: () => {
+            const paths = selectedFiles.map((f) => f.path);
+            trashFiles(paths, () => {
+              refreshActiveTab();
+              opts?.onDeleted?.(paths);
+            });
+          },
+        }]
+        : []),
+      ...(!opts?.hideDeletePermanent
+        ? [{
+          label: t("context_menu.delete_permanent"),
+          icon: "delete_forever",
+          action: () => {
+            const paths = selectedFiles.map((f) => f.path);
+            void buildPermanentDeleteMessage(paths).then((message) =>
+              confirm(t("context_menu.delete_permanent"), message).then((ok) => {
+                if (ok) {
+                  deleteFilesPermanently(paths, () => {
+                    refreshActiveTab();
+                    opts?.onDeleted?.(paths);
+                  });
+                }
+              }),
+            );
+          },
+        }]
+        : []),
+      ...(!opts?.hideExtract
+        ? [{
+          label: t("context_menu.extract_here"),
+          icon: "unarchive",
+          action: () => {
+            extractFile(item.path, refreshActiveTab);
+          },
+        }]
+        : []),
+      ...(item.mime !== "inode/blockdevice" && !opts?.hideCompress
+        ? [{
+          label: t("context_menu.compress"),
+          icon: "archive",
+          action: () => {
+            openCompressDialog(selectedFiles);
+          },
+        }]
+        : []),
+      ...(!opts?.hideRename && selectedFiles.length < 2
+        ? [{
+          label: t("context_menu.rename"),
+          icon: "edit",
+          action: () => {
+            openRenameDialog(item);
+            closeContextMenu();
+          },
+        }]
+        : []),
+      ...(!opts?.hideRename && selectedFiles.length >= 2
+        ? [{
+          label: t("context_menu.batch_rename"),
+          icon: "drive_file_rename_outline",
+          action: () => {
+            setBatchRenameFiles(selectedFiles);
+            closeContextMenu();
+          },
+        }]
+        : []),
+    ];
+
+    const specialItems: ContextMenuItem[] = [];
+    if (item.symlinkTarget && item.mime !== 'inode/symlink') {
+      const targetFileName = item.isDirectory
+        ? item.symlinkTarget.split("/").pop() || ""
+        : "";
+      specialItems.push({
+        label: t("symlink.go_to_target"),
+        icon: "arrow_forward",
+        action: () => {
+          if (item.isDirectory) {
+            handleSidebarNavigate(item.symlinkTarget!, targetFileName);
+          } else {
+            const parent = item.symlinkTarget!.substring(0, item.symlinkTarget!.lastIndexOf("/"));
+            const targetFileName = item.symlinkTarget!.split("/").pop() || "";
+            handleSidebarNavigate(parent || "/", targetFileName);
+          }
+          closeContextMenu();
+        },
+      });
+    }
+    if (item.isMountpoint && item.mountSource) {
+      const isRealDevice = item.mountSource.startsWith("/dev/") &&
+          !["devtmpfs", "tmpfs", "sysfs", "proc", "hugetlbfs", "mqueue", "selinuxfs", "debugfs", "fusectl", "securityfs", "pstore", "bpf", "cgroup2", "configfs"].includes(
+            item.mountSource.split("/").pop() || ""
+          );
+      if (isRealDevice) {
+        const targetFileName = item.mountSource.split("/").pop() || "";
+        specialItems.push({
+          label: t("mountpoint.go_to_source"),
+          icon: "hard_drive",
+          action: () => {
+            const parent = item.mountSource!.substring(0, item.mountSource!.lastIndexOf("/"));
+            handleSidebarNavigate(parent || "/", targetFileName);
+            closeContextMenu();
+          },
+        });
+      }
+    }
+    if (item.mime === 'inode/blockdevice' && item.isExternal) {
+      const devPath = item.devicePath || item.path;
+      if (item.isMountable) {
+        if (item.mountedAt) {
+          specialItems.push({
+            label: t("device.unmount"),
+            icon: "eject",
+            action: () => {
+              handleDeviceUnmount(devPath);
+              closeContextMenu();
+            },
+          });
+        } else {
+          specialItems.push({
+            label: t("device.mount"),
+            icon: "hard_drive",
+            action: () => {
+              handleDeviceMount(devPath);
+              closeContextMenu();
+            },
+          });
+        }
+      }
+      if (!item.parentDisk && !item.isMountable) {
+        specialItems.push({
+          label: t("device.eject"),
+          icon: "power_settings_new",
+          action: () => {
+            handleDeviceEject(devPath);
+            closeContextMenu();
+          },
+        });
+      }
+    }
+    if (specialItems.length > 0) {
+      items.push({ divider: true, label: "", action: () => {} }, ...specialItems);
+    }
+
+    items.push(
+      { divider: true, label: "", action: () => {} },
+      // 「打开方式」作用于文件类型的默认程序——目录无此语义（目录
+      // 默认程序由系统集成「默认文件管理器」独立管理），仅文件显示
+      ...(item.isDirectory
+        ? []
+        : [{
+          label: t("context_menu.open_with"),
+          icon: "apps",
+          action: () => {
+            setOpenWithFile(item);
+            closeContextMenu();
+          },
+        }]),
+      {
+        label: t("context_menu.properties"),
+        icon: "info",
+        action: () => {
+          if (opts?.onProperties) {
+            opts.onProperties();
+          } else if (selectedFiles.length > 1) {
+            // 多选（含右键命中已选中项时的完整选中集）→ 团体属性；
+            // 单选 → 单条目属性
+            openPropertiesDialog(null, selectedFiles);
+          } else {
+            openPropertiesDialog(item, null);
+          }
+          closeContextMenu();
+        },
+      },
+    );
+
+    return items;
   };
 
   const menuItems: ContextMenuItem[] = (() => {
@@ -1501,247 +1933,10 @@ function AppContent() {
       }
 
       // 右键命中已选中文件时，批量操作作用于整个选中集；否则只作用于命中的文件
-      const selectedFiles =
-        contextMenu.selected.length > 0 ? contextMenu.selected : [item];
-      const items: ContextMenuItem[] = [
-        {
-          label: t("context_menu.open"),
-          icon: "open_in_new",
-          action: () => {
-            // 目录内部打开（与双击同款导航）；文件走外部应用打开
-            if (item.isDirectory) {
-              handleSidebarNavigate(item.path);
-            } else {
-              // 无默认处理程序（xdg-open 会回退浏览器弹「是否保存」）
-              // → 改弹「打开方式」对话框
-              void openFile(item.path).then((err) => {
-                if (err === OPEN_NO_HANDLER) setOpenWithFile(item);
-              });
-            }
-            closeContextMenu();
-          },
-        },
-        // 内置终端以目录为 cwd 打开——文件无「终端目录」语义
-        // （chdir(2) failed: Not a directory），仅目录显示此项
-        ...(item.isDirectory
-          ? [{
-            label: t("context_menu.open_terminal"),
-            icon: "terminal",
-            action: () => openTerminalAt(item.path),
-          }]
-          : []),
-        ...(item.isDirectory
-          ? [{
-            label: t("context_menu.open_in_terminal"),
-            icon: "terminal",
-            action: () => {
-              void openInDefaultTerminal(item.path);
-              closeContextMenu();
-            },
-          }]
-          : []),
-        ...(item.isDirectory
-          ? [{
-            label: pinnedDirs.some((p) => p.path === item.path)
-              ? t("context_menu.unpin_sidebar")
-              : t("context_menu.pin_sidebar"),
-            icon: "push_pin",
-            action: () => {
-              if (pinnedDirs.some((p) => p.path === item.path)) {
-                unpinSidebarDir(item.path);
-              } else {
-                pinSidebarDir(item.path);
-              }
-              closeContextMenu();
-            },
-          }]
-          : []),
-        ...(item.mime !== "inode/blockdevice"
-          ? [{
-            label: dashboardPinned.some((p) => p.path === item.path)
-              ? t("context_menu.unpin")
-              : t("context_menu.pin"),
-            icon: "push_pin",
-            action: () => {
-              if (dashboardPinned.some((p) => p.path === item.path)) {
-                unpinDashboardItem(item.path);
-              } else {
-                pinDashboardItem(item.name, item.path, item.isDirectory);
-              }
-              closeContextMenu();
-            },
-          }]
-          : []),
-        { divider: true, label: "", action: () => {} },
-        {
-          label: t("context_menu.copy"),
-          icon: "content_copy",
-          action: () => handleCopy(selectedFiles),
-        },
-        {
-          label: t("context_menu.cut"),
-          icon: "content_cut",
-          action: () => handleCut(selectedFiles),
-        },
-        {
-          label: t("context_menu.delete"),
-          icon: "delete",
-          action: () =>
-            trashFiles(selectedFiles.map((f) => f.path), refreshActiveTab),
-        },
-        {
-          label: t("context_menu.delete_permanent"),
-          icon: "delete_forever",
-          action: () => {
-            const paths = selectedFiles.map((f) => f.path);
-            void buildPermanentDeleteMessage(paths).then((message) =>
-              confirm(t("context_menu.delete_permanent"), message).then((ok) => {
-                if (ok) deleteFilesPermanently(paths, refreshActiveTab);
-              }),
-            );
-          },
-        },
-        {
-          label: t("context_menu.extract_here"),
-          icon: "unarchive",
-          action: () => {
-            extractFile(item.path, refreshActiveTab);
-          },
-        },
-        ...(item.mime !== "inode/blockdevice"
-          ? [{
-            label: t("context_menu.compress"),
-            icon: "archive",
-            action: () => {
-              openCompressDialog(selectedFiles);
-            },
-          }]
-          : []),
-        ...(selectedFiles.length < 2
-          ? [{
-            label: t("context_menu.rename"),
-            icon: "edit",
-            action: () => {
-              openRenameDialog(item);
-              closeContextMenu();
-            },
-          }]
-          : []),
-        ...(selectedFiles.length >= 2
-          ? [{
-            label: t("context_menu.batch_rename"),
-            icon: "drive_file_rename_outline",
-            action: () => {
-              setBatchRenameFiles(selectedFiles);
-              closeContextMenu();
-            },
-          }]
-          : []),
-      ];
-
-      const specialItems: ContextMenuItem[] = [];
-      if (item.symlinkTarget && item.mime !== 'inode/symlink') {
-        const targetFileName = item.isDirectory
-          ? item.symlinkTarget.split("/").pop() || ""
-          : "";
-        specialItems.push({
-          label: t("symlink.go_to_target"),
-          icon: "arrow_forward",
-          action: () => {
-            if (item.isDirectory) {
-              handleSidebarNavigate(item.symlinkTarget!, targetFileName);
-            } else {
-              const parent = item.symlinkTarget!.substring(0, item.symlinkTarget!.lastIndexOf("/"));
-              const targetFileName = item.symlinkTarget!.split("/").pop() || "";
-              handleSidebarNavigate(parent || "/", targetFileName);
-            }
-            closeContextMenu();
-          },
-        });
-      }
-      if (item.isMountpoint && item.mountSource) {
-        const isRealDevice = item.mountSource.startsWith("/dev/") &&
-          !["devtmpfs", "tmpfs", "sysfs", "proc", "hugetlbfs", "mqueue", "selinuxfs", "debugfs", "fusectl", "securityfs", "pstore", "bpf", "cgroup2", "configfs"].includes(
-            item.mountSource.split("/").pop() || ""
-          );
-        if (isRealDevice) {
-          const targetFileName = item.mountSource.split("/").pop() || "";
-          specialItems.push({
-            label: t("mountpoint.go_to_source"),
-            icon: "hard_drive",
-            action: () => {
-              const parent = item.mountSource!.substring(0, item.mountSource!.lastIndexOf("/"));
-              handleSidebarNavigate(parent || "/", targetFileName);
-              closeContextMenu();
-            },
-          });
-        }
-      }
-      if (item.mime === 'inode/blockdevice' && item.isExternal) {
-        const devPath = item.devicePath || item.path;
-        if (item.isMountable) {
-          if (item.mountedAt) {
-            specialItems.push({
-              label: t("device.unmount"),
-              icon: "eject",
-              action: () => {
-                handleDeviceUnmount(devPath);
-                closeContextMenu();
-              },
-            });
-          } else {
-            specialItems.push({
-              label: t("device.mount"),
-              icon: "hard_drive",
-              action: () => {
-                handleDeviceMount(devPath);
-                closeContextMenu();
-              },
-            });
-          }
-        }
-        if (!item.parentDisk && !item.isMountable) {
-          specialItems.push({
-            label: t("device.eject"),
-            icon: "power_settings_new",
-            action: () => {
-              handleDeviceEject(devPath);
-              closeContextMenu();
-            },
-          });
-        }
-      }
-      if (specialItems.length > 0) {
-        items.push({ divider: true, label: "", action: () => {} }, ...specialItems);
-      }
-
-      items.push(
-        { divider: true, label: "", action: () => {} },
-        {
-          label: t("context_menu.open_with"),
-          icon: "apps",
-          action: () => {
-            setOpenWithFile(item);
-            closeContextMenu();
-          },
-        },
-        {
-          label: t("context_menu.properties"),
-          icon: "info",
-          action: () => {
-            // 多选（含右键命中已选中项时的完整选中集）→ 团体属性；
-            // 单选 → 单条目属性
-            if (selectedFiles.length > 1) {
-              openPropertiesDialog(null, selectedFiles);
-            } else {
-              openPropertiesDialog(item, null);
-            }
-            closeContextMenu();
-          },
-        },
+      return buildItemContextMenu(
+        item,
+        contextMenu.selected.length > 0 ? contextMenu.selected : [item],
       );
-
-      return items;
     }
     return (
       bgMenuItems ??
@@ -1757,6 +1952,133 @@ function AppContent() {
       )
     );
   })();
+
+  /**
+   * 固定项右键菜单：第一组 = 文件区文件夹右键菜单原样复用
+   * （去掉「固定到侧边栏」「解压到当前文件夹」「压缩」三项，
+   * 分界线位置不变）；第二组 = 上移/下移/取消固定，两组间以
+   * 分界线隔开。
+   */
+  const pinnedDirMenuItems: ContextMenuItem[] = pinnedDirMenu
+    ? (() => {
+      const { item } = pinnedDirMenu;
+      const index = pinnedDirs.findIndex((p) => p.path === item.path);
+      // 固定项只存 name/path/isDir：构造最小 IFile 供菜单复用
+      // （菜单动作仅依赖路径/名称/目录标记，缺失字段走各自默认分支）
+      const file: IFile = {
+        name: item.name,
+        path: item.path,
+        isDirectory: true,
+        size: 0,
+        mtime: new Date(0),
+        mime: "inode/directory",
+      };
+      const items = buildItemContextMenu(file, [file], {
+        hidePinSidebar: true,
+        hideExtract: true,
+        hideCompress: true,
+        onDeleted: handlePinnedDirDeleted,
+      });
+      items.push(
+        { divider: true, label: "", action: () => {} },
+        {
+          label: t("sidebar.pin_move_up"),
+          icon: "arrow_upward",
+          action: () => {
+            if (index > 0) reorderPinnedDir(index, index - 1);
+          },
+        },
+        {
+          label: t("sidebar.pin_move_down"),
+          icon: "arrow_downward",
+          action: () => {
+            if (index >= 0 && index < pinnedDirs.length - 1) {
+              reorderPinnedDir(index, index + 1);
+            }
+          },
+        },
+        {
+          label: t("sidebar.unpin"),
+          icon: "push_pin",
+          action: () => {
+            unpinSidebarDir(item.path);
+          },
+        },
+      );
+      return items;
+    })()
+    : [];
+
+  /**
+   * Places 条目右键菜单：
+   * - 仪表盘 = 仅「打开」；
+   * - 回收站 = 「打开 + 属性」（其余目录菜单条目对 trash:// 虚拟路径
+   *   无语义——终端 spawn 失败/固定生成 trash:// 字面条目/压缩解压
+   *   必然失败，故手写两项）；
+   * - 其余位置（Home/Desktop/…）= 文件区文件夹菜单裁剪掉复制/剪切/
+   *   删除/永久删除/重命名/解压/压缩（删除中段条目后连续 divider 折叠）。
+   */
+  const placeMenuItems: ContextMenuItem[] = placeMenu
+    ? (() => {
+      const { place } = placeMenu;
+      if (place.path === "app://dashboard") {
+        return [
+          {
+            label: t("context_menu.open"),
+            icon: "open_in_new",
+            action: () => {
+              handleSidebarNavigate("app://dashboard");
+            },
+          },
+        ];
+      }
+      if (place.path === "trash://") {
+        return [
+          {
+            label: t("context_menu.open"),
+            icon: "open_in_new",
+            action: () => {
+              handleSidebarNavigate("trash://");
+            },
+          },
+          {
+            label: t("context_menu.properties"),
+            icon: "info",
+            action: () => {
+              void openPlaceProperties({
+                name: t("trash.title"),
+                path: "trash://",
+              });
+            },
+          },
+        ];
+      }
+      // 位置区只存 name/path/icon：构造最小 IFile 供菜单复用
+      // （与固定项菜单同款——动作仅依赖路径/名称/目录标记）
+      const file: IFile = {
+        name: place.name,
+        path: place.path,
+        isDirectory: true,
+        size: 0,
+        mtime: new Date(0),
+        mime: "inode/directory",
+      };
+      return collapseMenuDividers(
+        buildItemContextMenu(file, [file], {
+          hideCopy: true,
+          hideCut: true,
+          hideDelete: true,
+          hideDeletePermanent: true,
+          hideRename: true,
+          hideExtract: true,
+          hideCompress: true,
+          onProperties: () => {
+            void openPlaceProperties(place);
+          },
+        }),
+      );
+    })()
+    : [];
 
   return (
     <div className="app-root">
@@ -1832,6 +2154,8 @@ function AppContent() {
           onPinPath={pinSidebarDir}
           onUnpinPath={unpinSidebarDir}
           onReorderPin={reorderPinnedDir}
+          onPinnedContextMenu={handlePinnedDirContextMenu}
+          onPlaceContextMenu={handlePlaceContextMenu}
         />
 
         <main className="main-content">
@@ -2042,6 +2366,24 @@ function AppContent() {
                 return items;
               })()}
               onClose={closeGvfsContextMenu}
+            />
+          )}
+
+          {pinnedDirMenu && (
+            <ContextMenu
+              x={pinnedDirMenu.x}
+              y={pinnedDirMenu.y}
+              items={pinnedDirMenuItems}
+              onClose={() => setPinnedDirMenu(null)}
+            />
+          )}
+
+          {placeMenu && (
+            <ContextMenu
+              x={placeMenu.x}
+              y={placeMenu.y}
+              items={placeMenuItems}
+              onClose={() => setPlaceMenu(null)}
             />
           )}
 

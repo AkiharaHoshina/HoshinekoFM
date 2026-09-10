@@ -796,6 +796,12 @@ async function clickAt(win, x, y, opts = {}) {
   await sendMouse(win, 'mouseUp', x, y, opts);
 }
 
+/** 在坐标 (x, y) 右键点击（CSS 像素，自动换算 zoom） */
+async function rightClickAt(win, x, y, opts = {}) {
+  await sendMouse(win, 'mouseDown', x, y, { ...opts, button: 'right' });
+  await sendMouse(win, 'mouseUp', x, y, { ...opts, button: 'right' });
+}
+
 /** 发送按键（keyCode 如 'a' / 'F5' / 'Escape' / 'Enter'） */
 async function key(win, keyCode, modifiers = []) {
   await win.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
@@ -935,6 +941,7 @@ module.exports = {
   clickAt,
   clickEl,
   rightClickEl,
+  rightClickAt,
   shiftClickEl,
   doubleClickEl,
   key,

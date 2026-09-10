@@ -350,6 +350,8 @@ const enUS = {
   'sidebar.pinned': 'Pinned',
   'sidebar.add_pin': 'Pin Folder',
   'sidebar.unpin': 'Unpin',
+  'sidebar.pin_move_up': 'Move up',
+  'sidebar.pin_move_down': 'Move down',
   'sidebar.already_pinned': 'This folder is already pinned',
   'sidebar.pin_via_file_manager': 'Select via file manager',
   'sidebar.pin_single_folder': 'Drag a single folder to pin it',

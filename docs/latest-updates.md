@@ -1,5 +1,66 @@
 # 更新日志
 
+## v0.11.48 — 已固定文件夹右键菜单 + Places 位置区右键菜单 + 回收站背景右键「属性」
+
+- **已固定文件夹右键菜单（v0.11.48）**：右键侧边栏已固定
+  文件夹按钮打开右键菜单，内容分两组（组间分界线隔开）：**第一组
+  = 文件区文件夹右键菜单原样复用**，去掉「固定到侧边栏」「解压到
+  当前文件夹」「压缩」三项、其余条目与分界线位置不变——App 把原
+  menuItems IIFE 的 item 分支抽为 `buildItemContextMenu(item,
+  selectedFiles, opts)`（文件区调用行为不变；固定项菜单传
+  `hidePinSidebar/hideExtract/hideCompress` 三裁剪 + `onDeleted`
+  回调），固定项构造最小 IFile（菜单动作只依赖路径/名称/目录标记，
+  symlink/挂载点特殊项不出现）；**第二组 = 上移/下移/取消固定**
+  （复用 `reorderPinnedDir` 越界 no-op 与 `unpinSidebarDir`；新 i18n
+  键 `sidebar.pin_move_up/pin_move_down`，12 语言，「取消固定」复用
+  `sidebar.unpin`）。**联动**：重命名成功（`useRenameDialog` 新增
+  可选 `onRenamed` 回调，仅成功分支触发）→ 固定项名称/路径同步
+  （旧按钮消失）；删除/永久删除成功（`onDeleted` 回调，失败不误毁
+   按钮）→ 固定项按钮销毁。e2e 65 覆盖：菜单结构（含分界线数量与
+   组序）、上移/下移换序、取消固定、重命名同步、删除进沙箱回收站
+   + 永久删除后按钮销毁。
+- **Places 位置区右键菜单（v0.11.48）**：右键侧边栏位置区
+  条目（仪表盘/主页/下载/…/回收站）打开右键菜单——**仪表盘** =
+  仅「打开」；**回收站** = 手写「打开 + 属性」两项（其余目录菜单
+  条目对 `trash://` 虚拟路径无语义：终端 spawn 失败、固定生成
+  `trash://` 字面条目、压缩/解压必然失败）；**其余位置** =
+  `buildItemContextMenu` 最小 IFile 复用，裁剪 `hideCopy/hideCut/
+  hideDelete/hideDeletePermanent/hideRename/hideExtract/hideCompress`
+  （新增 BuildItemMenuOptions 裁剪项，文件区/固定项菜单不传 opts
+  行为不变）——删空中段条目后两条相邻 divider 由新增
+  `collapseMenuDividers` 折叠。「属性」经新增 `onProperties` 覆盖
+  动作：先 `fs:stat` 补真实 mtime/size 再开对话框（最小 IFile 会
+  显示 1970 时间戳；trash:// stat 无映射返回 null，改经
+  `fs:get-dir-info` 取回收站 files 目录真实 mtime）。**后端
+  get-directory-size trash 映射**：`fs.ts` 抽 `trashVirtualToReal`
+  共享给 `fs:get-dir-info` 与 `system:get-directory-size`——回收站
+  属性大小行对真实 files 目录跑 du（此前显示「无法获取」）。Sidebar
+  经新可选 prop `onPlaceContextMenu(e, place)` 上报（仅 default
+  变体——picker 不传无菜单），App `placeMenu` 状态渲染 ContextMenu。
+  e2e 66 覆盖：仪表盘菜单唯一项「打开」+ 点击导航仪表盘；标准位置
+  菜单 6 项 1 分界线（结构断言 + 打开导航 + 属性对话框位置/非 1970
+  修改时间）；回收站菜单 2 项 0 分界线（打开导航 trash:// 视图 +
+  属性位置行 `trash://` + 大小行非「无法获取」+ 修改时间非 1970）。
+  无新 i18n 键（打开/属性均复用既有键）。
+- **回收站背景右键菜单「属性」（v0.11.48）**：文件区回收站
+  （trash://）空白处右键菜单此前只有「清空回收站/刷新」，现补
+  「属性」第三项（两组分界线）——与普通目录背景菜单「属性」同款
+  语义（回收站自身属性）：ExplorerTab `handleBackgroundContextMenu`
+  的 trash:// 分支构造最小 IFile（名称 = `trash.title`、路径 =
+  `trash://`）经 `onPropertiesFile` 上报。**App 属性补全链路统一**：
+  原 `handlePropertiesFile`（直接开对话框）与位置菜单
+  `openPlaceProperties` 合并为共享 `openPropertiesWithStat(file)`
+  ——先 `fs:stat` 补全真实 mtime/size（背景菜单/搜索菜单/回收站
+  背景菜单构造的最小 IFile 无真实元数据会显示 1970 时间戳），
+  `trash://` stat 返回 null 改经 `fs:get-dir-info` 取回收站 files
+  目录真实 mtime，都拿不到时保留传入值；大小行仍由 PropertiesGrid
+  经 get-directory-size（含 trash 映射）异步计算。副作用改进：普通
+  目录背景菜单「属性」此前 `mtime: new Date()` 假值，现为真实 stat
+  mtime。e2e 67 覆盖：菜单结构（3 项 2 分界线）+ 属性对话框（位置
+  行 `trash://`、修改时间非 1970、大小行非「无法获取」）。无新
+  i18n 键。
+
+
 ## v0.11.47 — 打开方式配置管理 + 对话框 Tab 滚动闪烁修复
 
 - **打开方式配置管理（设置 → 行为）**：新增「打开方式配置管理」行

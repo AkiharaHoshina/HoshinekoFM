@@ -378,6 +378,8 @@ const ukUA = {
   'sidebar.pinned': 'Закріплені',
   'sidebar.add_pin': 'Закріпити папку',
   'sidebar.unpin': 'Відкріпити',
+  'sidebar.pin_move_up': 'Перемістити вгору',
+  'sidebar.pin_move_down': 'Перемістити вниз',
   'sidebar.already_pinned': 'Папку вже закріплено',
   'sidebar.pin_via_file_manager': 'Вибрати через файловий менеджер',
   'sidebar.pin_single_folder': 'Перетягніть одну папку для закріплення',

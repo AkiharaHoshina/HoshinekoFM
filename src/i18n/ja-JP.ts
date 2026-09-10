@@ -339,6 +339,8 @@ const jaJP = {
   'sidebar.pinned': 'ピン留め',
   'sidebar.add_pin': 'フォルダーをピン留め',
   'sidebar.unpin': 'ピン留めを解除',
+  'sidebar.pin_move_up': '上へ移動',
+  'sidebar.pin_move_down': '下へ移動',
   'sidebar.already_pinned': 'このフォルダーは既にピン留めされています',
   'sidebar.pin_via_file_manager': 'ファイルマネージャーで選択',
   'sidebar.pin_single_folder': 'フォルダーを1つドラッグしてピン留め',

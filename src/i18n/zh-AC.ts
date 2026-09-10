@@ -341,6 +341,8 @@ const zhAC = {
   'sidebar.pinned': '已固定',
   'sidebar.add_pin': '固定文件夹',
   'sidebar.unpin': '取消固定',
+  'sidebar.pin_move_up': '上移',
+  'sidebar.pin_move_down': '下移',
   'sidebar.already_pinned': '该文件夹已固定',
   'sidebar.pin_via_file_manager': '使用文件管理器选择',
   'sidebar.pin_single_folder': '请拖动单个文件夹进行固定',

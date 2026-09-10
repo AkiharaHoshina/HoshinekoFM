@@ -57,6 +57,12 @@ const path = require('path');
       `[...document.querySelectorAll('.context-menu md-list-item')].some(li => /内置终端|built-in terminal/i.test(li.textContent ?? ''))`,
     );
     h.assert.strictEqual(dirHasTerminal.value, true, '目录右键菜单应包含「在内置终端打开」');
+    // 目录无「打开方式」语义（打开方式作用于文件类型的默认程序）
+    const dirHasOpenWith = await h.js(
+      win,
+      `[...document.querySelectorAll('.context-menu md-list-item')].some(li => /打开方式|Open With/i.test(li.textContent ?? ''))`,
+    );
+    h.assert.strictEqual(dirHasOpenWith.value, false, '目录右键菜单不应包含「打开方式」');
     const clicked = await h.js(
       win,
       `(() => {
@@ -164,6 +170,36 @@ const path = require('path');
       }
       h.assert.ok(fs.existsSync(marker), '右键「打开」也应直接执行 .AppImage 可执行文件');
     }
+  });
+
+  await h.run('03e 背景右键（当前目录）菜单不含「打开方式」', async () => {
+    const dir = h.tempDir();
+    h.makeFileTree(dir, { 'a.txt': 'hello', 'b.txt': 'world' });
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 2`);
+
+    // 右键文件区底部空白（容器底缘上方 24px，条目列表只占顶部）
+    const pt = await h.js(
+      win,
+      `(() => {
+        const el = document.querySelector('.file-list-container');
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.bottom - 24 };
+      })()`,
+    );
+    await h.rightClickAt(win, pt.value.x, pt.value.y);
+    await h.waitFor(win, `document.querySelectorAll('.context-menu md-list-item').length >= 1`);
+    // 确认命中的是背景菜单（含「新建文件夹」）而非文件条目菜单
+    const hasNewFolder = await h.js(
+      win,
+      `[...document.querySelectorAll('.context-menu md-list-item')].some(li => /新建文件夹|New Folder/i.test(li.textContent ?? ''))`,
+    );
+    h.assert.strictEqual(hasNewFolder.value, true, '背景右键菜单应包含「新建文件夹」（确认命中的是背景菜单）');
+    const bgHasOpenWith = await h.js(
+      win,
+      `[...document.querySelectorAll('.context-menu md-list-item')].some(li => /打开方式|Open With/i.test(li.textContent ?? ''))`,
+    );
+    h.assert.strictEqual(bgHasOpenWith.value, false, '背景右键菜单不应包含「打开方式」');
   });
 
   h.finish();

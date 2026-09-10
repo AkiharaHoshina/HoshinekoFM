@@ -1513,7 +1513,9 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   const handleBackgroundContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
 
-    // 回收站背景菜单：只提供清空与刷新
+    // 回收站背景菜单：清空 / 刷新 / 属性（回收站自身属性，与普通目录
+    // 背景菜单「属性」同款语义——App 侧经 fs:stat / get-dir-info /
+    // get-directory-size 的 trash 映射补全真实信息）
     if (currentPath === 'trash://') {
       onContextMenu(e, null);
       onBgMenuItems([
@@ -1531,6 +1533,21 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           label: t('context_menu.refresh'),
           icon: 'refresh',
           action: () => loadPath(currentPath),
+        },
+        { label: '', divider: true, action: () => {} },
+        {
+          label: t('context_menu.properties'),
+          icon: 'info',
+          action: () => {
+            onPropertiesFile({
+              name: t('trash.title'),
+              path: 'trash://',
+              isDirectory: true,
+              size: 0,
+              mtime: new Date(0),
+              mime: 'inode/directory',
+            });
+          },
         },
       ]);
       return;
@@ -1597,13 +1614,6 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         icon: 'terminal',
         action: () => { void openInDefaultTerminal(currentPath); }
       },
-      {
-        label: t('context_menu.open_with'),
-        icon: 'apps',
-        action: () => {
-          onOpenWithFile(currentFolderAsFile);
-        }
-      },
       { label: '', divider: true, action: () => {} },
       {
         label: t('context_menu.properties'),
@@ -1616,7 +1626,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
     onContextMenu(e, null);
     onBgMenuItems(customItems);
-  }, [currentPath, files, clipboard, onCreateDialog, loadPath, executePasteAction, onOpenTerminalAt, onOpenWithFile, onPropertiesFile, onContextMenu, onBgMenuItems, onConfirmDialog]);
+  }, [currentPath, files, clipboard, onCreateDialog, loadPath, executePasteAction, onOpenTerminalAt, onPropertiesFile, onContextMenu, onBgMenuItems, onConfirmDialog]);
 
   // ── Stable callback wrappers for FileList (ref pattern to prevent unnecessary re-renders) ──
   const handleSelectRef = useRef(handleSelect);

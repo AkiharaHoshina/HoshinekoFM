@@ -339,6 +339,8 @@ const zhTW = {
   'sidebar.pinned': '已固定',
   'sidebar.add_pin': '固定資料夾',
   'sidebar.unpin': '取消固定',
+  'sidebar.pin_move_up': '上移',
+  'sidebar.pin_move_down': '下移',
   'sidebar.already_pinned': '該資料夾已固定',
   'sidebar.pin_via_file_manager': '使用檔案管理員選擇',
   'sidebar.pin_single_folder': '請拖動單個資料夾進行釘選',
