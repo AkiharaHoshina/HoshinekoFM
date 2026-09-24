@@ -1,5 +1,11 @@
 import type { IFile } from '../types/files';
-import { getSemanticGroup, GROUP_ORDER } from './fileUtils';
+import {
+  getSemanticGroup,
+  getDeviceGroup,
+  GROUP_ORDER,
+  DEV_GROUP_ORDER,
+  isDevGroupingList,
+} from './fileUtils';
 
 /** 排序字段（与 settings.sortBy 持久化键对应） */
 export type SortBy = 'name' | 'size' | 'date';
@@ -40,13 +46,17 @@ export interface SortOptions {
  * @returns 过滤并排序后的新数组
  */
 export function sortFiles(files: IFile[], options: SortOptions): IFile[] {
+  // /dev 根目录：分组开启时按设备类型分组（与 flattenItems 同源判定）
+  const useDevice = isDevGroupingList(files);
+  const groupOf = useDevice ? getDeviceGroup : getSemanticGroup;
+  const groupOrder = useDevice ? DEV_GROUP_ORDER : GROUP_ORDER;
   const filtered = files.filter((f) => options.showHiddenFiles || !f.name.startsWith('.'));
   return filtered.sort((a: IFile, b: IFile) => {
     if (options.groupingEnabled) {
-      const groupA = getSemanticGroup(a);
-      const groupB = getSemanticGroup(b);
+      const groupA = groupOf(a);
+      const groupB = groupOf(b);
       if (groupA !== groupB) {
-        return GROUP_ORDER.indexOf(groupA) - GROUP_ORDER.indexOf(groupB);
+        return groupOrder.indexOf(groupA) - groupOrder.indexOf(groupB);
       }
     } else if (a.isDirectory !== b.isDirectory) {
       return a.isDirectory ? -1 : 1;

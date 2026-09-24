@@ -1,5 +1,5 @@
 import type { IFile } from "../../types/files";
-import { getSemanticGroup } from "../../utils/fileUtils";
+import { getSemanticGroup, getDeviceGroup, isDevGroupingList } from "../../utils/fileUtils";
 import { t } from "../../i18n";
 
 export const DOUBLE_CLICK_THRESHOLD = 500;
@@ -18,6 +18,13 @@ const GROUP_LABEL_KEYS: Record<string, string> = {
   Archives: "group.archives",
   Executables: "group.executables",
   Others: "group.others",
+  DevBlockMountable: "group.dev_block_mountable",
+  DevBlockOther: "group.dev_block_other",
+  DevTty: "group.dev_tty",
+  DevCharOther: "group.dev_char_other",
+  DevSymlink: "group.dev_symlink",
+  DevFifo: "group.dev_fifo",
+  DevSocket: "group.dev_socket",
 };
 
 export function tGroup(groupName: string): string {
@@ -236,10 +243,15 @@ export function flattenItems(
   const items: ListItem[] = [];
   let lastGroup = "";
 
+  // /dev 根目录：分组头按设备类型（与 sortFiles 同源判定——搜索态
+  // groupInfo 分支不经过此路径）
+  const deviceDir = isDevGroupingList(files);
+
   const groupOf = (file: IFile): { key: string; label: string } | null => {
     if (!groupingEnabled) return null;
     if (groupInfo) return groupInfo(file);
-    return { key: getSemanticGroup(file), label: tGroup(getSemanticGroup(file)) };
+    const key = deviceDir ? getDeviceGroup(file) : getSemanticGroup(file);
+    return { key, label: tGroup(key) };
   };
 
   for (let i = 0; i < files.length; i++) {

@@ -612,6 +612,13 @@ const koKP = {
   'group.archives': '압축 화일',
   'group.executables': '실행 화일',
   'group.others': '기타 화일',
+  'group.dev_block_mountable': '마운트 가능한 블록 장치',
+  'group.dev_block_other': '기타 블록 장치',
+  'group.dev_tty': '텔레타이프(tty)',
+  'group.dev_char_other': '기타 문자 장치',
+  'group.dev_symlink': '링크',
+  'group.dev_fifo': '파이프',
+  'group.dev_socket': '소켓',
 
   // ── 크기 포맷 ──
   'size.b': 'B',

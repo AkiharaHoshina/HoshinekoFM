@@ -643,6 +643,13 @@ const ukUA = {
   'group.archives': 'Архіви',
   'group.executables': 'Виконувані файли',
   'group.others': 'Інші',
+  'group.dev_block_mountable': 'Монтовані блочні пристрої',
+  'group.dev_block_other': 'Інші блочні пристрої',
+  'group.dev_tty': 'Телетайп (tty)',
+  'group.dev_char_other': 'Інші символьні пристрої',
+  'group.dev_symlink': 'Посилання',
+  'group.dev_fifo': 'Канали',
+  'group.dev_socket': 'Сокети',
 
   // ── 大小格式化 ──
   'size.b': 'Б',

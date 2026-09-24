@@ -612,6 +612,13 @@ const enUS = {
   'group.archives': 'Archives',
   'group.executables': 'Executables',
   'group.others': 'Others',
+  'group.dev_block_mountable': 'Mountable block devices',
+  'group.dev_block_other': 'Other block devices',
+  'group.dev_tty': 'Teletype (tty)',
+  'group.dev_char_other': 'Other character devices',
+  'group.dev_symlink': 'Links',
+  'group.dev_fifo': 'Pipes',
+  'group.dev_socket': 'Sockets',
 
   // ── 大小格式化 ──
   'size.b': 'B',

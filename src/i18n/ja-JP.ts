@@ -602,6 +602,13 @@ const jaJP = {
   'group.archives': 'アーカイブ',
   'group.executables': '実行可能ファイル',
   'group.others': 'その他のファイル',
+  'group.dev_block_mountable': 'マウント可能なブロックデバイス',
+  'group.dev_block_other': 'その他のブロックデバイス',
+  'group.dev_tty': 'テレタイプ(tty)',
+  'group.dev_char_other': 'その他のキャラクタデバイス',
+  'group.dev_symlink': 'リンク',
+  'group.dev_fifo': 'パイプ',
+  'group.dev_socket': 'ソケット',
 
   // ── 大小格式化 ──
   'size.b': 'B',

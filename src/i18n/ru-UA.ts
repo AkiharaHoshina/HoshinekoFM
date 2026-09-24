@@ -646,6 +646,13 @@ const ruUA = {
   'group.archives': 'Архивы',
   'group.executables': 'Исполняемые файлы',
   'group.others': 'Другие',
+  'group.dev_block_mountable': 'Монтируемые блочные устройства',
+  'group.dev_block_other': 'Прочие блочные устройства',
+  'group.dev_tty': 'Телетайп (tty)',
+  'group.dev_char_other': 'Прочие символьные устройства',
+  'group.dev_symlink': 'Ссылки',
+  'group.dev_fifo': 'Каналы',
+  'group.dev_socket': 'Сокеты',
 
   // ── 大小格式化 ──
   'size.b': 'Б',

@@ -1,6 +1,28 @@
 # 更新日志
 
-## v0.11.49-dev — 桌面条目 Exec 条件引号
+## v0.11.49-dev — 桌面条目 Exec 条件引号 + /dev 特殊分类
+
+- **/dev 特殊分类（v0.11.49-dev）**：分组开启时 `/dev` 根目录按设备
+  类型分组（替代无意义的语义分组——设备文件 MIME 全落「其他」），
+  组头序固定：文件夹 → **可挂载块设备** → **其他块设备** →
+  **电传打字机(tty)** → **其他字符设备** → **链接** → **管道** →
+  **套接字** → 其他。**仅 `/dev` 根生效**，子目录（/dev/disk、/dev/shm、
+  /dev/pts 等挂载点内容）保持通用语义分组；分组关闭时仍平铺（目录
+  优先）；搜索态（按目录聚簇）不经过。判定全部复用渲染层既有字段
+  （零后端改动）：`mime`（inode/blockdevice/chardevice/fifo/socket/
+  symlink）+ `isMountable`（分区/DM——块设备拆分依据）+ **symlinkTarget
+  优先**（后端把可解析链接按目标分类——/dev/stdin → /proc/self/fd/0
+  归字符设备、/dev/fd 归目录——但 /dev 下条目本质是链接，按
+  symlinkTarget 存在性归链接组）；tty 判定 = 名字 console/ptmx/^tty/
+  ^rfcomm（vcs/fb 等不在列）。实现：`fileUtils.ts` 的 `getDeviceGroup`/
+  `DEV_GROUP_ORDER`/`groupingDirOf`（从首条目推断父目录）/
+  `isDevGroupingList`；`sortFiles` 与 `flattenItems` 同源切换（排序与
+  组头渲染一致）；主窗口/选择器/保存器自动同享；外观设置预览（假路径）
+  不受影响。i18n 新增 7 键 × 12 语言。e2e 71 覆盖：组头序、目录/tty/
+  字符设备/链接归组、块设备归两个块设备组之一（isMountable 拆分依赖
+  /sys 状态不硬编码）、分组关闭平铺、普通目录语义分组回归——**虚拟
+  列表滚动收集**（querySelectorAll 只见视口内行，页面内异步 IIFE 分步
+  滚动；滚动元素是 react-window List 外层 div，非 .file-list-container）。
 
 - **桌面条目 Exec 条件引号**：修复「设为默认文件
   管理器后，第三方应用『在文件管理器中显示』仍打开 Nautilus」——

@@ -602,6 +602,13 @@ const zhCN = {
   'group.archives': '压缩包',
   'group.executables': '可执行文件',
   'group.others': '其他文件',
+  'group.dev_block_mountable': '可挂载块设备',
+  'group.dev_block_other': '其他块设备',
+  'group.dev_tty': '电传打字机(tty)',
+  'group.dev_char_other': '其他字符设备',
+  'group.dev_symlink': '链接',
+  'group.dev_fifo': '管道',
+  'group.dev_socket': '套接字',
 
   // ── 大小格式化 ──
   'size.b': 'B',

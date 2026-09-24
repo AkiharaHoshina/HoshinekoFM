@@ -602,6 +602,13 @@ const zhCT = {
   'group.archives': '壓縮檔',
   'group.executables': '可執行檔案',
   'group.others': '其他檔案',
+  'group.dev_block_mountable': '可掛載區塊裝置',
+  'group.dev_block_other': '其他區塊裝置',
+  'group.dev_tty': '電傳打字機(tty)',
+  'group.dev_char_other': '其他字元裝置',
+  'group.dev_symlink': '連結',
+  'group.dev_fifo': '管道',
+  'group.dev_socket': '套接字',
 
   // ── 大小格式化 ──
   'size.b': 'B',
