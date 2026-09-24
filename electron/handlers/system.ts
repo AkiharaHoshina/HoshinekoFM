@@ -1036,6 +1036,135 @@ async function listSystemDefaultHandlers(): Promise<SystemDefaultEntry[]> {
 }
 
 /**
+ * 运行系统集成脚本（install.sh / uninstall.sh / reinstall.sh）。
+ * 打包版脚本与 packaging 配置经 asarUnpack 解包到
+ * `resources/app.asar.unpacked`（spawn 不能执行 asar 内文件，
+ * 且 bash 需要真实文件系统里的 packaging 目录）。
+ *
+ * AppImage 经 FUSE 挂载运行时，挂载点对 root 不可见：pkexec 以
+ * root 重入执行脚本会 EACCES。因此先把脚本与 packaging 复制到
+ * 真实文件系统的临时目录（/tmp，root 可访问），脚本执行结束后清理。
+ *
+ * GUI 经 system:install/uninstall/reinstall-system-integration IPC
+ * 调用（收集输出返回渲染层）；CLI 子命令（--install-portal 等）以
+ * stream 模式调用（stdio 直通终端，实时看到脚本进度与 pkexec 提示）。
+ *
+ * @param scriptName - scripts/system-integration 下的脚本文件名
+ * @param args - 传给脚本的参数（[] = 完整执行含 pkexec 重入）
+ * @param options - stream=true 时脚本 stdio 直通终端（CLI 用），
+ *   output/error 不收集；缺省捕获输出供 IPC 返回
+ * @returns 执行结果；code：NO_SCRIPT / SCRIPT_FAILED / SCRIPT_TIMEOUT
+ *   （10 分钟硬超时兜底——脚本内系统命令挂起时强制终止并返回）
+ */
+export async function runIntegrationScript(
+  scriptName: string,
+  args: string[],
+  options?: { stream?: boolean },
+): Promise<{ success: boolean; code?: string; output: string; error: string }> {
+  // 开发分支用编译产物 __dirname 锚定仓库根（dist-electron/handlers →
+  // 仓库根）：e2e harness 里 app.getAppPath() 是 scripts/e2e，不能直接用。
+  const baseDir = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked')
+    : path.join(__dirname, '..', '..');
+  const srcScript = path.join(baseDir, 'scripts', 'system-integration', scriptName);
+  const srcScriptDir = path.dirname(srcScript);
+  const srcPackaging = path.join(baseDir, 'packaging');
+  try {
+    await fs.access(srcScript);
+  } catch {
+    return { success: false, code: 'NO_SCRIPT', output: '', error: `${scriptName} 不存在` };
+  }
+  const runDir = await fs
+    .mkdtemp(path.join(os.tmpdir(), 'hoshineko-integration-'))
+    .catch(() => null);
+  if (runDir === null) {
+    return { success: false, code: 'NO_SCRIPT', output: '', error: '创建临时目录失败' };
+  }
+  try {
+    // 源脚本自带执行位，fs.cp 默认保留源文件 mode（勿传 mode 选项：
+    // Node 22 对 fs.cp 的 mode 校验会拒绝 0o755 这类完整权限值）
+    await fs.cp(srcScript, path.join(runDir, scriptName));
+    // reinstall.sh 会 source 同目录的 install.sh / uninstall.sh 复用
+    // 函数（单次 pkexec 合并卸载+安装）：依赖脚本必须一并复制，
+    // 否则 source 行直接「没有那个文件或目录」失败
+    if (scriptName === 'reinstall.sh') {
+      for (const dep of ['install.sh', 'uninstall.sh']) {
+        await fs.cp(path.join(srcScriptDir, dep), path.join(runDir, dep));
+      }
+    }
+    await fs.cp(srcPackaging, path.join(runDir, 'packaging'), { recursive: true });
+  } catch (e) {
+    void fs.rm(runDir, { recursive: true, force: true }).catch(() => { /* 清理失败忽略 */ });
+    return {
+      success: false,
+      code: 'NO_SCRIPT',
+      output: '',
+      error: `复制 ${scriptName} 到临时目录失败：${getExecError(e).message}`,
+    };
+  }
+  const scriptPath = path.join(runDir, scriptName);
+  const packagingDir = path.join(runDir, 'packaging');
+  /** 清理临时目录（脚本执行结束后调用，IPC 返回前保证完成） */
+  const cleanup = () =>
+    fs.rm(runDir, { recursive: true, force: true }).catch(() => { /* 清理失败忽略 */ });
+  // 脚本级硬超时兜底：会话总线/portal 单元状态异常时脚本内的系统命令
+  // （如 systemctl restart）可能挂起，导致 IPC 永不返回、设置页按钮一直
+  // 忙碌禁用。10 分钟足够覆盖 pkexec 交互授权耗时。
+  const SCRIPT_TIMEOUT_MS = 10 * 60 * 1000;
+  return new Promise((resolve) => {
+    // detached：独立进程组——超时时 kill(-pid) 连带杀掉脚本内的
+    // pkexec/systemctl 子进程，且不会误伤应用自身进程组
+    const child = spawn(scriptPath, args, {
+      env: { ...process.env, HOSHINEKO_PACKAGING_DIR: packagingDir, HOSHINEKO_VERSION: app.getVersion() },
+      detached: true,
+      ...(options?.stream ? { stdio: 'inherit' } : {}),
+    });
+    let settled = false;
+    let output = '';
+    let error = '';
+    const settle = (result: {
+      success: boolean;
+      code?: 'NO_SCRIPT' | 'SCRIPT_FAILED' | 'SCRIPT_TIMEOUT';
+      output: string;
+      error: string;
+    }) => {
+      if (settled) return;
+      settled = true;
+      void cleanup().finally(() => resolve(result));
+    };
+    const killTimer = setTimeout(() => {
+      // 超时：杀进程组（脚本内的 pkexec/systemctl 子进程一并清理）
+      try {
+        if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        child.kill('SIGKILL');
+      }
+      settle({
+        success: false,
+        code: 'SCRIPT_TIMEOUT',
+        output,
+        error: `${error}\n[超时] ${scriptName} 执行超过 ${SCRIPT_TIMEOUT_MS / 60000} 分钟，已强制终止`,
+      });
+    }, SCRIPT_TIMEOUT_MS);
+    child.stdout?.on('data', (d) => (output += String(d)));
+    child.stderr?.on('data', (d) => (error += String(d)));
+    child.on('error', (e) => {
+      clearTimeout(killTimer);
+      settle({ success: false, output, error: e.message });
+    });
+    child.on('close', (code) => {
+      clearTimeout(killTimer);
+      settle({
+        success: code === 0,
+        code: code === 0 ? undefined : 'SCRIPT_FAILED',
+        output,
+        error,
+      });
+    });
+  });
+}
+
+/**
  * 注册 system 相关 IPC handler。
  *
  * @param onSessionBusRestarted - 会话总线重启成功后的回调（main.ts 注入：
@@ -1220,127 +1349,6 @@ export function registerSystemHandlers(
     }
     return { success: false, error: lastError };
   });
-
-  /**
-   * 运行系统集成脚本（install.sh / uninstall.sh）并收集输出。
-   * 打包版脚本与 packaging 配置经 asarUnpack 解包到
-   * `resources/app.asar.unpacked`（spawn 不能执行 asar 内文件，
-   * 且 bash 需要真实文件系统里的 packaging 目录）。
-   *
-   * AppImage 经 FUSE 挂载运行时，挂载点对 root 不可见：pkexec 以
-   * root 重入执行脚本会 EACCES。因此先把脚本与 packaging 复制到
-   * 真实文件系统的临时目录（/tmp，root 可访问），脚本执行结束后清理。
-   *
-   * @param scriptName - scripts/system-integration 下的脚本文件名
-   * @param args - 传给脚本的参数（[] = 完整执行含 pkexec 重入）
-   * @returns 执行结果；code：NO_SCRIPT / SCRIPT_FAILED / SCRIPT_TIMEOUT
-   *   （10 分钟硬超时兜底——脚本内系统命令挂起时强制终止并返回）
-   */
-  const runIntegrationScript = async (
-    scriptName: string,
-    args: string[],
-  ): Promise<{ success: boolean; code?: string; output: string; error: string }> => {
-    // 开发分支用编译产物 __dirname 锚定仓库根（dist-electron/handlers →
-    // 仓库根）：e2e harness 里 app.getAppPath() 是 scripts/e2e，不能直接用。
-    const baseDir = app.isPackaged
-      ? path.join(process.resourcesPath, 'app.asar.unpacked')
-      : path.join(__dirname, '..', '..');
-    const srcScript = path.join(baseDir, 'scripts', 'system-integration', scriptName);
-    const srcScriptDir = path.dirname(srcScript);
-    const srcPackaging = path.join(baseDir, 'packaging');
-    try {
-      await fs.access(srcScript);
-    } catch {
-      return { success: false, code: 'NO_SCRIPT', output: '', error: `${scriptName} 不存在` };
-    }
-    const runDir = await fs
-      .mkdtemp(path.join(os.tmpdir(), 'hoshineko-integration-'))
-      .catch(() => null);
-    if (runDir === null) {
-      return { success: false, code: 'NO_SCRIPT', output: '', error: '创建临时目录失败' };
-    }
-    try {
-      // 源脚本自带执行位，fs.cp 默认保留源文件 mode（勿传 mode 选项：
-      // Node 22 对 fs.cp 的 mode 校验会拒绝 0o755 这类完整权限值）
-      await fs.cp(srcScript, path.join(runDir, scriptName));
-      // reinstall.sh 会 source 同目录的 install.sh / uninstall.sh 复用
-      // 函数（单次 pkexec 合并卸载+安装）：依赖脚本必须一并复制，
-      // 否则 source 行直接「没有那个文件或目录」失败
-      if (scriptName === 'reinstall.sh') {
-        for (const dep of ['install.sh', 'uninstall.sh']) {
-          await fs.cp(path.join(srcScriptDir, dep), path.join(runDir, dep));
-        }
-      }
-      await fs.cp(srcPackaging, path.join(runDir, 'packaging'), { recursive: true });
-    } catch (e) {
-      void fs.rm(runDir, { recursive: true, force: true }).catch(() => { /* 清理失败忽略 */ });
-      return {
-        success: false,
-        code: 'NO_SCRIPT',
-        output: '',
-        error: `复制 ${scriptName} 到临时目录失败：${getExecError(e).message}`,
-      };
-    }
-    const scriptPath = path.join(runDir, scriptName);
-    const packagingDir = path.join(runDir, 'packaging');
-    /** 清理临时目录（脚本执行结束后调用，IPC 返回前保证完成） */
-    const cleanup = () =>
-      fs.rm(runDir, { recursive: true, force: true }).catch(() => { /* 清理失败忽略 */ });
-    // 脚本级硬超时兜底：会话总线/portal 单元状态异常时脚本内的系统命令
-    // （如 systemctl restart）可能挂起，导致 IPC 永不返回、设置页按钮一直
-    // 忙碌禁用。10 分钟足够覆盖 pkexec 交互授权耗时。
-    const SCRIPT_TIMEOUT_MS = 10 * 60 * 1000;
-    return new Promise((resolve) => {
-      // detached：独立进程组——超时时 kill(-pid) 连带杀掉脚本内的
-      // pkexec/systemctl 子进程，且不会误伤应用自身进程组
-      const child = spawn(scriptPath, args, {
-        env: { ...process.env, HOSHINEKO_PACKAGING_DIR: packagingDir, HOSHINEKO_VERSION: app.getVersion() },
-        detached: true,
-      });
-      let settled = false;
-      let output = '';
-      let error = '';
-      const settle = (result: {
-        success: boolean;
-        code?: 'NO_SCRIPT' | 'SCRIPT_FAILED' | 'SCRIPT_TIMEOUT';
-        output: string;
-        error: string;
-      }) => {
-        if (settled) return;
-        settled = true;
-        void cleanup().finally(() => resolve(result));
-      };
-      const killTimer = setTimeout(() => {
-        // 超时：杀进程组（脚本内的 pkexec/systemctl 子进程一并清理）
-        try {
-          if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
-        } catch {
-          child.kill('SIGKILL');
-        }
-        settle({
-          success: false,
-          code: 'SCRIPT_TIMEOUT',
-          output,
-          error: `${error}\n[超时] ${scriptName} 执行超过 ${SCRIPT_TIMEOUT_MS / 60000} 分钟，已强制终止`,
-        });
-      }, SCRIPT_TIMEOUT_MS);
-      child.stdout.on('data', (d) => (output += String(d)));
-      child.stderr.on('data', (d) => (error += String(d)));
-      child.on('error', (e) => {
-        clearTimeout(killTimer);
-        settle({ success: false, output, error: e.message });
-      });
-      child.on('close', (code) => {
-        clearTimeout(killTimer);
-        settle({
-          success: code === 0,
-          code: code === 0 ? undefined : 'SCRIPT_FAILED',
-          output,
-          error,
-        });
-      });
-    });
-  };
 
   /**
    * 一键安装系统集成（幂等脚本）：

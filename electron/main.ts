@@ -8,7 +8,7 @@ import { setupPtyHandlers, killAllPty } from './pty';
 import { getThumbnail, detectMime, THUMB_QUEUE_DROPPED } from './fsUtils';
 import { startWatching, stopWatching, stopAllWatching } from './fsWatcher';
 import { registerFsHandlers } from './handlers/fs';
-import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor, startBackendConflictQuery, resetBackendConflictCache } from './handlers/system';
+import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor, startBackendConflictQuery, resetBackendConflictCache, runIntegrationScript } from './handlers/system';
 import type { BackendKind } from './handlers/backendInfo';
 import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers, startColorSchemeWatcher, stopColorSchemeWatcher } from './handlers/theme';
@@ -586,6 +586,74 @@ const FM1_ONLY_MODE = process.argv.includes('--filemanager1');
 const SERVICE_ONLY_MODE = PORTAL_ONLY_MODE || FM1_ONLY_MODE;
 
 /**
+ * CLI 子命令（一次性模式）：`hoshineko --help` / `--install-portal` /
+ * `--remove-portal` / `--reinstall-portal` / `--admin` 命中即执行后退出——
+ * 不创建窗口、**不请求单实例锁**（GUI 已运行时 CLI 命令必须独立执行，
+ * 不能经 second-instance 转发给 GUI），不注册 D-Bus 后端。
+ * 未命中返回 null，走通常模式启动。
+ */
+type CliAction =
+  | { kind: 'help' }
+  | { kind: 'admin' }
+  | { kind: 'script'; scriptName: 'install.sh' | 'uninstall.sh' | 'reinstall.sh'; label: string };
+
+function parseCliAction(argv: string[]): CliAction | null {
+  if (argv.includes('--help') || argv.includes('-H')) return { kind: 'help' };
+  if (argv.includes('--admin') || argv.includes('-A')) return { kind: 'admin' };
+  if (argv.includes('--install-portal')) return { kind: 'script', scriptName: 'install.sh', label: 'portal 安装' };
+  if (argv.includes('--remove-portal')) return { kind: 'script', scriptName: 'uninstall.sh', label: 'portal 卸载' };
+  if (argv.includes('--reinstall-portal')) return { kind: 'script', scriptName: 'reinstall.sh', label: 'portal 重装' };
+  return null;
+}
+
+const CLI_HELP_TEXT = `HoshinekoFM — 文件管理器
+
+用法:
+  hoshineko [选项] [路径]
+
+选项:
+  -H, --help              显示本帮助并退出
+  -A, --admin             管理员权限入口（预留）
+      --install-portal    安装 portal 系统集成（含 pkexec 授权），完成后退出
+      --remove-portal     卸载 portal 系统集成（含 pkexec 授权），完成后退出
+      --reinstall-portal  重装 portal 系统集成（单次 pkexec 授权），完成后退出
+
+不带选项时以图形界面启动；给定路径时在该目录打开。
+内部选项（D-Bus 服务激活，勿手动使用）: --portal / --filemanager1`;
+
+/**
+ * 执行 CLI 子命令并返回进程退出码（0 成功 / 1 失败）。
+ * 脚本命令经 runIntegrationScript 的 stream 模式执行——stdio 直通
+ * 终端，脚本进度与 pkexec 提示实时可见；结束后打印结果行。
+ */
+async function runCliAction(action: CliAction): Promise<number> {
+  if (action.kind === 'help') {
+    console.log(CLI_HELP_TEXT);
+    return 0;
+  }
+  if (action.kind === 'admin') {
+    console.log('管理员权限入口');
+    return 0;
+  }
+  const res = await runIntegrationScript(action.scriptName, [], { stream: true });
+  if (res.success) {
+    console.log(`[HoshinekoFM] ${action.label}完成`);
+    return 0;
+  }
+  const detail = res.error.trim();
+  console.error(
+    `[HoshinekoFM] ${action.label}失败${res.code ? `（${res.code}）` : ''}${detail ? `：${detail}` : ''}`,
+  );
+  return 1;
+}
+
+/** 本次启动的 CLI 子命令（null = 通常模式启动） */
+const CLI_ACTION = parseCliAction(process.argv);
+if (CLI_ACTION) {
+  void runCliAction(CLI_ACTION).then((code) => app.exit(code));
+}
+
+/**
  * 服务模式隔离 userData：常驻服务（dbus 激活的 --portal / --filemanager1）
  * 与 GUI 共享同一 userData 时，两个进程会同时打开 Local Storage 的
  * LevelDB——后启动的常驻进程（如为外部应用弹起选择器窗口时）会持有
@@ -605,8 +673,10 @@ if (SERVICE_ONLY_MODE) {
 // D-Bus 名字仲裁（requestName DO_NOT_QUEUE，失败即 exit(1)，见
 // whenReady）——若也持锁，升级后新服务进程会被旧常驻的锁挡在门外
 // （second-instance 把 argv 转发给旧进程 → 永远跑旧代码、新版本不生效）。
+// CLI 子命令同样不持锁：GUI 运行时执行 `hoshineko --install-portal`
+// 等命令必须在独立进程里跑完（持锁会把 argv 转发给 GUI，命令永不执行）。
 // GUI 模式保持锁：多次启动共享同一后端多开窗口。
-if (!SERVICE_ONLY_MODE) {
+if (!SERVICE_ONLY_MODE && !CLI_ACTION) {
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {
     app.quit();
@@ -938,6 +1008,10 @@ function parseRangeHeader(header: string | null, size: number): { start: number;
 }
 
 app.whenReady().then(() => {
+  // CLI 子命令：执行体在模块顶层（runCliAction）——此处早退跳过菜单/
+  // 协议/D-Bus 后端/窗口等全部启动流程，脚本执行期间 ready 到达也不会
+  // 误开窗口；进程退出码由 runCliAction 的 app.exit(code) 决定。
+  if (CLI_ACTION) return;
   // 移除应用菜单：屏蔽 Alt 唤出顶栏（frameless 窗口 + 自定义标题栏）
   Menu.setApplicationMenu(null);
   /**
