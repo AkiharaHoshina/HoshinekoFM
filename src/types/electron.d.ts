@@ -29,6 +29,42 @@ export interface RegisteredMimeEntry {
 }
 
 /**
+ * Object Panel（objects://）对象实例。
+ * kind 决定行为：disk/partition/mount 双击进目录（已挂载），
+ * cpu/memory/tty 双击进详情页。
+ */
+export interface ObjectInstance {
+    /** 类内唯一 id：存储类=设备路径或挂载点，cpu/memory 固定，tty=tty 名 */
+    id: string;
+    name: string;
+    subtitle: string | null;
+    kind: 'disk' | 'partition' | 'mount' | 'cpu' | 'memory' | 'tty';
+    icon: string;
+}
+
+/** Object Panel 类信息（渲染层按 id 翻译显示名） */
+export interface ObjectClassInfo {
+    id: 'storage' | 'processor' | 'tty';
+    icon: string;
+    instances: ObjectInstance[];
+}
+
+/** Object Panel 实时读数（按 kind 判别） */
+export type ObjectReading =
+    | { kind: 'cpu'; model: string | null; totalPct: number; cores: { id: string; pct: number }[] }
+    | { kind: 'memory'; totalBytes: number; usedBytes: number; availableBytes: number; percent: number }
+    | { kind: 'storage'; name: string; mounted: boolean; mountpoint: string | null; sizeLabel: string | null; usedBytes: number | null; totalBytes: number | null; percent: number | null; fstype: string | null };
+
+/** 对象搜索命中（搜索「包含对象」开启时混入搜索结果） */
+export interface ObjectSearchHit {
+    className: 'storage' | 'processor' | 'tty';
+    instanceId: string;
+    name: string;
+    icon: string;
+    objectPath: string;
+}
+
+/**
  * 后端总线名冲突诊断（portal / FileManager1 注册失败时的探测结果，
  * 主进程 backendInfo.ts 生成）：
  * - state 'outdated'：占名者版本与本进程不同（旧版常驻，建议卸载重装）；
@@ -467,15 +503,27 @@ export interface IElectronAPI {
     getVersion: () => Promise<string>;
     /** 用系统默认浏览器打开外部 http/https 链接 */
     openExternal: (url: string) => Promise<boolean>;
-    search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string, extensions?: string[], limit?: number | null, timeoutMs?: number | null }) => Promise<{
+    search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string, extensions?: string[], limit?: number | null, timeoutMs?: number | null, includeObjects?: boolean }) => Promise<{
       results: IFile[];
       partial: boolean;
       cancelled: boolean;
       reason?: 'timeout' | 'cancelled';
       error?: string;
+      objects?: ObjectSearchHit[];
     }>;
     /** 取消当前窗口正在进行的搜索（搜索页「取消搜索」按钮） */
     cancelSearch: () => Promise<boolean>;
+    /** Object Panel：枚举全部对象（按类分组，主进程短 TTL 缓存） */
+    listObjects: (force?: boolean) => Promise<ObjectClassInfo[]>;
+    /** Object Panel：读取对象实时读数（cpu/memory/storage；tty 走流式通道） */
+    readObject: (classId: string, instanceId: string) => Promise<ObjectReading | null>;
+    /** Object Panel：开始读取 tty 输出流（v1 只读） */
+    ttyStart: (ttyId: string) => Promise<{ ok: boolean; streamId?: number; error?: string }>;
+    /** Object Panel：停止 tty 输出流 */
+    ttyStop: (streamId: number) => Promise<boolean>;
+    ttyOnData: (streamId: number, callback: (chunk: string) => void) => () => void;
+    ttyOnError: (streamId: number, callback: (message: string) => void) => () => void;
+    ttyOnClose: (streamId: number, callback: () => void) => () => void;
     /**
      * 系统注册文件格式枚举（按格式筛选的「添加」描述查表与「快捷添加」
      * 对话框数据源）：complete = 描述 + 扩展名 + 打开程序三样齐全。

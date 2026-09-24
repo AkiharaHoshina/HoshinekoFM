@@ -7,6 +7,7 @@ import { shouldSuppressDrop } from '../utils/nativeDragTracker';
 import { isPinReorderDragActive } from '../utils/pinReorderDrag';
 import { registerKeyboardZone } from '../utils/focusZones';
 import { parseSearchPath } from '../utils/searchPath';
+import { parseObjectsPath } from '../utils/objectsPath';
 import type { IFile } from '../types/files';
 import './TabBar.css';
 
@@ -64,6 +65,14 @@ const getTabTitle = (title: string): string => {
     if (normalizeTitle.startsWith('search://')) {
       const parsed = parseSearchPath(title);
       if (parsed) return t('tab.search', parsed.query);
+    }
+    // Object Panel 虚拟路径：显示「对象」或「对象 · 实例名」
+    if (normalizeTitle.startsWith('objects://')) {
+      const parsed = parseObjectsPath(title);
+      if (parsed && parsed.instanceId) {
+        return `${t('objects.title')} · ${parsed.instanceId.split('/').pop() || parsed.instanceId}`;
+      }
+      if (parsed) return t('objects.title');
     }
     return title;
   }

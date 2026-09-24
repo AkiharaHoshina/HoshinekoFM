@@ -840,6 +840,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
             </button>
           )}
+          {/* Object Panel（objects:// 虚拟页集）入口：Places 顶部（决策 F）。
+              选择器不支持 objects://（无该虚拟页渲染），仅主窗口显示 */}
+          {!isPicker && (
+            <button
+              className={`sidebar-item ${currentPath.startsWith("objects://") ? "active" : ""}`}
+              tabIndex={-1}
+              onClick={() => onNavigate("objects://")}
+            >
+              <Icon
+                name="widgets"
+                className="sidebar-icon"
+                filled={currentPath.startsWith("objects://")}
+              />
+              <span className="sidebar-label">
+                <MarqueeText enabled={marqueeEnabled}>{t("objects.title")}</MarqueeText>
+              </span>
+            </button>
+          )}
           {places
             .filter((place) => !(hideTrash && place.name === "Trash"))
             .map((place) => {

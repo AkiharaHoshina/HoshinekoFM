@@ -1,0 +1,265 @@
+/* Object Panel（objects:// 虚拟页集） */
+
+.object-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.object-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.object-panel-header-icon {
+  font-size: 28px;
+  color: var(--md-sys-color-primary);
+}
+
+.object-panel-title {
+  font-size: 20px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.object-panel-subtitle {
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.object-panel-hint {
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+.object-load-failed {
+  padding: 24px;
+  text-align: center;
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.7;
+  font-size: 13px;
+}
+
+/* ── 根：类卡片 ── */
+.object-class-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.object-class-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.object-class-card:hover,
+.object-class-card:focus-visible {
+  background: var(--md-sys-color-surface-container-high);
+  outline: none;
+}
+
+.object-class-icon {
+  font-size: 32px;
+  color: var(--md-sys-color-primary);
+}
+
+.object-class-name {
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.object-class-count {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* ── 类页：实例列表 ── */
+.object-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.object-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.object-row:hover {
+  background: var(--md-sys-color-surface-container);
+}
+
+.object-row--selected {
+  background: var(--md-sys-color-secondary-container);
+}
+
+.object-row-icon {
+  font-size: 22px;
+  color: var(--md-sys-color-on-surface-variant);
+  flex-shrink: 0;
+}
+
+.object-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.object-row-name {
+  font-size: 14px;
+}
+
+.object-row-sub {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.object-row-details {
+  flex-shrink: 0;
+}
+
+/* ── 实例页：读数与操作 ── */
+.object-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.object-refresh-toggle {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -8px;
+}
+
+.object-readings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.object-reading-sub {
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.object-reading-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.object-reading-label {
+  width: 120px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.object-reading-value {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* 条形（纯 CSS，无 canvas——v1 决策；走势图记入未做清单） */
+.object-bar {
+  flex: 1;
+  min-width: 60px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--md-sys-color-surface-container-high);
+  overflow: hidden;
+}
+
+.object-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--md-sys-color-primary);
+  transition: width 300ms ease;
+}
+
+.object-core-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.object-core-grid .object-reading-label {
+  width: 64px;
+}
+
+.object-reading-loading {
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.7;
+}
+
+.object-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── tty 只读视图 ── */
+.object-tty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.object-tty-text {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, black 12%, transparent);
+  font-family: var(--md-ref-typeface-brand), 'Noto Sans Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  min-height: 120px;
+  max-height: 360px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.object-tty-denied {
+  padding: 24px;
+  text-align: center;
+  border-radius: 12px;
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 13px;
+}
+
+.object-tty-closed {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.75;
+}

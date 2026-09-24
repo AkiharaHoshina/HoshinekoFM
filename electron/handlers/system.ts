@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow, app } from 'electron';
 import path from 'path';
-import { promises as fs, watch as fsWatch, existsSync } from 'fs';
+import { promises as fs, watch as fsWatch, existsSync, createReadStream } from 'fs';
 import os from 'os';
 import { spawn, exec, execFile } from 'child_process';
 import { promisify } from 'util';
@@ -2021,7 +2021,8 @@ export function registerSystemHandlers(
    * - reason：'timeout'（超时自动取消）/ 'cancelled'（用户取消或
    *   单飞行顶替）；正常完成与 error 均为 undefined；
    * - error：spawn 失败等硬错误信息（渲染层弹搜索失败通知）；
-   * - partial：部分内容缺失（find 权限错误以非零退出码/写 stderr 报告）。
+   * - partial：部分内容缺失（find 权限错误以非零退出码/写 stderr 报告）；
+   * - objects：includeObjects 开启时的 OP 对象命中（最多 10 条）。
    */
   interface SearchResult {
     results: { name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null }[];
@@ -2029,6 +2030,39 @@ export function registerSystemHandlers(
     cancelled: boolean;
     reason?: 'timeout' | 'cancelled';
     error?: string;
+    objects?: ObjectSearchHit[];
+  }
+
+  /** 对象搜索命中（名称/副标题匹配关键词） */
+  interface ObjectSearchHit {
+    className: 'storage' | 'processor' | 'tty';
+    instanceId: string;
+    name: string;
+    icon: string;
+    /** objects:// 实例页路径 */
+    objectPath: string;
+  }
+
+  /** 按关键词搜索 OP 对象（名称/副标题，不区分大小写，最多 10 条） */
+  async function searchObjects(query: string): Promise<ObjectSearchHit[]> {
+    const q = query.toLowerCase();
+    const classes = await listObjectsCached();
+    const hits: ObjectSearchHit[] = [];
+    for (const cls of classes) {
+      for (const inst of cls.instances) {
+        const hay = `${inst.name}\n${inst.subtitle ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) continue;
+        hits.push({
+          className: cls.id,
+          instanceId: inst.id,
+          name: inst.name,
+          icon: inst.icon,
+          objectPath: `objects://${cls.id}/${encodeURIComponent(inst.id)}`,
+        });
+        if (hits.length >= 10) return hits;
+      }
+    }
+    return hits;
   }
 
   /** 活跃搜索（按发送者 id 单飞行：每窗口至多一个 find 子进程） */
@@ -2149,8 +2183,12 @@ export function registerSystemHandlers(
    * @returns SearchResult——cancelled.reason='timeout' 时渲染层弹超时
    * 通知并复原视图；'cancelled' 为显式取消（渲染层已复原，静默丢弃）。
    */
-  ipcMain.handle('system:search', async (event, directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string, extensions?: string[], limit?: number | null, timeoutMs?: number | null }): Promise<SearchResult> => {
+  ipcMain.handle('system:search', async (event, directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string, extensions?: string[], limit?: number | null, timeoutMs?: number | null, includeObjects?: boolean }): Promise<SearchResult> => {
     const senderId = event.sender.id;
+
+    // 对象搜索（设置「搜索包含对象」开启时）：与 find 并行、结果缓存快
+    const objectsPromise: Promise<ObjectSearchHit[] | undefined> =
+      options?.includeObjects && query ? searchObjects(query) : Promise.resolve(undefined);
 
     // 单飞行：同窗口新搜索先取消旧搜索（kill 旧 find，防并发堆积）
     const prev = activeSearches.get(senderId);
@@ -2258,7 +2296,9 @@ export function registerSystemHandlers(
             entry.earlyStop = true;
             if (entry.timer !== null) { clearTimeout(entry.timer); entry.timer = null; }
             try { child.kill('SIGTERM'); } catch { /* 已退出 */ }
-            void buildSearchResults(entry, null, true).then((result) => entry.settle(result));
+            void buildSearchResults(entry, null, true).then(async (result) => {
+              entry.settle({ ...result, objects: result.cancelled ? undefined : await objectsPromise });
+            });
           }
         });
         child.stderr.on('data', (d) => {
@@ -2271,7 +2311,9 @@ export function registerSystemHandlers(
         child.on('close', (code) => {
           if (entry.settled) return;
           if (entry.timer !== null) { clearTimeout(entry.timer); entry.timer = null; }
-          void buildSearchResults(entry, code, entry.earlyStop).then((result) => entry.settle(result));
+          void buildSearchResults(entry, code, entry.earlyStop).then(async (result) => {
+            entry.settle({ ...result, objects: result.cancelled ? undefined : await objectsPromise });
+          });
         });
 
         // 超时自动取消（null = 本次搜索不限时）
@@ -2311,5 +2353,332 @@ export function registerSystemHandlers(
       console.error('List registered mime failed:', error);
       return [];
     }
+  });
+
+  // ── Object Panel（objects:// 虚拟页集，v1）────────────────────────
+  //
+  // 设计见 docs/ObjectPanel可行性报告.md。v1 三类对象：
+  // - storage：块设备（磁盘/分区）与挂载点（getAllDevices + getMountMap）；
+  // - processor：固定实例 cpu / memory（/proc/stat、/proc/meminfo）；
+  // - tty：/sys/class/tty 下的控制台终端（v1 **完全只读**输出流——
+  //   逻辑上为读写终端预留：tty 流式通道按「读流」实现，未来交互写入
+  //   只需在同一通道上增加写分支，勿破坏现有 start/stop 契约）。
+
+  /** OP 对象实例 */
+  interface ObjectInstance {
+    /** 类内唯一 id：存储类=设备路径或挂载点，cpu/memory 固定，tty=tty 名 */
+    id: string;
+    /** 显示名 */
+    name: string;
+    /** 副标题（模型/挂载点等；可为 null） */
+    subtitle: string | null;
+    /** 实例种类（决定双击/详情页行为） */
+    kind: 'disk' | 'partition' | 'mount' | 'cpu' | 'memory' | 'tty';
+    /** Material Symbols 图标名 */
+    icon: string;
+  }
+
+  /** OP 类信息（渲染层按 id 翻译显示名） */
+  interface ObjectClassInfo {
+    id: 'storage' | 'processor' | 'tty';
+    icon: string;
+    instances: ObjectInstance[];
+  }
+
+  /** 实时读数（按 kind 判别） */
+  type ObjectReading =
+    | { kind: 'cpu'; model: string | null; totalPct: number; cores: { id: string; pct: number }[] }
+    | { kind: 'memory'; totalBytes: number; usedBytes: number; availableBytes: number; percent: number }
+    | { kind: 'storage'; name: string; mounted: boolean; mountpoint: string | null; sizeLabel: string | null; usedBytes: number | null; totalBytes: number | null; percent: number | null; fstype: string | null };
+
+  /** CPU 占用百分比缓存：/proc/stat 是单调计数，需与上次采样做差 */
+  let lastCpuSample: { total: number; idle: number; perCore: Map<string, { total: number; idle: number }> } | null = null;
+  let cpuModelCache: string | null | undefined;
+
+  /** 读取 CPU 模型名（/proc/cpuinfo 首条 model name；失败回落 null） */
+  async function readCpuModel(): Promise<string | null> {
+    if (cpuModelCache !== undefined) return cpuModelCache;
+    try {
+      const content = await fs.readFile('/proc/cpuinfo', 'utf-8');
+      const m = /^model name\s*:\s*(.+)$/m.exec(content);
+      cpuModelCache = m ? m[1].trim() : null;
+    } catch {
+      cpuModelCache = null;
+    }
+    return cpuModelCache;
+  }
+
+  /** 解析一行 /proc/stat 的 cpu 计数（user+nice+system+irq+softirq+steal 为忙，idle+iowait 为空闲） */
+  function parseCpuLine(line: string): { total: number; idle: number } {
+    const nums = line.trim().split(/\s+/).slice(1).map(Number);
+    const idle = (nums[3] ?? 0) + (nums[4] ?? 0);
+    const total = nums.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
+    return { total, idle };
+  }
+
+  /** 计算 CPU 占用百分比（需上次采样；无上次采样时返回 0，下一次轮询出真值） */
+  function cpuPercent(cur: { total: number; idle: number }, prev: { total: number; idle: number } | undefined): number {
+    if (!prev) return 0;
+    const dTotal = cur.total - prev.total;
+    const dIdle = cur.idle - prev.idle;
+    if (dTotal <= 0) return 0;
+    return Math.min(100, Math.max(0, Math.round(((dTotal - dIdle) / dTotal) * 100)));
+  }
+
+  /** 枚举存储类对象：磁盘/分区（lsblk 树）+ /dev 背书的挂载点 */
+  async function listStorageObjects(): Promise<ObjectInstance[]> {
+    const instances: ObjectInstance[] = [];
+    const seenMountpoints = new Set<string>();
+    try {
+      const devices = await getAllDevices();
+      const walk = (d: LsblkDevice) => {
+        if (d.type === 'disk') {
+          instances.push({
+            id: d.devicePath ?? `/dev/${d.name}`,
+            name: d.label ?? d.name,
+            subtitle: d.model && d.model !== d.name ? d.model : (d.size ?? null),
+            kind: 'disk',
+            icon: 'hard_drive',
+          });
+        } else if (d.type === 'part') {
+          const name = d.label ?? d.name;
+          instances.push({
+            id: d.devicePath ?? `/dev/${d.name}`,
+            name,
+            subtitle: d.mountpoint ?? (d.fstype ?? null),
+            kind: 'partition',
+            icon: 'storage',
+          });
+          if (d.mountpoint) seenMountpoints.add(d.mountpoint);
+        }
+        if (d.children) for (const c of d.children) walk(c);
+      };
+      for (const d of devices) walk(d);
+    } catch { /* lsblk 失败：仅挂载点 */ }
+
+    try {
+      const mounts = await getMountMap();
+      for (const [mp, info] of Object.entries(mounts)) {
+        if (!info.source.startsWith('/dev/')) continue;
+        if (seenMountpoints.has(mp)) continue; // 分区实例已含挂载点副标题
+        const name = path.basename(mp) || mp;
+        instances.push({
+          id: mp,
+          name,
+          subtitle: info.source,
+          kind: 'mount',
+          icon: 'folder_open',
+        });
+      }
+    } catch { /* 挂载表不可用：仅 lsblk 结果 */ }
+
+    instances.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    return instances;
+  }
+
+  /** 枚举 tty 类对象（/sys/class/tty 下的控制台终端 ttyN） */
+  async function listTtyObjects(): Promise<ObjectInstance[]> {
+    const instances: ObjectInstance[] = [];
+    try {
+      const entries = await fs.readdir('/sys/class/tty');
+      for (const name of entries) {
+        if (!/^tty\d+$/.test(name)) continue;
+        instances.push({ id: name, name, subtitle: null, kind: 'tty', icon: 'terminal' });
+      }
+    } catch { /* /sys/class/tty 不可用：空列表 */ }
+    instances.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    return instances;
+  }
+
+  /**
+   * 枚举全部 OP 对象（按类分组）。结果内存缓存 3s：CPU/内存/tty 枚举
+   * 稳定，存储类随设备热插拔变化——缓存短 TTL + 设备事件主动失效由
+   * 渲染层轮询自然覆盖（v1 不做事件推送，列表页可见时按需拉取）。
+   */
+  let objectsCache: { ts: number; classes: ObjectClassInfo[] } | null = null;
+  async function listObjectsCached(force = false): Promise<ObjectClassInfo[]> {
+    if (!force && objectsCache && Date.now() - objectsCache.ts < 3000) {
+      return objectsCache.classes;
+    }
+    const classes: ObjectClassInfo[] = [
+      { id: 'storage', icon: 'hard_drive', instances: await listStorageObjects() },
+      {
+        id: 'processor',
+        icon: 'memory',
+        instances: [
+          { id: 'cpu', name: 'CPU', subtitle: await readCpuModel(), kind: 'cpu', icon: 'memory' },
+          { id: 'memory', name: 'Memory', subtitle: null, kind: 'memory', icon: 'memory' },
+        ],
+      },
+      { id: 'tty', icon: 'terminal', instances: await listTtyObjects() },
+    ];
+    objectsCache = { ts: Date.now(), classes };
+    return classes;
+  }
+
+  /** 按 id 找实例（listObjectsCached 结果内） */
+  async function findObjectInstance(classId: string, instanceId: string): Promise<{ cls: ObjectClassInfo; inst: ObjectInstance } | null> {
+    const classes = await listObjectsCached();
+    const cls = classes.find((c) => c.id === classId);
+    const inst = cls?.instances.find((i) => i.id === instanceId);
+    return cls && inst ? { cls, inst } : null;
+  }
+
+  /** 读取对象实时读数（cpu/memory/storage；tty 走流式通道） */
+  async function readObjectReading(classId: string, instanceId: string): Promise<ObjectReading | null> {
+    try {
+      if (classId === 'processor' && instanceId === 'cpu') {
+        const content = await fs.readFile('/proc/stat', 'utf-8');
+        const lines = content.split('\n');
+        const cur = parseCpuLine(lines[0] ?? '');
+        const prev = lastCpuSample;
+        const perCorePrev = prev?.perCore ?? new Map();
+        const perCore = new Map<string, { total: number; idle: number }>();
+        const cores: { id: string; pct: number }[] = [];
+        for (const line of lines) {
+          if (!line.startsWith('cpu')) continue;
+          const coreId = line.slice(3).trim();
+          if (!/^\d+$/.test(coreId)) continue;
+          const sample = parseCpuLine(line);
+          perCore.set(coreId, sample);
+          cores.push({ id: coreId, pct: cpuPercent(sample, perCorePrev.get(coreId)) });
+        }
+        lastCpuSample = { total: cur.total, idle: cur.idle, perCore };
+        return { kind: 'cpu', model: await readCpuModel(), totalPct: cpuPercent(cur, prev ?? undefined), cores };
+      }
+      if (classId === 'processor' && instanceId === 'memory') {
+        const content = await fs.readFile('/proc/meminfo', 'utf-8');
+        const kb = (key: string): number => {
+          const m = new RegExp(`^${key}:\\s+(\\d+)`).exec(content);
+          return m ? Number(m[1]) * 1024 : 0;
+        };
+        const total = kb('MemTotal');
+        const available = kb('MemAvailable');
+        const used = Math.max(0, total - available);
+        return {
+          kind: 'memory',
+          totalBytes: total,
+          usedBytes: used,
+          availableBytes: available,
+          percent: total > 0 ? Math.round((used / total) * 100) : 0,
+        };
+      }
+      if (classId === 'storage') {
+        const inst = await findObjectInstance(classId, instanceId);
+        if (!inst) return null;
+        let mountpoint: string | null = null;
+        let fstype: string | null = null;
+        let sizeLabel: string | null = null;
+        if (inst.inst.kind === 'mount') {
+          mountpoint = inst.inst.id;
+          const mounts = await getMountMap();
+          fstype = mounts.get(inst.inst.id)?.fstype ?? null;
+        } else {
+          const devices = await getAllDevices();
+          const flat: LsblkDevice[] = [];
+          const walk = (d: LsblkDevice) => { flat.push(d); if (d.children) d.children.forEach(walk); };
+          devices.forEach(walk);
+          const dev = flat.find((d) => (d.devicePath ?? `/dev/${d.name}`) === inst.inst.id);
+          if (dev) {
+            mountpoint = dev.mountpoint ?? null;
+            fstype = dev.fstype ?? null;
+            sizeLabel = dev.size ?? null;
+          }
+        }
+        let usedBytes: number | null = null;
+        let totalBytes: number | null = null;
+        let percent: number | null = null;
+        if (mountpoint) {
+          try {
+            const s = await fs.statfs(mountpoint);
+            totalBytes = s.blocks * s.bsize;
+            usedBytes = (s.blocks - s.bfree) * s.bsize;
+            percent = totalBytes > 0 ? Math.round((usedBytes / totalBytes) * 100) : 0;
+          } catch { /* 挂载点刚消失：保持 null */ }
+        }
+        return {
+          kind: 'storage',
+          name: inst.inst.name,
+          mounted: mountpoint !== null,
+          mountpoint,
+          sizeLabel,
+          usedBytes,
+          totalBytes,
+          percent,
+          fstype,
+        };
+      }
+      return null;
+    } catch (e) {
+      console.error('read-object failed', classId, instanceId, e);
+      return null;
+    }
+  }
+
+  /** 活跃的 tty 读流（streamId → ReadStream） */
+  const ttyStreams = new Map<number, ReturnType<typeof createReadStream>>();
+  let ttyStreamSeq = 0;
+
+  ipcMain.handle('system:list-objects', async (_event, force?: boolean) => {
+    try {
+      return await listObjectsCached(force === true);
+    } catch (e) {
+      console.error('list-objects failed', e);
+      return [];
+    }
+  });
+
+  ipcMain.handle('system:read-object', async (_event, classId: string, instanceId: string) => {
+    return await readObjectReading(classId, instanceId);
+  });
+
+  /**
+   * 开始读取 tty 输出流（v1 只读）：白名单 ttyN（防任意设备路径）。
+   * 数据经 `objects:tty-data:<streamId>` 事件推送；错误/关闭各有事件。
+   * **写入预留**：未来交互式终端只需在本通道加写分支（保持 start/stop
+   * 契约不变），不新开协议。
+   */
+  ipcMain.handle('objects:tty-start', (event, ttyId: string) => {
+    if (typeof ttyId !== 'string' || !/^tty\d+$/.test(ttyId)) {
+      return { ok: false, error: 'INVALID_ID' };
+    }
+    const streamId = ++ttyStreamSeq;
+    const stream = createReadStream(`/dev/${ttyId}`, { encoding: 'utf8' });
+    ttyStreams.set(streamId, stream);
+    stream.on('data', (chunk) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(`objects:tty-data:${streamId}`, String(chunk));
+      }
+    });
+    stream.on('error', (err) => {
+      ttyStreams.delete(streamId);
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(`objects:tty-error:${streamId}`, String((err as Error)?.message ?? err));
+      }
+    });
+    stream.on('close', () => {
+      ttyStreams.delete(streamId);
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(`objects:tty-close:${streamId}`);
+      }
+    });
+    event.sender.once('destroyed', () => {
+      const s = ttyStreams.get(streamId);
+      if (s) {
+        ttyStreams.delete(streamId);
+        try { s.destroy(); } catch { /* 已销毁 */ }
+      }
+    });
+    return { ok: true, streamId };
+  });
+
+  /** 停止 tty 输出流 */
+  ipcMain.handle('objects:tty-stop', (_event, streamId: number) => {
+    const s = ttyStreams.get(streamId);
+    if (s) {
+      ttyStreams.delete(streamId);
+      try { s.destroy(); } catch { /* 已销毁 */ }
+    }
+    return true;
   });
 }

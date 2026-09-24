@@ -36,6 +36,7 @@ import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useUiZoom } from "./hooks/useUiZoom";
 import { zoomIconSize } from "./utils/iconZoom";
 import { parseSearchPath, SEARCH_DEFAULT_LIMIT, SEARCH_DEFAULT_TIMEOUT } from "./utils/searchPath";
+import { parseObjectsPath } from "./utils/objectsPath";
 import type { ThemeConfig } from "./types/theme";
 import {
   trashFiles,
@@ -608,6 +609,12 @@ function AppContent() {
   const [searchTimeout, setSearchTimeout] = useLocalStorage<number | null>(
     "settings.searchTimeout",
     SEARCH_DEFAULT_TIMEOUT,
+  );
+  /** 搜索包含对象（设置 → 行为「搜索包含对象」开关，默认关，确定时生效；
+   *  开启时搜索结果混入 Object Panel 对象命中） */
+  const [searchObjects, setSearchObjects] = useLocalStorage<boolean>(
+    "settings.searchObjects",
+    false,
   );
   const [locale, setLocaleState] = useLocalStorage<Locale>(
     "settings.locale",
@@ -1263,7 +1270,8 @@ function AppContent() {
     activeTabPath === 'app://dashboard' ||
     activeTabPath === 'dashboard://' ||
     activeTabPath === 'trash://' ||
-    activeTabPath.startsWith('search://');
+    activeTabPath.startsWith('search://') ||
+    activeTabPath.startsWith('objects://');
   const windowTitle = useMemo(() => {
     if (activeTabPath === 'app://dashboard') return 'Hoshineko Nya~';
     if (activeTabPath === 'trash://') return t('nav.trash');
@@ -1273,6 +1281,14 @@ function AppContent() {
     if (activeTabPath.startsWith('search://')) {
       const parsedSearch = parseSearchPath(activeTabPath);
       if (parsedSearch) return t('tab.search', parsedSearch.query);
+    }
+    // Object Panel 虚拟路径：窗口标题显示对象名/「对象」
+    if (activeTabPath.startsWith('objects://')) {
+      const parsedObjects = parseObjectsPath(activeTabPath);
+      if (parsedObjects && parsedObjects.instanceId) {
+        return parsedObjects.instanceId.split('/').pop() || t('objects.title');
+      }
+      return t('objects.title');
     }
     return activeTabPath === '/'
       ? '/'
@@ -1396,6 +1412,7 @@ function AppContent() {
     setSearchGroupByDir(true);
     setSearchLimit(SEARCH_DEFAULT_LIMIT);
     setSearchTimeout(SEARCH_DEFAULT_TIMEOUT);
+    setSearchObjects(false);
     setShowHomeStorageUsage(false);
     setFilePreviewEnabled(false);
     setCalculateDirSize(true);
@@ -1428,6 +1445,7 @@ function AppContent() {
     setSearchGroupByDir,
     setSearchLimit,
     setSearchTimeout,
+    setSearchObjects,
     setShowHomeStorageUsage,
     setFilePreviewEnabled,
     setCalculateDirSize,
@@ -2346,6 +2364,9 @@ function AppContent() {
                   searchGroupByDir={searchGroupByDir}
                   searchLimit={searchLimit}
                   searchTimeout={searchTimeout}
+                  searchObjects={searchObjects}
+                  onUnmountDevice={handleDeviceUnmount}
+                  onEjectDevice={handleDeviceEject}
                   onSortByChange={setSortBy}
                   onSortOrderChange={setSortOrder}
                   onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}
@@ -2800,6 +2821,8 @@ function AppContent() {
             onSearchLimitChange={setSearchLimit}
             searchTimeout={searchTimeout}
             onSearchTimeoutChange={setSearchTimeout}
+            searchObjects={searchObjects}
+            onSearchObjectsChange={setSearchObjects}
             titleBarMode={titleBarMode}
             onTitleBarChange={setTitleBarMode}
             showFullPathTitle={showFullPathTitle}

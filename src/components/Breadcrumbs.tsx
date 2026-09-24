@@ -10,7 +10,11 @@ import type { IFile } from "../types/files";
 import { createAddressBarDropHandler } from "../utils/addressBarDrop";
 import { isPinReorderDragActive } from "../utils/pinReorderDrag";
 import { isSearchPath, parseSearchPath } from "../utils/searchPath";
+import { isObjectsPath, parseObjectsPath, buildObjectsPath, OBJECTS_CLASS_LABEL } from "../utils/objectsPath";
 import { t } from "../i18n";
+
+/** 局部别名（JSX 内更短）：objects 路径构建 */
+const buildObjectsPathLocal = buildObjectsPath;
 
 type HomeMap = Record<string, { username: string; uid: number }>;
 
@@ -173,6 +177,13 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
    */
   const isSearchVirtual = isSearchPath(currentPath);
   const parsedSearch = useMemo(() => (isSearchVirtual ? parseSearchPath(currentPath) : null), [isSearchVirtual, currentPath]);
+  /**
+   * Object Panel 虚拟路径（objects://[类][/实例]）：地址栏渲染「对象胶囊
+   * + 类段 + 实例段」——胶囊点击回对象根，类段点击回类页，实例段为
+   * 末段（加粗）。对象页无真实目录，段不接收拖放。
+   */
+  const isObjectsVirtual = isObjectsPath(currentPath);
+  const parsedObjects = useMemo(() => (isObjectsVirtual ? parseObjectsPath(currentPath) : null), [isObjectsVirtual, currentPath]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastRef = useRef<HTMLSpanElement>(null);
 
@@ -245,9 +256,9 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   }, [currentPath]);
 
   useEffect(() => {
-    // 回收站/搜索态虚拟路径无真实目录段，跳过软链接检测（segmentPaths
-    // 会是无意义的前缀，如 /trash:）
-    if (isTrashVirtual || isSearchVirtual) return;
+    // 回收站/搜索态/Object Panel 虚拟路径无真实目录段，跳过软链接检测
+    // （segmentPaths 会是无意义的前缀，如 /trash:）
+    if (isTrashVirtual || isSearchVirtual || isObjectsVirtual) return;
     const segmentPaths = parts.map(
       (_, i) => "/" + parts.slice(0, i + 1).join("/"),
     );
@@ -273,7 +284,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentPath, parts, isTrashVirtual, isSearchVirtual]);
+  }, [currentPath, parts, isTrashVirtual, isSearchVirtual, isObjectsVirtual]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     dropHandler?.handleDragOver(e);
@@ -543,6 +554,59 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       />
     );
   })() : null;
+
+  // Object Panel 虚拟路径：渲染「对象胶囊 + 类段 + 实例段」。段点击导航
+  // 对应虚拟路径；对象页无真实目录，段不接收拖放。所有 hooks 已执行。
+  if (isObjectsVirtual && parsedObjects) {
+    return (
+      <div
+        ref={scrollRef}
+        className="breadcrumb-container"
+        onWheel={(e) => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollLeft += e.deltaY;
+          }
+        }}
+      >
+        <Chip
+          title={t('objects.title')}
+          onClick={() => onNavigate('objects://')}
+          onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
+          className="breadcrumb-chip breadcrumb-objects-chip"
+        >
+          <Icon name="widgets" slot="icon" />
+          <span style={{ fontWeight: parsedObjects.className === null ? 600 : 400 }}>{t('objects.title')}</span>
+        </Chip>
+        {parsedObjects.className !== null && (
+          <React.Fragment>
+            <span className="breadcrumb-separator">/</span>
+            <Button
+              variant="text"
+              onClick={() => onNavigate(buildObjectsPathLocal(parsedObjects.className))}
+              className="breadcrumb-item"
+              style={{ fontWeight: parsedObjects.instanceId === null ? 600 : 400 }}
+            >
+              {t(OBJECTS_CLASS_LABEL[parsedObjects.className] ?? 'objects.title')}
+            </Button>
+          </React.Fragment>
+        )}
+        {parsedObjects.instanceId !== null && (
+          <React.Fragment>
+            <span className="breadcrumb-separator">/</span>
+            <Button
+              variant="text"
+              className="breadcrumb-item"
+              style={{ fontWeight: 600 }}
+              onClick={() => onNavigate(buildObjectsPathLocal(parsedObjects.className, parsedObjects.instanceId))}
+            >
+              {parsedObjects.instanceId.split('/').pop() || parsedObjects.instanceId}
+            </Button>
+          </React.Fragment>
+        )}
+        {ctxMenuNode}
+      </div>
+    );
+  }
 
   // 搜索态虚拟路径：渲染「搜索胶囊 + 基础目录段」。基础目录段为真实
   // 路径（可点击退出搜索进入、可拖放，语义与普通面包屑一致）；搜索胶囊

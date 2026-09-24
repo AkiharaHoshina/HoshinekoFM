@@ -222,9 +222,32 @@ contextBridge.exposeInMainWorld('electron', {
   setIcon: (iconPath: string) => ipcRenderer.invoke('window:set-icon', iconPath),
   /** 界面缩放：设置本窗口 zoom factor（0.5–2.0），跨窗口同步由 storage 事件驱动各窗口自行调用 */
   setUiZoom: (factor: number) => ipcRenderer.invoke('window:set-zoom', factor),
-  search: (dir: string, query: string, options?: { type?: 'f' | 'd'; minSize?: string; maxSize?: string; extensions?: string[]; limit?: number | null; timeoutMs?: number | null }) => ipcRenderer.invoke('system:search', dir, query, options),
+  search: (dir: string, query: string, options?: { type?: 'f' | 'd'; minSize?: string; maxSize?: string; extensions?: string[]; limit?: number | null; timeoutMs?: number | null; includeObjects?: boolean }) => ipcRenderer.invoke('system:search', dir, query, options),
   /** 取消当前窗口正在进行的搜索（搜索页「取消搜索」按钮） */
   cancelSearch: () => ipcRenderer.invoke('system:cancel-search'),
+  /** Object Panel：枚举全部对象（按类分组，主进程短 TTL 缓存） */
+  listObjects: (force?: boolean) => ipcRenderer.invoke('system:list-objects', force),
+  /** Object Panel：读取对象实时读数（cpu/memory/storage；tty 走流式通道） */
+  readObject: (classId: string, instanceId: string) => ipcRenderer.invoke('system:read-object', classId, instanceId),
+  /** Object Panel：开始读取 tty 输出流（v1 只读） */
+  ttyStart: (ttyId: string) => ipcRenderer.invoke('objects:tty-start', ttyId),
+  /** Object Panel：停止 tty 输出流 */
+  ttyStop: (streamId: number) => ipcRenderer.invoke('objects:tty-stop', streamId),
+  ttyOnData: (streamId: number, callback: (chunk: string) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, chunk: string) => callback(chunk);
+    ipcRenderer.on(`objects:tty-data:${streamId}`, handler);
+    return () => ipcRenderer.removeListener(`objects:tty-data:${streamId}`, handler);
+  },
+  ttyOnError: (streamId: number, callback: (message: string) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, message: string) => callback(message);
+    ipcRenderer.on(`objects:tty-error:${streamId}`, handler);
+    return () => ipcRenderer.removeListener(`objects:tty-error:${streamId}`, handler);
+  },
+  ttyOnClose: (streamId: number, callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on(`objects:tty-close:${streamId}`, handler);
+    return () => ipcRenderer.removeListener(`objects:tty-close:${streamId}`, handler);
+  },
   /** 系统注册文件格式枚举（按格式筛选的快捷添加/描述查表数据源） */
   listRegisteredMime: () => ipcRenderer.invoke('system:list-registered-mime'),
   getDirectorySize: (path: string, requestId?: string) => ipcRenderer.invoke('system:get-directory-size', path, requestId),
