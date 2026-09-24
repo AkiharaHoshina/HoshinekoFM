@@ -1,6 +1,9 @@
 /**
  * e2e 16：设为默认文件管理器（xdg-mime inode/directory 关联 + 用户级桌面入口）。
- * 注意：会修改用户级 mimeapps.list——用例结束时恢复原值，净效果为零。
+ * 沙箱 HOME（main 进程 os.homedir 读 env HOME + xdg-mime 子进程按
+ * $HOME/.config/mimeapps.list 解析）：桌面入口写入与 mimeapps.list 改写
+ * 全部落在沙箱，不触碰真实用户配置——必须 setupApp 前设置（system.ts
+ * 注册 handler 时按 os.homedir() 计算 USER_APPS_DIR 等路径）。
  */
 const h = require('./harness.cjs');
 const fs = require('fs');
@@ -10,6 +13,14 @@ const path = require('path');
 const OURS = 'HoshinekoFM.desktop';
 
 (async () => {
+  // 沙箱 HOME：不隔离会覆写真实 ~/.local/share/applications/
+  // HoshinekoFM.desktop 与 ~/.config/mimeapps.list（e2e 19/60/66 同款手法）
+  const sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-16-home-'));
+  process.env.HOME = sandboxHome;
+  // xdg-mime default 写 mimeapps.list 前不创建目录（xdg-utils 自身缺陷：
+  // touch $HOME/.config/mimeapps.list 在 .config 缺失时报错、关联写不进去）
+  fs.mkdirSync(path.join(sandboxHome, '.config'), { recursive: true });
+
   await h.setupApp();
 
   await h.run('16 设为默认文件管理器', async () => {
