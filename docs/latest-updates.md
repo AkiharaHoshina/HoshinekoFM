@@ -59,6 +59,23 @@
    mtime。e2e 67 覆盖：菜单结构（3 项 2 分界线）+ 属性对话框（位置
    行 `trash://`、修改时间非 1970、大小行非「无法获取」）。无新
    i18n 键。
+- **对话框内拖选误关防护（v0.11.48 补充，e2e 70）**：带输入框的
+   对话框里按住左键拖动选择、拖太快 mouseup 落在背景遮罩区时，浏览器
+   在两端点的最近公共祖先（原生 `<dialog>` 元素）上合成 click——事件
+   路径不经过 `.container`，md-dialog 的 `nextClickIsFromContent` 标志
+   不会被置位，该 click 被 `handleDialogClick` 误判为遮罩点击 → 派发
+   cancel → 关闭对话框（选择本身照常完成；真实遮罩点击的 mousedown
+   起点在内容区外，标志不受影响照常关闭）。修复（`Dialog.tsx`
+   useLayoutEffect）：window 捕获 mousedown 记录起点是否在 `.container`
+   内（slotted 节点不在 container 子树内，contains 判不出——按
+   composedPath 是否经过 container 判定）；host 捕获 click——起点在内、
+   落点在外（composedPath 不含 container）时 `stopPropagation()` 吞掉，
+   捕获阶段阻止事件深入 shadow 树、`<dialog>` 的 handleDialogClick
+   不触发。e2e 70 覆盖：新建标签页目录二级对话框（带 backdrop）内
+   拖选后对话框仍开 + 内部 input 选择非折叠（selectionStart<
+   selectionEnd），回归同点真实遮罩点击（clickAt）照常关闭；
+   验证方式：去掉 stopPropagation 后用例必挂于「不应关闭对话框」。
+   无新 i18n 键。
 - **地址栏按钮自动收缩（v0.11.48 补充）**：设置 → 外观新增「地址栏
    按钮自动收缩」开关（默认关闭，**确定时生效**——与全部设置项统一
    pending 草稿机制）——`settings.

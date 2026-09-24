@@ -257,6 +257,36 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
     if (el?.shadowRoot) injectDialogStyle(el.shadowRoot, backdrop);
     const host = el as HTMLElement | null;
     if (!host) return;
+
+    /**
+     * 拖选误关防护：在内容区（输入框等）按住左键拖动选择、拖得太快
+     * 导致 mouseup 落在遮罩区时，浏览器在两端点的最近公共祖先（原生
+     * <dialog> 元素）上合成 click——事件路径不经过 .container，
+     * md-dialog 的 nextClickIsFromContent 标志不会被置位，该 click 被
+     * handleDialogClick 误判为遮罩点击 → 派发 cancel → 关闭对话框
+     * （选择本身照常完成）。在捕获阶段吞掉「mousedown 起点在内容区
+     * 内、落点在内容区外」的 click；真实遮罩点击的起点在内容区外
+     * （标志为 false），照常关闭。
+     *
+     * containerEl 由 tryAttachScroller 在 Lit 首帧渲染后就绪（事件触发
+     * 时读取，届时已就绪）。slotted 节点（对话框按钮等光 DOM 子节点）
+     * 不在 container 子树内，contains 判不出归属——须按 composedPath
+     * 是否经过 container 判定。
+     */
+    let containerEl: HTMLElement | null = null;
+    /** 最近一次 mousedown 的目标是否在内容区内 */
+    let pressInsideContent = false;
+    const onMouseDownCapture = (e: MouseEvent) => {
+      pressInsideContent = containerEl ? e.composedPath().includes(containerEl) : false;
+    };
+    const onClickCapture = (e: MouseEvent) => {
+      if (!pressInsideContent || !containerEl) return;
+      if (e.composedPath().includes(containerEl)) return;
+      e.stopPropagation();
+    };
+    window.addEventListener('mousedown', onMouseDownCapture, true);
+    host.addEventListener('click', onClickCapture, true);
+
     // 滚动时间表：shadow scroller 的 scroll 事件不穿透 shadow 边界到
     // window 捕获监听（实测），必须直接挂。Lit 首帧渲染是异步的——
     // layout effect 时 .scroller 尚未渲染，rAF 重试直到找到；
@@ -275,6 +305,7 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
       const sc = host.shadowRoot?.querySelector('.scroller') as HTMLElement | null;
       if (sc) {
         scrollerEl = sc;
+        containerEl = host.shadowRoot?.querySelector('.container') as HTMLElement | null;
         sc.addEventListener('scroll', onShadowScrollerScroll);
         // 通知调用方：**当前打开周期**的 scroller 就绪（经 ref 读取，
         // 避免回调身份变化导致本 effect 重跑）
@@ -366,6 +397,8 @@ export const Dialog: React.FC<DialogProps> = ({ title, open, onClose, children, 
       window.removeEventListener('touchmove', onUserScroll, true);
       window.removeEventListener('keydown', onUserScroll, true);
       host.removeEventListener('focusin', onFocusIn);
+      window.removeEventListener('mousedown', onMouseDownCapture, true);
+      host.removeEventListener('click', onClickCapture, true);
     };
   }, [visible, backdrop]);
 
