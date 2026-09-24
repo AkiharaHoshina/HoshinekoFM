@@ -94,7 +94,7 @@ const h = require('./harness.cjs');
     // （选择器内 omnibar 搜索 'a'，结果含 sub/a.txt 与根目录文件 → 出现
     // 目录组头）。先搜索拿到原始结果，再开广播验证分组头出现
     const sr = await h.js(picker2, `window.electron.search(${JSON.stringify(dir)}, 'a')`);
-    h.assert.ok(sr.ok && sr.value.length > 0, '搜索应返回结果');
+    h.assert.ok(sr.ok && sr.value.results.length > 0, '搜索应返回结果');
     // 搜索前把分组开关注入 false：搜索态下分组按钮仍强制高亮（证明
     // 高亮来自搜索分类强制而非继承分组开关）
     await h.js(win, `window.electron.setPickerViewPrefs({

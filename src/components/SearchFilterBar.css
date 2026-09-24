@@ -1,0 +1,163 @@
+/* 搜索筛选条（主窗口/选择器共用）：结果行 + 第一行两选框 + 条件式二级 UI */
+
+.search-filter-bar {
+  padding: 8px 24px;
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── 结果行 ── */
+.search-filter-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-filter-results {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-filter-capped {
+  flex-shrink: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.85;
+  font-size: 12px;
+}
+
+.search-filter-summary .icon-button {
+  flex-shrink: 0;
+}
+
+/* ── 第一行：文件类型 + 筛选模式 ── */
+.search-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.search-filter-row md-outlined-select {
+  min-width: 180px;
+}
+
+/* ── 二级 UI ── */
+.search-filter-level2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 按大小筛选：输入 + 确认 */
+.search-size-level2 {
+  padding-top: 2px;
+}
+
+/* 按格式筛选：预览区 + 输入行 */
+.search-format-level2 {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* 格式预览区：圆角方形、略浅色；少于 3 行固定三行高度，
+   行数增多时随内容增高（挤压下方空间） */
+.search-format-preview {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--md-sys-color-surface-container-low) 60%, transparent);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  padding: 6px 12px;
+  min-height: 96px; /* 三行 × 32px */
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.search-format-row {
+  display: grid;
+  grid-template-columns: 5fr 1fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.search-format-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+}
+
+.search-format-ext {
+  text-align: right;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-format-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 84px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+/* 格式输入行：扩展名 + 添加/快捷添加/确认 */
+.search-format-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── 快捷添加对话框 ── */
+.search-quickadd-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 480px;
+  max-width: 100%;
+}
+
+.search-quickadd-list {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 12px;
+}
+
+.search-quickadd-empty {
+  padding: 24px;
+  text-align: center;
+  opacity: 0.7;
+  font-size: 13px;
+}
+
+.search-quickadd-item md-icon {
+  color: var(--md-sys-color-primary);
+}
+
+/* ── 上限对话框 ── */
+.search-limit-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 320px;
+  max-width: 100%;
+}
+
+.search-limit-hint {
+  font-size: 12px;
+  opacity: 0.75;
+}

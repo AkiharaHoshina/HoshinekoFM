@@ -13,8 +13,9 @@ const execFileAsync = promisify(execFile);
 
 // Read first N bytes of a file and return them as a Buffer
 async function readHead(filePath: string, bytes = 16): Promise<Buffer | null> {
+  let fd: Awaited<ReturnType<typeof fs.open>> | null = null;
   try {
-    const fd = await fs.open(filePath, 'r');
+    fd = await fs.open(filePath, 'r');
     const buf = Buffer.alloc(bytes);
     // 循环读满：大块 read 不保证一次返回全部字节，尾部补零会破坏
     // 解析（JPEG SOF 扫描依赖完整段头）
@@ -24,10 +25,21 @@ async function readHead(filePath: string, bytes = 16): Promise<Buffer | null> {
       if (bytesRead === 0) break;
       offset += bytesRead;
     }
-    await fd.close();
     return buf;
   } catch {
     return null;
+  } finally {
+    // 必须显式关闭：/proc、/sys、/dev 等特殊文件的 read 可能抛错，
+    // 若在 catch 提前返回会泄漏 fd——直到 GC 补关（Node 打印
+    // "Closing file descriptor N on garbage collection"），大搜索
+    // stat 大量特殊文件时 fd 耗尽（EMFILE）导致全进程卡死。
+    if (fd !== null) {
+      try {
+        await fd.close();
+      } catch {
+        /* 已关闭/关闭失败：忽略 */
+      }
+    }
   }
 }
 
@@ -229,7 +241,10 @@ const mimeCache = new Map<string, { mime: string; ts: number }>();
 /** Run `file --mime-type --brief` as an external subprocess. Returns stdout or null. */
 async function fileMimeCommand(filePath: string): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync('file', ['--mime-type', '--brief', filePath]);
+    // 3s 超时：`file` 遇到 FIFO/设备等特殊文件会阻塞等待，无超时的
+    // execFile 永不返回——搜索 / 时 stat 循环卡在 await 上（整次搜索
+    // 冻结）。超时按识别失败处理（回退 null）。
+    const { stdout } = await execFileAsync('file', ['--mime-type', '--brief', filePath], { timeout: 3000 });
     const mime = stdout.trim();
     return mime && mime !== 'application/octet-stream' ? mime : null;
   } catch {

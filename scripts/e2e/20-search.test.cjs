@@ -54,16 +54,21 @@ const path = require('path');
       );
       h.assert.ok(!lockedShown.value, '无权限目录内的条目不应出现在结果中');
 
-      // IPC 直连：应返回可访问的匹配项（非空数组而非 []）
+      // IPC 直连：应返回可访问的匹配项（非空数组而非 []），且带
+      // partial 标记（locked 目录无权限 → 部分内容缺失）
       const res = await h.js(win, `window.electron.search(${JSON.stringify(dir)}, 'proc')`);
       h.assert.ok(res.ok, 'system:search IPC 应正常返回');
       h.assert.ok(
-        Array.isArray(res.value) && res.value.length >= 2,
+        Array.isArray(res.value.results) && res.value.results.length >= 2,
         'system:search 应返回可访问部分的匹配结果',
       );
+      h.assert.strictEqual(res.value.partial, true, '有无权限子目录时 partial 应为 true');
       // mime 随结果返回：图片结果为 image/*（图标/缩略图按真实类型显示）
-      const imgEntry = res.value.find((f) => f.path === `${dir}/sub/proc-img.png`);
+      const imgEntry = res.value.results.find((f) => f.path === `${dir}/sub/proc-img.png`);
       h.assert.ok(imgEntry && typeof imgEntry.mime === 'string' && imgEntry.mime.startsWith('image/'), `图片搜索结果应带 image mime：${JSON.stringify(imgEntry)}`);
+
+      // 部分内容缺失通知：搜索完成后的 toast 提示（结果可能不完整）
+      await h.waitFor(win, `[...document.querySelectorAll('.toast-message')].some((m) => /incomplete|不完整|不完全|неполн/.test(m.textContent ?? ''))`, { timeout: 8000 });
 
       // 搜索结果悬停标题 = 完整路径
       const title = await h.js(

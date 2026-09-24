@@ -13,6 +13,22 @@ export interface IDrive {
 }
 
 /**
+ * 系统注册文件格式条目（主进程 mimeRegistry.ts 生成，按格式筛选的
+ * 「添加」描述查表与「快捷添加」对话框数据源）：
+ * - description：本地化描述（如「Word 97-2003 文档」），无 <comment>
+ *   时为 null；
+ * - hasHandler：是否有注册的打开程序（mimeinfo.cache 缺失时为 null）；
+ * - complete：描述 + 扩展名 + 打开程序三样齐全（完整注册）。
+ */
+export interface RegisteredMimeEntry {
+    mime: string;
+    description: string | null;
+    extensions: string[];
+    hasHandler: boolean | null;
+    complete: boolean;
+}
+
+/**
  * 后端总线名冲突诊断（portal / FileManager1 注册失败时的探测结果，
  * 主进程 backendInfo.ts 生成）：
  * - state 'outdated'：占名者版本与本进程不同（旧版常驻，建议卸载重装）；
@@ -451,7 +467,20 @@ export interface IElectronAPI {
     getVersion: () => Promise<string>;
     /** 用系统默认浏览器打开外部 http/https 链接 */
     openExternal: (url: string) => Promise<boolean>;
-    search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string }) => Promise<IFile[]>;
+    search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string, extensions?: string[], limit?: number | null, timeoutMs?: number | null }) => Promise<{
+      results: IFile[];
+      partial: boolean;
+      cancelled: boolean;
+      reason?: 'timeout' | 'cancelled';
+      error?: string;
+    }>;
+    /** 取消当前窗口正在进行的搜索（搜索页「取消搜索」按钮） */
+    cancelSearch: () => Promise<boolean>;
+    /**
+     * 系统注册文件格式枚举（按格式筛选的「添加」描述查表与「快捷添加」
+     * 对话框数据源）：complete = 描述 + 扩展名 + 打开程序三样齐全。
+     */
+    listRegisteredMime: () => Promise<RegisteredMimeEntry[]>;
     /**
      * 计算目录总大小（后端 `du -sb`）。
      * 并发策略：同一时刻只允许一个 du——新请求到达（目录切换）会杀掉旧

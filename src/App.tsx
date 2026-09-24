@@ -35,6 +35,7 @@ import { PropertiesDialog } from "./components/PropertiesDialog";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useUiZoom } from "./hooks/useUiZoom";
 import { zoomIconSize } from "./utils/iconZoom";
+import { parseSearchPath, SEARCH_DEFAULT_LIMIT, SEARCH_DEFAULT_TIMEOUT } from "./utils/searchPath";
 import type { ThemeConfig } from "./types/theme";
 import {
   trashFiles,
@@ -595,6 +596,18 @@ function AppContent() {
   const [searchGroupByDir, setSearchGroupByDir] = useLocalStorage<boolean>(
     "settings.searchGroupByDir",
     true,
+  );
+  /** 搜索结果默认上限（设置 → 行为「搜索结果上限」行，确定时生效；
+   *  搜索页内「调整上限」为会话级临时覆盖，不写本键） */
+  const [searchLimit, setSearchLimit] = useLocalStorage<number | null>(
+    "settings.searchLimit",
+    SEARCH_DEFAULT_LIMIT,
+  );
+  /** 搜索超时时长（秒，设置 → 行为「搜索超时时长」行，确定时生效；
+   *  默认 30、上限 180；搜索页「移除超时时长」为会话级临时覆盖） */
+  const [searchTimeout, setSearchTimeout] = useLocalStorage<number | null>(
+    "settings.searchTimeout",
+    SEARCH_DEFAULT_TIMEOUT,
   );
   const [locale, setLocaleState] = useLocalStorage<Locale>(
     "settings.locale",
@@ -1242,19 +1255,25 @@ function AppContent() {
    */
   const activeTabPath = tabs.find((t) => t.id === activeTabId)?.path ?? '';
   /**
-   * 当前标签页是否为虚拟路径（仪表盘/回收站根）：虚拟路径不可作为
-   * 终端工作目录——左侧功能栏打开终端时回落主进程默认（~ 家目录），
+   * 当前标签页是否为虚拟路径（仪表盘/回收站根/搜索态）：虚拟路径不可
+   * 作为终端工作目录——左侧功能栏打开终端时回落主进程默认（~ 家目录），
    * 否则 node-pty 以不存在的目录 spawn、shell 立即退出（见 TerminalPane）。
    */
   const isVirtualTerminalDir =
     activeTabPath === 'app://dashboard' ||
     activeTabPath === 'dashboard://' ||
-    activeTabPath === 'trash://';
+    activeTabPath === 'trash://' ||
+    activeTabPath.startsWith('search://');
   const windowTitle = useMemo(() => {
     if (activeTabPath === 'app://dashboard') return 'Hoshineko Nya~';
     if (activeTabPath === 'trash://') return t('nav.trash');
     if (!activeTabPath) return 'Hoshineko Nya~';
     if (showFullPathTitle) return activeTabPath;
+    // 搜索态虚拟路径：窗口标题显示「搜索: 关键词」
+    if (activeTabPath.startsWith('search://')) {
+      const parsedSearch = parseSearchPath(activeTabPath);
+      if (parsedSearch) return t('tab.search', parsedSearch.query);
+    }
     return activeTabPath === '/'
       ? '/'
       : activeTabPath.split('/').filter(Boolean).pop() || '/';
@@ -1375,6 +1394,8 @@ function AppContent() {
     setShowFullPathTitle(false);
     setMarqueeEnabled(false);
     setSearchGroupByDir(true);
+    setSearchLimit(SEARCH_DEFAULT_LIMIT);
+    setSearchTimeout(SEARCH_DEFAULT_TIMEOUT);
     setShowHomeStorageUsage(false);
     setFilePreviewEnabled(false);
     setCalculateDirSize(true);
@@ -1405,6 +1426,8 @@ function AppContent() {
     setShowFullPathTitle,
     setMarqueeEnabled,
     setSearchGroupByDir,
+    setSearchLimit,
+    setSearchTimeout,
     setShowHomeStorageUsage,
     setFilePreviewEnabled,
     setCalculateDirSize,
@@ -2321,6 +2344,8 @@ function AppContent() {
                   sortOrder={sortOrder}
                   groupingEnabled={groupingEnabled}
                   searchGroupByDir={searchGroupByDir}
+                  searchLimit={searchLimit}
+                  searchTimeout={searchTimeout}
                   onSortByChange={setSortBy}
                   onSortOrderChange={setSortOrder}
                   onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}
@@ -2771,6 +2796,10 @@ function AppContent() {
             onClearThumbCache={() => void handleClearThumbCache()}
             searchGroupByDir={searchGroupByDir}
             onSearchGroupByDirChange={setSearchGroupByDir}
+            searchLimit={searchLimit}
+            onSearchLimitChange={setSearchLimit}
+            searchTimeout={searchTimeout}
+            onSearchTimeoutChange={setSearchTimeout}
             titleBarMode={titleBarMode}
             onTitleBarChange={setTitleBarMode}
             showFullPathTitle={showFullPathTitle}

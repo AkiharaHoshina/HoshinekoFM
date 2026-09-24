@@ -222,7 +222,11 @@ contextBridge.exposeInMainWorld('electron', {
   setIcon: (iconPath: string) => ipcRenderer.invoke('window:set-icon', iconPath),
   /** 界面缩放：设置本窗口 zoom factor（0.5–2.0），跨窗口同步由 storage 事件驱动各窗口自行调用 */
   setUiZoom: (factor: number) => ipcRenderer.invoke('window:set-zoom', factor),
-  search: (dir: string, query: string, options?: { type?: 'f' | 'd'; minSize?: string; maxSize?: string }) => ipcRenderer.invoke('system:search', dir, query, options),
+  search: (dir: string, query: string, options?: { type?: 'f' | 'd'; minSize?: string; maxSize?: string; extensions?: string[]; limit?: number | null; timeoutMs?: number | null }) => ipcRenderer.invoke('system:search', dir, query, options),
+  /** 取消当前窗口正在进行的搜索（搜索页「取消搜索」按钮） */
+  cancelSearch: () => ipcRenderer.invoke('system:cancel-search'),
+  /** 系统注册文件格式枚举（按格式筛选的快捷添加/描述查表数据源） */
+  listRegisteredMime: () => ipcRenderer.invoke('system:list-registered-mime'),
   getDirectorySize: (path: string, requestId?: string) => ipcRenderer.invoke('system:get-directory-size', path, requestId),
   /** 取消目录大小统计（团体属性对话框关闭时杀残留 du；requestId 定向匹配） */
   cancelDirectorySize: (requestId?: string) => ipcRenderer.send('system:cancel-directory-size', requestId),

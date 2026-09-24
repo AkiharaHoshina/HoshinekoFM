@@ -7,8 +7,6 @@ import { useTopBarWrap } from '../hooks/useTopBarWrap';
 import { useAutoSortCollapse } from '../hooks/useAutoSortCollapse';
 import { Sidebar, type SidebarPinnedItem } from './Sidebar';
 import { Button } from './Button';
-import { Icon } from './Icon';
-import { IconButton } from './IconButton';
 import { OutlinedSelect, SelectOption, OutlinedTextField } from './md';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
@@ -34,6 +32,9 @@ import type { IFile, AllDevice, GvfsVolume } from '../types/files';
 import type { ThemeConfig } from '../types/theme';
 import type { PickerConfig, PickerFilter, PickerViewPrefs, PickerThemeSnapshot, PickerSettings } from '../types/picker';
 import { getMimeDisplayName } from '../utils/mimeTypes';
+import { isSearchPath, parseSearchPath, SEARCH_DEFAULT_LIMIT, SEARCH_DEFAULT_TIMEOUT, type SearchPathFilter } from '../utils/searchPath';
+import { SearchFilterBar } from './SearchFilterBar';
+import { SearchPendingOverlay } from './SearchPendingOverlay';
 import './FilePicker.css';
 
 /**
@@ -63,6 +64,17 @@ export const FilePickerRoot: React.FC = () => {
 };
 
 /**
+ * 选择器搜索选项（与主窗口 SearchOptions 同形；limit/timeout 为临时值，
+ * 不入 search:// 虚拟路径——选择器无标签页，search:// 仅作输入语法）
+ */
+interface PickerSearchOptions extends SearchPathFilter {
+  /** 结果上限（undefined = 设置默认值；null = 无限制） */
+  limit?: number | null;
+  /** 超时毫秒（undefined = 设置默认值；null = 本次搜索不限时） */
+  timeout?: number | null;
+}
+
+/**
  * 内置文件选择器（独立窗口）：
  * - 左：侧边栏（Places + 固定目录 + 设备；无仪表盘入口、无固定按钮）
  * - 中：Omnibar + 文件浏览区（单选/框选）
@@ -76,15 +88,42 @@ const FilePicker: React.FC = () => {
   const [files, setFiles] = useState<IFile[]>([]);
   /** 搜索态：搜索结果显示时按目录分组（settings.searchGroupByDir） */
   const [searchActive, setSearchActive] = useState(false);
-  /** 搜索词与高级过滤（类型/最小/最大大小，与主窗口同款搜索筛选器） */
+  /** 搜索词与高级过滤（类型/最小/最大大小/扩展名/临时上限，与主窗口
+   *  同款搜索筛选器；limit 为临时上限不入 search://） */
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchOptions, setSearchOptions] = useState<{ type?: 'f' | 'd'; minSize?: string; maxSize?: string }>({});
+  const [searchOptions, setSearchOptions] = useState<PickerSearchOptions>({});
   const searchQueryRef = useRef('');
-  const searchOptionsRef = useRef<{ type?: 'f' | 'd'; minSize?: string; maxSize?: string }>({});
+  const searchOptionsRef = useRef<PickerSearchOptions>({});
   // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取
   searchQueryRef.current = searchQuery;
   // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取
   searchOptionsRef.current = searchOptions;
+  /** 搜索默认上限设置（settings.searchLimit，与主窗口同键共享；null =
+   *  无限制；服务模式 userData 隔离时回落内置默认——与 marqueeEnabled
+   *  同款语义） */
+  const [localSearchLimit] = useLocalStorage<number | null>('settings.searchLimit', SEARCH_DEFAULT_LIMIT);
+  /** 净化后的设置默认上限（null = 无限制；越界回落内置默认）——handleSearch 透传后端 */
+  const pickerBaseSearchLimit = useMemo<number | null>(() => {
+    if (localSearchLimit === null) return null;
+    return Number.isFinite(localSearchLimit) && localSearchLimit > 0 && localSearchLimit <= 100000
+      ? Math.floor(localSearchLimit)
+      : SEARCH_DEFAULT_LIMIT;
+  }, [localSearchLimit]);
+  /** 生效结果上限：搜索页临时上限优先，否则设置项默认值（null = 无限制） */
+  const pickerEffectiveSearchLimit = useMemo<number | null>(() => {
+    if (searchOptions.limit === null) return null;
+    return searchOptions.limit ?? pickerBaseSearchLimit;
+  }, [searchOptions.limit, pickerBaseSearchLimit]);
+  /** 搜索超时设置（settings.searchTimeout，与主窗口同键共享；null =
+   *  不限时；服务模式 userData 隔离时回落内置默认——与搜索上限同款语义） */
+  const [localSearchTimeout] = useLocalStorage<number | null>('settings.searchTimeout', SEARCH_DEFAULT_TIMEOUT);
+  /** 净化后的设置超时时长（秒；上限 180；null = 不限时）——handleSearch 透传后端 */
+  const pickerBaseSearchTimeoutSec = useMemo<number | null>(() => {
+    if (localSearchTimeout === null) return null;
+    return Number.isFinite(localSearchTimeout) && localSearchTimeout >= 1 && localSearchTimeout <= 180
+      ? Math.floor(localSearchTimeout)
+      : SEARCH_DEFAULT_TIMEOUT;
+  }, [localSearchTimeout]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);
   /** 键盘游标（focus）：与主窗口同语义——Shift+方向键游标前进锚点固定 */
@@ -517,10 +556,29 @@ const FilePicker: React.FC = () => {
     [sortedFiles, isSelectableFor, config],
   );
 
-  /** 进入目录：清空选中与搜索状态；回收站虚拟目录走 listTrash */
+  /** handleSearch 最新值引用：loadPath（useCallback 依赖 []）解析
+   *  search://… 时经此调用，打破 loadPath ↔ handleSearch 互引用环 */
+  const handleSearchRef = useRef<((query: string, options: PickerSearchOptions) => Promise<void>) | null>(null);
+
+  /** 进入目录：清空选中与搜索状态；回收站虚拟目录走 listTrash。
+   *  选择器无标签页、不支持 search:// 持久化——地址栏输入 search://…
+   *  按普通搜索处理（解析后发起搜索，见 handleSearchRef） */
   const loadPath = useCallback(async (path: string) => {
     try {
       setSearchActive(false);
+      if (isSearchPath(path)) {
+        const parsed = parseSearchPath(path);
+        if (parsed) {
+          void handleSearchRef.current?.(parsed.query, {
+            type: parsed.filter.type,
+            minSize: parsed.filter.minSize,
+            maxSize: parsed.filter.maxSize,
+            extensions: parsed.filter.extensions,
+          });
+          return;
+        }
+        // 解析失败按普通路径加载（必然报错提示）
+      }
       if (path === 'trash://') {
         const data = await FileSystemService.listTrash();
         setFiles(data);
@@ -566,26 +624,77 @@ const FilePicker: React.FC = () => {
     void init();
   }, [loadPath]);
 
-  /** Omnibar 搜索（与主界面一致的搜索筛选器：类型/最小/最大大小；
-   *  searchActive 驱动搜索结果按目录分组——确认时同步组
-   *  settings.searchGroupByDir） */
+  /** Omnibar 搜索（与主界面一致的搜索筛选器；searchActive 驱动搜索
+   *  结果按目录分组——确认时同步组 settings.searchGroupByDir）。
+   *  回收站视图无 system:search，与主窗口同款按名称过滤。
+   *  乐观切换：发起即清空文件区并显示「搜索中 + 取消」覆盖层（选择器
+   *  无虚拟路径，currentPath 保持发起目录）。
+   *  并发守卫：序号比对丢弃过期请求的迟到结果（同主窗口 runSearch）。 */
+  const pickerSearchSeqRef = useRef(0);
+  /** 搜索进行中（覆盖层显示） */
+  const [searchPending, setSearchPending] = useState(false);
   const handleSearch = useCallback(async (
     query: string,
-    options: { type?: 'f' | 'd'; minSize?: string; maxSize?: string } = {},
+    options: PickerSearchOptions = {},
   ) => {
     if (!query.trim()) {
       setSearchActive(false);
       void loadPath(currentPath);
       return;
     }
+    const seq = ++pickerSearchSeqRef.current;
     setSearchActive(true);
     setSearchQuery(query);
     setSearchOptions(options);
     try {
-      const results = await window.electron.search(currentPath, query, options);
+      if (currentPath === 'trash://') {
+        const q = query.trim().toLowerCase();
+        const trash = await FileSystemService.listTrash();
+        if (pickerSearchSeqRef.current !== seq) return;
+        setFiles(q === '' ? trash : trash.filter((f) => f.name.toLowerCase().includes(q)));
+        setSelected(new Set());
+        return;
+      }
+      // 乐观切换：文件区清空 + 搜索中覆盖层
+      setFiles([]);
+      setSearchPending(true);
+      // 临时上限未指定时透传设置默认上限；超时 null = 本次搜索不限时
+      const sendOptions: PickerSearchOptions = options.limit === undefined
+        ? { ...options, limit: pickerBaseSearchLimit }
+        : options;
+      const timeoutMs = options.timeout === null
+        ? null
+        : (options.timeout !== undefined
+          ? options.timeout
+          : (pickerBaseSearchTimeoutSec === null ? null : pickerBaseSearchTimeoutSec * 1000));
+      const { results, partial, cancelled, reason, error } = await window.electron.search(currentPath, query, { ...sendOptions, timeoutMs });
+      if (pickerSearchSeqRef.current !== seq) return;
+      if (cancelled) {
+        setSearchPending(false);
+        if (reason === 'timeout') {
+          showToast(t('search.timeout_notice'), 'warning');
+          void loadPath(currentPath);
+        }
+        return;
+      }
+      if (error) {
+        setSearchPending(false);
+        showToast(t('error.search_failed', error), 'error');
+        setSearchActive(false);
+        setSearchQuery('');
+        void loadPath(currentPath);
+        return;
+      }
+      setSearchPending(false);
       setFiles(results);
       setSelected(new Set());
+      // 部分内容缺失（权限不足等）：通知提示
+      if (partial) {
+        showToast(t('search.partial_notice'), 'warning');
+      }
     } catch (e) {
+      if (pickerSearchSeqRef.current !== seq) return;
+      setSearchPending(false);
       showToast(
         t('error.search_failed', (e as Error)?.message || String(e) || t('error.unknown')),
         'error',
@@ -596,20 +705,25 @@ const FilePicker: React.FC = () => {
       setSearchQuery('');
       void loadPath(currentPath);
     }
+  }, [currentPath, loadPath, pickerBaseSearchLimit, pickerBaseSearchTimeoutSec]);
+
+  /** 取消进行中的搜索（覆盖层按钮）：后端 kill + 丢弃结果 + 复原目录 */
+  const handleCancelSearch = useCallback(() => {
+    pickerSearchSeqRef.current++; // 丢弃迟到结果
+    void window.electron.cancelSearch?.();
+    setSearchPending(false);
+    void loadPath(currentPath);
   }, [currentPath, loadPath]);
 
-  /**
-   * 修改大小过滤文本（仅更新状态，不立即重搜——避免每敲一个字符就跑
-   * 一次 find）。提交时机：输入框 Enter。类型下拉则选择即重搜。
-   */
-  const updateSizeOption = useCallback((key: 'minSize' | 'maxSize', raw: string) => {
-    const v = raw.trim();
-    setSearchOptions((prev) => ({ ...prev, [key]: v === '' ? undefined : v }));
-  }, []);
+  // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取
+  handleSearchRef.current = handleSearch;
 
-  /** 提交大小过滤并重搜（输入框 Enter 触发，读取最新选项） */
-  const commitSearchOptions = useCallback(() => {
-    void handleSearch(searchQueryRef.current, searchOptionsRef.current);
+  /**
+   * 提交筛选变化并重搜（文件类型/二级筛选/临时上限三路共用）：
+   * 合并进已生效选项（未被本次提交覆盖的字段保留）。
+   */
+  const commitSearchOptions = useCallback((next: Partial<PickerSearchOptions>) => {
+    void handleSearch(searchQueryRef.current, { ...searchOptionsRef.current, ...next });
   }, [handleSearch]);
 
   /** 目录 + 文件名拼接（根目录边界：dir 为 '/' 时不重复斜杠） */
@@ -792,7 +906,10 @@ const FilePicker: React.FC = () => {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+      // md-* 文本域宿主也须拦截：shadow 内部输入框的按键到 window 时
+      // e.target 已重定向为宿主（tag 非 INPUT），否则筛选输入框键入会
+      // 触发文件区快捷键/type-ahead 打乱所选条目
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'MD-OUTLINED-TEXT-FIELD' || target.tagName === 'MD-FILLED-TEXT-FIELD')) return;
 
       if (e.key === 'Tab') {
         if (document.querySelector('md-dialog[open], .context-menu, [role="dialog"]')) return;
@@ -1233,54 +1350,40 @@ const FilePicker: React.FC = () => {
               />
             </div>
           </div>
-          {/* 搜索筛选器（与主窗口同款：结果计数 + 清除 + 类型/最小/最大
-              大小过滤）——搜索态显示；类型选择即重搜，大小输入 Enter 提交 */}
+          {/* 搜索筛选条（与主窗口共用 SearchFilterBar：两选框 + 条件式
+              二级 UI）——搜索态显示；类型选择即重搜，大小/格式确认生效 */}
           {searchActive && (
-            <div style={{ padding: '8px 24px', background: 'var(--md-sys-color-surface-container)', color: 'var(--md-sys-color-on-surface-variant)', fontSize: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Icon name="search" />
-                <span>{t('search.results', files.length, searchQuery)}</span>
-                <IconButton onClick={() => { void loadPath(currentPath); }} variant="standard" title={t('search.clear')}>
-                  <Icon name="close" />
-                </IconButton>
-              </div>
-              <div className="search-filter-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
-                <OutlinedSelect
-                  className="search-filter-type"
-                  value={searchOptions.type ?? ''}
-                  onInput={(e) => {
-                    const v = (e.target as HTMLSelectElement).value;
-                    // 类型选择即重搜
-                    void handleSearch(searchQueryRef.current, {
-                      ...searchOptionsRef.current,
-                      type: v === '' ? undefined : (v as 'f' | 'd'),
-                    });
-                  }}
-                >
-                  <SelectOption value=""><div slot="headline">{t('search.type_all')}</div></SelectOption>
-                  <SelectOption value="f"><div slot="headline">{t('search.type_file')}</div></SelectOption>
-                  <SelectOption value="d"><div slot="headline">{t('search.type_folder')}</div></SelectOption>
-                </OutlinedSelect>
-                <OutlinedTextField
-                  label={t('search.min_size')}
-                  value={searchOptions.minSize ?? ''}
-                  onInput={(e) => updateSizeOption('minSize', (e.target as HTMLInputElement).value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitSearchOptions();
-                  }}
-                  style={{ width: '120px' }}
-                />
-                <OutlinedTextField
-                  label={t('search.max_size')}
-                  value={searchOptions.maxSize ?? ''}
-                  onInput={(e) => updateSizeOption('maxSize', (e.target as HTMLInputElement).value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitSearchOptions();
-                  }}
-                  style={{ width: '120px' }}
-                />
-              </div>
-            </div>
+            <SearchFilterBar
+              query={searchQuery}
+              options={{
+                type: searchOptions.type,
+                minSize: searchOptions.minSize,
+                maxSize: searchOptions.maxSize,
+                extensions: searchOptions.extensions,
+              }}
+              resultCount={files.length}
+              limit={pickerEffectiveSearchLimit}
+              resultsCapped={pickerEffectiveSearchLimit !== null && files.length >= pickerEffectiveSearchLimit}
+              marqueeEnabled={marqueeEnabled}
+              nameFilterOnly={currentPath === 'trash://'}
+              onTypeChange={(type) => commitSearchOptions({ type })}
+              onFilterCommit={(f) => commitSearchOptions({
+                type: f.type,
+                minSize: f.minSize,
+                maxSize: f.maxSize,
+                extensions: f.extensions,
+              })}
+              onClear={() => { void loadPath(currentPath); }}
+              onLimitChange={(n) => commitSearchOptions({ limit: n })}
+              onLimitRemoved={() => {
+                commitSearchOptions({ limit: null });
+                showToast(t('search.limit_removed'), 'info');
+              }}
+              onTimeoutRemoved={() => {
+                commitSearchOptions({ timeout: null });
+                showToast(t('search.timeout_removed'), 'info');
+              }}
+            />
           )}
           <div
             ref={fileZoneRef}
@@ -1289,6 +1392,10 @@ const FilePicker: React.FC = () => {
             tabIndex={-1}
             style={{ outline: 'none' }}
           >
+            {/* 搜索中覆盖层：大搜索期间文件区清空、中央显示取消入口 */}
+            {searchPending && (
+              <SearchPendingOverlay onCancel={handleCancelSearch} />
+            )}
             <FileList
               files={displayFiles}
               selectedFiles={selected}

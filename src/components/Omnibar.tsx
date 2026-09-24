@@ -9,6 +9,7 @@ import { useDrag } from "../contexts/DragContext";
 import { createAddressBarDropHandler } from "../utils/addressBarDrop";
 import { t } from "../i18n";
 import { expandAddressPath, looksLikePathInput } from "../utils/addressPath";
+import { isSearchPath } from "../utils/searchPath";
 import "./Omnibar.css";
 
 interface OmnibarProps {
@@ -83,8 +84,9 @@ export const Omnibar: React.FC<OmnibarProps> = ({
 
   /** 检测当前路径中是否有任意段是软链接 */
   useEffect(() => {
-    // 回收站虚拟路径（trash://…）无真实目录段，跳过软链接检测
-    if (currentPath.startsWith('trash://')) return;
+    // 回收站虚拟路径（trash://…）与搜索态虚拟路径（search://…）无真实
+    // 目录段，跳过软链接检测
+    if (currentPath.startsWith('trash://') || currentPath.startsWith('search://')) return;
     const segments = currentPath.split('/').filter(Boolean)
       .map((_, i, arr) => '/' + arr.slice(0, i + 1).join('/'));
 
@@ -147,6 +149,14 @@ export const Omnibar: React.FC<OmnibarProps> = ({
     // If starts with '/' or '~' or contains separator, or is '.'/'..'
     // (relative syntax) -> Path Navigation
     // Else -> Search
+
+    // search:// 虚拟路径：直接交给 loadPath 解析（主窗口恢复/发起搜索；
+    // 选择器按普通搜索处理，见 FilePicker.loadPath）——不能先过
+    // looksLikePathInput：含 '/' 会被误判为路径导航弹「目录不存在」
+    if (isSearchPath(trimmed)) {
+      onNavigate(trimmed);
+      return;
+    }
 
     if (looksLikePathInput(trimmed)) {
       // `~`/`./`/`../` 语法展开：相对地址栏当前显示路径（回收站浏览时

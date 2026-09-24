@@ -1,0 +1,40 @@
+/* 搜索中覆盖层：覆盖文件区中央（搜索态虚拟路径下文件区清空） */
+
+.search-pending-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--md-sys-color-surface);
+  z-index: 5;
+}
+
+.search-pending-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 32px;
+}
+
+/* 简易旋转指示（Material Symbols progress_activity 同款环状） */
+.search-pending-spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 4px solid var(--md-sys-color-surface-container-high);
+  border-top-color: var(--md-sys-color-primary);
+  animation: search-pending-rotate 1s linear infinite;
+}
+
+.search-pending-text {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 14px;
+}
+
+@keyframes search-pending-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -9,6 +9,7 @@ import { useDrag } from "../contexts/DragContext";
 import type { IFile } from "../types/files";
 import { createAddressBarDropHandler } from "../utils/addressBarDrop";
 import { isPinReorderDragActive } from "../utils/pinReorderDrag";
+import { isSearchPath, parseSearchPath } from "../utils/searchPath";
 import { t } from "../i18n";
 
 type HomeMap = Record<string, { username: string; uid: number }>;
@@ -165,6 +166,13 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     if (!isTrashVirtual) return [];
     return currentPath.slice('trash://'.length).split('/').filter(Boolean);
   }, [isTrashVirtual, currentPath]);
+  /**
+   * 搜索态虚拟路径（search://目录:关键词）：地址栏渲染「搜索胶囊 +
+   * 基础目录段」——基础目录段点击退出搜索进入该目录（普通面包屑
+   * 语义），搜索胶囊不可导航（仅展示，点击重跑当前搜索）。
+   */
+  const isSearchVirtual = isSearchPath(currentPath);
+  const parsedSearch = useMemo(() => (isSearchVirtual ? parseSearchPath(currentPath) : null), [isSearchVirtual, currentPath]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastRef = useRef<HTMLSpanElement>(null);
 
@@ -237,9 +245,9 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   }, [currentPath]);
 
   useEffect(() => {
-    // 回收站虚拟路径无真实目录段，跳过软链接检测（segmentPaths 会是
-    // 无意义的前缀，如 /trash:）
-    if (isTrashVirtual) return;
+    // 回收站/搜索态虚拟路径无真实目录段，跳过软链接检测（segmentPaths
+    // 会是无意义的前缀，如 /trash:）
+    if (isTrashVirtual || isSearchVirtual) return;
     const segmentPaths = parts.map(
       (_, i) => "/" + parts.slice(0, i + 1).join("/"),
     );
@@ -265,7 +273,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentPath, parts, isTrashVirtual]);
+  }, [currentPath, parts, isTrashVirtual, isSearchVirtual]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     dropHandler?.handleDragOver(e);
@@ -535,6 +543,61 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       />
     );
   })() : null;
+
+  // 搜索态虚拟路径：渲染「搜索胶囊 + 基础目录段」。基础目录段为真实
+  // 路径（可点击退出搜索进入、可拖放，语义与普通面包屑一致）；搜索胶囊
+  // 仅展示（点击重跑当前搜索）。所有 hooks 已在此处之前执行完毕。
+  if (isSearchVirtual && parsedSearch) {
+    const dirParts = parsedSearch.dir.split('/').filter(Boolean);
+    return (
+      <div
+        ref={scrollRef}
+        className="breadcrumb-container"
+        onWheel={(e) => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollLeft += e.deltaY;
+          }
+        }}
+      >
+        <Chip
+          title={t('tab.search', parsedSearch.query)}
+          onClick={() => onNavigate(currentPath)}
+          onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
+          className="breadcrumb-chip breadcrumb-search-chip"
+        >
+          <Icon name="search" slot="icon" />
+          <span style={{ fontWeight: 600 }}>{t('tab.search', parsedSearch.query)}</span>
+        </Chip>
+        {dirParts.map((p, i) => {
+          const segmentPath = '/' + dirParts.slice(0, i + 1).join('/');
+          const isLast = i === dirParts.length - 1;
+          return (
+            <React.Fragment key={segmentPath}>
+              <span
+                ref={isLast ? lastRef : undefined}
+                className={`breadcrumb-separator${dragOverPath === segmentPath ? ' drag-over' : ''}`}
+              >
+                /
+              </span>
+              <Button
+                variant="text"
+                onClick={() => { onNavigate(segmentPath); }}
+                onDragOver={handleDragOver}
+                onDragEnter={(e) => handleDragEnter(e, segmentPath)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, segmentPath)}
+                className={`breadcrumb-item${dragOverPath === segmentPath ? ' drag-over' : ''}`}
+                style={{ fontWeight: isLast ? 600 : 400 }}
+              >
+                {p}
+              </Button>
+            </React.Fragment>
+          );
+        })}
+        {ctxMenuNode}
+      </div>
+    );
+  }
 
   // 回收站虚拟路径：渲染「回收站胶囊」（trash:// 根时加粗为最后一个
   // 元素）+ 相对段按钮（trash://文件夹名/…），样式与主页/根目录胶囊一致。

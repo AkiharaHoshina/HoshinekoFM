@@ -7,11 +7,12 @@ import { promisify } from 'util';
 import dbus from 'dbus-next';
 import { getMountMap, invalidateMountMapCache, getExecError } from '../shared';
 import { getThumbnailCacheInfo, clearThumbnailCache, detectMime } from '../fsUtils';
-import { getExtensionsForMime } from '../mimeMap';
+import { getExtensionsForMime, EXT_TO_MIME } from '../mimeMap';
 import { readOpenRule, writeOpenRule, deleteOpenRule, listOpenRules, clearAllOpenRules, type OpenRule } from '../openRules';
 import { launchWithApp } from '../openLaunch';
 import { getLastBackendRegistration } from '../backends';
 import { quoteExecArg } from '../launcherEntry';
+import { listRegisteredMime } from '../mimeRegistry';
 import { PORTAL_BUS_NAME, PORTAL_FILE_CHOOSER_PATH, PORTAL_FILE_CHOOSER_IFACE } from './portalFileChooser';
 import { FILE_MANAGER1_NAME, FILE_MANAGER1_PATH, FILE_MANAGER1_IFACE } from './fileManager1';
 import {
@@ -2015,16 +2016,180 @@ export function registerSystemHandlers(
   }
 
   /**
+   * 搜索结果（system:search 返回值）：
+   * - cancelled = 被取消/超时/被新搜索顶替，results 为空；
+   * - reason：'timeout'（超时自动取消）/ 'cancelled'（用户取消或
+   *   单飞行顶替）；正常完成与 error 均为 undefined；
+   * - error：spawn 失败等硬错误信息（渲染层弹搜索失败通知）；
+   * - partial：部分内容缺失（find 权限错误以非零退出码/写 stderr 报告）。
+   */
+  interface SearchResult {
+    results: { name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null }[];
+    partial: boolean;
+    cancelled: boolean;
+    reason?: 'timeout' | 'cancelled';
+    error?: string;
+  }
+
+  /** 活跃搜索（按发送者 id 单飞行：每窗口至多一个 find 子进程） */
+  interface ActiveSearch {
+    child: ReturnType<typeof spawn> | null;
+    timer: ReturnType<typeof setTimeout> | null;
+    out: string;
+    err: string;
+    limit: number;
+    earlyStop: boolean;
+    settled: boolean;
+    /** 原始 promise resolve（settleActiveSearch 内部调用，防递归） */
+    resolve: (result: SearchResult) => void;
+    /** 公开结算入口：先从注册表摘除再结算 */
+    settle: (result: SearchResult) => void;
+  }
+
+  const activeSearches = new Map<number, ActiveSearch>();
+  /** 已注册 destroyed 清理的发送者（每发送者仅注册一次，防监听器堆积） */
+  const senderDestroyedHooked = new Map<number, boolean>();
+
+  /** 结算一次搜索：杀残留子进程、清计时器、resolve 结果（幂等） */
+  function settleActiveSearch(entry: ActiveSearch, result: SearchResult): void {
+    if (entry.settled) return;
+    entry.settled = true;
+    if (entry.timer !== null) {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+    if (entry.child && entry.child.exitCode === null && entry.child.signalCode === null) {
+      try { entry.child.kill('SIGTERM'); } catch { /* 已退出 */ }
+    }
+    entry.resolve(result);
+  }
+
+  /** 结果数超过该值改用「扩展名快查」mime（跳过 magic 读与 `file`
+   *  子进程）：移除上限后的大宗搜索（/ 搜 '1' 可命中数十万条）逐文件
+   *  detectMime 需数分钟，用户感知为卡死 */
+  const FAST_MIME_THRESHOLD = 2000;
+  /** 并发 stat+mime 池大小（大宗结果逐条顺序处理是第二个卡顿源） */
+  const MIME_POOL_SIZE = 24;
+
+  /** 扩展名快查 mime（大宗结果的图标判定；未知扩展名回落 null = 通用图标） */
+  function mimeByExtensionFast(filePath: string): string | null {
+    const ext = path.extname(filePath).toLowerCase();
+    if (!ext) return null;
+    return EXT_TO_MIME[ext] ?? null;
+  }
+
+  /** 收集到的行 → stat + mime 组装结果（早停/正常结束共用；
+   *  大宗结果并发处理 + 扩展名快查 mime） */
+  async function buildSearchResults(entry: ActiveSearch, code: number | null, earlyStop: boolean): Promise<SearchResult> {
+    const lines = entry.out.split('\n').filter(Boolean).slice(0, entry.limit);
+    const useFastMime = lines.length > FAST_MIME_THRESHOLD;
+    const results: { name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null }[] = new Array(lines.length);
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (!entry.settled) {
+        const i = cursor++;
+        if (i >= lines.length) return;
+        const pathStr = lines[i];
+        try {
+          const stats = await fs.stat(pathStr);
+          // mime 必须随结果返回：文件列表图标/缩略图按 mime 判定——
+          // 缺省会让搜索结果全部显示为通用文件图标（与真实类型不符）。
+          // 仅普通文件跑 detectMime：FIFO/设备/socket 等特殊文件（/ 搜索
+          // 大量命中 /proc、/run）会让 magic 读取/`file` 子进程阻塞。
+          const mime = stats.isDirectory()
+            ? 'inode/directory'
+            : (!stats.isFile() ? null : (useFastMime ? mimeByExtensionFast(pathStr) : await detectMime(pathStr)));
+          results[i] = {
+            name: path.basename(pathStr),
+            path: pathStr,
+            isDirectory: stats.isDirectory(),
+            size: stats.size,
+            mtime: stats.mtime,
+            mime,
+          };
+        } catch { /* continue */ }
+      }
+    };
+    const poolSize = Math.max(1, Math.min(MIME_POOL_SIZE, lines.length));
+    await Promise.all(Array.from({ length: poolSize }, () => worker()));
+    if (entry.settled) return { results: [], partial: false, cancelled: true, reason: 'cancelled' };
+    const cleaned = results.filter((r): r is NonNullable<typeof r> => r !== undefined);
+    // partial：stderr 有权限提示，或 find **自然**非零退出（早停/被杀不算）
+    const partial = entry.err.trim().length > 0 || (!earlyStop && code !== null && code !== 0);
+    return { results: cleaned, partial, cancelled: false };
+  }
+
+  /**
    * 文件搜索（find -iname）：目录树中部分子目录无访问权限时 find 仍
    * 输出可访问部分的匹配结果、仅以退出码 1 与 stderr 报告权限问题——
    * 必须用 spawn 手动收集 stdout，不能在非零退出码时整体丢弃
    * （否则「/tmp 搜 proc」这类场景会因个别 systemd 私有目录而零结果）。
-   * stderr（权限提示）静默忽略，符合常规文件管理器行为。
+   * stderr（权限提示）不再静默忽略：以返回值的 partial 标记透传给渲染
+   * 层弹通知（用户要求：部分内容无法显示时提示）。
+   *
+   * options：
+   * - type：find -type（f/d）；
+   * - minSize/maxSize：find -size 风格大小串（单位 b/k/M/G/T）；
+   * - extensions：扩展名白名单（如 ['doc','txt']）——以
+   *   `\( -iname '*.a' -o -iname '*.b' \)` 组合**下放 find**：结果截断
+   *   发生在 find 之后，渲染层过滤会因截断漏掉匹配（例如前 200 条全是
+   *   其他扩展名时白名单过滤后为空——错误结果）；
+   * - limit：结果上限（默认由渲染层传 settings.searchLimit；
+   *   NaN/越界回落 200）——**凑满即 SIGTERM 早停**（内存上界 O(limit)、
+   *   大搜索提前结束）；
+   * - timeoutMs：超时毫秒（渲染层传 settings.searchTimeout；null = 不
+   *   限时——搜索页「移除超时时长」的会话级覆盖；越界回落默认 30s）。
+   *
+   * 进程管理（防溢出，决策：每窗口 1 个并发）：
+   * - 按发送者单飞行：同一窗口新搜索先取消旧搜索（杀 find）；
+   * - 超时/取消/早停/窗口销毁统一 kill；
+   * - 流式计数 + 早停：stdout 不再无界累积（/ 搜 '1' 曾可命中数十万
+   *   条目致内存暴涨）。
+   *
+   * @returns SearchResult——cancelled.reason='timeout' 时渲染层弹超时
+   * 通知并复原视图；'cancelled' 为显式取消（渲染层已复原，静默丢弃）。
    */
-  ipcMain.handle('system:search', async (_, directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string }) => {
+  ipcMain.handle('system:search', async (event, directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string, extensions?: string[], limit?: number | null, timeoutMs?: number | null }): Promise<SearchResult> => {
+    const senderId = event.sender.id;
+
+    // 单飞行：同窗口新搜索先取消旧搜索（kill 旧 find，防并发堆积）
+    const prev = activeSearches.get(senderId);
+    if (prev && !prev.settled) {
+      activeSearches.delete(senderId);
+      settleActiveSearch(prev, { results: [], partial: false, cancelled: true, reason: 'cancelled' });
+    }
+
+    // 窗口销毁回收：find 不留孤儿进程（每发送者仅注册一次）
+    if (!senderDestroyedHooked.has(senderId)) {
+      senderDestroyedHooked.set(senderId, true);
+      event.sender.once('destroyed', () => {
+        senderDestroyedHooked.delete(senderId);
+        const entry = activeSearches.get(senderId);
+        if (entry && !entry.settled) {
+          activeSearches.delete(senderId);
+          settleActiveSearch(entry, { results: [], partial: false, cancelled: true, reason: 'cancelled' });
+        }
+      });
+    }
+
     try {
       const args = [directory];
       if (options?.type) args.push('-type', options.type);
+      // 扩展名白名单：sanitize 防 find 参数注入/选项误解析（仅字母数字
+      // 与 _+-，剔除 * 与前导点）；括号分组保证 -o 只作用于各 -iname
+      // （与后续关键词 -iname 为与关系）
+      const exts = (options?.extensions ?? [])
+        .map((e) => e.trim().replace(/^\*+/, '').replace(/^\.+/, ''))
+        .filter((e) => /^[A-Za-z0-9_+-]+$/.test(e))
+        .slice(0, 64);
+      if (exts.length > 0) {
+        args.push('(');
+        for (let i = 0; i < exts.length; i++) {
+          if (i > 0) args.push('-o');
+          args.push('-iname', `*.${exts[i]}`);
+        }
+        args.push(')');
+      }
       if (query) args.push('-iname', `*${query}*`);
       // 最小大小：+N 语义为「严格大于 N」（find 取整后），与用户直觉一致
       if (options?.minSize) args.push('-size', `+${options.minSize}`);
@@ -2034,39 +2199,116 @@ export function registerSystemHandlers(
         if (doubled) args.push('-size', `-${doubled}`);
       }
 
-      const stdout = await new Promise<string>((resolve, reject) => {
+      // 结果上限：null = 无限制（用户移除上限/无效输入）——仍设硬安全
+      // 上限防内存/进程失控（「无限制」在实践中即 100000 条）；数值须
+      // 正整数 ≤ 100000，否则回落默认 200
+      const DEFAULT_SEARCH_LIMIT = 200;
+      const HARD_SEARCH_LIMIT = 100000;
+      const limit = options?.limit === null
+        ? HARD_SEARCH_LIMIT
+        : (Number.isInteger(options?.limit) && (options?.limit as number) > 0 && (options?.limit as number) <= 100000
+          ? (options!.limit as number)
+          : DEFAULT_SEARCH_LIMIT);
+
+      // 超时：null = 不限时；数值须 1..180000ms（设置页上限 180s）；
+      // HOSHINEKO_E2E_SEARCH_TIMEOUT_MS 为测试强制覆盖（渲染层总传设置值，
+      // 不用它覆盖则 e2e 需等满 30s）
+      const envTimeout = Number(process.env.HOSHINEKO_E2E_SEARCH_TIMEOUT_MS);
+      const envOverride = Number.isFinite(envTimeout) && envTimeout > 0 && envTimeout <= 180000
+        ? envTimeout
+        : null;
+      const DEFAULT_SEARCH_TIMEOUT_MS = 30000;
+      const timeoutMs = options?.timeoutMs === null
+        ? null
+        : (envOverride !== null
+          ? envOverride
+          : (typeof options?.timeoutMs === 'number' && options.timeoutMs > 0 && options.timeoutMs <= 180000
+            ? options.timeoutMs
+            : DEFAULT_SEARCH_TIMEOUT_MS));
+
+      return await new Promise<SearchResult>((resolve) => {
+        const entry: ActiveSearch = {
+          child: null,
+          timer: null,
+          out: '',
+          err: '',
+          limit,
+          earlyStop: false,
+          settled: false,
+          resolve,
+          settle: () => { /* 下方立即覆盖 */ },
+        };
+        entry.settle = (result: SearchResult) => {
+          activeSearches.delete(senderId);
+          settleActiveSearch(entry, result);
+        };
+        activeSearches.set(senderId, entry);
+
         const child = spawn('find', args);
-        let out = '';
-        child.stdout.on('data', (d) => (out += String(d)));
-        child.stderr.on('data', () => { /* 权限不足等提示忽略 */ });
-        child.on('error', reject);
-        child.on('close', () => resolve(out));
+        entry.child = child;
+
+        let nlCount = 0;
+        child.stdout.on('data', (d) => {
+          if (entry.settled) return;
+          const s = String(d);
+          entry.out += s;
+          // 流式计数：凑满 limit 行即早停（内存上界 O(limit)）
+          nlCount += (s.match(/\n/g) ?? []).length;
+          if (nlCount >= limit) {
+            entry.earlyStop = true;
+            if (entry.timer !== null) { clearTimeout(entry.timer); entry.timer = null; }
+            try { child.kill('SIGTERM'); } catch { /* 已退出 */ }
+            void buildSearchResults(entry, null, true).then((result) => entry.settle(result));
+          }
+        });
+        child.stderr.on('data', (d) => {
+          if (!entry.settled) entry.err += String(d);
+        });
+        child.on('error', (err) => {
+          if (entry.settled) return;
+          entry.settle({ results: [], partial: false, cancelled: false, error: String((err as Error)?.message ?? err) });
+        });
+        child.on('close', (code) => {
+          if (entry.settled) return;
+          if (entry.timer !== null) { clearTimeout(entry.timer); entry.timer = null; }
+          void buildSearchResults(entry, code, entry.earlyStop).then((result) => entry.settle(result));
+        });
+
+        // 超时自动取消（null = 本次搜索不限时）
+        if (timeoutMs !== null) {
+          entry.timer = setTimeout(() => {
+            entry.settle({ results: [], partial: false, cancelled: true, reason: 'timeout' });
+          }, timeoutMs);
+        }
       });
-
-      const lines = stdout.split('\n').filter(Boolean);
-      const results: { name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null }[] = [];
-
-      const topLines = lines.slice(0, 100);
-
-      for (const pathStr of topLines) {
-        try {
-          const stats = await fs.stat(pathStr);
-          // mime 必须随结果返回：文件列表图标/缩略图按 mime 判定——
-          // 缺省会让搜索结果全部显示为通用文件图标（与真实类型不符）
-          const mime = stats.isDirectory() ? 'inode/directory' : await detectMime(pathStr);
-          results.push({
-            name: path.basename(pathStr),
-            path: pathStr,
-            isDirectory: stats.isDirectory(),
-            size: stats.size,
-            mtime: stats.mtime,
-            mime,
-          });
-        } catch { /* continue */ }
-      }
-      return results;
     } catch (error) {
       console.error('Search failed:', error);
+      return { results: [], partial: false, cancelled: false, error: String((error as Error)?.message ?? error) };
+    }
+  });
+
+  /**
+   * 取消当前窗口的搜索（搜索页「取消搜索」按钮）：杀 find 并以
+   * cancelled 结算 pending promise——渲染层 seq 守卫丢弃结果并复原视图。
+   */
+  ipcMain.handle('system:cancel-search', (event) => {
+    const entry = activeSearches.get(event.sender.id);
+    if (entry && !entry.settled) {
+      entry.settle({ results: [], partial: false, cancelled: true, reason: 'cancelled' });
+    }
+    return true;
+  });
+
+  /**
+   * 系统注册文件格式枚举（「按格式筛选」快捷添加对话框与扩展名描述
+   * 查表数据源）：解析 mimeinfo.cache + shared-mime-info XML，见
+   * ../mimeRegistry。解析失败整体回退空列表（渲染层有内置兜底文案）。
+   */
+  ipcMain.handle('system:list-registered-mime', async () => {
+    try {
+      return await listRegisteredMime();
+    } catch (error) {
+      console.error('List registered mime failed:', error);
       return [];
     }
   });

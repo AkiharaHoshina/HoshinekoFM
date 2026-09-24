@@ -116,19 +116,21 @@ const { app } = require('electron');
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`);
 
-    // 输入 'a.txt'（无路径语法）→ 搜索而非导航（搜索过滤行出现）
+    // 输入 'a.txt'（无路径语法）→ 搜索而非导航（搜索过滤行出现）；
+    // search:// 虚拟路径模型（v0.11.49-dev 起）：地址栏显示
+    // search://<目录>:<关键词>，不再是搜索前的目录
     await enterPath(win, 'a.txt');
     await h.waitFor(win, `!!document.querySelector('.search-filter-row')`);
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`);
     let stillDir = await readAddressBar(win);
-    h.assert.ok(stillDir === dir, '搜索输入不应导航离开当前目录');
+    h.assert.ok(stillDir === `search://${dir}:a.txt`, `搜索后地址栏应为 search:// 虚拟路径：${stillDir}`);
 
     // 波浪号开头的文件名（~file.txt）：不是 ~ 家目录语法，应搜索而非
     // 当目录导航（回归：曾误判为路径并弹「目录不存在」）
     await enterPath(win, '~file.txt');
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/~file.txt"]')`);
     stillDir = await readAddressBar(win);
-    h.assert.ok(stillDir === dir, '~ 文件名搜索不应导航离开当前目录');
+    h.assert.ok(stillDir === `search://${dir}:~file.txt`, `~ 文件名搜索后地址栏应为 search:// 虚拟路径：${stillDir}`);
   });
 
   h.finish();

@@ -6,6 +6,8 @@ import { Icon } from "./Icon";
 import { Switch, Slider, Divider, OutlinedSelect, SelectOption } from "./md";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { NewTabPathDialog } from "./NewTabPathDialog";
+import { SearchLimitDialog } from "./SearchLimitDialog";
+import { SearchTimeoutDialog } from "./SearchTimeoutDialog";
 import { SettingsPreview } from "./SettingsPreview";
 import { formatNewTabPath } from "../utils/newTabPath";
 import { t, getLanguageOptions, type Locale } from '../i18n';
@@ -89,6 +91,14 @@ interface SettingsDialogProps {
   /** 搜索分类：搜索结果按同目录分组（组头 = 完整目录路径；确定时生效） */
   searchGroupByDir: boolean;
   onSearchGroupByDirChange: (value: boolean) => void;
+  /** 搜索结果默认上限（默认 200、null = 无限制；确定时生效——搜索页
+   *  内「调整上限」为会话级临时覆盖，不写此键） */
+  searchLimit: number | null;
+  onSearchLimitChange: (limit: number | null) => void;
+  /** 搜索超时时长（秒，默认 30、上限 180、null = 不限时；确定时生效——
+   *  搜索页上限对话框「移除超时时长」为会话级临时覆盖，不写此键） */
+  searchTimeout: number | null;
+  onSearchTimeoutChange: (seconds: number | null) => void;
   /** 标题栏模式（null = 跟随系统，true/false = 手动开/关） */
   titleBarMode: boolean | null;
   onTitleBarChange: (mode: boolean | null) => void;
@@ -161,6 +171,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onClearThumbCache,
   searchGroupByDir,
   onSearchGroupByDirChange,
+  searchLimit,
+  onSearchLimitChange,
+  searchTimeout,
+  onSearchTimeoutChange,
   titleBarMode,
   onTitleBarChange,
   showFullPathTitle,
@@ -339,10 +353,18 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   const [pendingCalculateDirSize, setPendingCalculateDirSize] = useState<boolean>(calculateDirSize);
   /** 新建标签页目录草稿：二级对话框确认只写入草稿，外层确定才应用 */
   const [pendingNewTabPath, setPendingNewTabPath] = useState<string>(newTabPath);
+  /** 搜索结果上限草稿：二级对话框确认只写入草稿，外层确定才应用 */
+  const [pendingSearchLimit, setPendingSearchLimit] = useState<number | null>(searchLimit);
+  /** 搜索超时时长草稿：二级对话框确认只写入草稿，外层确定才应用 */
+  const [pendingSearchTimeout, setPendingSearchTimeout] = useState<number | null>(searchTimeout);
   /** 恢复默认设置确认对话框（带背景遮罩的 ConfirmDialog） */
   const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
   /** 自定义新标签页目录二级对话框开关 */
   const [newTabDialogOpen, setNewTabDialogOpen] = useState(false);
+  /** 搜索结果上限二级对话框开关 */
+  const [searchLimitDialogOpen, setSearchLimitDialogOpen] = useState(false);
+  /** 搜索超时时长二级对话框开关 */
+  const [searchTimeoutDialogOpen, setSearchTimeoutDialogOpen] = useState(false);
 
   /**
    * 外观预览区挂载状态：打开时立即挂载；关闭后延迟 300ms 卸载——
@@ -401,6 +423,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       setPendingTitleBar(titleBarMode);
       setPendingFullPath(showFullPathTitle);
       setPendingSearchGroupByDir(searchGroupByDir);
+      setPendingSearchLimit(searchLimit);
+      setPendingSearchTimeout(searchTimeout);
       setPendingMarquee(marqueeEnabled);
       setPendingFilePreview(filePreviewEnabled);
       setPendingAutoCreateDesktopEntry(autoCreateDesktopEntry);
@@ -427,6 +451,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setPendingTitleBar(titleBarMode);
     setPendingFullPath(showFullPathTitle);
     setPendingSearchGroupByDir(searchGroupByDir);
+    setPendingSearchLimit(searchLimit);
+    setPendingSearchTimeout(searchTimeout);
     setPendingMarquee(marqueeEnabled);
     setPendingFilePreview(filePreviewEnabled);
     setPendingAutoCreateDesktopEntry(autoCreateDesktopEntry);
@@ -439,7 +465,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setPendingShowHomeStorageUsage(showHomeStorageUsage);
     setPendingCalculateDirSize(calculateDirSize);
     setPendingNewTabPath(newTabPath);
-  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, marqueeEnabled, filePreviewEnabled, autoCreateDesktopEntry, autoCreateAppMenuEntry, showHiddenFiles, viewMode, iconSize, filledIcons, sortControlsAutoCollapse, showHomeStorageUsage, calculateDirSize, newTabPath]);
+  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, searchLimit, searchTimeout, marqueeEnabled, filePreviewEnabled, autoCreateDesktopEntry, autoCreateAppMenuEntry, showHiddenFiles, viewMode, iconSize, filledIcons, sortControlsAutoCollapse, showHomeStorageUsage, calculateDirSize, newTabPath]);
 
   /**
    * 应用全部 pending 设置（不关闭对话框）：「应用」与「确定」共用
@@ -453,6 +479,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     if (pendingTitleBar !== titleBarMode) onTitleBarChange(pendingTitleBar);
     if (pendingFullPath !== showFullPathTitle) onShowFullPathTitleChange(pendingFullPath);
     if (pendingSearchGroupByDir !== searchGroupByDir) onSearchGroupByDirChange(pendingSearchGroupByDir);
+    if (pendingSearchLimit !== searchLimit) onSearchLimitChange(pendingSearchLimit);
+    if (pendingSearchTimeout !== searchTimeout) onSearchTimeoutChange(pendingSearchTimeout);
     if (pendingMarquee !== marqueeEnabled) onMarqueeChange(pendingMarquee);
     if (pendingFilePreview !== filePreviewEnabled) onFilePreviewChange(pendingFilePreview);
     if (pendingAutoCreateDesktopEntry !== autoCreateDesktopEntry) onAutoCreateDesktopEntryChange(pendingAutoCreateDesktopEntry);
@@ -769,6 +797,46 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               <Switch selected={pendingSearchGroupByDir} onClick={() => setPendingSearchGroupByDir(!pendingSearchGroupByDir)} />
             </div>
 
+            {/* 搜索结果默认上限：二级对话框输入正整数（1–100000）——二级
+              确认只写入草稿，外层「应用」/「确定」才应用；副标题展示当前
+              草稿值；搜索页内「调整上限」为会话级临时覆盖不写此键 */}
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="filter_list" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.search_limit")}
+                  </div>
+                  <div className="settings-row__sub settings-row__sub--wrap">
+                    {pendingSearchLimit === null ? t("search.unlimited") : t("settings.search_limit_desc", pendingSearchLimit)}
+                  </div>
+                </div>
+              </div>
+              <Button variant="outlined" onClick={() => setSearchLimitDialogOpen(true)}>
+                {t("settings.search_limit_edit")}
+              </Button>
+            </div>
+
+            {/* 搜索超时时长：二级对话框输入整数秒（1–180）——二级确认只
+              写入草稿，外层「应用」/「确定」才应用；搜索页上限对话框
+              「移除超时时长」为会话级临时覆盖不写此键 */}
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="timer" />
+                <div className="settings-row__label-col">
+                  <div className="settings-row__label">
+                    {t("settings.search_timeout")}
+                  </div>
+                  <div className="settings-row__sub settings-row__sub--wrap">
+                    {pendingSearchTimeout === null ? t("search.unlimited") : t("settings.search_timeout_desc", pendingSearchTimeout)}
+                  </div>
+                </div>
+              </div>
+              <Button variant="outlined" onClick={() => setSearchTimeoutDialogOpen(true)}>
+                {t("settings.search_limit_edit")}
+              </Button>
+            </div>
+
             <div className="settings-row" onClick={() => setPendingShowHomeStorageUsage(!pendingShowHomeStorageUsage)}>
               <div className="settings-row__start">
                 <Icon name="home" />
@@ -1050,6 +1118,28 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
             setPendingNewTabPath(path);
           }}
           onCancel={() => setNewTabDialogOpen(false)}
+        />
+      )}
+
+      {searchLimitDialogOpen && (
+        <SearchLimitDialog
+          currentLimit={pendingSearchLimit}
+          onConfirm={(limit) => {
+            setSearchLimitDialogOpen(false);
+            setPendingSearchLimit(limit);
+          }}
+          onCancel={() => setSearchLimitDialogOpen(false)}
+        />
+      )}
+
+      {searchTimeoutDialogOpen && (
+        <SearchTimeoutDialog
+          currentTimeout={pendingSearchTimeout}
+          onConfirm={(seconds) => {
+            setSearchTimeoutDialogOpen(false);
+            setPendingSearchTimeout(seconds);
+          }}
+          onCancel={() => setSearchTimeoutDialogOpen(false)}
         />
       )}
     </>

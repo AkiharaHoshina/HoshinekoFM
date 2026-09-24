@@ -6,6 +6,7 @@ import { useDrag } from '../contexts/DragContext';
 import { shouldSuppressDrop } from '../utils/nativeDragTracker';
 import { isPinReorderDragActive } from '../utils/pinReorderDrag';
 import { registerKeyboardZone } from '../utils/focusZones';
+import { parseSearchPath } from '../utils/searchPath';
 import type { IFile } from '../types/files';
 import './TabBar.css';
 
@@ -59,6 +60,11 @@ const getTabTitle = (title: string): string => {
   case 'videos':
     return t('tab.videos');
   default:
+    // 搜索态虚拟路径：解析关键词显示「搜索: …」
+    if (normalizeTitle.startsWith('search://')) {
+      const parsed = parseSearchPath(title);
+      if (parsed) return t('tab.search', parsed.query);
+    }
     return title;
   }
 };
