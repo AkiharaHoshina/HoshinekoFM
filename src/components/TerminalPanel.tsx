@@ -21,6 +21,18 @@ interface TerminalPanelProps {
     currentDir?: string;
     /** 显式 cd 请求（含递增 nonce）：「在此打开终端」等显式动作触发 */
     cdRequest?: { path: string; nonce: number } | null;
+    /**
+     * 显式聚焦请求（含递增 nonce）： Shift+Tab / Ctrl+` 从图形界面侧
+     * 切回终端时由 App 递增，TerminalPane 据此聚焦 xterm 输入域。
+     */
+    focusRequest?: { nonce: number } | null;
+    /**
+     * 焦点状态上报：xterm 输入域聚焦/失焦时通知 App（Ctrl+` 的
+     * 「已聚焦则切回图形界面」判定依赖它）。
+     */
+    onFocusChange?: (focused: boolean) => void;
+    /** 焦点逃逸请求：终端内  Shift+Tab / Ctrl+` → App 把焦点移回图形界面 */
+    onFocusEscape?: () => void;
     /** 面板当前高度（px，受控：由 App 持有） */
     height: number;
     /** 拖动标题栏调整高度时回调（App 更新 state） */
@@ -42,6 +54,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   cwd,
   currentDir,
   cdRequest,
+  focusRequest,
+  onFocusChange,
+  onFocusEscape,
   height,
   onHeightChange,
   onResetHeight,
@@ -123,7 +138,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
         </IconButton>
       </div>
       <div className="terminal-panel-body">
-        <TerminalPane cwd={cwd} currentDir={currentDir} cdRequest={cdRequest} />
+        <TerminalPane
+          cwd={cwd}
+          currentDir={currentDir}
+          cdRequest={cdRequest}
+          focusRequest={focusRequest}
+          onFocusChange={onFocusChange}
+          onFocusEscape={onFocusEscape}
+        />
       </div>
     </div>
   );

@@ -1,0 +1,16 @@
+/*
+ * 内置终端面板的聚焦视觉状态：
+ * xterm 输入域持有焦点时（用户正在操作终端），以主题色描边标示当前
+ * 快捷键域——此时 Ctrl+Shift+C/V 等终端快捷键生效；焦点移回图形界面
+ * 后描边消失，文件区快捷键接管。
+ * 终端背景恒为深色（#1e1e1e），主题色在明暗主题下对比度不稳，
+ * 故使用固定亮蓝，保证深色底上的可辨识度。
+ */
+.terminal-pane {
+  outline: none;
+}
+
+.terminal-pane--focused {
+  outline: 2px solid #4d9eff;
+  outline-offset: -2px;
+}

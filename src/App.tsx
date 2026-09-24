@@ -183,6 +183,17 @@ function AppContent() {
    * 打开期间可由标题栏拖动调整（TerminalPanel 受控回调）。
    */
   const [terminalHeight, setTerminalHeight] = useState(DEFAULT_TERMINAL_HEIGHT);
+  /**
+   * xterm 输入域是否持有焦点（TerminalPane onFocusChange 上报）。
+   * 快捷键域跟随 DOM 焦点：终端聚焦时终端快捷键生效、文件区快捷键
+   * 静默；此处仅供 Ctrl+` 的「已聚焦则切回图形界面」判定。
+   */
+  const [terminalFocused, setTerminalFocused] = useState(false);
+  /**
+   * 显式聚焦终端面板请求：nonce 每次递增（Shift+Tab / Ctrl+` 从
+   * 图形界面侧切回终端），TerminalPane 据此聚焦 xterm 输入域。
+   */
+  const [terminalFocusRequest, setTerminalFocusRequest] = useState<{ nonce: number } | null>(null);
 
   const openTerminalAt = useCallback((path: string) => {
     setTerminalCwd(path);
@@ -1535,8 +1546,73 @@ function AppContent() {
   const toggleTerminal = () => {
     // 每次呼出恢复默认高度（关闭时重置无副作用）
     setTerminalHeight(DEFAULT_TERMINAL_HEIGHT);
+    // 关闭面板时复位焦点状态（卸载不派发 blur，须显式复位——
+    // 否则残留的 terminalFocused 会让 Ctrl+` 误判「已聚焦」）
+    if (terminalOpen) setTerminalFocused(false);
     setTerminalOpen((prev) => !prev);
   };
+
+  /**
+   * 聚焦终端面板（Shift+Tab / Ctrl+` 从图形界面侧触发）：
+   * 未打开则先打开（挂载后自动聚焦），已打开则递增 focusRequest
+   * 让 TerminalPane 聚焦 xterm 输入域。
+   */
+  const focusTerminalPanel = useCallback(() => {
+    setTerminalOpen(true);
+    setTerminalFocusRequest((prev) => ({ nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
+
+  /**
+   * 焦点逃逸：把焦点从终端移回图形界面。
+   * 走键盘分区框架——终端不在分区循环内，focusNextKeyboardZone 检测到
+   * 「焦点不在当前分区内」时落到上次跟踪的分区（通常是文件区）。
+   */
+  const escapeTerminalFocus = useCallback(() => {
+    focusNextKeyboardZone(1);
+  }, []);
+
+  /**
+   * 终端焦点切换快捷键（全局，**window 捕获阶段**——必须先于 Tab
+   * 框架的冒泡监听执行并 stopPropagation，否则文件区 Shift+Tab 会
+   * 同时被框架拿去反向循环分区）：
+   * - Shift+Tab：双向焦点切换（图形界面 ↔ 内置终端）——终端内由
+   *   TerminalPane 的 attachCustomKeyEventHandler 拦截并经
+   *   onFocusEscape 上报，本监听只处理「图形界面 → 终端」方向
+   *   （仅终端已打开时拦截；终端关闭时不 preventDefault，Shift+Tab
+   *   回落 Tab 框架的反向分区循环/浏览器默认焦点遍历）；
+   * - Ctrl+`：切换（VS Code 惯例）——终端已聚焦时切回图形界面，
+   *   否则聚焦终端面板。
+   * 终端内的按键被 TerminalPane 容器 stopPropagation 挡在冒泡途中，
+   * 到不了这里（`.terminal-panel` 近距检查为双保险）；对话框/右键
+   * 菜单打开时不劫持（与其余全局快捷键同款守卫）。焦点在输入框
+   * （地址栏等）内也生效——全局焦点切换不应被编辑态拦截。
+   */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('.terminal-panel')) return;
+      if (document.querySelector('md-dialog[open], .context-menu, [role="dialog"]')) return;
+
+      if (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && e.key === 'Tab') {
+        if (!terminalOpen) return;
+        e.preventDefault();
+        e.stopPropagation();
+        focusTerminalPanel();
+        return;
+      }
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key === '`') {
+        e.preventDefault();
+        if (terminalOpen && terminalFocused) {
+          escapeTerminalFocus();
+        } else {
+          focusTerminalPanel();
+        }
+        return;
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [terminalOpen, terminalFocused, focusTerminalPanel, escapeTerminalFocus]);
 
   const handleOpenWithFile = useCallback((file: IFile) => {
     setOpenWithFile(file);
@@ -2308,11 +2384,16 @@ function AppContent() {
               }
               currentDir={tabs.find((t) => t.id === activeTabId)?.path || undefined}
               cdRequest={terminalCdRequest}
+              focusRequest={terminalFocusRequest}
+              onFocusChange={setTerminalFocused}
+              onFocusEscape={escapeTerminalFocus}
               height={terminalHeight}
               onHeightChange={setTerminalHeight}
               onResetHeight={() => setTerminalHeight(DEFAULT_TERMINAL_HEIGHT)}
               onClose={() => {
                 setTerminalOpen(false);
+                // 卸载不派发 blur，焦点状态须显式复位
+                setTerminalFocused(false);
                 // 关闭时清空显式启动目录，下次呼出以当前标签页目录启动
                 setTerminalCwd(undefined);
               }}

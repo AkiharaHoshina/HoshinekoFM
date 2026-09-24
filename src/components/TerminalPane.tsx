@@ -10,6 +10,7 @@ import { useDrag } from '../contexts/DragContext';
 import { extractDropPaths } from '../utils/dragDrop';
 import { shouldSuppressDrop } from '../utils/nativeDragTracker';
 import { isPinReorderDragActive } from '../utils/pinReorderDrag';
+import './TerminalPane.css';
 
 /** 右键菜单位置（null 表示关闭） */
 interface TerminalMenuPos {
@@ -24,6 +25,21 @@ interface TerminalPaneProps {
     currentDir?: string;
     /** 显式 cd 请求（含递增 nonce）：「在此打开终端」等显式动作触发 */
     cdRequest?: { path: string; nonce: number } | null;
+    /**
+     * 显式聚焦请求（含递增 nonce）： Shift+Tab / Ctrl+` 从图形界面侧
+     * 切回终端时由 App 递增，本组件收到变化后聚焦 xterm 输入域。
+     */
+    focusRequest?: { nonce: number } | null;
+    /**
+     * 焦点状态上报：xterm 输入域聚焦/失焦时通知 App（App 据此维护
+     * terminalFocused，供 Ctrl+` 的「已聚焦则切回图形界面」判定）。
+     */
+    onFocusChange?: (focused: boolean) => void;
+    /**
+     * 焦点逃逸请求：终端内按 Shift+Tab / Ctrl+` 时上报 App，
+     * 由 App 把焦点移回图形界面（键盘分区框架）。
+     */
+    onFocusEscape?: () => void;
     onClose?: () => void;
 }
 
@@ -57,7 +73,7 @@ function shellQuotePath(path: string): string {
   return `'${path.replace(/'/g, "'\\''")}'`;
 }
 
-export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdRequest }) => {
+export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdRequest, focusRequest, onFocusChange, onFocusEscape }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -66,6 +82,17 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdR
   /** 组件卸载标志：spawnPty 的异步回调据此跳过已卸载窗口的写入 */
   const disposedRef = useRef(false);
 
+  /**
+   * 最新回调引用：快捷键拦截器在挂载 effect 中一次性注册（attachCustomKeyEventHandler），
+   * 闭包捕获首渲染的 props——经 ref 每轮 effect 同步取最新值，避免过期闭包。
+   */
+  const onFocusChangeRef = useRef(onFocusChange);
+  const onFocusEscapeRef = useRef(onFocusEscape);
+  useEffect(() => {
+    onFocusChangeRef.current = onFocusChange;
+    onFocusEscapeRef.current = onFocusEscape;
+  }, [onFocusChange, onFocusEscape]);
+
   /** 本窗口内部拖拽状态（文件区域 → 终端的路径粘贴来源） */
   const { getDragState } = useDrag();
 
@@ -73,6 +100,11 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdR
   const [hasSelection, setHasSelection] = useState(false);
   /** 右键菜单位置 */
   const [menuPos, setMenuPos] = useState<TerminalMenuPos | null>(null);
+  /**
+   * xterm 输入域是否持有焦点（决定聚焦视觉状态与 App 侧
+   * terminalFocused——快捷键域跟随 DOM 焦点，见 App 全局 keydown）。
+   */
+  const [focused, setFocused] = useState(false);
 
   /**
    * 拖放目标：把文件区域（或其他窗口/应用）拖入的条目完整路径粘贴到
@@ -207,6 +239,93 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdR
       setHasSelection(!!term.getSelection());
     });
 
+    /**
+     * 终端快捷键（仅在 xterm 输入域持有焦点时触发——快捷键域跟随 DOM
+     * 焦点，见 App 全局 keydown 的说明）。返回 false = 拦截（不发给
+     * PTY 也不走 xterm 默认处理）：
+     * - Shift+Tab / Ctrl+`：焦点逃逸回图形界面；
+     * - Ctrl+Shift+C：复制选区——无选区时静默吞掉（否则会被 xterm 按
+     *   Ctrl+C 把 ^C/SIGINT 发给 shell，按复制会杀掉正在跑的命令）；
+     * - Ctrl+Shift+V：粘贴系统剪贴板（term.paste 自带 bracketed-paste）；
+     * - Ctrl+Shift+A：全选（含回滚缓冲）；
+     * - Ctrl+Shift+K：清屏（含回滚缓冲，与右键菜单同语义）；
+     * - Ctrl+Shift+↑/↓：滚动回滚缓冲（不进 shell）；
+     * - Ctrl+Insert / Shift+Insert：经典终端复制/粘贴。
+     */
+    term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      if (event.type !== 'keydown') return true;
+      const ctrl = event.ctrlKey && !event.metaKey && !event.altKey;
+      const ctrlShift = ctrl && event.shiftKey;
+      const key = event.key;
+
+      // 焦点逃逸：Shift+Tab / Ctrl+` → 交还图形界面
+      if (
+        (event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && key === 'Tab') ||
+        (ctrl && !event.shiftKey && key === '`')
+      ) {
+        event.preventDefault();
+        onFocusEscapeRef.current?.();
+        return false;
+      }
+
+      // Ctrl+Shift+C：复制选区（无选区静默吞掉，不发 ^C）
+      if (ctrlShift && (key === 'c' || key === 'C')) {
+        event.preventDefault();
+        const sel = term.getSelection();
+        if (sel) void window.electron.ptyClipboardWrite(sel);
+        return false;
+      }
+
+      // Ctrl+Shift+V：粘贴系统剪贴板
+      if (ctrlShift && (key === 'v' || key === 'V')) {
+        event.preventDefault();
+        void window.electron.ptyClipboardRead().then((text) => {
+          if (text) term.paste(text);
+        });
+        return false;
+      }
+
+      // Ctrl+Shift+A：全选（含回滚缓冲）
+      if (ctrlShift && (key === 'a' || key === 'A')) {
+        event.preventDefault();
+        term.selectAll();
+        return false;
+      }
+
+      // Ctrl+Shift+K：清屏（含回滚缓冲）
+      if (ctrlShift && (key === 'k' || key === 'K')) {
+        event.preventDefault();
+        term.clear();
+        return false;
+      }
+
+      // Ctrl+Shift+↑/↓：滚动回滚缓冲（不进 shell）
+      if (ctrlShift && (key === 'ArrowUp' || key === 'ArrowDown')) {
+        event.preventDefault();
+        term.scrollLines(key === 'ArrowUp' ? -1 : 1);
+        return false;
+      }
+
+      // Ctrl+Insert 复制选区
+      if (ctrl && !event.shiftKey && key === 'Insert') {
+        event.preventDefault();
+        const sel = term.getSelection();
+        if (sel) void window.electron.ptyClipboardWrite(sel);
+        return false;
+      }
+
+      // Shift+Insert 粘贴系统剪贴板
+      if (!ctrl && !event.metaKey && !event.altKey && event.shiftKey && key === 'Insert') {
+        event.preventDefault();
+        void window.electron.ptyClipboardRead().then((text) => {
+          if (text) term.paste(text);
+        });
+        return false;
+      }
+
+      return true;
+    });
+
     const doFit = () => {
       if (disposedRef.current) return;
       fitAddon.fit();
@@ -273,6 +392,18 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdR
     lastCdNonceRef.current = cdRequest.nonce;
     sendCd(cdRequest.path);
   }, [cdRequest, sendCd]);
+
+  /**
+   * 显式聚焦请求（ Shift+Tab / Ctrl+` 从图形界面侧切回终端）：
+   * 仅当 nonce 变化时聚焦 xterm 输入域。挂载时 ptySpawn 已自动聚焦，
+   * lastFocusNonceRef 初值即首个 nonce，跳过首轮避免重复聚焦。
+   */
+  const lastFocusNonceRef = useRef(focusRequest?.nonce ?? null);
+  useEffect(() => {
+    if (!focusRequest || lastFocusNonceRef.current === focusRequest.nonce) return;
+    lastFocusNonceRef.current = focusRequest.nonce;
+    terminalRef.current?.focus();
+  }, [focusRequest]);
 
   // ── 右键菜单动作 ──
 
@@ -348,6 +479,7 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdR
 
   return (
     <div 
+      className={`terminal-pane${focused ? ' terminal-pane--focused' : ''}`}
       style={{ 
         position: 'absolute',
         top: 0,
@@ -359,6 +491,18 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdR
         zIndex: 10 // 提高层级，防止点击事件穿透到下方的文件列表背景上
       }} 
       ref={containerRef} 
+      // 焦点状态：focusin/focusout 冒泡（React onFocus/onBlur 委托），
+      // xterm 隐藏输入域的焦点进出都会经过本容器——据此驱动聚焦视觉
+      // 状态并上报 App（terminalFocused）。卸载时不派发 blur，App 侧
+      // 关闭面板时自行复位。
+      onFocus={() => {
+        setFocused(true);
+        onFocusChangeRef.current?.(true);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        onFocusChangeRef.current?.(false);
+      }}
       // 拖放目标标记：nativeDragTracker 兜底判定（Wayland 落回源窗口
       // 不派发 drop）据此把终端识别为可放置目标，合成 drop 交回本组件
       data-drop-target="terminal"
