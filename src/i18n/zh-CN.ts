@@ -243,6 +243,7 @@ const zhCN = {
   'settings.portal_version_reinstalled_hint': '旧版常驻进程已清理，本窗口已立即接管 portal 请求；若仍有旧实例在应答，请重启该实例',
   'settings.portal_version_reinstall_failed': 'Portal 集成重装失败',
   'settings.portal_version_dev_title': 'Portal 运行时状态',
+  'settings.portal_runtime_reinstall': '重新安装 Portal',
   'settings.defaults': '默认配置',
   'settings.restore_defaults': '恢复默认设置',
   'settings.restore_defaults_desc': '将所有设置恢复为首次使用时的默认值',

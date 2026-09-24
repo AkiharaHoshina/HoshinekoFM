@@ -243,6 +243,7 @@ const zhHK = {
   'settings.portal_version_reinstalled_hint': '舊版常駐進程已清理，本視窗已即時接管 portal 請求；若仍有舊執行個體回應緊，請重新啟動佢',
   'settings.portal_version_reinstall_failed': 'Portal 整合重裝失敗',
   'settings.portal_version_dev_title': 'Portal 執行時期狀態',
+  'settings.portal_runtime_reinstall': '重新安裝 Portal',
   'settings.defaults': '默認配置',
   'settings.restore_defaults': '恢復默認設定',
   'settings.restore_defaults_desc': '將所有設定恢復為首次使用時的預設值',

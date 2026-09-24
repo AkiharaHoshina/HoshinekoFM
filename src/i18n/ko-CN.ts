@@ -244,6 +244,7 @@ const koCN = {
   'settings.portal_version_reinstalled_hint': '기존 상주 프로세스를 정리했으며 이 창이 즉시 portal 요청에 응답합니다. 다른 구버전 인스턴스가 계속 응답 중이면 다시 시작하세요',
   'settings.portal_version_reinstall_failed': 'Portal 통합 재설치 실패',
   'settings.portal_version_dev_title': 'Portal 런타임 상태',
+  'settings.portal_runtime_reinstall': 'Portal 재설치',
   'settings.defaults': '기본 설정',
   'settings.restore_defaults': '기본 설정 복원',
   'settings.restore_defaults_desc': '모든 설정을 처음 사용할 때의 기본값으로 되돌립니다',

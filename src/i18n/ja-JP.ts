@@ -243,6 +243,7 @@ const jaJP = {
   'settings.portal_version_reinstalled_hint': '旧常駐プロセスは削除され、このウィンドウがすぐに portal 要求に応答します。別の旧インスタンスがまだ応答している場合は再起動してください',
   'settings.portal_version_reinstall_failed': 'Portal 統合の再インストールに失敗しました',
   'settings.portal_version_dev_title': 'Portal ランタイム状態',
+  'settings.portal_runtime_reinstall': 'Portal を再インストール',
   'settings.defaults': 'デフォルト設定',
   'settings.restore_defaults': 'デフォルト設定に戻す',
   'settings.restore_defaults_desc': 'すべての設定を初回使用時のデフォルト値に戻します',

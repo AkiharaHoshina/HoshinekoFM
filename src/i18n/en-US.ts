@@ -254,6 +254,7 @@ const enUS = {
   'settings.portal_version_reinstalled_hint': 'Old resident processes were cleaned up and this window now answers portal requests immediately; if another older instance is still responding, restart it',
   'settings.portal_version_reinstall_failed': 'Portal integration reinstall failed',
   'settings.portal_version_dev_title': 'Portal runtime status',
+  'settings.portal_runtime_reinstall': 'Reinstall Portal',
   'settings.defaults': 'Defaults',
   'settings.restore_defaults': 'Restore Default Settings',
   'settings.restore_defaults_desc': 'Reset all settings to their first-use defaults',

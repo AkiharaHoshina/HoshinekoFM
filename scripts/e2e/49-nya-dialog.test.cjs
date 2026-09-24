@@ -8,7 +8,9 @@
  * - 普通 PgDn（无 Ctrl）不触发；
  * - 设置打开期间按 Ctrl+PgUp：打开 portal 运行时信息（PortalVersionDialog
  *   开发详情视图，标题「Portal 运行时状态」，正文含 appVersion 诊断
- *   字段），取消关闭。
+ *   字段），取消关闭；重新打开 → 底部「重新安装 Portal」按钮存在，
+ *   替换重装 IPC 为假 handler 后点击 → 对话框关闭 + 结果弹窗出现
+ *   （绝不真实跑 reinstall.sh）。
  */
 const h = require('./harness.cjs');
 
@@ -176,6 +178,46 @@ const h = require('./harness.cjs');
       return true;
     })()`);
     await h.waitFor(win, `(${portalInfo}) === undefined`, 5000);
+
+    // ── 重新安装 Portal 按钮（开发详情视图底部）──
+    // 重新打开调试界面 → 断言底部含「重新安装 Portal」按钮 → 替换重装
+    // IPC 为假 handler（记录调用 + 返回成功）→ 点击按钮 → 对话框关闭 +
+    // 结果弹窗出现（绝不真实跑 reinstall.sh）
+    await h.js(win, `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageUp', ctrlKey: true })); true`);
+    await h.waitFor(win, `(${portalInfo}) !== undefined`, 8000);
+    await h.waitDialogAnim();
+    const reinstallBtn = await h.js(win, `(() => {
+      const d = ${portalInfo};
+      const b = [...d.querySelectorAll('md-button, md-filled-button, md-text-button, md-outlined-button')]
+        .find(x => /重新安装 Portal|Reinstall Portal/.test(x.textContent ?? ''));
+      return !!b;
+    })()`);
+    h.assert.strictEqual(reinstallBtn.value, true, '开发详情视图底部应有「重新安装 Portal」按钮');
+
+    const reinstalls = [];
+    ipcMain.removeHandler('system:reinstall-system-integration');
+    ipcMain.handle('system:reinstall-system-integration', async () => {
+      reinstalls.push(1);
+      return { success: true, output: '', error: '' };
+    });
+    await h.js(win, `(() => {
+      const d = ${portalInfo};
+      [...d.querySelectorAll('md-button, md-filled-button, md-text-button, md-outlined-button')]
+        .find(x => /重新安装 Portal|Reinstall Portal/.test(x.textContent ?? ''))?.click();
+      return true;
+    })()`);
+    await h.waitFor(win, `(${portalInfo}) === undefined`, 5000);
+    const notice = `[...document.querySelectorAll('md-dialog')].find(d => d.open && /已重装完成|reinstalled/.test(d.textContent))`;
+    await h.waitFor(win, `(${notice}) !== undefined`, 8000);
+    h.assert.strictEqual(reinstalls.length, 1, '应调用一次重装 IPC');
+    // 关闭结果弹窗，恢复后续场景的干净状态
+    await h.js(win, `(() => {
+      const d = ${notice};
+      [...d.querySelectorAll('md-button, md-filled-button, md-text-button, md-outlined-button')]
+        .find(b => /完成|Done|确定|OK/.test(b.textContent ?? ''))?.click();
+      return true;
+    })()`);
+    await h.waitFor(win, `(${notice}) === undefined`, 5000);
 
     // ── 场景二：矮窗口内容溢出 → PgDn/PgUp 翻页滚动 ──
     // 内容无焦点元素、打开时焦点在 scroller 外的确定按钮上，Chromium

@@ -282,6 +282,7 @@ const ukUA = {
   'settings.portal_version_reinstalled_hint': 'Старі резидентні процеси очищено, і це вікно тепер одразу відповідає на запити portal; якщо старий екземпляр досі відповідає, перезапустіть його',
   'settings.portal_version_reinstall_failed': 'Не вдалося перевстановити інтеграцію Portal',
   'settings.portal_version_dev_title': 'Стан Portal під час виконання',
+  'settings.portal_runtime_reinstall': 'Перевстановити Portal',
   'settings.defaults': 'Стандартні налаштування',
   'settings.restore_defaults': 'Відновити стандартні налаштування',
   'settings.restore_defaults_desc': 'Скинути всі налаштування до значень першого запуску',

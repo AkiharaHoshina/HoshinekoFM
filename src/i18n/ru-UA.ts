@@ -285,6 +285,7 @@ const ruUA = {
   'settings.portal_version_reinstalled_hint': 'Старые резидентные процессы очищены, и это окно теперь сразу отвечает на запросы portal; если старый экземпляр всё ещё отвечает, перезапустите его',
   'settings.portal_version_reinstall_failed': 'Не удалось переустановить интеграцию Portal',
   'settings.portal_version_dev_title': 'Состояние Portal во время выполнения',
+  'settings.portal_runtime_reinstall': 'Переустановить Portal',
   'settings.defaults': 'Стандартные настройки',
   'settings.restore_defaults': 'Восстановить стандартные настройки',
   'settings.restore_defaults_desc': 'Сбросить все настройки к значениям первого запуска',

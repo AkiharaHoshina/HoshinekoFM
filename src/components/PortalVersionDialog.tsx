@@ -7,11 +7,11 @@ import './PortalVersionDialog.css';
 
 interface PortalVersionDialogProps {
   open: boolean;
-  /** 'user'：用户版（取消 / 一键重装）；'dev'：开发者详情（仅取消） */
+  /** 'user'：用户版（取消 / 一键重装）；'dev'：开发者详情（取消 / 重新安装 Portal） */
   mode: 'user' | 'dev';
   /** portal 运行时诊断信息（开发详情的数据源；null 时详情区显示空值） */
   info: PortalRuntimeInfo | null;
-  /** 重装进行中（「一键重装」按钮禁用防重入） */
+  /** 重装进行中（重装按钮禁用防重入） */
   busy: boolean;
   onReinstall: () => void;
   onClose: () => void;
@@ -22,9 +22,10 @@ interface PortalVersionDialogProps {
  * - 打包版（mode='user'）：双按钮——取消（什么都不做）/ 一键重装
  *   （reinstall.sh：卸载 + 安装单次 pkexec 授权）；按 PgDn 可切换为
  *   开发详情视图（调试入口，见 App.tsx 键盘监听）。
- * - 开发版（mode='dev'）：仅取消按钮，正文展示 portal 运行时诊断
- *   详情（版本对比、安装状态、后端注册结果、冲突报告），供开发者
- *   悉知 portal 状态。
+ * - 开发版（mode='dev'）：正文展示 portal 运行时诊断详情（版本对比、
+ *   安装状态、后端注册结果、冲突报告），底部「重新安装 Portal」按钮
+ *   执行同一重装链路（设置 + Ctrl+PgUp 打开的调试界面即此视图——
+ *   开发者可不退出界面直接重装修复 portal 状态）。
  * 带遮罩：版本不一致属「portal 文件选择器行为异常」级故障，需用户
  * 明确知晓（toast 易被忽略）。
  */
@@ -47,16 +48,14 @@ export const PortalVersionDialog: React.FC<PortalVersionDialogProps> = ({
       onClose={onClose}
       backdrop
       actions={
-        devMode ? (
+        <>
           <Button variant="text" onClick={onClose}>{t('dialog.button.cancel')}</Button>
-        ) : (
-          <>
-            <Button variant="text" onClick={onClose}>{t('dialog.button.cancel')}</Button>
-            <Button disabled={busy} onClick={onReinstall}>
-              {t('settings.portal_version_reinstall')}
-            </Button>
-          </>
-        )
+          <Button disabled={busy} onClick={onReinstall}>
+            {devMode
+              ? t('settings.portal_runtime_reinstall')
+              : t('settings.portal_version_reinstall')}
+          </Button>
+        </>
       }
     >
       {devMode ? (

@@ -2666,7 +2666,7 @@ function AppContent() {
           />
 
           {/* portal 版本不一致弹窗：打包版取消/一键重装（PgDn 切换开发
-              详情）；开发版仅取消 + 运行时诊断详情 */}
+              详情）；开发版取消/重新安装 Portal + 运行时诊断详情 */}
           <PortalVersionDialog
             open={!!portalVersionDialog}
             mode={portalVersionDialog?.mode ?? "user"}
