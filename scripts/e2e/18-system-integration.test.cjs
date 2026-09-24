@@ -191,8 +191,8 @@ const path = require('path');
     );
     const desktopAfterInstall = fs.readFileSync(fakeDesktop, 'utf-8');
     h.assert.ok(
-      /^Exec=".*\/bin\/HoshinekoFM" %U$/m.test(desktopAfterInstall),
-      `桌面入口 Exec 应统一到固定路径：${desktopAfterInstall}`,
+      /^Exec=.*\/bin\/HoshinekoFM %U$/m.test(desktopAfterInstall),
+      `桌面入口 Exec 应统一到固定路径（简单路径裸写不带引号——引号会破坏 xdg-utils 解析）：${desktopAfterInstall}`,
     );
 
     // 幂等：再次安装不重复复制（内容一致跳过）
@@ -204,8 +204,8 @@ const path = require('path');
     h.assert.strictEqual(b1.status, 0, `带 APPIMAGE 的卸载应成功：${b1.stderr}`);
     const desktopAfterUninstall = fs.readFileSync(fakeDesktop, 'utf-8');
     h.assert.ok(
-      desktopAfterUninstall.includes(`Exec="${fakeApp}" %U`),
-      `桌面入口 Exec 应恢复为 APPIMAGE 路径：${desktopAfterUninstall}`,
+      desktopAfterUninstall.includes(`Exec=${fakeApp} %U`),
+      `桌面入口 Exec 应恢复为 APPIMAGE 路径（简单路径裸写不带引号）：${desktopAfterUninstall}`,
     );
     h.assert.ok(fs.existsSync(userBin), '非 AppImage 形态（无魔数）的固定副本不应被误删');
 

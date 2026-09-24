@@ -11,6 +11,7 @@ import { getExtensionsForMime } from '../mimeMap';
 import { readOpenRule, writeOpenRule, deleteOpenRule, listOpenRules, clearAllOpenRules, type OpenRule } from '../openRules';
 import { launchWithApp } from '../openLaunch';
 import { getLastBackendRegistration } from '../backends';
+import { quoteExecArg } from '../launcherEntry';
 import { PORTAL_BUS_NAME, PORTAL_FILE_CHOOSER_PATH, PORTAL_FILE_CHOOSER_IFACE } from './portalFileChooser';
 import { FILE_MANAGER1_NAME, FILE_MANAGER1_PATH, FILE_MANAGER1_IFACE } from './fileManager1';
 import {
@@ -1076,10 +1077,10 @@ export function registerSystemHandlers(
         ? userBinPath
         : null;
     const execLine = fixedBin
-      ? `Exec="${fixedBin}" %U`
+      ? `Exec=${quoteExecArg(fixedBin)} %U`
       : process.env.APPIMAGE
-        ? `Exec="${process.env.APPIMAGE}" %U`
-        : `Exec="${process.execPath}" "${app.getAppPath()}" %U`;
+        ? `Exec=${quoteExecArg(process.env.APPIMAGE)} %U`
+        : `Exec=${quoteExecArg(process.execPath)} ${quoteExecArg(app.getAppPath())} %U`;
     const iconLine = process.env.APPIMAGE
       ? '' // AppImage 集成通常自带 .desktop 与图标
       : `Icon=${path.join(app.getAppPath(), 'src', 'icon.svg')}`;

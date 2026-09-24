@@ -48,6 +48,29 @@ is_appimage() {
   [ -f "$1" ] && [ "$(dd if="$1" bs=1 skip=8 count=2 2>/dev/null)" = "AI" ]
 }
 
+# 桌面条目 Exec 参数值（条件引号）：仅当值含保留字符（空格/引号/反斜杠
+# 等）时按桌面条目规范加引号并转义，简单路径裸写。无条件加引号虽符合
+# 规范，但 xdg-utils（xdg-mime query default 的 desktop_file_to_binary）
+# 解析 Exec 时不剥引号，带引号的默认程序被判定「不存在」并静默回落到
+# 系统级 mimeapps 默认（niri 等未注册桌面上所有 xdg-open generic 应用
+# 都会忽略用户默认）；简单路径必须裸写。
+desktop_exec_arg() {
+  case "$1" in
+    *[!A-Za-z0-9_./:+@%-]*) printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# 重写桌面入口的 Exec 行（sed 的替换串会解释反斜杠、破坏转义路径；
+# 经 awk ENVIRON 透传字面值，任何路径形态均不丢失）
+set_desktop_exec() {
+  local file="$1" value="$2"
+  export HOSHINEKO_DESKTOP_EXEC="$value"
+  awk '{ if (substr($0, 1, 5) == "Exec=") print "Exec=" ENVIRON["HOSHINEKO_DESKTOP_EXEC"] " %U"; else print }' \
+    "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+  unset HOSHINEKO_DESKTOP_EXEC
+}
+
 # 会话总线名（与 packaging/dbus 激活文件的 Name 一致）：busctl 按名
 # 解析拥有者 PID 精确击杀，不依赖进程 cmdline 长相——AppImage 被改名、
 # 非标准路径启动的旧常驻也能命中（cmdline 匹配兜底只覆盖「路径含
@@ -212,10 +235,10 @@ user_install() {
   # 桌面入口 Exec 统一到固定路径：优先系统级二进制，其次用户级副本
   if [ -f "$DESKTOP_FILE" ]; then
     if [ -x "$SYSTEM_BIN" ]; then
-      sed -i "s|^Exec=.*|Exec=\"$SYSTEM_BIN\" %U|" "$DESKTOP_FILE"
+      set_desktop_exec "$DESKTOP_FILE" "$(desktop_exec_arg "$SYSTEM_BIN")"
       echo "[user] $DESKTOP_FILE Exec → $SYSTEM_BIN"
     elif [ -x "$USER_BIN" ]; then
-      sed -i "s|^Exec=.*|Exec=\"$USER_BIN\" %U|" "$DESKTOP_FILE"
+      set_desktop_exec "$DESKTOP_FILE" "$(desktop_exec_arg "$USER_BIN")"
       echo "[user] $DESKTOP_FILE Exec → $USER_BIN"
     fi
   fi

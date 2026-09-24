@@ -1,5 +1,30 @@
 # 更新日志
 
+## v0.11.49-dev — 桌面条目 Exec 条件引号
+
+- **桌面条目 Exec 条件引号**：修复「设为默认文件
+  管理器后，第三方应用『在文件管理器中显示』仍打开 Nautilus」——
+  HoshinekoFM.desktop 此前无条件写 `Exec="<路径>" %U`（桌面条目规范
+  允许引号，但 xdg-utils 的 Exec 解析 `desktop_file_to_binary`
+  （`first_word` + `command -v`，**不剥引号**）把带引号的默认程序
+  判定「不存在」→ 静默回落到系统级 `/usr/share/applications/
+  mimeapps.list`（shared-mime-info 包自带
+  `inode/directory=org.gnome.Nautilus.desktop`）→ 启动 Nautilus。
+  GLib 系（`gio mime`/`gio open`）能正确解析引号，故 `gio mime`
+  显示 HoshinekoFM 而 `xdg-mime` 显示 Nautilus 的错位。影响面：
+  niri/Hyprland 等未注册桌面上所有走 xdg-open generic 分支的应用
+  （Qt/Electron/Python「在文件管理器中显示」）都忽略用户默认。
+  修复：**仅路径含保留字符（空格/引号/反斜杠等）时加引号转义，
+  简单路径裸写**——`electron/launcherEntry.ts` 新增 `quoteExecArg`
+  （launcherEntry 与 system.ts `buildDesktopEntry` 共用）；
+  `scripts/system-integration/install.sh`/`uninstall.sh` 新增同语义
+  `desktop_exec_arg` + `set_desktop_exec`（awk ENVIRON 透传字面值，
+  sed 替换串会解释反斜杠）——安装统一 Exec、卸载恢复 APPIMAGE 路径
+  均走条件引号，卸载检测兼容带/不带引号两种形态；根目录 install.sh
+  同款。e2e 56 补「简单路径裸写不带引号」断言（含空格/引号路径仍
+  引号转义，三种形态齐备）；e2e 18 断言更新为裸写形态。已装机器的
+  条目在下次系统集成/默认文件管理器操作时自动重写。
+
 ## v0.11.48 — 已固定文件夹右键菜单 + Places 位置区右键菜单 + 回收站背景右键「属性」
 
 - **已固定文件夹右键菜单（v0.11.48）**：右键侧边栏已固定
@@ -179,9 +204,9 @@
   `.file-list-item` 等真实文件区类，而关闭的设置对话框常驻 DOM——
   关闭后仍渲染会污染全局 `.file-list-item` 查询（e2e 全套「文件区
   已加载」信号首命中预览样例、真实顶栏未挂载时点击落空）——
-  SettingsDialog 打开立即挂载、关闭延迟 300ms 卸载（覆盖关闭动画
-  收尾期）；e2e 64 底部按钮断言随 settings.done 改名 完成|Done →
-  确定|OK。
+   SettingsDialog 打开立即挂载、关闭延迟 300ms 卸载（覆盖关闭动画
+    收尾期）；e2e 64 底部按钮断言随 settings.done 改名 完成|Done →
+    确定|OK。
 
 
 ## v0.11.47 — 打开方式配置管理 + 对话框 Tab 滚动闪烁修复
@@ -463,7 +488,10 @@
 - **条目内容**：`Type=Application / Name=HoshinekoFM / Exec="<路径>" %U /
   Terminal=false / Categories=Utility;FileTools;FileManager; /
   StartupWMClass=HoshinekoFM`——Exec 优先 `APPIMAGE` 环境变量（AppImage 形态
-  稳定入口），回落进程路径；路径经桌面条目规范转义（反斜杠/引号）；
+  稳定入口），回落进程路径；路径经桌面条目规范转义（反斜杠/引号）——
+  **v0.11.49-dev 改为条件引号**：仅路径含保留字符（空格/引号/反斜杠等）时
+  加引号转义、简单路径裸写（无条件加引号会被 xdg-utils 判定不存在而
+  静默回落系统级默认，见顶部 v0.11.49-dev 条目）；
   `chmod 755` + `gio set metadata::trusted true`（GNOME 双击信任，best-effort）。
 - **图标**：`src/icon.svg`（SVG 矢量）经 extraResources 进打包产物，启动时
   复制到 `~/.local/share/icons/hicolor/scalable/hoshineko-fm.svg` 稳定落点

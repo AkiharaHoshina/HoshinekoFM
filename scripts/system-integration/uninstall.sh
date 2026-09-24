@@ -40,6 +40,27 @@ is_appimage() {
   [ -f "$1" ] && [ "$(dd if="$1" bs=1 skip=8 count=2 2>/dev/null)" = "AI" ]
 }
 
+# 桌面条目 Exec 参数值（条件引号，与 install.sh 同款）：仅当值含保留
+# 字符（空格/引号/反斜杠等）时加引号转义，简单路径裸写——无条件加引号
+# 会被 xdg-utils（desktop_file_to_binary 不剥引号）判定不存在而静默
+# 回落系统级默认，见 install.sh 的 desktop_exec_arg 注释。
+desktop_exec_arg() {
+  case "$1" in
+    *[!A-Za-z0-9_./:+@%-]*) printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# 重写桌面入口的 Exec 行（与 install.sh 同款：awk ENVIRON 透传字面值，
+# sed 的替换串会解释反斜杠、破坏转义路径）
+set_desktop_exec() {
+  local file="$1" value="$2"
+  export HOSHINEKO_DESKTOP_EXEC="$value"
+  awk '{ if (substr($0, 1, 5) == "Exec=") print "Exec=" ENVIRON["HOSHINEKO_DESKTOP_EXEC"] " %U"; else print }' \
+    "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+  unset HOSHINEKO_DESKTOP_EXEC
+}
+
 # 会话总线名（与 packaging/dbus 激活文件的 Name 一致）：busctl 按名
 # 解析拥有者 PID 精确击杀，不依赖进程 cmdline 长相——AppImage 被改名、
 # 非标准路径启动的旧常驻也能命中（cmdline 匹配兜底只覆盖「路径含
@@ -169,12 +190,17 @@ root_uninstall() {
 }
 
 user_uninstall() {
-  # 桌面入口 Exec 恢复：固定路径（系统级/用户级副本）→ 当前 AppImage 运行路径
+  # 桌面入口 Exec 恢复：固定路径（系统级/用户级副本）→ 当前 AppImage 运行路径。
+  # 检测兼容两种形态（安装脚本按路径是否含保留字符裸写或加引号）：
+  # 引号形态 `Exec="<path>" %U`（grep -F 整段含闭合引号）；裸写形态
+  # `Exec=<path> %U`（尾随空格防匹配更长路径前缀）。
   if [ -f "$DESKTOP_FILE" ]; then
     if grep -q -F "Exec=\"$SYSTEM_BIN\"" "$DESKTOP_FILE" \
-      || grep -q -F "Exec=\"$USER_BIN\"" "$DESKTOP_FILE"; then
+      || grep -q -F "Exec=$SYSTEM_BIN " "$DESKTOP_FILE" \
+      || grep -q -F "Exec=\"$USER_BIN\"" "$DESKTOP_FILE" \
+      || grep -q -F "Exec=$USER_BIN " "$DESKTOP_FILE"; then
       if [ -n "${APPIMAGE:-}" ]; then
-        sed -i "s|^Exec=.*|Exec=\"$APPIMAGE\" %U|" "$DESKTOP_FILE"
+        set_desktop_exec "$DESKTOP_FILE" "$(desktop_exec_arg "$APPIMAGE")"
         echo "[user] $DESKTOP_FILE Exec 已恢复为当前 AppImage 路径"
       else
         echo "[warn] 桌面入口仍指向固定路径，但当前环境无 AppImage 路径可恢复，请手动检查 $DESKTOP_FILE" >&2

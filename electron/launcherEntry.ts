@@ -66,6 +66,26 @@ export function escapeExecValue(value: string): string {
 }
 
 /**
+ * .desktop Exec 参数值（条件引号包裹）：仅当值含保留字符（空格/引号/
+ * 反斜杠等）时按桌面条目规范加引号并转义；简单路径**裸写**。
+ *
+ * 无条件加引号虽符合桌面条目规范，但 xdg-utils 的 Exec 解析
+ * （`xdg-mime query default` → `desktop_file_to_binary`：`first_word`
+ * + `command -v`，**不剥引号**）会把带引号的默认程序判定为「不存在」
+ * 并静默回落到系统级 mimeapps 默认——实测 HoshinekoFM.desktop 写
+ * `Exec="/usr/local/bin/HoshinekoFM" %U` 后 `xdg-mime` 返回 Nautilus、
+ * `gio mime` 返回 HoshinekoFM 的错位；所有经 xdg-open generic 分支
+ * 打开目录的应用（niri/Hyprland 等未注册桌面上的一切 Qt/Electron/
+ * Python 应用）都会因此忽略用户默认。简单路径必须裸写。
+ *
+ * @param value - Exec 参数原始值（可执行文件路径）
+ * @returns Exec= 行可用的参数值（简单路径裸写；否则引号包裹并转义）
+ */
+export function quoteExecArg(value: string): string {
+  return /^[A-Za-z0-9_./:+@%-]+$/.test(value) ? value : `"${escapeExecValue(value)}"`;
+}
+
+/**
  * 构造 .desktop 文件内容（与 install.sh 的品牌字段保持一致）。
  * Exec 不带任何启动参数（默认单实例语义）；%U 允许把目录拖到
  * 快捷方式上打开（经单实例转发定位，见 createWindow 启动路径）。
@@ -80,7 +100,7 @@ export function buildLauncherEntryContent(execPath: string, iconPath: string | n
     'Type=Application',
     'Name=HoshinekoFM',
     'Comment=Hoshineko File Manager',
-    `Exec="${escapeExecValue(execPath)}" %U`,
+    `Exec=${quoteExecArg(execPath)} %U`,
   ];
   if (iconPath) lines.push(`Icon=${escapeExecValue(iconPath)}`);
   lines.push(

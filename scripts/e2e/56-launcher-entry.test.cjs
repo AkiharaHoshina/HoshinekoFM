@@ -182,6 +182,29 @@ const path = require('path');
       'APPIMAGE 存在时 Exec 应优先使用 APPIMAGE 路径',
     );
 
+    // ── 简单路径（无保留字符）裸写 Exec：无条件加引号会被 xdg-utils
+    // 的 desktop_file_to_binary 判定不存在（不剥引号 → command -v 失败）
+    // 而静默回落系统级默认（xdg-open generic 应用忽略用户默认文件管理器）——
+    // 简单路径必须不带引号 ──
+    fs.rmSync(markerFile, { force: true });
+    fs.rmSync(desktopFile, { force: true });
+    fs.rmSync(appmenuFile, { force: true });
+    process.env.HOSHINEKO_E2E_LAUNCHER_EXEC = '/usr/local/bin/HoshinekoFM';
+    delete process.env.HOSHINEKO_E2E_LAUNCHER_APPIMAGE;
+    win.webContents.reload();
+    await h.waitFor(win, `!!document.querySelector('.m3-navigation-rail')`, 15000);
+    await waitForFile(desktopFile);
+    const plainContent = fs.readFileSync(desktopFile, 'utf-8');
+    const plainExecLine = plainContent.split('\n').find((l) => l.startsWith('Exec='));
+    h.assert.ok(
+      plainContent.includes('Exec=/usr/local/bin/HoshinekoFM %U'),
+      `简单路径 Exec 应裸写（不带引号）：${plainExecLine}`,
+    );
+    h.assert.ok(
+      !plainExecLine.startsWith('Exec="'),
+      `简单路径 Exec 不得带引号：${plainExecLine}`,
+    );
+
     // ── 非法 kind 拒绝（ensure 与 remove 两个通道）──
     const invalidEnsure = await h.js(win, `window.electron.ensureLauncherEntry('bogus')`);
     h.assert.deepStrictEqual(
