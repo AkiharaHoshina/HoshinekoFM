@@ -28,6 +28,35 @@ interface ObjectPanelProps {
 /** tty 输出流缓冲上限（字符，防无限增长） */
 const TTY_TEXT_CAP = 50000;
 
+/**
+ * 系统关键挂载点：运行中卸载会破坏系统/会话（根文件系统、家目录、
+ * 引导与 EFI 分区、独立挂载的系统目录）。这些挂载点上的存储对象
+ * **隐藏卸载按钮**（挂载按钮不适用——它们必然处于已挂载态）。
+ */
+const PROTECTED_MOUNTPOINTS = new Set([
+  '/',
+  '/home',
+  '/boot',
+  '/boot/efi',
+  '/efi',
+  '/etc',
+  '/usr',
+  '/var',
+]);
+
+/**
+ * 判定存储读数是否为 swap（无目录语义的对象）：fstype 为 `swap`，
+ * 或 lsblk 伪挂载点形态（`[SWAP]`，fstype 缺失时的兜底）。
+ * swap 对象**隐藏打开/挂载/卸载按钮**（激活的 swap 是 swapon 挂载，
+ * 不是目录挂载点，双击与「打开位置」均无意义）。
+ *
+ * @param reading - 存储类实例读数（可能为 null）
+ */
+function isSwapLike(reading: { fstype: string | null; mountpoint: string | null } | null): boolean {
+  if (!reading) return false;
+  return reading.fstype === 'swap' || (reading.mountpoint?.startsWith('[') ?? false);
+}
+
 /** 格式化字节数（1024 进制，复用仪表盘同款形态） */
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '—';
@@ -193,6 +222,12 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     }
     const readingRes = await window.electron.readObject(parsed?.className ?? 'storage', inst.id);
     if (readingRes?.kind === 'storage' && readingRes.mounted && readingRes.mountpoint) {
+      // swap 对象（fstype=swap / lsblk 伪挂载点 [SWAP]）无目录语义，不可进入
+      if (isSwapLike(readingRes)) {
+        showToast(t('objects.not_openable'), 'info');
+        onNavigate(buildObjectsPath(parsed?.className ?? 'storage', inst.id));
+        return;
+      }
       onOpenLocation(readingRes.mountpoint);
       return;
     }
@@ -203,21 +238,30 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   /** 存储类实例页操作区 */
   const renderStorageActions = (inst: ObjectInstance) => {
     const r = reading && reading.kind === 'storage' ? reading : null;
+    /** swap 对象：无目录语义，隐藏打开/挂载/卸载（弹出保留给磁盘级） */
+    const swap = isSwapLike(r);
+    /** 挂载点是否处于系统关键路径（/、/home、/boot 等）：隐藏卸载 */
+    const protectedMp = r?.mountpoint != null && PROTECTED_MOUNTPOINTS.has(r.mountpoint);
+    /** 可打开 = 已挂载到真实目录且非 swap 伪挂载点 */
+    const openable = !!r?.mounted && !!r.mountpoint && !swap;
     const actions: React.ReactNode[] = [];
-    if (r?.mounted && r.mountpoint) {
+    if (openable) {
       actions.push(
-        <Button key="open" variant="tonal" onClick={() => onOpenLocation(r.mountpoint!)}>
+        <Button key="open" variant="tonal" onClick={() => onOpenLocation(r!.mountpoint!)}>
           {t('objects.open_location')}
         </Button>,
       );
       if (inst.kind === 'partition' || inst.kind === 'disk') {
-        actions.push(
-          <Button key="unmount" variant="outlined" onClick={() => {
-            if (onUnmountDevice) void onUnmountDevice(inst.id).then(() => reloadObjects(true));
-          }}>
-            {t('device.unmount')}
-          </Button>,
-        );
+        // 系统关键挂载点（/、/home 等）不提供卸载入口
+        if (!protectedMp) {
+          actions.push(
+            <Button key="unmount" variant="outlined" onClick={() => {
+              if (onUnmountDevice) void onUnmountDevice(inst.id).then(() => reloadObjects(true));
+            }}>
+              {t('device.unmount')}
+            </Button>,
+          );
+        }
       }
       if (inst.kind === 'disk') {
         actions.push(
@@ -228,7 +272,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
           </Button>,
         );
       }
-    } else if (inst.kind === 'partition' || inst.kind === 'disk') {
+    } else if ((inst.kind === 'partition' || inst.kind === 'disk') && !swap) {
       actions.push(
         <Button key="mount" onClick={() => {
           if (onMountDevice) void onMountDevice(inst.id).then(() => reloadObjects(true));

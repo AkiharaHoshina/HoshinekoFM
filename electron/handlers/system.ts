@@ -2549,7 +2549,10 @@ export function registerSystemHandlers(
       if (classId === 'processor' && instanceId === 'memory') {
         const content = await fs.readFile('/proc/meminfo', 'utf-8');
         const kb = (key: string): number => {
-          const m = new RegExp(`^${key}:\\s+(\\d+)`).exec(content);
+          // `m` 标志必须存在：/proc/meminfo 只有首行（MemTotal）在串首，
+          // MemFree/MemAvailable 等在后续行——无 `m` 时 `^` 永远匹配不到
+          // 它们，可用内存恒为 0（显示「占满、可用 0%」的根因）。
+          const m = new RegExp(`^${key}:\\s+(\\d+)`, 'm').exec(content);
           return m ? Number(m[1]) * 1024 : 0;
         };
         const total = kb('MemTotal');
