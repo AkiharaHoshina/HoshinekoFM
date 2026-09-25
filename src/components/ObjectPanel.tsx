@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { AutoSizer } from 'react-virtualized-auto-sizer';
+import { List, type RowComponentProps } from 'react-window';
 import { Icon } from './Icon';
 import { Button } from './Button';
 import { MarqueeText } from './MarqueeText';
 import { Sparkline } from './Sparkline';
-import { Slider } from './md';
+import { OutlinedTextField, Slider } from './md';
 import { showToast } from '../utils/toast';
 import { t } from '../i18n';
 import { parseObjectsPath, buildObjectsPath, OBJECTS_CLASS_LABEL } from '../utils/objectsPath';
@@ -17,6 +19,10 @@ interface ObjectPanelProps {
   marqueeEnabled: boolean;
   /** 标签页是否激活（进程类页 3s 轮询门控；undefined 视为激活） */
   isActive?: boolean;
+  /** 走势图时间范围（秒；设置 → 外观「走势图时间范围」，默认 60——
+   *  历史窗口按「窗口时长 ÷ 采样间隔」派生点数：1s 类 = 窗口秒数、
+   *  2s 类 = 一半） */
+  sparklineWindowSeconds?: number;
   /** 虚拟路径导航（类页/实例页/面包屑） */
   onNavigate: (p: string) => void;
   /** 打开真实目录（loadPath——双击已挂载存储对象/「打开位置」） */
@@ -38,11 +44,92 @@ interface ObjectPanelProps {
 /** tty 输出流缓冲上限（字符，防无限增长） */
 const TTY_TEXT_CAP = 50000;
 
-/** 走势图历史长度（采样点环形缓冲上限；1s 采样 = 1 分钟窗口） */
-const HISTORY_LEN = 60;
-
 /** 进程类页轮询间隔（枚举含 /proc 全量扫描，3s 与后端 TTL 对齐） */
 const PROCESS_CLASS_POLL_MS = 3000;
+
+/** 进程类页虚拟化行高（px）：名称 14px×1.5 + 副行 12px×1.5 + 2px 间距
+ *  + 10px 上下内边距 ≈ 61px，取 62 留 1px 余量；CSS 同步见
+ *  .object-list-virtual .object-row */
+const PROCESS_ROW_HEIGHT = 62;
+
+/** 进程类页筛选关键词（模块级行组件经 rowProps 接收） */
+interface ProcessRowData {
+  /** 当前可见实例（已排序 + 已筛选） */
+  instances: ObjectInstance[];
+  selectedId: string | null;
+  marqueeEnabled: boolean;
+  onSelect: (id: string) => void;
+  onOpen: (inst: ObjectInstance) => void;
+  onDetails: (inst: ObjectInstance) => void;
+}
+
+/**
+ * 进程类页虚拟化行（react-window rowComponent）：style 定位由 List 传入，
+ * 行内容与普通 DOM 路径共用渲染逻辑。
+ */
+const ProcessListRow = ({
+  index,
+  style,
+  instances,
+  selectedId,
+  marqueeEnabled,
+  onSelect,
+  onOpen,
+  onDetails,
+}: RowComponentProps<ProcessRowData>): React.ReactElement | null => {
+  const inst = instances[index];
+  if (!inst) return null;
+  return (
+    <div style={style}>
+      <div
+        data-id={inst.id}
+        className={`object-row${selectedId === inst.id ? ' object-row--selected' : ''}`}
+        onClick={() => onSelect(inst.id)}
+        onDoubleClick={() => void onOpen(inst)}
+        title={inst.subtitle ?? inst.id}
+      >
+        <Icon name={inst.icon} className="object-row-icon" />
+        <div className="object-row-main">
+          <MarqueeText enabled={marqueeEnabled} className="object-row-name">
+            {inst.name}
+          </MarqueeText>
+          {inst.subtitle && (
+            <div className="object-row-sub">
+              <MarqueeText enabled={marqueeEnabled}>{inst.subtitle}</MarqueeText>
+            </div>
+          )}
+        </div>
+        {inst.restricted && (
+          <span className="object-row-restricted" title={t('objects.tty_denied')}>
+            {t('objects.need_permission')}
+          </span>
+        )}
+        {inst.metrics && (
+          <>
+            <div className="object-row-cpu">
+              <div className="object-bar object-bar--mini">
+                <div className="object-bar-fill" style={{ width: `${inst.metrics.cpuPct}%` }} />
+              </div>
+              <span>{inst.metrics.cpuPct}%</span>
+            </div>
+            <div className="object-row-rss">{formatBytes(inst.metrics.rssBytes)}</div>
+            <div className="object-row-state" title={t(processStateKey(inst.metrics.state))}>{inst.metrics.state}</div>
+          </>
+        )}
+        <Button
+          variant="text"
+          className="object-row-details"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDetails(inst);
+          }}
+        >
+          {t('objects.details')}
+        </Button>
+      </div>
+    </div>
+  );
+};
 
 /**
  * 系统关键挂载点：运行中卸载会破坏系统/会话（根文件系统、家目录、
@@ -169,6 +256,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   path,
   marqueeEnabled,
   isActive,
+  sparklineWindowSeconds = 60,
   onNavigate,
   onOpenLocation,
   onMountDevice,
@@ -202,6 +290,8 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   const [history, setHistory] = useState<Record<string, number[]>>({});
   /** 进程类页排序 */
   const [processSort, setProcessSort] = useState<{ key: ProcessSortKey; desc: boolean }>({ key: 'name', desc: false });
+  /** 进程类页筛选关键词（本地过滤 comm/cmdline/pid，零 IPC） */
+  const [processFilter, setProcessFilter] = useState('');
   /** 存储实例页 SMART 健康（进入实例页一次性拉取，不进轮询） */
   const [smart, setSmart] = useState<SmartInfo | null>(null);
   /** 背光页入口亮度（「恢复原值」目标） */
@@ -266,6 +356,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     setBacklightInitial(null);
     setProcessInitialNice(null);
     setProcessSort({ key: 'name', desc: false });
+    setProcessFilter('');
     setBacklightUnlocked(false);
     setReadFailCount(0);
     // tty 缓冲复位同样在此（渲染期复位）——effect 内同步 setState
@@ -284,12 +375,16 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
 
   /** 实例页读数轮询：可见才跑（组件只在 objects:// 视图渲染）、可暂停；
    *  cpu/memory/process/network 1s、存储/thermal/backlight/power 2s；
-   *  tty 走流式通道。tick 内同步采样走势图历史（与轮询同一节拍）。 */
+   *  tty 走流式通道。tick 内同步采样走势图历史（与轮询同一节拍）；
+   *  历史长度 = sparklineWindowSeconds ÷ 采样间隔（设置可调）。 */
   useEffect(() => {
     if (!parsed?.instanceId || !currentInstance) return;
     const kind = currentInstance.kind;
     if (kind === 'tty') return;
     if (readingPaused) return;
+    const intervalMs = kind === 'cpu' || kind === 'memory' || kind === 'process' || kind === 'network' ? 1000 : 2000;
+    // 走势图历史上限（点数）：窗口时长 ÷ 采样间隔（最少 1 点）
+    const historyCap = Math.max(1, Math.round((sparklineWindowSeconds * 1000) / intervalMs));
     let cancelled = false;
     const tick = async () => {
       const r = await window.electron.readObject(parsed.className ?? '', parsed.instanceId ?? '');
@@ -310,7 +405,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         const push = (k: string, v: number) => {
           if (!Number.isFinite(v)) return;
           const arr = [...(next[k] ?? []), v];
-          next[k] = arr.length > HISTORY_LEN ? arr.slice(arr.length - HISTORY_LEN) : arr;
+          next[k] = arr.length > historyCap ? arr.slice(arr.length - historyCap) : arr;
         };
         if (r.kind === 'cpu') {
           push('total', r.totalPct);
@@ -328,12 +423,12 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       });
     };
     void tick();
-    const interval = setInterval(() => void tick(), kind === 'cpu' || kind === 'memory' || kind === 'process' || kind === 'network' ? 1000 : 2000);
+    const interval = setInterval(() => void tick(), intervalMs);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [parsed, currentInstance, readingPaused]);
+  }, [parsed, currentInstance, readingPaused, sparklineWindowSeconds]);
 
   /** 存储实例页 SMART 一次性拉取（smartctl 慢，绝不进轮询循环；
    *  路径切换的复位在渲染期复位块内） */
@@ -796,6 +891,9 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     }
     if (reading.kind === 'backlight') {
       const pct = reading.maxBrightness > 0 ? Math.round((reading.brightness / reading.maxBrightness) * 100) : 0;
+      // 实际亮度未跟随（内核忽略写，常见双背光设备：intel_backlight +
+      // acpi_video0）——提示用户改另一设备，避免「滑了没反应」困惑
+      const mismatched = reading.actualBrightness !== reading.brightness;
       return (
         <div className="object-readings">
           <div className="object-reading-row">
@@ -805,6 +903,9 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
             </div>
             <span className="object-reading-value">{pct}%（{reading.brightness}/{reading.maxBrightness}）</span>
           </div>
+          {mismatched && (
+            <div className="object-backlight-hint">{t('objects.backlight_mismatch')}</div>
+          )}
         </div>
       );
     }
@@ -977,6 +1078,18 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     return list;
   }, [currentClass, processSort]);
 
+  /** 进程类页筛选（本地匹配 comm/cmdline/pid，不区分大小写；先排序后过滤） */
+  const filteredProcessInstances = useMemo(() => {
+    if (!sortedClassInstances) return null;
+    const q = processFilter.trim().toLowerCase();
+    if (!q) return sortedClassInstances;
+    return sortedClassInstances.filter((i) =>
+      i.name.toLowerCase().includes(q) ||
+      (i.subtitle ?? '').toLowerCase().includes(q) ||
+      i.id.toLowerCase().includes(q),
+    );
+  }, [sortedClassInstances, processFilter]);
+
   const renderSortBar = () => (
     <div className="object-sortbar">
       {PROCESS_SORT_KEYS.map((k) => (
@@ -997,6 +1110,14 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       >
         <Icon name={processSort.desc ? 'arrow_downward' : 'arrow_upward'} />
       </Button>
+      <OutlinedTextField
+        className="object-process-filter"
+        value={processFilter}
+        placeholder={t('objects.process_filter')}
+        onInput={(e) => setProcessFilter((e.target as HTMLInputElement).value)}
+      >
+        <Icon name="search" slot="leading-icon" />
+      </OutlinedTextField>
     </div>
   );
 
@@ -1070,8 +1191,17 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   // 类页
   const isProcessClass = parsed?.className === 'process';
   const listInstances = sortedClassInstances ?? currentClass?.instances ?? [];
+  /** 进程类虚拟化行的 rowProps（List 变化即重渲染行） */
+  const processRowProps: ProcessRowData = {
+    instances: filteredProcessInstances ?? [],
+    selectedId,
+    marqueeEnabled,
+    onSelect: setSelectedId,
+    onOpen: (inst) => { void handleInstanceDoubleClick(inst); },
+    onDetails: (inst) => onNavigate(buildObjectsPath(parsed?.className ?? undefined, inst.id)),
+  };
   return (
-    <div className="object-panel">
+    <div className={`object-panel${isProcessClass ? ' object-panel--virtual' : ''}`}>
       <div className="object-panel-header">
         <Icon name={currentClass?.icon ?? 'widgets'} className="object-panel-header-icon" />
         <div className="object-panel-title">{t(OBJECTS_CLASS_LABEL[parsed?.className ?? ''] ?? 'objects.title')}</div>
@@ -1082,11 +1212,32 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         <div className="object-load-failed">{t('objects.loading')}</div>
       ) : currentClass.instances.length === 0 ? (
         <div className="object-load-failed">{t('objects.class_empty')}</div>
-      ) : (
+      ) : isProcessClass ? (
         <>
-          {isProcessClass && renderSortBar()}
-          <div className="object-list">{listInstances.map(renderInstanceRow)}</div>
+          {renderSortBar()}
+          {(filteredProcessInstances?.length ?? 0) === 0 ? (
+            <div className="object-load-failed">{t('objects.process_no_match')}</div>
+          ) : (
+            <div className="object-list-virtual">
+              <AutoSizer
+                renderProp={({ height, width }) =>
+                  height == null || width == null ? null : (
+                    <List
+                      style={{ height, width }}
+                      rowComponent={ProcessListRow}
+                      rowProps={processRowProps}
+                      rowCount={filteredProcessInstances?.length ?? 0}
+                      rowHeight={PROCESS_ROW_HEIGHT}
+                      overscanCount={5}
+                    />
+                  )
+                }
+              />
+            </div>
+          )}
         </>
+      ) : (
+        <div className="object-list">{listInstances.map(renderInstanceRow)}</div>
       )}
     </div>
   );

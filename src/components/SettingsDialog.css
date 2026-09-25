@@ -203,6 +203,10 @@ md-dialog:has(.settings-preview-fixed) {
   width: 160px;
 }
 
+.settings-select--compact {
+  width: 128px;
+}
+
 .settings-about-row {
   display: flex;
   align-items: center;

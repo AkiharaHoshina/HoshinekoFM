@@ -34,6 +34,10 @@ interface SettingsDialogProps {
    *  切换入口，窗口过窄自动折叠菜单、宽度正常自动展开） */
   sortControlsAutoCollapse: boolean;
   onSortControlsAutoCollapseChange: (value: boolean) => void;
+  /** 走势图时间范围（秒：30/60/120/300，默认 60；确定时生效——
+   *  Object Panel 实例页走势图历史窗口，点数按采样间隔派生） */
+  sparklineWindowSeconds: number;
+  onSparklineWindowSecondsChange: (seconds: number) => void;
   locale: Locale;
   onLocaleChange: (locale: Locale) => void;
   /** 滚动文本（跑马灯标题）开关；确定时生效 */
@@ -142,6 +146,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onFilledIconsChange,
   sortControlsAutoCollapse,
   onSortControlsAutoCollapseChange,
+  sparklineWindowSeconds,
+  onSparklineWindowSecondsChange,
   locale,
   onLocaleChange,
   marqueeEnabled,
@@ -354,6 +360,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   const [pendingIconSize, setPendingIconSize] = useState<number>(iconSize);
   const [pendingFilledIcons, setPendingFilledIcons] = useState<boolean>(filledIcons);
   const [pendingSortControlsAutoCollapse, setPendingSortControlsAutoCollapse] = useState<boolean>(sortControlsAutoCollapse);
+  /** 走势图时间范围草稿（确定时生效，与其余设置项同款 pending） */
+  const [pendingSparklineWindowSeconds, setPendingSparklineWindowSeconds] = useState<number>(sparklineWindowSeconds);
   const [pendingShowHomeStorageUsage, setPendingShowHomeStorageUsage] = useState<boolean>(showHomeStorageUsage);
   const [pendingCalculateDirSize, setPendingCalculateDirSize] = useState<boolean>(calculateDirSize);
   /** 新建标签页目录草稿：二级对话框确认只写入草稿，外层确定才应用 */
@@ -445,6 +453,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       setPendingShowHomeStorageUsage(showHomeStorageUsage);
       setPendingCalculateDirSize(calculateDirSize);
       setPendingNewTabPath(newTabPath);
+      setPendingSparklineWindowSeconds(sparklineWindowSeconds);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 open 变化时同步
   }, [open]);
@@ -474,7 +483,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setPendingShowHomeStorageUsage(showHomeStorageUsage);
     setPendingCalculateDirSize(calculateDirSize);
     setPendingNewTabPath(newTabPath);
-  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, searchLimit, searchTimeout, searchObjects, marqueeEnabled, filePreviewEnabled, autoCreateDesktopEntry, autoCreateAppMenuEntry, showHiddenFiles, viewMode, iconSize, filledIcons, sortControlsAutoCollapse, showHomeStorageUsage, calculateDirSize, newTabPath]);
+    setPendingSparklineWindowSeconds(sparklineWindowSeconds);
+  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, searchLimit, searchTimeout, searchObjects, marqueeEnabled, filePreviewEnabled, autoCreateDesktopEntry, autoCreateAppMenuEntry, showHiddenFiles, viewMode, iconSize, filledIcons, sortControlsAutoCollapse, showHomeStorageUsage, calculateDirSize, newTabPath, sparklineWindowSeconds]);
 
   /**
    * 应用全部 pending 设置（不关闭对话框）：「应用」与「确定」共用
@@ -503,6 +513,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     if (pendingShowHomeStorageUsage !== showHomeStorageUsage) onShowHomeStorageUsageChange(pendingShowHomeStorageUsage);
     if (pendingCalculateDirSize !== calculateDirSize) onCalculateDirSizeChange(pendingCalculateDirSize);
     if (pendingNewTabPath !== newTabPath) onNewTabPathChange(pendingNewTabPath);
+    if (pendingSparklineWindowSeconds !== sparklineWindowSeconds) onSparklineWindowSecondsChange(pendingSparklineWindowSeconds);
   };
 
   /** 确定：应用全部 pending 设置并关闭对话框 */
@@ -689,6 +700,30 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 </div>
               </div>
               <Switch selected={pendingMarquee} onClick={() => setPendingMarquee(!pendingMarquee)} />
+            </div>
+
+            {/* 走势图时间范围（确定时生效：Object Panel 实例页走势图历史
+              窗口，30 秒–5 分钟四档；下拉只改草稿，应用/确定才落 localStorage） */}
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="show_chart" />
+                <div className="settings-row__label">
+                  {t("settings.sparkline_window")}
+                </div>
+              </div>
+              <OutlinedSelect
+                className="settings-select settings-select--compact"
+                value={String(pendingSparklineWindowSeconds)}
+                onInput={(e) => {
+                  const val = Number((e.target as HTMLSelectElement).value);
+                  if (val && val !== pendingSparklineWindowSeconds) setPendingSparklineWindowSeconds(val);
+                }}
+              >
+                <SelectOption value="30"><div slot="headline">{t("settings.sparkline_30s")}</div></SelectOption>
+                <SelectOption value="60"><div slot="headline">{t("settings.sparkline_1m")}</div></SelectOption>
+                <SelectOption value="120"><div slot="headline">{t("settings.sparkline_2m")}</div></SelectOption>
+                <SelectOption value="300"><div slot="headline">{t("settings.sparkline_5m")}</div></SelectOption>
+              </OutlinedSelect>
             </div>
 
             {/* 地址栏按钮自动收缩（确定时生效）：开启时隐藏右上角控件组

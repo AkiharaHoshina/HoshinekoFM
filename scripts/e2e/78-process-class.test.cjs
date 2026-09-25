@@ -49,12 +49,24 @@ const { ipcMain } = require('electron');
     // 指标列存在（每个进程行有 CPU 列）
     await h.waitFor(win, `document.querySelectorAll('.object-row-cpu').length >= 1`);
 
-    // 自身进程（测试主进程 pid）必在列表中
+    // 自身进程（测试主进程 pid）必在列表中——虚拟化后视口只渲染可见
+    // 行，直接查询可能不可见：经筛选输入定位（同时覆盖筛选功能）
     const selfPid = String(process.pid);
-    const selfRow = await h.js(win, `!!document.querySelector('.object-row[data-id="${selfPid}"]')`);
-    h.assert.ok(selfRow.value, `自身进程（pid ${selfPid}）应出现在进程列表中`);
+    await h.setReactInput(win, '.object-process-filter', selfPid);
+    await h.waitFor(win, `!!document.querySelector('.object-row[data-id="${selfPid}"]')`, { timeout: 8000 });
+    // 筛选输入只留自身进程一行
+    const allMatch = await h.js(win, `(() => {
+      const q = ${JSON.stringify(selfPid)};
+      return [...document.querySelectorAll('.object-row')].every((r) => {
+        const id = r.getAttribute('data-id') ?? '';
+        const txt = (r.textContent ?? '').toLowerCase();
+        return id.includes(q) || txt.includes(q.toLowerCase());
+      });
+    })()`);
+    h.assert.ok(allMatch.value === true, '筛选后所有可见行都应匹配关键词');
 
-    // 进自身实例页：无终止/强制结束按钮、nice 滑条禁用、「本应用」标识
+    // 进自身实例页（筛选保持——虚拟化后清空筛选该行会滚出视口）：
+    // 无终止/强制结束按钮、nice 滑条禁用、「本应用」标识
     await h.js(win, `(() => {
       const row = document.querySelector('.object-row[data-id="${selfPid}"]');
       const btn = row ? row.querySelector('.object-row-details') : null;
@@ -145,6 +157,23 @@ const { ipcMain } = require('electron');
       const names = [...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim());
       return names[0] === 'bbb' && names[2] === 'aaa';
     })()`, { timeout: 8000 });
+
+    // 筛选：pid 匹配（"200" → 只留 bbb）
+    await h.setReactInput(win, '.object-process-filter', '200');
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
+    const filteredNames = await h.js(win, `[...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim())`);
+    h.assert.ok(JSON.stringify(filteredNames.value) === JSON.stringify(['bbb']), `按 pid 筛选应只留 bbb：${JSON.stringify(filteredNames.value)}`);
+
+    // 无匹配：空态文案（12 语言双匹配）
+    await h.setReactInput(win, '.object-process-filter', 'zzz-no-match');
+    await h.waitFor(win, `(() => {
+      const el = document.querySelector('.object-load-failed');
+      return !!el && /无匹配|No matching|一致|일치|подходящих|відповідних/.test(el.textContent ?? '');
+    })()`, { timeout: 8000 });
+
+    // 清空筛选恢复全量
+    await h.setReactInput(win, '.object-process-filter', '');
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 3`, { timeout: 8000 });
 
     // 实例页：读数 + 状态翻译 + nice 值
     await h.js(win, `(() => {

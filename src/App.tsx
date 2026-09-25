@@ -591,6 +591,16 @@ function AppContent() {
     false,
   );
   /**
+   * 走势图时间范围（设置 → 外观，默认 60s；确定时生效——Object Panel
+   * 实例页走势图的历史窗口，按「窗口时长 ÷ 采样间隔」派生点数：
+   * 30/60/120/300 秒四档。仅主窗口 ObjectPanel 使用，选择器/保存器无
+   * 对象面板，无快照联动）。
+   */
+  const [sparklineWindowSeconds, setSparklineWindowSeconds] = useLocalStorage<number>(
+    "settings.sparklineWindowSeconds",
+    60,
+  );
+  /**
    * 外观预览收起状态（设置对话框 sticky 预览区，默认展开 = false）：
    * 与其他设置同款持久化（useLocalStorage 跨窗口 storage 同步），
    * 恢复默认设置重置为展开。
@@ -1426,6 +1436,7 @@ function AppContent() {
     setSortControlsCollapsed(false);
     setSortControlsAutoCollapse(false);
     setPreviewCollapsed(false);
+    setSparklineWindowSeconds(60);
     setAutoCreateDesktopEntry(true);
     setAutoCreateAppMenuEntry(true);
     setNewTabPath("/");
@@ -1459,6 +1470,7 @@ function AppContent() {
     setSortControlsCollapsed,
     setSortControlsAutoCollapse,
     setPreviewCollapsed,
+    setSparklineWindowSeconds,
     setAutoCreateDesktopEntry,
     setAutoCreateAppMenuEntry,
     setNewTabPath,
@@ -2384,6 +2396,7 @@ function AppContent() {
                   sortControlsCollapsed={sortControlsCollapsed}
                   sortControlsAutoCollapse={sortControlsAutoCollapse}
                   onSortControlsCollapsedChange={setSortControlsCollapsed}
+                  sparklineWindowSeconds={sparklineWindowSeconds}
                   refreshSignal={tab.version}
                   scrollToFileName={tab.pendingSelectFile}
                   onScrollToComplete={handleScrollToComplete}
@@ -2795,6 +2808,8 @@ function AppContent() {
             onFilledIconsChange={setFilledIcons}
             sortControlsAutoCollapse={sortControlsAutoCollapse}
             onSortControlsAutoCollapseChange={setSortControlsAutoCollapse}
+            sparklineWindowSeconds={sparklineWindowSeconds}
+            onSparklineWindowSecondsChange={setSparklineWindowSeconds}
             locale={locale}
             onLocaleChange={handleLocaleChange}
             marqueeEnabled={marqueeEnabled}

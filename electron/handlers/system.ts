@@ -2994,18 +2994,23 @@ export function registerSystemHandlers(
     }
   }
 
-  /** 读取电源实例读数（电量/状态/能量/循环次数） */
+  /** 读取电源实例读数（电量/状态/能量/循环次数）。
+   *  全部属性**并行**读（每文件仍经 readFileTimed 2s 超时）——EC 慢的
+   *  笔记本上顺序读 6 文件单 tick 最坏 12s（读数区长时间停在旧值），
+   *  并行后单 tick 最坏 = 单文件 2s，天然构成 tick 总预算。 */
   async function readPowerReading(instanceId: string): Promise<ObjectReading | null> {
     if (!SYSFS_ID_RE.test(instanceId)) return null;
     const dir = path.join(getSysfsRoot(), 'class', 'power_supply', instanceId);
     try {
-      const capacity = await readSysfsNum(path.join(dir, 'capacity'));
-      const status = (await readSysfsStr(path.join(dir, 'status'))) ?? 'Unknown';
-      const type = (await readSysfsStr(path.join(dir, 'type'))) ?? 'Unknown';
-      const energyNow = await readSysfsNum(path.join(dir, 'energy_now')); // µWh
-      const energyFull = await readSysfsNum(path.join(dir, 'energy_full'));
-      const cycleCount = await readSysfsNum(path.join(dir, 'cycle_count'));
-      return { kind: 'power', capacity, status, energyNow, energyFull, cycleCount, type };
+      const [capacity, status, type, energyNow, energyFull, cycleCount] = await Promise.all([
+        readSysfsNum(path.join(dir, 'capacity')),
+        readSysfsStr(path.join(dir, 'status')),
+        readSysfsStr(path.join(dir, 'type')),
+        readSysfsNum(path.join(dir, 'energy_now')), // µWh
+        readSysfsNum(path.join(dir, 'energy_full')),
+        readSysfsNum(path.join(dir, 'cycle_count')),
+      ]);
+      return { kind: 'power', capacity, status: status ?? 'Unknown', energyNow, energyFull, cycleCount, type: type ?? 'Unknown' };
     } catch {
       return null;
     }

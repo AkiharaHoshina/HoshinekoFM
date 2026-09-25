@@ -289,6 +289,30 @@
   color: var(--md-sys-color-primary);
 }
 
+.object-process-filter {
+  margin-left: auto;
+  width: 220px;
+  --md-outlined-field-top-space: 4px;
+  --md-outlined-field-bottom-space: 4px;
+}
+
+/* ── 进程类页虚拟化列表 ── */
+/* 进程类页：外层面板不滚动（overflow hidden），虚拟列表自身滚动 */
+.object-panel--virtual {
+  overflow: hidden;
+}
+
+.object-list-virtual {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 虚拟化行固定高（与 ObjectPanel.tsx 的 PROCESS_ROW_HEIGHT=62 同步） */
+.object-list-virtual .object-row {
+  height: 62px;
+  box-sizing: border-box;
+}
+
 .object-row-cpu {
   display: flex;
   align-items: center;

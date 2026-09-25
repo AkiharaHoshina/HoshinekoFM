@@ -146,6 +146,9 @@ interface ExplorerTabProps {
     sortControlsAutoCollapse: boolean;
     /** 切换控件组折叠（App 写入持久化键，跨窗口同步） */
     onSortControlsCollapsedChange: (collapsed: boolean) => void;
+    /** 走势图时间范围（秒，App 持 settings.sparklineWindowSeconds）——
+     *  Object Panel 实例页走势图历史窗口，点数按采样间隔派生 */
+    sparklineWindowSeconds: number;
     refreshSignal: number;
     scrollToFileName?: string;
     onScrollToComplete?: () => void;
@@ -203,7 +206,7 @@ interface ExplorerTabProps {
     terminalOpen?: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, searchLimit, searchTimeout, searchObjects, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, sortControlsAutoCollapse, onSortControlsCollapsedChange, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, onUnmountDevice, onEjectDevice, onTerminateProcess, onNiceProcess, onNetworkToggle, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, searchLimit, searchTimeout, searchObjects, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, sortControlsAutoCollapse, onSortControlsCollapsedChange, sparklineWindowSeconds, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, onUnmountDevice, onEjectDevice, onTerminateProcess, onNiceProcess, onNetworkToggle, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -2221,6 +2224,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           path={currentPath}
           marqueeEnabled={marqueeEnabled}
           isActive={isActive}
+          sparklineWindowSeconds={sparklineWindowSeconds}
           onNavigate={(p: string) => loadPath(p, true)}
           onOpenLocation={(p: string) => loadPath(p, true)}
           onMountDevice={onMountDevice}
