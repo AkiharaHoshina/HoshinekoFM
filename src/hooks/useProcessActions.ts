@@ -35,11 +35,50 @@ export function useProcessActions(confirm: ConfirmFn) {
     })();
   }, [confirm]);
 
-  /** 调整进程 nice（L1 可逆低危：无确认；失败 toast） */
-  const niceProcess = useCallback((pid: number, name: string, nice: number) => {
+  /**
+   * 调整进程 nice（L1 可逆低危：无确认）。成功 toast 报新值（nice 无
+   * 可见效果、失败曾静默成功——用户无从得知是否生效；网络开关同款
+   * 成功反馈）；失败 toast——EPERM/NO_TOOL/AUTH_FAILED/HELPER_FAILED
+   * 按结构化码翻译。跨用户进程 EPERM 时主进程经持久特权助手回落
+   * （一次 pkexec 授权，见 system.ts 的 ensureNiceHelper）：ObjectPanel
+   * 的「解锁」按钮 = 以当前 nice 写一次触发授权，经 onDone(true) 回报
+   * 解锁成功。
+   */
+  const niceProcess = useCallback((pid: number, name: string, nice: number, onDone?: (ok: boolean) => void) => {
     void (async () => {
       const res = await window.electron.processNice(pid, nice);
-      if (!res.ok) showToast(t('objects.process_nice_failed', name, res.error ?? ''), 'error');
+      if (res.ok) {
+        onDone?.(true);
+        showToast(t('objects.process_nice_ok', name, nice), 'success');
+        return;
+      }
+      onDone?.(false);
+      if (res.error === 'EPERM') showToast(t('objects.process_nice_eperm', name), 'error');
+      else if (res.error === 'NO_TOOL') showToast(t('objects.process_nice_no_tool'), 'error');
+      else if (res.error === 'AUTH_FAILED') showToast(t('objects.write_auth_failed'), 'error');
+      else if (res.error === 'HELPER_FAILED') showToast(t('objects.process_nice_failed', name, t('objects.process_nice_helper_failed')), 'error');
+      else showToast(t('objects.process_nice_failed', name, res.error ?? ''), 'error');
+    })();
+  }, []);
+
+  /**
+   * 提前授权进程优先级（ObjectPanel「解锁」按钮）：拉起持久 nice 助手
+   * （一次 pkexec 授权，**本会话有效**——助手常驻到应用退出，与 polkit
+   * 5 分钟临时授权缓存无关）。「先解锁再拖」模型下所有进程 nice 滑条
+   * 默认锁定，解锁后任意方向调整（含减小 nice 提高优先级）零弹框。
+   * 成功 toast 说明有效期；NO_TOOL/AUTH_FAILED 按码翻译。
+   */
+  const unlockNice = useCallback((onDone?: (ok: boolean) => void) => {
+    void (async () => {
+      const res = await window.electron.processNiceAuth();
+      if (res.ok) {
+        onDone?.(true);
+        showToast(t('objects.process_nice_unlocked'), 'success');
+        return;
+      }
+      onDone?.(false);
+      if (res.error === 'NO_TOOL') showToast(t('objects.process_nice_no_tool'), 'error');
+      else showToast(t('objects.write_auth_failed'), 'error');
     })();
   }, []);
 
@@ -65,5 +104,5 @@ export function useProcessActions(confirm: ConfirmFn) {
     })();
   }, [confirm]);
 
-  return { confirmTerminate, niceProcess, toggleNetwork };
+  return { confirmTerminate, niceProcess, unlockNice, toggleNetwork };
 }

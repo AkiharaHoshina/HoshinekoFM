@@ -60,7 +60,7 @@ export type ObjectReading =
     | { kind: 'memory'; totalBytes: number; usedBytes: number; availableBytes: number; percent: number }
     | { kind: 'storage'; name: string; mounted: boolean; mountpoint: string | null; sizeLabel: string | null; usedBytes: number | null; totalBytes: number | null; percent: number | null; fstype: string | null }
     | { kind: 'process'; pid: number; name: string; user: string | null; state: string; cpuPct: number; rssBytes: number; threads: number; nice: number; ppid: number; startedAt: number | null; exe: string | null; cwd: string | null; isSelf: boolean; ownUser: boolean }
-    | { kind: 'thermal'; name: string; temps: { id: string; label: string | null; valueC: number }[]; fans: { id: string; label: string | null; rpm: number }[] }
+    | { kind: 'thermal'; name: string; temps: { id: string; label: string | null; valueC: number }[]; fans: { id: string; label: string | null; rpm: number }[]; currs?: { id: string; label: string | null; mA: number }[]; voltages?: { id: string; label: string | null; mV: number }[] }
     | { kind: 'backlight'; brightness: number; maxBrightness: number; actualBrightness: number; writable: boolean }
     | { kind: 'network'; operstate: string; speedMbps: number | null; addresses: string[]; rxBytesPerSec: number; txBytesPerSec: number; isLoopback: boolean }
     | { kind: 'power'; capacity: number | null; status: string; energyNow: number | null; energyFull: number | null; cycleCount: number | null; type: string }
@@ -544,6 +544,8 @@ export interface IElectronAPI {
     processSignal: (pid: number, signal: 'TERM' | 'KILL') => Promise<{ ok: boolean; error?: string }>;
     /** Object Panel：调整进程 nice（-20..19，renice） */
     processNice: (pid: number, nice: number) => Promise<{ ok: boolean; error?: string }>;
+    /** Object Panel：提前授权进程优先级（「解锁」按钮——一次 pkexec，本会话有效） */
+    processNiceAuth: () => Promise<{ ok: boolean; error?: string }>;
     /** Object Panel：读取块设备 SMART 健康（smartctl 一次性静态信息） */
     smartInfo: (devicePath: string) => Promise<SmartInfo>;
     /** Object Panel：白名单写（v2 仅 backlight/brightness）；EACCES 经 pkexec 回落；回传旧值供「恢复原值」 */

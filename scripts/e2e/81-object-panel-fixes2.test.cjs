@@ -3,11 +3,13 @@
  * 覆盖：
  * - 81a 背光只读实例「先解锁再拖」：444 沙箱文件 → 滑条禁用 +
  *   「解锁」按钮 + 权限提示；解锁 → 假 pkexec（PATH 影子化，绝不
- *   真实提权）记录 sh -c 调用并写入文件 → 滑条启用；拖动/恢复均经
- *   pkexec 回落；越界/非法 id 仍被拒且不触发 pkexec；
+ *   真实提权）模拟**持久助手**（spawn 一次 → 打 ready → stdin 行
+ *   协议写值回 ok）→ 滑条启用；拖动/恢复均经助手 stdin（pkexec
+ *   **只调用一次**——回归「每松手弹一次密码框」），越界/非法 id
+ *   仍被拒且不触发 pkexec；
  * - 81b 冒号 id 的 power 实例真实读通（ucsi-source-psy-USBC000:002）；
- * - 81c 图表加高与行下布局：主图 ≥90px（96 标称）、网格子图 ≥44px
- *   （48 标称）、走势图不在文字行内（`.object-reading-row` 内无
+ * - 81c 图表加高与行下布局：主图 ≥130px（144 标称）、网格子图 ≥85px
+ *   （96 标称）、走势图不在文字行内（`.object-reading-row` 内无
  *   `.sparkline`）、CPU 每核/温度均为「行 + 行下图」块结构；
  * - 81d tty 受限实例：类页「需要权限」徽标、受限实例不调用
  *   objects:tty-start（记录型断言）、实例页直接权限占位；
@@ -33,20 +35,32 @@ const { ipcMain } = require('electron');
   fs.mkdirSync(psyDir, { recursive: true });
   fs.writeFileSync(path.join(psyDir, 'type'), 'USB');
   fs.writeFileSync(path.join(psyDir, 'status'), 'Unknown');
+  // ucsi hwmon 芯片：只有 curr/in 输入、无 temp/fan（修复前前端显示
+  // 「无法加载对象」误导——应显示电流/电压读数）
+  const hwDir = path.join(sysfsDir, 'class', 'hwmon', 'hwmon6');
+  fs.mkdirSync(hwDir, { recursive: true });
+  fs.writeFileSync(path.join(hwDir, 'name'), 'ucsi_source_psy_USBC000:002');
+  fs.writeFileSync(path.join(hwDir, 'curr1_input'), '0');
+  fs.writeFileSync(path.join(hwDir, 'curr1_max'), '0');
+  fs.writeFileSync(path.join(hwDir, 'in0_input'), '0');
+  fs.writeFileSync(path.join(hwDir, 'in0_max'), '0');
   process.env.HOSHINEKO_E2E_SYSFS_DIR = sysfsDir;
 
-  // 假 pkexec：记录调用 + 模拟 root 写入（chmod u+w → printf → 恢复只读）
+  // 假 pkexec：记录调用（argv 含 target，值走 stdin）+ 模拟持久助手
+  // （ready 握手 → stdin 行协议写值回 ok；每写一次恢复 444 只读，
+  //  逼真复刻 root:root 644 下每次直写都失败、必须经助手的场景）
   const pkBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-pkexec81-'));
   const pkLog = path.join(pkBinDir, 'pkexec.log');
   const pkPath = path.join(pkBinDir, 'pkexec');
   fs.writeFileSync(pkPath, `#!/bin/sh
 echo "$@" >> "${pkLog}"
 if [ "$1" != "sh" ]; then exit 126; fi
-val="$5"
-target="$6"
-chmod u+w "$target" 2>/dev/null
-printf '%s' "$val" > "$target"
-chmod u-w "$target" 2>/dev/null
+target="$5"
+printf 'ready\\n'
+while IFS= read -r v; do
+  chmod u+w "$target" 2>/dev/null
+  if printf '%s' "$v" > "$target"; then chmod u-w "$target" 2>/dev/null; printf 'ok\\n'; else chmod u-w "$target" 2>/dev/null; printf 'err\\n'; fi
+done
 exit 0
 `);
   fs.chmodSync(pkPath, 0o755);
@@ -54,7 +68,7 @@ exit 0
 
   await h.setupApp();
 
-  await h.run('81a 背光只读实例「先解锁再拖」（假 pkexec 回落）', async () => {
+  await h.run('81a 背光只读实例「先解锁再拖」（假 pkexec 持久助手回落）', async () => {
     // 真实 list/read/write-object handler + 沙箱（444 只读 → writable:false）
     const dir = h.tempDir();
     h.makeFileTree(dir, { 'a.txt': 'x' });
@@ -73,17 +87,18 @@ exit 0
     await h.js(win, `document.querySelector('.object-row .object-row-details').click()`, true);
     await h.waitFor(win, `!!document.querySelector('.object-brightness-slider')`, { timeout: 8000 });
 
-    // 锁定态：滑条禁用 + 解锁按钮 + 权限提示
+    // 锁定态：滑条禁用 + 解锁按钮 + 权限提示（提示在独立第二行
+    // .object-actions-block .object-hint，文案随 locale 变化按类断言）
     const locked = await h.js(win, `(() => {
       const s = document.querySelector('.object-brightness-slider');
       const box = document.querySelector('.object-actions--slider');
       const text = box ? box.textContent ?? '' : '';
-      return { disabled: s.disabled, hasUnlock: /解锁|Unlock|ロック解除|잠금 해제/.test(text), hasHint: /需要权限|Permission required|権限が必要|권한 필요/.test(text) };
+      return { disabled: s.disabled, hasUnlock: /解锁|Unlock|ロック解除|잠금 해제/.test(text), hasHint: !!document.querySelector('.object-actions-block .object-hint') };
     })()`);
     h.assert.ok(locked.value.disabled === true, '只读实例滑条应禁用');
     h.assert.ok(locked.value.hasUnlock && locked.value.hasHint, '应有「解锁」按钮与权限提示');
 
-    // 解锁：写当前值 → 直写 444 失败 → 假 pkexec 回落 → 滑条启用
+    // 解锁：写当前值 → 直写 444 失败 → 拉起持久助手（pkexec 仅此一次）→ 滑条启用
     const logBefore = fs.existsSync(pkLog) ? fs.readFileSync(pkLog, 'utf-8') : '';
     await h.js(win, `(() => {
       const btns = [...document.querySelectorAll('.object-actions--slider > *')];
@@ -96,10 +111,11 @@ exit 0
       const s = document.querySelector('.object-brightness-slider');
       return !!s && s.disabled === false;
     })()`, { timeout: 8000 });
-    let pkLogContent = fs.existsSync(pkLog) ? fs.readFileSync(pkLog, 'utf-8') : '';
-    h.assert.ok(pkLogContent.length > logBefore.length && pkLogContent.includes('50') && pkLogContent.includes('acpi_video0'), `解锁应经 pkexec 写 50：${JSON.stringify(pkLogContent.slice(logBefore.length))}`);
+    const pkAfterUnlock = fs.existsSync(pkLog) ? fs.readFileSync(pkLog, 'utf-8') : '';
+    const unlockLines = pkAfterUnlock.slice(logBefore.length).split('\n').filter(Boolean);
+    h.assert.ok(unlockLines.length === 1 && unlockLines[0].includes('acpi_video0'), `解锁应恰好拉起一次助手（argv 含目标路径）：${JSON.stringify(unlockLines)}`);
 
-    // 拖动 → 120：经 pkexec 回落写入沙箱
+    // 拖动 → 120：经助手 stdin 写入沙箱，pkexec 不得再次调用（回归每松手弹框）
     await h.js(win, `(() => {
       const s = document.querySelector('.object-brightness-slider');
       s.value = 120;
@@ -113,10 +129,10 @@ exit 0
       await h.sleep(100);
     }
     h.assert.ok(written === '120', `解锁后拖动应写入 120：${written}`);
-    pkLogContent = fs.readFileSync(pkLog, 'utf-8');
-    h.assert.ok(pkLogContent.includes('120'), '拖动应经 pkexec 写入 120');
+    let pkAfterDrag = fs.readFileSync(pkLog, 'utf-8');
+    h.assert.ok(pkAfterDrag === pkAfterUnlock, '拖动不应再次调用 pkexec（持久助手复用）');
 
-    // 恢复原值 → 50
+    // 恢复原值 → 50：同样经助手，pkexec 不增
     await h.waitFor(win, `Array.from(document.querySelectorAll('.object-actions--slider > *')).some((x) => /恢复原值|Restore value|元の値に戻す|원래 값으로/.test(x.textContent ?? ''))`, { timeout: 8000 });
     await h.js(win, `(() => {
       const btns = [...document.querySelectorAll('.object-actions--slider > *')];
@@ -132,6 +148,8 @@ exit 0
       await h.sleep(100);
     }
     h.assert.ok(restored === '50', `恢复应回写 50：${restored}`);
+    pkAfterDrag = fs.readFileSync(pkLog, 'utf-8');
+    h.assert.ok(pkAfterDrag === pkAfterUnlock, '恢复原值不应再次调用 pkexec（持久助手复用）');
 
     // 安全：越界/非法 id 不触发 pkexec
     const pkCount = fs.readFileSync(pkLog, 'utf-8').split('\n').filter(Boolean).length;
@@ -176,6 +194,39 @@ exit 0
     h.assert.ok(page.value.hasStatus && page.value.noFail, `冒号 id 实例应正常读数：${JSON.stringify(page.value)}`);
     h.assert.ok(page.value.hasType, `应有类型行（USB）：${JSON.stringify(page.value)}`);
     h.assert.ok(page.value.hasHint, `空信息实例应有「无更多可用信息」提示：${JSON.stringify(page.value)}`);
+
+    // ucsi hwmon 芯片（真实枚举自沙箱 hwmon 冒号 name，仅 curr/in 无 temp/fan）：
+    // 修复前 temps/fans 全空 → 「无法加载对象」误导；修复后显示电流/电压行
+    await h.js(win, `(() => {
+      const up = document.querySelector('[data-kb-zone="topbar-up"] md-icon-button, [data-kb-zone="topbar-up"] md-outlined-icon-button');
+      up.click(); return true;
+    })()`, true);
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
+    await h.js(win, `(() => {
+      const up = document.querySelector('[data-kb-zone="topbar-up"] md-icon-button, [data-kb-zone="topbar-up"] md-outlined-icon-button');
+      up.click(); return true;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
+    await h.js(win, `(() => {
+      const c = [...document.querySelectorAll('.object-class-card')].find((x) => /传感器|Sensors/.test(x.textContent ?? ''));
+      if (!c) return false;
+      c.click(); return true;
+    })()`, true);
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
+    const hwRowId = await h.js(win, `document.querySelector('.object-row').getAttribute('data-id')`);
+    h.assert.ok(hwRowId.value === 'hwmon6', `hwmon 实例应存在：${hwRowId.value}`);
+    await h.js(win, `document.querySelector('.object-row .object-row-details').click()`, true);
+    await h.waitFor(win, `!!document.querySelector('.object-reading-value')`, { timeout: 8000 });
+    const hwPage = await h.js(win, `(() => {
+      const text = document.querySelector('.object-panel')?.textContent ?? '';
+      return {
+        hasCurr: /电流|Current|電流|전류/.test(text),
+        hasVolt: /电压|Voltage|電圧|전압/.test(text),
+        noFail: !/无法加载|Failed to load|読み込めません|불러올 수 없습니다/.test(text),
+      };
+    })()`);
+    h.assert.ok(hwPage.value.hasCurr && hwPage.value.hasVolt, `ucsi 芯片应显示电流/电压行：${JSON.stringify(hwPage.value)}`);
+    h.assert.ok(hwPage.value.noFail, `ucsi 芯片不得显示「无法加载对象」：${JSON.stringify(hwPage.value)}`);
   });
 
   await h.run('81c 图表加高与行下布局', async () => {
@@ -199,6 +250,8 @@ exit 0
           kind: 'thermal', name: 'k10temp',
           temps: [{ id: '1', label: 'T1', valueC: 42.5 }, { id: '2', label: 'T2', valueC: 55.0 }],
           fans: [],
+          currs: [],
+          voltages: [],
         };
       }
       return null;
@@ -214,7 +267,7 @@ exit 0
     })()`, true);
     await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
 
-    // CPU 实例页：主图 96 + 每核子图 48 + 行内无图
+    // CPU 实例页：主图 144 + 每核子图 96 + 行内无图
     await h.js(win, `(() => {
       const c = [...document.querySelectorAll('.object-class-card')].find((x) => /处理器|Processor/.test(x.textContent ?? ''));
       c.click(); return true;
@@ -240,8 +293,8 @@ exit 0
         miniBorder: miniStyle ? miniStyle.borderTopWidth : '',
       };
     })()`);
-    h.assert.ok(cpuChart.value.mainH >= 90, `主图高度应 ≥90（96 标称）：${cpuChart.value.mainH}`);
-    h.assert.ok(cpuChart.value.miniH >= 44, `子图高度应 ≥44（48 标称）：${cpuChart.value.miniH}`);
+    h.assert.ok(cpuChart.value.mainH >= 130, `主图高度应 ≥130（144 标称）：${cpuChart.value.mainH}`);
+    h.assert.ok(cpuChart.value.miniH >= 85, `子图高度应 ≥85（96 标称）：${cpuChart.value.miniH}`);
     h.assert.ok(cpuChart.value.miniCount === 2, `每核应有子图：${cpuChart.value.miniCount}`);
     h.assert.ok(cpuChart.value.inlineGraphs === 0, '走势图不应挤在文字行内');
     h.assert.ok(cpuChart.value.mainBorder !== '0px' && cpuChart.value.mainBorder !== '', `主图应有边框：${cpuChart.value.mainBorder}`);

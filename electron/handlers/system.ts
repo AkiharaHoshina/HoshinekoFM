@@ -2401,7 +2401,7 @@ export function registerSystemHandlers(
     | { kind: 'memory'; totalBytes: number; usedBytes: number; availableBytes: number; percent: number }
     | { kind: 'storage'; name: string; mounted: boolean; mountpoint: string | null; sizeLabel: string | null; usedBytes: number | null; totalBytes: number | null; percent: number | null; fstype: string | null }
     | { kind: 'process'; pid: number; name: string; user: string | null; state: string; cpuPct: number; rssBytes: number; threads: number; nice: number; ppid: number; startedAt: number | null; exe: string | null; cwd: string | null; isSelf: boolean; ownUser: boolean }
-    | { kind: 'thermal'; name: string; temps: { id: string; label: string | null; valueC: number }[]; fans: { id: string; label: string | null; rpm: number }[] }
+    | { kind: 'thermal'; name: string; temps: { id: string; label: string | null; valueC: number }[]; fans: { id: string; label: string | null; rpm: number }[]; currs: { id: string; label: string | null; mA: number }[]; voltages: { id: string; label: string | null; mV: number }[] }
     | { kind: 'backlight'; brightness: number; maxBrightness: number; actualBrightness: number; writable: boolean }
     | { kind: 'network'; operstate: string; speedMbps: number | null; addresses: string[]; rxBytesPerSec: number; txBytesPerSec: number; isLoopback: boolean }
     | { kind: 'power'; capacity: number | null; status: string; energyNow: number | null; energyFull: number | null; cycleCount: number | null; type: string }
@@ -3029,7 +3029,10 @@ export function registerSystemHandlers(
     }
   }
 
-  /** 读取传感器实例读数（temp 与 fan 输入，毫摄氏度 → °C） */
+  /** 读取传感器实例读数（temp/fan/curr/in 输入；毫摄氏度 → °C、电流 mA、电压 mV）。
+   *  ucsi/hid 等电源芯片 hwmon 只有 curr/in 输入无 temp/fan——此前
+   *  temps/fans 全空时前端显示「无法加载对象」误导用户；现补齐电流/电压
+   *  输入，全部为空才由前端显示「无可读输入」解释文案。 */
   async function readThermalReading(instanceId: string): Promise<ObjectReading | null> {
     if (!SYSFS_ID_RE.test(instanceId)) return null;
     const dir = path.join(getSysfsRoot(), 'class', 'hwmon', instanceId);
@@ -3037,6 +3040,8 @@ export function registerSystemHandlers(
       const files = await fs.readdir(dir);
       const temps: { id: string; label: string | null; valueC: number }[] = [];
       const fans: { id: string; label: string | null; rpm: number }[] = [];
+      const currs: { id: string; label: string | null; mA: number }[] = [];
+      const voltages: { id: string; label: string | null; mV: number }[] = [];
       for (const f of files) {
         const tm = /^temp(\d+)_input$/.exec(f);
         if (tm) {
@@ -3052,12 +3057,30 @@ export function registerSystemHandlers(
           if (rpm === null) continue;
           const label = await readSysfsStr(path.join(dir, `fan${fm[1]}_label`));
           fans.push({ id: fm[1], label, rpm });
+          continue;
+        }
+        const cm = /^curr(\d+)_input$/.exec(f);
+        if (cm) {
+          const mA = await readSysfsNum(path.join(dir, f));
+          if (mA === null) continue;
+          const label = await readSysfsStr(path.join(dir, `curr${cm[1]}_label`));
+          currs.push({ id: cm[1], label, mA });
+          continue;
+        }
+        const vm = /^in(\d+)_input$/.exec(f);
+        if (vm) {
+          const mV = await readSysfsNum(path.join(dir, f));
+          if (mV === null) continue;
+          const label = await readSysfsStr(path.join(dir, `in${vm[1]}_label`));
+          voltages.push({ id: vm[1], label, mV });
         }
       }
       const chipName = (await readSysfsStr(path.join(dir, 'name'))) ?? instanceId;
       temps.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
       fans.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
-      return { kind: 'thermal', name: chipName, temps, fans };
+      currs.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+      voltages.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+      return { kind: 'thermal', name: chipName, temps, fans, currs, voltages };
     } catch {
       return null;
     }
@@ -3088,6 +3111,40 @@ export function registerSystemHandlers(
   /** 网络速率差值采样（ifname → { rx, tx, ts }；map 上限 256 全清） */
   let lastNetSample: Map<string, { rx: number; tx: number; ts: number }> | null = null;
 
+  /** 无线协商速率缓存（iface → { ts, mbps }；iw 每次 spawn 有开销，10s TTL；
+   *  map 上限 256 全清防增长） */
+  const wirelessBitrateCache = new Map<string, { ts: number; mbps: number | null }>();
+
+  /**
+   * 经 `iw dev <iface> link` 读取无线协商速率（MBit/s → Mbps）。
+   * 多数 WiFi 驱动（iwlwifi 等）不在 sysfs 暴露 `speed` 文件——速率行
+   * 恒显「—」；此处回落 iw。非无线/未连接/工具缺失回 null（保持「—」语义）。
+   *
+   * rx 与 tx 双解析取较大值：`rx bitrate` 是「最后一帧的速率」——空闲/
+   * 省电时只收到 6 Mbps 基本速率信标帧，rx 被持续刷新为 6.0（实测
+   * iwlwifi：rx 6.0 / tx 866.7 VHT-MCS 9），只读 rx 会把协商速率显示成
+   * 6 Mbps 虚数；tx bitrate 是协商速率，稳定得多。取两者较大值对称
+   * 防御其他驱动 tx 侧衰减的情况。
+   */
+  async function readWirelessBitrateMbps(iface: string): Promise<number | null> {
+    const cached = wirelessBitrateCache.get(iface);
+    if (cached && Date.now() - cached.ts < 10000) return cached.mbps;
+    let mbps: number | null = null;
+    try {
+      const { stdout } = await execFileAsync('iw', ['dev', iface, 'link'], { timeout: 3000 });
+      const rx = /rx bitrate:\s*([\d.]+)\s*MBit\/s/i.exec(stdout);
+      const tx = /tx bitrate:\s*([\d.]+)\s*MBit\/s/i.exec(stdout);
+      const best = Math.max(
+        rx ? Number(rx[1]) : 0,
+        tx ? Number(tx[1]) : 0,
+      );
+      if (Number.isFinite(best) && best > 0) mbps = Math.round(best * 10) / 10;
+    } catch { /* iw 缺失/非无线接口/未连接：保持 null */ }
+    if (wirelessBitrateCache.size > 256) wirelessBitrateCache.clear();
+    wirelessBitrateCache.set(iface, { ts: Date.now(), mbps });
+    return mbps;
+  }
+
   /** 读取网络接口读数（operstate/速率/地址 + rx/tx 差值速率） */
   async function readNetworkReading(instanceId: string): Promise<ObjectReading | null> {
     if (!SYSFS_ID_RE.test(instanceId)) return null;
@@ -3095,7 +3152,9 @@ export function registerSystemHandlers(
     try {
       const operstate = (await readSysfsStr(path.join(dir, 'operstate'))) ?? 'unknown';
       const speedRaw = await readSysfsNum(path.join(dir, 'speed')); // Mbit/s；-1 = 未知
-      const speedMbps = speedRaw !== null && speedRaw > 0 ? speedRaw : null;
+      let speedMbps = speedRaw !== null && speedRaw > 0 ? speedRaw : null;
+      // sysfs 无 speed（WiFi 常见）：回落 iw 协商速率
+      if (speedMbps === null) speedMbps = await readWirelessBitrateMbps(instanceId);
       const addresses: string[] = [];
       const mac = await readSysfsStr(path.join(dir, 'address'));
       if (mac) addresses.push(mac);
@@ -3310,20 +3369,251 @@ export function registerSystemHandlers(
   });
 
   /**
-   * 调整进程 nice（-20..19；renice util-linux 通用）。跨用户/自身由
-   * renice 权限拒绝（自身进程调整语义不明，前端已禁用，此处兜底）。
+   * 跨 locale 的权限拒绝判定（renice / ip 等 CLI 工具）。EPERM/EACCES 的
+   * stderr 是 strerror 译文——随系统 glibc 语言变化（如 zh_CN glibc ≥2.41
+   * 译「权限不够」而非「不允许的操作」）；Node 的 execFile 失败时
+   * error.message 会附加 stderr（`Command failed: …\n<stderr>`）。覆盖
+   * 应用 12 语言对应 glibc 译文 + 英文原样；新增语言变体在此补充。
+   */
+  const PERMISSION_DENIED_RE = /permission denied|not permitted|不允许的操作|不允許的操作|权限不够|權限不足|權限不夠|許可されていません|許可されていない|허용되지 않습니다|허용되지 않는|권한이 없습니다|Операция не позволена|Операция не разрешена|Операцію не дозволено|Операція не дозволена/i;
+
+  /**
+   * 调整进程 nice（-20..19；renice util-linux 通用）。renice 对同用户
+   * 进程只允许**增大** nice（降低优先级）——减小 nice（提高优先级，
+   * 如「恢复原值」从 2 回到 0）或跨用户/root 进程需要 CAP_SYS_NICE，
+   * 直跑 EPERM。EPERM 时经持久特权助手回落（一次 pkexec 授权——前端
+   * 「解锁」按钮 = 以当前 nice 写一次触发授权，与背光同款语义）。自身
+   * 进程按同用户语义允许调整（renice 自身可逆无危险；终止动作的 SELF
+   * 保护在 process-signal 保留）。失败码结构化：NO_TOOL（renice 缺失）/
+   * AUTH_FAILED（授权取消/超时）/HELPER_FAILED（助手返回 err——进程
+   * 消失等）/其余截尾透传。
    */
   ipcMain.handle('system:process-nice', async (_event, pid: unknown, nice: unknown) => {
     const pidNum = typeof pid === 'number' ? pid : NaN;
     const niceNum = typeof nice === 'number' ? nice : NaN;
     if (!Number.isInteger(pidNum) || pidNum < 1 || pidNum > 4194304) return { ok: false, error: 'INVALID_PID' };
     if (!Number.isInteger(niceNum) || niceNum < -20 || niceNum > 19) return { ok: false, error: 'INVALID_NICE' };
-    if (pidNum === process.pid) return { ok: false, error: 'SELF' };
     try {
       await execFileAsync('renice', ['-n', String(niceNum), '-p', String(pidNum)], { timeout: 5000 });
       return { ok: true };
     } catch (e) {
-      return { ok: false, error: getExecError(e) ?? String((e as Error)?.message ?? e).slice(0, 200) };
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { ok: false, error: 'NO_TOOL' };
+      const msg = getExecError(e).message;
+      if (PERMISSION_DENIED_RE.test(msg)) {
+        try {
+          const helper = await ensureNiceHelper();
+          if (!helper) return { ok: false, error: 'AUTH_FAILED' };
+          const wrote = await privilegedHelperWrite(helper, `${niceNum} ${pidNum}`);
+          return wrote ? { ok: true, escalated: true } : { ok: false, error: 'HELPER_FAILED' };
+        } catch (e2) {
+          return { ok: false, error: getExecError(e2).message.slice(0, 200) || 'AUTH_FAILED' };
+        }
+      }
+      return { ok: false, error: msg.slice(0, 200) || 'UNKNOWN' };
+    }
+  });
+
+  // ── 持久特权写助手（背光 / 进程 nice 共用） ──
+
+  /**
+   * 持久特权助手：一次 pkexec 拉起常驻 sh，stdin 行协议 → stdout
+   * ok/err 确认行。
+   *
+   * 动机：pkexec 的 polkit 授权缓存按「动作 + 命令行细节」键控——命令行
+   * 携带**每次不同的值**时，每次写入都是不同的授权请求：拖一次滑条
+   * 弹一次密码框（实测每松手一弹），且弹框抢焦点/用户取消/超时都会让
+   * 写入失败。助手方案：首次写入经**一次** pkexec 拉起常驻 sh（用户只
+   * 授权一次），后续值经 stdin 行协议写入——授权次数 = 1，拖动不再弹框、
+   * 写入必达。
+   *
+   * 安全：脚本只执行**单一动作**（背光写 sysfs / 进程 renice），入参在
+   * 主进程侧校验（SYSFS_ID_RE + 前缀双保险 / 整数 pid+nice）后才进
+   * stdin；助手内位置参数形式无注入面。主进程退出时管道 EOF，助手
+   * read 返回非零自然退出（无僵尸残留）；授权失败/超时（30s）杀掉进程
+   * 并从表移除，用户可重新点「解锁」重试。
+   */
+  interface PrivilegedHelper {
+    /** pkexec 常驻子进程（sh 读 stdin 行 → 执行动作 → 回 ok/err 行） */
+    proc: ReturnType<typeof spawn>;
+    /** stdout 行缓冲（ok/err 确认行跨 chunk 拼接） */
+    buf: string;
+    /** 等待确认的写队列（FIFO，与 stdin 写入顺序一一对应） */
+    waiters: Array<(ok: boolean) => void>;
+  }
+
+  /**
+   * 拉起持久特权助手并等待 ready 握手（ready = pkexec 授权成功、sh
+   * 就绪；30s 超时）。失败（用户取消/超时/spawn 失败）杀进程并从
+   * registry 移除（key 定位，保证表中不留死助手）；调用侧可在下次触发
+   * 时重新拉起（再弹一次授权框）。script 为 sh -c 脚本体，name 为 $0，
+   * args 为 $1 起的位置参数。
+   */
+  async function launchPrivilegedHelper(
+    registry: Map<string, PrivilegedHelper>,
+    key: string,
+    script: string,
+    name: string,
+    args: string[],
+  ): Promise<PrivilegedHelper | null> {
+    const helper: PrivilegedHelper = {
+      proc: spawn('pkexec', ['sh', '-c', script, name, ...args], { stdio: ['pipe', 'pipe', 'pipe'] }),
+      buf: '',
+      waiters: [],
+    };
+    registry.set(key, helper);
+    const ready = new Promise<boolean>((resolve) => {
+      let settled = false;
+      const settle = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(ok);
+      };
+      helper.proc.stdout?.on('data', (chunk: Buffer) => {
+        helper.buf += chunk.toString();
+        let idx: number;
+        while ((idx = helper.buf.indexOf('\n')) >= 0) {
+          const line = helper.buf.slice(0, idx).trim();
+          helper.buf = helper.buf.slice(idx + 1);
+          if (!line) continue;
+          if (line === 'ready') { settle(true); continue; }
+          const w = helper.waiters.shift();
+          if (w) w(line === 'ok');
+        }
+      });
+      helper.proc.once('error', () => {
+        settle(false);
+        // spawn 失败只派发 error 不派发 exit：挂起写入同样按失败结算
+        while (helper.waiters.length > 0) helper.waiters.shift()?.(false);
+        if (registry.get(key) === helper) registry.delete(key);
+      });
+      helper.proc.once('exit', () => {
+        settle(false);
+        // 进程退出：全部挂起写入按失败结算（不悬挂渲染层）
+        while (helper.waiters.length > 0) helper.waiters.shift()?.(false);
+        if (registry.get(key) === helper) registry.delete(key);
+      });
+    });
+    const ok = await Promise.race([
+      ready,
+      new Promise<boolean>((resolve) => {
+        const timer = setTimeout(() => resolve(false), 30000);
+        timer.unref?.();
+      }),
+    ]);
+    if (!ok) {
+      try { helper.proc.kill(); } catch { /* 已退出 */ }
+      if (registry.get(key) === helper) registry.delete(key);
+      return null;
+    }
+    return helper;
+  }
+
+  /** 经助手写一行（stdin 行协议；等待 ok/err 确认行） */
+  function privilegedHelperWrite(helper: PrivilegedHelper, line: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      helper.waiters.push(resolve);
+      try {
+        helper.proc.stdin?.write(`${line}\n`);
+      } catch {
+        const idx = helper.waiters.indexOf(resolve);
+        if (idx >= 0) helper.waiters.splice(idx, 1);
+        resolve(false);
+      }
+    });
+  }
+
+  // ── 背光特权写助手 ──
+
+  /**
+   * 背光只读文件（root:root 644 的 intel_backlight 等）的持久特权写助手。
+   * 助手脚本只用 shell 内建（printf/read/test）——pkexec 环境无 PATH，
+   * 不依赖外部命令。安全：target 在 spawn 前已过 SYSFS_ID_RE + 前缀
+   * 双保险（无引号/空格/斜杠），值在主进程侧整数校验（0..max_brightness）。
+   * 动机与生命周期语义见 launchPrivilegedHelper 注释。
+   */
+  const backlightHelpers = new Map<string, PrivilegedHelper>();
+
+  /**
+   * 获取（或拉起）target 的写助手；授权失败/超时回 null。写入侧调用——
+   * 非 null 即已收到 ready 行（pkexec 授权成功、sh 就绪）。
+   */
+  async function ensureBacklightHelper(target: string): Promise<PrivilegedHelper | null> {
+    const existing = backlightHelpers.get(target);
+    if (existing) {
+      if (existing.proc.exitCode === null && existing.proc.signalCode === null) return existing;
+      backlightHelpers.delete(target);
+    }
+    return launchPrivilegedHelper(
+      backlightHelpers,
+      target,
+      'printf "ready\\n"; while IFS= read -r v; do printf "%s" "$v" > "$1" && printf "ok\\n" || printf "err\\n"; done',
+      'hoshineko-backlight',
+      [target],
+    );
+  }
+
+  // ── 进程 nice 特权助手 ──
+
+  /**
+   * 进程优先级（nice）持久特权助手——跨用户/root 进程 renice 需要
+   * CAP_SYS_NICE（直跑 EPERM，见 process-nice 的回落分支）。与背光同款
+   * 「一次 pkexec 授权、拖动零弹框」。助手脚本：stdin 行协议
+   * `nice pid\n` → `renice -n <nice> -p <pid>` → ok/err。
+   *
+   * renice 传**绝对路径**（pkexec 环境无 PATH，与 network-set 的 ip 同源
+   * 手法；ensure 时经 command -v 解析，缺失回 null = NO_TOOL 语义）。
+   * 安全：nice/pid 在主进程侧整数校验后才进 stdin；助手除 renice 无其他
+   * 能力。单例（key 固定 'nice'）：renice 不依赖目标，授权一次即可调整
+   * 任意进程——**「先解锁再拖」模型下所有进程滑条默认锁定，解锁按钮 =
+   * system:process-nice-auth 提前拉起助手（一次 pkexec）**；本会话内
+   * 任意方向调整（含减小 nice 提高优先级）零弹框。
+   */
+  const niceHelpers = new Map<string, PrivilegedHelper>();
+
+  /** renice 绝对路径解析（会话内缓存——renice 不会中途消失） */
+  let renicePathCache: string | null | undefined;
+  async function resolveRenicePath(): Promise<string | null> {
+    if (renicePathCache !== undefined) return renicePathCache;
+    renicePathCache = null;
+    try {
+      const { stdout } = await execFileAsync('sh', ['-c', 'command -v renice'], { timeout: 3000 });
+      renicePathCache = stdout.trim() || null;
+    } catch { /* renice 缺失 */ }
+    return renicePathCache;
+  }
+
+  /** 获取（或拉起）全局 nice 助手；授权失败/超时/工具缺失回 null */
+  async function ensureNiceHelper(): Promise<PrivilegedHelper | null> {
+    const existing = niceHelpers.get('nice');
+    if (existing) {
+      if (existing.proc.exitCode === null && existing.proc.signalCode === null) return existing;
+      niceHelpers.delete('nice');
+    }
+    const renicePath = await resolveRenicePath();
+    if (!renicePath) return null;
+    return launchPrivilegedHelper(
+      niceHelpers,
+      'nice',
+      'printf "ready\\n"; r="$1"; while IFS= read -r line; do set -- $line; "$r" -n "$1" -p "$2" >/dev/null 2>&1 && printf "ok\\n" || printf "err\\n"; done',
+      'hoshineko-nice',
+      [renicePath],
+    );
+  }
+
+  /**
+   * 提前授权进程优先级调整（前端「解锁」按钮）：直接拉起持久 nice 助手
+   * ——一次 pkexec 授权，**本会话内有效**（助手常驻到主进程退出，与
+   * polkit 5 分钟临时授权缓存无关：缓存只影响「重新 spawn pkexec」，
+   * 而助手只 spawn 一次、后续写走 stdin 行协议零弹框）。失败码：
+   * NO_TOOL（renice 缺失）/AUTH_FAILED（授权取消/超时/助手拉起失败）。
+   */
+  ipcMain.handle('system:process-nice-auth', async () => {
+    if (!(await resolveRenicePath())) return { ok: false, error: 'NO_TOOL' };
+    try {
+      const helper = await ensureNiceHelper();
+      return helper ? { ok: true } : { ok: false, error: 'AUTH_FAILED' };
+    } catch (e) {
+      return { ok: false, error: getExecError(e).message.slice(0, 200) || 'AUTH_FAILED' };
     }
   });
 
@@ -3332,8 +3622,8 @@ export function registerSystemHandlers(
    * 三层校验：类/键白名单 + instanceId 形态（SYSFS_ID_RE，无斜杠，天然
    * 防 ../ 逃逸）+ 值范围（0..max_brightness，写前读上限）。写前读旧值
    * 回传供「恢复原值」。直写 EACCES/EPERM（root:root 644 的
-   * intel_backlight 等）时 pkexec 回落（位置参数形式，无注入面；
-   * polkit 授权缓存数分钟，连续拖动不重复弹密码框）。
+   * intel_backlight 等）时经持久助手回落（一次 pkexec 授权，拖动不再
+   * 重复弹框，见 BacklightHelper 注释）。
    */
   ipcMain.handle('system:write-object', async (_event, classId: unknown, instanceId: unknown, key: unknown, value: unknown) => {
     if (classId !== 'backlight') return { ok: false, error: 'UNKNOWN_CLASS' };
@@ -3354,17 +3644,17 @@ export function registerSystemHandlers(
       return { ok: true, previous, escalated: false };
     } catch (e1) {
       const msg = String((e1 as NodeJS.ErrnoException)?.message ?? e1);
-      // EACCES/EPERM（root:root 644 的 intel_backlight 等）：pkexec 回落。
-      // 安全：instanceId 已过 SYSFS_ID_RE（无引号/空格/斜杠），value 已
-      // 整数校验——位置参数形式（$1/$2）双保险，无 shell 注入面。
+      // EACCES/EPERM（root:root 644 的 intel_backlight 等）：持久助手回落。
       if (!/EACCES|EPERM|permission denied/i.test(msg)) {
         return { ok: false, error: msg.slice(0, 200) };
       }
       try {
-        await execFileAsync('pkexec', ['sh', '-c', 'printf "%s" "$1" > "$2"', 'hoshineko-write-object', String(v), target], { timeout: 30000 });
-        return { ok: true, previous, escalated: true };
+        const helper = await ensureBacklightHelper(target);
+        if (!helper) return { ok: false, error: 'AUTH_FAILED' };
+        const wrote = await privilegedHelperWrite(helper, String(v));
+        return wrote ? { ok: true, previous, escalated: true } : { ok: false, error: 'WRITE_FAILED' };
       } catch (e2) {
-        return { ok: false, error: getExecError(e2) ?? String((e2 as Error)?.message ?? e2).slice(0, 200) };
+        return { ok: false, error: getExecError(e2).message.slice(0, 200) || 'AUTH_FAILED' };
       }
     }
   });
@@ -3466,14 +3756,14 @@ export function registerSystemHandlers(
       return { ok: true, escalated: false };
     } catch (e1) {
       const msg = String((e1 as { stderr?: string })?.stderr ?? '') + String((e1 as Error)?.message ?? '');
-      if (!/not permitted|permission denied/i.test(msg)) {
-        return { ok: false, error: getExecError(e1) ?? msg.slice(0, 200) };
+      if (!PERMISSION_DENIED_RE.test(msg)) {
+        return { ok: false, error: getExecError(e1).message.slice(0, 200) || msg.slice(0, 200) };
       }
       try {
         await execFileAsync('pkexec', [ipPath, ...args], { timeout: 30000 });
         return { ok: true, escalated: true };
       } catch (e2) {
-        return { ok: false, error: getExecError(e2) ?? String((e2 as Error)?.message ?? e2).slice(0, 200) };
+        return { ok: false, error: getExecError(e2).message.slice(0, 200) || 'AUTH_FAILED' };
       }
     }
   });

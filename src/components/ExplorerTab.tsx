@@ -160,8 +160,10 @@ interface ExplorerTabProps {
     onEjectDevice?: (devicePath: string) => Promise<unknown>;
     /** 终止进程（Object Panel 进程类，App useProcessActions；L2 确认） */
     onTerminateProcess?: (pid: number, name: string, signal: 'TERM' | 'KILL') => void;
-    /** 调整进程 nice（Object Panel 进程类，App useProcessActions；L1） */
-    onNiceProcess?: (pid: number, name: string, nice: number) => void;
+    /** 调整进程 nice（Object Panel 进程类，App useProcessActions；L1；
+     *  onDone 回报结果——跨用户进程「解锁」写入后经它置解锁态） */
+    onNiceProcess?: (pid: number, name: string, nice: number, onDone?: (ok: boolean) => void) => void;
+    onUnlockNice?: (onDone?: (ok: boolean) => void) => void;
     /** 网络接口 up/down（Object Panel 网络类，App useProcessActions；down L2 确认） */
     onNetworkToggle?: (iface: string, up: boolean) => void;
     marqueeEnabled: boolean;
@@ -209,7 +211,7 @@ interface ExplorerTabProps {
     terminalOpen?: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, searchLimit, searchTimeout, searchObjects, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, sortControlsAutoCollapse, onSortControlsCollapsedChange, sparklineWindowSeconds, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, onUnmountDevice, onEjectDevice, onTerminateProcess, onNiceProcess, onNetworkToggle, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, onDashboardPinObject, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, searchLimit, searchTimeout, searchObjects, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, sortControlsAutoCollapse, onSortControlsCollapsedChange, sparklineWindowSeconds, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, onUnmountDevice, onEjectDevice, onTerminateProcess, onNiceProcess, onUnlockNice, onNetworkToggle, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, onDashboardPinObject, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -2236,6 +2238,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           onEjectDevice={onEjectDevice}
           onTerminateProcess={onTerminateProcess}
           onNiceProcess={onNiceProcess}
+          onUnlockNice={onUnlockNice}
           onNetworkToggle={onNetworkToggle}
         />
       ) : (

@@ -2,10 +2,12 @@
  * e2e 78：Object Panel 第二阶段——进程类。
  * 覆盖：
  * - 真实 /proc（形态断言，不硬编码进程数）：进程类卡片计数、实例行、
- *   自身进程（测试主进程 pid 必在列表中）徽标 + 无终止按钮 + nice 滑条禁用；
+ *   自身进程（测试主进程 pid 必在列表中）徽标 + 无终止按钮 + nice 滑条
+ *   默认锁定（先解锁再拖）；
  * - 假数据（removeHandler 模式）：指标列渲染、排序条（按 CPU 翻转行序）、
  *   实例页读数、终止/强制结束走 App 级 ConfirmDialog（取消不调用、确认
- *   记录 TERM/KILL）、nice 滑条写记录 + 恢复按钮回写初值。
+ *   记录 TERM/KILL）、nice 滑条锁定→解锁（假 process-nice-auth）→拖动
+ *   记录 + 恢复按钮回写初值。
  */
 const h = require('./harness.cjs');
 const { ipcMain } = require('electron');
@@ -66,7 +68,7 @@ const { ipcMain } = require('electron');
     h.assert.ok(allMatch.value === true, '筛选后所有可见行都应匹配关键词');
 
     // 进自身实例页（筛选保持——虚拟化后清空筛选该行会滚出视口）：
-    // 无终止/强制结束按钮、nice 滑条禁用、「本应用」标识
+    // 无终止/强制结束按钮、nice 滑条默认锁定 + 解锁按钮、「本应用」标识
     await h.js(win, `(() => {
       const row = document.querySelector('.object-row[data-id="${selfPid}"]');
       const btn = row ? row.querySelector('.object-row-details') : null;
@@ -80,10 +82,11 @@ const { ipcMain } = require('electron');
       const panel = document.querySelector('.object-panel');
       const texts = panel ? panel.textContent ?? '' : '';
       const slider = document.querySelector('.object-nice-slider');
-      return { hasTerm: /终止|Terminate|強制|Force kill|强制结束/.test(texts), sliderDisabled: slider ? slider.disabled : null, badge: /本应用|本應用|This app|このアプリ/.test(texts) };
+      return { hasTerm: /终止|Terminate|強制|Force kill|强制结束/.test(texts), sliderDisabled: slider ? slider.disabled : null, hasUnlock: /解锁|Unlock|ロック解除|잠금 해제/.test(texts), badge: /本应用|本應用|This app|このアプリ/.test(texts) };
     })()`);
     h.assert.ok(selfPage.value.hasTerm === false, `自身进程不应有终止按钮：${selfPage.value.hasTerm}`);
-    h.assert.ok(selfPage.value.sliderDisabled === true, `自身进程 nice 滑条应禁用：${selfPage.value.sliderDisabled}`);
+    h.assert.ok(selfPage.value.sliderDisabled === true, `自身进程 nice 滑条应默认锁定（先解锁再拖）：${selfPage.value.sliderDisabled}`);
+    h.assert.ok(selfPage.value.hasUnlock === true, `自身进程也应有解锁按钮：${selfPage.value.hasUnlock}`);
     h.assert.ok(selfPage.value.badge === true, '自身进程页应有「本应用」标识');
   });
 
@@ -108,6 +111,7 @@ const { ipcMain } = require('electron');
     ipcMain.removeHandler('system:read-object');
     ipcMain.removeHandler('system:process-signal');
     ipcMain.removeHandler('system:process-nice');
+    ipcMain.removeHandler('system:process-nice-auth');
     ipcMain.handle('system:list-objects', async () => [
       { id: 'storage', icon: 'hard_drive', instances: [] },
       { id: 'processor', icon: 'memory', instances: [] },
@@ -117,6 +121,7 @@ const { ipcMain } = require('electron');
     ipcMain.handle('system:read-object', async (_e, _c, instanceId) => (READINGS[instanceId] ? makeReading(instanceId) : null));
     ipcMain.handle('system:process-signal', async (_e, pid, signal) => { signalCalls.push({ pid, signal }); return { ok: true }; });
     ipcMain.handle('system:process-nice', async (_e, pid, nice) => { niceCalls.push({ pid, nice }); niceState[String(pid)] = nice; return { ok: true }; });
+    ipcMain.handle('system:process-nice-auth', async () => ({ ok: true }));
 
     const dir = h.tempDir();
     h.makeFileTree(dir, { 'a.txt': 'x' });
@@ -243,7 +248,27 @@ const { ipcMain } = require('electron');
     await h.sleep(300);
     h.assert.ok(signalCalls.length === 2 && signalCalls[1].signal === 'KILL', `应记录 KILL：${JSON.stringify(signalCalls)}`);
 
-    // nice 滑条：5 → 记录；恢复按钮出现 → 点击回写 0
+    // nice 滑条：默认锁定（「先解锁再拖」）→ 解锁（假 process-nice-auth
+    // ok，不触真实 pkexec）→ 拖 5 → 记录；恢复按钮出现 → 点击回写 0
+    const lockedNice = await h.js(win, `(() => {
+      const s = document.querySelector('.object-nice-slider');
+      const box = document.querySelector('.object-nice-row');
+      const text = box ? box.textContent ?? '' : '';
+      return { disabled: s ? s.disabled : null, hasUnlock: /解锁|Unlock|ロック解除|잠금 해제/.test(text) };
+    })()`);
+    h.assert.ok(lockedNice.value.disabled === true, 'nice 滑条应默认锁定');
+    h.assert.ok(lockedNice.value.hasUnlock === true, '应有「解锁」按钮');
+    await h.js(win, `(() => {
+      const btns = [...document.querySelectorAll('.object-nice-row > *')];
+      const b = btns.find((x) => /解锁|Unlock|ロック解除|잠금 해제/.test(x.textContent ?? ''));
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`, true);
+    await h.waitFor(win, `(() => {
+      const s = document.querySelector('.object-nice-slider');
+      return !!s && s.disabled === false;
+    })()`, { timeout: 8000 });
     await h.js(win, `(() => {
       const s = document.querySelector('.object-nice-slider');
       if (!s) return false;

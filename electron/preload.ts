@@ -252,6 +252,8 @@ contextBridge.exposeInMainWorld('electron', {
   processSignal: (pid: number, signal: 'TERM' | 'KILL') => ipcRenderer.invoke('system:process-signal', pid, signal),
   /** Object Panel：调整进程 nice（-20..19，renice） */
   processNice: (pid: number, nice: number) => ipcRenderer.invoke('system:process-nice', pid, nice),
+  /** Object Panel：提前授权进程优先级（「解锁」按钮——一次 pkexec，本会话有效） */
+  processNiceAuth: () => ipcRenderer.invoke('system:process-nice-auth'),
   /** Object Panel：读取块设备 SMART 健康（smartctl 一次性静态信息） */
   smartInfo: (devicePath: string) => ipcRenderer.invoke('system:smart-info', devicePath),
   /** Object Panel：白名单写（v2 仅 backlight/brightness）；回传旧值供「恢复原值」 */

@@ -1,5 +1,60 @@
 # 更新日志
 
+## v0.11.49-dev — Object Panel 进程优先级修复轮（e2e 83 更新 + 78/81/82 回归）
+
+- **减小 nice 提权报「权限不够」修复**：renice 对同用户进程只允许
+  **增大** nice（降低优先级）——减小 nice（提高优先级，含「恢复原值」）
+  需 CAP_SYS_NICE，直跑 EPERM；而 EPERM 的 stderr 是 glibc strerror
+  译文——zh_CN glibc ≥2.41 译「权限不够」（旧译「不允许的操作」），
+  此前判定正则不覆盖，跨用户持久助手回落不触发、raw 报错直接弹给
+  用户。修复：`PERMISSION_DENIED_RE` 跨 locale 判定（12 语言 glibc
+  译文 + 英文原样，`system:process-nice` 与 `system:network-set` 共用）
+- **所有进程优先级滑条默认锁定、先解锁再拖**：拖动方向不可预判
+  （增大 nice 无需授权、减小 nice 需授权），改为统一锁定 + 「解锁」
+  按钮（与背光同款模型）——解锁经新 IPC `system:process-nice-auth`
+  提前拉起持久特权助手：**一次 pkexec 授权、本会话有效**（助手常驻
+  到应用退出，与 polkit 5 分钟临时授权缓存无关），解锁后任意方向
+  调整零弹框；解锁状态在对象面板会话内跨进程复用（授权一次覆盖
+  任意进程）。**提示行独立第二行**：锁定 = 授权与有效期说明
+  （`objects.process_nice_lock_hint`），解锁后 = 常驻「已解锁」状态
+  （`objects.process_nice_unlocked`，与解锁 toast 同文案）；背光同步
+  同款（锁定 `objects.backlight_lock_hint` / 解锁后常驻
+  `objects.backlight_unlocked` + 解锁成功 toast；原生可写设备无锁定
+  概念不显示提示行）——此前「自身进程恒灰无解锁」与「本用户进程
+  免解锁直调」两个行为一并统一
+- **调整成功反馈**：nice 调整此前成功静默（「首次修改不报错但不知
+  是否生效」）——成功 toast 报新值（`objects.process_nice_ok` × 12）
+  + 滑条乐观回写（受控滑条不再等 1s 轮询回跳再跳回）
+- e2e 78 更新（自身进程「锁定 + 解锁按钮」断言；78b 假
+  process-nice-auth 解锁→拖动）+ e2e 83 假 renice 改中文 EPERM
+  逼真复刻 + 解锁经 auth IPC（授权不写载荷）+ 解锁后常驻「已解锁」
+  提示断言（nice/背光双覆盖）+ 会话级解锁复用断言；81 背光锁定态
+  提示断言改按类定位（提示移出滑条行）；回归 78/79/81/82/83 全绿
+
+## v0.11.49-dev — Object Panel 问题修复轮
+
+- **进程优先级报错 `[object Object]` 修复**：`getExecError` 返回
+  `{stderr, message}` 对象，process-nice / write-object / network-set 把
+  整包对象塞进 `error` 字段，toast 拼成 `[object Object]` 吞掉真实原因——
+  一律取 `.message`；process-nice 失败码结构化（renice 缺失 `NO_TOOL` /
+  跨用户 `EPERM`），前端按码给出清晰文案（新增
+  `objects.process_nice_eperm`/`objects.process_nice_no_tool`）
+- **走势图加高**：主图 96 → **144px**（1.5 倍）、子图 48 → **96px**
+  （2 倍）
+- **ucsi 等电源芯片 hwmon「无法加载对象」修复**：这类传感器（如
+  `ucsi_source_psy_USBC000:002`）只有电流/电压输入、没有温度/风扇——后端
+  补读 `curr/in` 输入，前端新增电流/电压行 + 行下走势图；四类输入全空
+  时显示「无可读输入」解释文案（不再误报「无法加载对象」）
+- **背光解锁后每松手弹 pkexec + 写入失败修复**：polkit 授权缓存按
+  「动作 + 命令行细节」键控，命令行带不同亮度值 = 每次都是新授权请求。
+  改为**持久特权助手**：解锁时一次 pkexec 拉起常驻 sh，后续亮度经
+  stdin 行协议写入（`值` → `ok`/`err` 确认）——一次授权、拖动零弹框、
+  写入必达；授权取消/超时干净失败（新增 `objects.write_auth_failed` 文案）
+- **WiFi 网络速率恒「—」修复**：多数无线驱动 sysfs 不暴露 `speed` 文件
+  ——回落 `iw dev <iface> link` 解析协商速率（10s 缓存）
+- e2e 81 更新（假 pkexec 持久助手契约、图表高度断言、ucsi hwmon 真实读通）
+  + 76/77/78/79/80/82 回归全绿
+
 ## v0.11.49-dev — Object Panel 第二阶段 + 第三阶段 + /dev 特殊分类
 
 - **Object Panel（objects://）第三阶段（e2e 82）**：设计见
@@ -28,7 +83,7 @@
     **网络**：下行/上行速率、地址、状态 + 断开/连接开关（down 强警告确认、
     EPERM 自动 pkexec、lo 禁止）；**电源**：电量/状态/能量/循环次数 +
     类型行 + 空信息提示
-  - **走势图**：主图 96px/子图 48px、圆角方形边框、位于文字行正下方，
+  - **走势图**：主图 96px/子图 48px（后增为 144px/96px，见上）、圆角方形边框、位于文字行正下方，
     采样并入轮询（暂停即停采）
   - **SMART**：smartctl 一次性静态信息（检测到才显示、未检测到提示安装）；
   - **健壮性**：全部 sysfs/proc 读超时（读数 2s/枚举 1s）、实例 id 校验放宽

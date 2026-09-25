@@ -36,8 +36,12 @@ interface ObjectPanelProps {
   onEjectDevice?: (devicePath: string) => Promise<unknown>;
   /** 终止进程（TERM/KILL；L2 确认由 App 侧 useProcessActions 承担） */
   onTerminateProcess?: (pid: number, name: string, signal: 'TERM' | 'KILL') => void;
-  /** 调整进程 nice（L1，无确认；name 供 toast 文案） */
-  onNiceProcess?: (pid: number, name: string, nice: number) => void;
+  /** 调整进程 nice（L1，无确认；name 供 toast 文案；
+   *  onDone 回报结果——成功后经它乐观回写读数） */
+  onNiceProcess?: (pid: number, name: string, nice: number, onDone?: (ok: boolean) => void) => void;
+  /** 提前授权进程优先级（「解锁」按钮——一次 pkexec，本会话有效；
+   *  onDone 回报结果，成功后经它置 processUnlocked） */
+  onUnlockNice?: (onDone?: (ok: boolean) => void) => void;
   /** 网络接口 up/down（down 的 L2 确认由 App 侧承担） */
   onNetworkToggle?: (iface: string, up: boolean) => void;
 }
@@ -52,6 +56,15 @@ const PROCESS_CLASS_POLL_MS = 3000;
  *  + 10px 上下内边距 ≈ 61px，取 62 留 1px 余量；CSS 同步见
  *  .object-list-virtual .object-row */
 const PROCESS_ROW_HEIGHT = 62;
+
+/**
+ * 亮度紧急恢复注册表（模块级：instanceId → 入口初始亮度）。
+ * 首次把亮度改离入口值即登记（初始值优先、幂等）；Ctrl+Shift+Home
+ * 一键把全部已改动实例写回初始值（锁定实例走 write-object 的 pkexec
+ * 助手回落），成功后清项。防误拖到 0 黑屏后无法用图形界面恢复。
+ * 模块级而非 state：面板卸载/切换实例后注册仍有效。
+ */
+const backlightUndoRegistry = new Map<string, number>();
 
 /**
  * 对象投影拖拽发起（实例行，阴影投影）：dataTransfer 只带对象 MIME
@@ -216,6 +229,24 @@ function dirOf(p: string): string {
   return i > 0 ? p.slice(0, i) : p;
 }
 
+/** 格式化电流（mA → A/mA 自适应） */
+function formatCurrent(mA: number): string {
+  if (!Number.isFinite(mA)) return '—';
+  return Math.abs(mA) >= 1000 ? `${(mA / 1000).toFixed(2)} A` : `${Math.round(mA)} mA`;
+}
+
+/** 格式化电压（mV → V/mV 自适应） */
+function formatVoltage(mV: number): string {
+  if (!Number.isFinite(mV)) return '—';
+  return Math.abs(mV) >= 1000 ? `${(mV / 1000).toFixed(2)} V` : `${Math.round(mV)} mV`;
+}
+
+/** 走势图动态上限（电流/电压无固定 0–100 语义：取数据最大值上浮 15%，空回 1 防除零） */
+function dynamicMax(points: number[]): number {
+  const m = Math.max(0, ...points.filter(Number.isFinite));
+  return m > 0 ? m * 1.15 : 1;
+}
+
 /** 进程状态字母 → i18n 键（未知字母回落原样） */
 function processStateKey(state: string): string {
   switch (state) {
@@ -288,6 +319,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   onEjectDevice,
   onTerminateProcess,
   onNiceProcess,
+  onUnlockNice,
   onNetworkToggle,
 }) => {
   /**
@@ -324,6 +356,9 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   const [processInitialNice, setProcessInitialNice] = useState<number | null>(null);
   /** 背光会话解锁（「先解锁再拖」流程 B；路径切换复位） */
   const [backlightUnlocked, setBacklightUnlocked] = useState(false);
+  /** nice 会话解锁（「先解锁再拖」——所有进程滑条默认锁定；助手为全局
+   *  单例，授权一次覆盖任意进程，故**路径切换不复位**，仅面板卸载复位） */
+  const [processUnlocked, setProcessUnlocked] = useState(false);
   /** 实例页读数连续失败计数（≥3 显示「无法读取」，不再永久「正在读取…」；
    *  状态而非 ref——渲染期复位块可同步清零，避免 render 期读写 ref） */
   const [readFailCount, setReadFailCount] = useState(0);
@@ -442,6 +477,8 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
           push('proc', r.cpuPct);
         } else if (r.kind === 'thermal') {
           for (const t of r.temps) push(`temp:${t.id}`, t.valueC);
+          for (const c of r.currs ?? []) push(`curr:${c.id}`, c.mA);
+          for (const v of r.voltages ?? []) push(`volt:${v.id}`, v.mV);
         } else if (r.kind === 'gpu' && r.utilizationPct !== null) {
           push('gpu', r.utilizationPct);
         }
@@ -512,6 +549,44 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       }
     };
   }, [parsed, currentInstance]);
+
+  /**
+   * Ctrl+Shift+Home 亮度紧急恢复：把注册表内全部已改动实例写回入口
+   * 初始值（黑屏自救——亮度误拖到 0 后图形界面无法操作，唯一入口是
+   * 键盘）。捕获阶段监听：终端聚焦时容器 stopPropagation 只挡冒泡、
+   * 捕获仍可达；不做输入框守卫（恢复优先）。选择 Ctrl+Shift+Home：
+   * 应用内 Ctrl+Shift 仅有 Tab（切标签）与终端焦点域 C/V/A/K/方向键，
+   * Home 无冲突；系统级 GNOME/KDE 无该全局组合；Home 助记「回家」。
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || !e.shiftKey || e.altKey || e.metaKey) return;
+      if (e.key !== 'Home') return;
+      if (backlightUndoRegistry.size === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void (async () => {
+        const entries = [...backlightUndoRegistry.entries()];
+        let okCount = 0;
+        for (const [id, initial] of entries) {
+          const res = await window.electron.writeObject('backlight', id, 'brightness', initial);
+          if (!res.ok) continue;
+          okCount++;
+          backlightUndoRegistry.delete(id);
+          // 当前打开实例恰为恢复对象时乐观回写读数
+          if (id === parsed?.instanceId) {
+            setReading((prev) => (prev?.kind === 'backlight' ? { ...prev, brightness: initial } : prev));
+          }
+        }
+        showToast(
+          okCount > 0 ? t('objects.brightness_restored') : t('objects.brightness_restore_failed'),
+          okCount > 0 ? 'success' : 'error',
+        );
+      })();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [parsed, setReading]);
 
   /** 双击存储对象：已挂载进目录（决策 B），未挂载回退实例页 */
   const handleInstanceDoubleClick = useCallback(async (inst: ObjectInstance) => {
@@ -620,29 +695,51 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     }
     return (
       <>
-        {/* nice 调整：L1 语义（可逆低危，无确认 + 恢复按钮）；自身/跨用户禁用 */}
-        <div className="object-nice-row">
-          <span className="object-reading-label">{t('objects.process_nice')}</span>
-          <Slider
-            className="object-nice-slider"
-            value={r.nice}
-            min={-20}
-            max={19}
-            step={1}
-            labeled
-            disabled={r.isSelf || !r.ownUser}
-            title={r.isSelf ? t('objects.process_self') : r.ownUser ? undefined : t('objects.process_user')}
-            onChange={(e) => {
-              const v = Number((e.target as HTMLInputElement).value);
-              if (Number.isFinite(v) && v !== r.nice) onNiceProcess?.(r.pid, r.name, v);
-            }}
-          />
-          <span className="object-reading-value">{r.nice}</span>
-          {processInitialNice !== null && processInitialNice !== r.nice && (
-            <Button variant="text" onClick={() => onNiceProcess?.(r.pid, r.name, processInitialNice)}>
-              {t('objects.restore_value')}
-            </Button>
-          )}
+        {/* nice 调整：L1 语义（可逆低危，无确认 + 恢复按钮）。普通用户
+            减小 nice 提高优先级需 CAP_SYS_NICE，且方向不可预判（用户拖
+            动方向不定）——所有进程滑条默认锁定、「先解锁再拖」（与背光
+            同款，且解锁经一次 pkexec 授权**本会话有效**、任意方向零弹框：
+            助手常驻到应用退出，与 polkit 5 分钟临时授权缓存无关）。
+            解锁按钮 = onUnlockNice（processNiceAuth 拉起助手），onDone
+            置 processUnlocked（面板会话级，路径切换不复位——助手全局
+            单例）；失败 toast 已在 hook 内。写入成功经 onDone 乐观回写
+            读数——受控滑条不再等 1s 轮询回跳，且与成功 toast 共同确认
+            「已生效」。提示行独立在第二行：锁定 = 授权与有效期说明、
+            已解锁 = 常驻「已解锁」状态（与背光同款） */}
+        <div className="object-nice-block">
+          <div className="object-nice-row">
+            <span className="object-reading-label">{t('objects.process_nice')}</span>
+            <Slider
+              className="object-nice-slider"
+              value={r.nice}
+              min={-20}
+              max={19}
+              step={1}
+              labeled
+              disabled={!processUnlocked}
+              title={processUnlocked ? undefined : t('objects.need_permission')}
+              onChange={(e) => {
+                const v = Number((e.target as HTMLInputElement).value);
+                if (Number.isFinite(v) && v !== r.nice) {
+                  onNiceProcess?.(r.pid, r.name, v, () => setReading((prev) => (prev?.kind === 'process' ? { ...prev, nice: v } : prev)));
+                }
+              }}
+            />
+            <span className="object-reading-value">{r.nice}</span>
+            {!processUnlocked && (
+              <Button variant="tonal" onClick={() => onUnlockNice?.((ok) => { if (ok) setProcessUnlocked(true); })}>
+                {t('objects.unlock')}
+              </Button>
+            )}
+            {processUnlocked && processInitialNice !== null && processInitialNice !== r.nice && (
+              <Button variant="text" onClick={() => onNiceProcess?.(r.pid, r.name, processInitialNice, () => setReading((prev) => (prev?.kind === 'process' ? { ...prev, nice: processInitialNice } : prev)))}>
+                {t('objects.restore_value')}
+              </Button>
+            )}
+          </div>
+          <div className="object-hint">
+            {processUnlocked ? t('objects.process_nice_unlocked') : t('objects.process_nice_lock_hint')}
+          </div>
         </div>
         {actions.length > 0 ? <div className="object-actions">{actions}</div> : null}
       </>
@@ -654,47 +751,66 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     const r = reading && reading.kind === 'backlight' ? reading : null;
     if (!r || r.maxBrightness <= 0) return null;
     const unlocked = r.writable || backlightUnlocked;
-    /** 写入（ok 乐观更新 + onOk 回调；失败复位解锁态 + toast——授权缓存过期等） */
+    /** 写入（ok 乐观更新 + onOk 回调；失败复位解锁态 + toast——授权取消/助手退出等）；
+     *  成功时维护紧急恢复注册表：改离入口值登记、写回入口值清项（首次登记
+     *  优先保留会话内最早快照） */
     const write = (v: number, optimistic: boolean, onOk?: () => void) => {
       void window.electron.writeObject('backlight', inst.id, 'brightness', v).then((res) => {
         if (res.ok) {
           if (optimistic) setReading({ ...r, brightness: v });
+          if (backlightInitial !== null) {
+            if (v !== backlightInitial) {
+              if (!backlightUndoRegistry.has(inst.id)) backlightUndoRegistry.set(inst.id, backlightInitial);
+            } else {
+              backlightUndoRegistry.delete(inst.id);
+            }
+          }
           onOk?.();
         } else {
           setBacklightUnlocked(false);
-          showToast(t('objects.write_failed', res.error ?? ''), 'error');
+          const errMsg = res.error === 'AUTH_FAILED' ? t('objects.write_auth_failed') : t('objects.write_failed', res.error ?? '');
+          showToast(errMsg, 'error');
         }
       });
     };
     return (
-      <div className="object-actions object-actions--slider">
-        <Slider
-          className="object-brightness-slider"
-          value={r.brightness}
-          min={0}
-          max={r.maxBrightness}
-          step={1}
-          labeled
-          disabled={!unlocked}
-          title={unlocked ? undefined : t('objects.need_permission')}
-          onChange={(e) => {
-            const v = Number((e.target as HTMLInputElement).value);
-            if (!Number.isFinite(v) || v === r.brightness) return;
-            write(v, true);
-          }}
-        />
-        {!unlocked && (
-          <>
-            <Button variant="tonal" onClick={() => write(r.brightness, false, () => setBacklightUnlocked(true))}>
+      <div className="object-actions-block object-actions-block--slider">
+        <div className="object-actions object-actions--slider">
+          <Slider
+            className="object-brightness-slider"
+            value={r.brightness}
+            min={0}
+            max={r.maxBrightness}
+            step={1}
+            labeled
+            disabled={!unlocked}
+            title={unlocked ? undefined : t('objects.need_permission')}
+            onChange={(e) => {
+              const v = Number((e.target as HTMLInputElement).value);
+              if (!Number.isFinite(v) || v === r.brightness) return;
+              write(v, true);
+            }}
+          />
+          {!unlocked && (
+            <Button variant="tonal" onClick={() => write(r.brightness, false, () => {
+              setBacklightUnlocked(true);
+              showToast(t('objects.backlight_unlocked'), 'success');
+            })}>
               {t('objects.unlock')}
             </Button>
-            <span className="object-backlight-hint">{t('objects.need_permission')}</span>
-          </>
-        )}
-        {unlocked && backlightInitial !== null && backlightInitial !== r.brightness && (
-          <Button variant="text" onClick={() => write(backlightInitial, true)}>
-            {t('objects.restore_value')}
-          </Button>
+          )}
+          {unlocked && backlightInitial !== null && backlightInitial !== r.brightness && (
+            <Button variant="text" onClick={() => write(backlightInitial, true)}>
+              {t('objects.restore_value')}
+            </Button>
+          )}
+        </div>
+        {/* 提示独立第二行（与进程 nice 同款）：只读设备锁定 = 授权与有效期
+            说明、解锁后 = 常驻「已解锁」状态；原生可写设备无锁定概念不提示 */}
+        {!r.writable && (
+          <div className="object-hint">
+            {unlocked ? t('objects.backlight_unlocked') : t('objects.backlight_lock_hint')}
+          </div>
         )}
       </div>
     );
@@ -909,8 +1025,26 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
               <span className="object-reading-value">{fan.rpm} RPM</span>
             </div>
           ))}
-          {reading.temps.length === 0 && reading.fans.length === 0 && (
-            <div className="object-load-failed">{t('objects.load_failed')}</div>
+          {reading.currs?.map((c) => (
+            <div className="object-series" key={`c${c.id}`}>
+              <div className="object-reading-row">
+                <span className="object-reading-label">{c.label ?? `${t('objects.thermal_current')} ${c.id}`}</span>
+                <span className="object-reading-value">{formatCurrent(c.mA)}</span>
+              </div>
+              <Sparkline className="sparkline--mini" points={history[`curr:${c.id}`] ?? []} max={dynamicMax(history[`curr:${c.id}`] ?? [])} />
+            </div>
+          ))}
+          {reading.voltages?.map((v) => (
+            <div className="object-series" key={`v${v.id}`}>
+              <div className="object-reading-row">
+                <span className="object-reading-label">{v.label ?? `${t('objects.thermal_voltage')} ${v.id}`}</span>
+                <span className="object-reading-value">{formatVoltage(v.mV)}</span>
+              </div>
+              <Sparkline className="sparkline--mini" points={history[`volt:${v.id}`] ?? []} max={dynamicMax(history[`volt:${v.id}`] ?? [])} />
+            </div>
+          ))}
+          {reading.temps.length === 0 && reading.fans.length === 0 && (reading.currs?.length ?? 0) === 0 && (reading.voltages?.length ?? 0) === 0 && (
+            <div className="object-reading-sub">{t('objects.thermal_no_inputs')}</div>
           )}
         </div>
       );
