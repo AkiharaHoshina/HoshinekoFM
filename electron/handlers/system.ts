@@ -2035,7 +2035,7 @@ export function registerSystemHandlers(
 
   /** 对象搜索命中（名称/副标题匹配关键词） */
   interface ObjectSearchHit {
-    className: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power';
+    className: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power' | 'gpu';
     instanceId: string;
     name: string;
     icon: string;
@@ -2377,7 +2377,7 @@ export function registerSystemHandlers(
     /** 副标题（模型/挂载点/cmdline 截断等；可为 null） */
     subtitle: string | null;
     /** 实例种类（决定双击/详情页行为） */
-    kind: 'disk' | 'partition' | 'mount' | 'cpu' | 'memory' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power';
+    kind: 'disk' | 'partition' | 'mount' | 'cpu' | 'memory' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power' | 'gpu';
     /** Material Symbols 图标名 */
     icon: string;
     /** 进程类列表指标（枚举时一并算出，其他类不传）：
@@ -2390,7 +2390,7 @@ export function registerSystemHandlers(
 
   /** OP 类信息（渲染层按 id 翻译显示名） */
   interface ObjectClassInfo {
-    id: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power';
+    id: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power' | 'gpu';
     icon: string;
     instances: ObjectInstance[];
   }
@@ -2404,7 +2404,8 @@ export function registerSystemHandlers(
     | { kind: 'thermal'; name: string; temps: { id: string; label: string | null; valueC: number }[]; fans: { id: string; label: string | null; rpm: number }[] }
     | { kind: 'backlight'; brightness: number; maxBrightness: number; actualBrightness: number; writable: boolean }
     | { kind: 'network'; operstate: string; speedMbps: number | null; addresses: string[]; rxBytesPerSec: number; txBytesPerSec: number; isLoopback: boolean }
-    | { kind: 'power'; capacity: number | null; status: string; energyNow: number | null; energyFull: number | null; cycleCount: number | null; type: string };
+    | { kind: 'power'; capacity: number | null; status: string; energyNow: number | null; energyFull: number | null; cycleCount: number | null; type: string }
+    | { kind: 'gpu'; vendor: 'nvidia' | 'amd' | 'intel'; utilizationPct: number | null; memUsedBytes: number | null; memTotalBytes: number | null; tempC: number | null };
 
   /** CPU 占用百分比缓存：/proc/stat 是单调计数，需与上次采样做差 */
   let lastCpuSample: { total: number; idle: number; perCore: Map<string, { total: number; idle: number }> } | null = null;
@@ -2793,6 +2794,147 @@ export function registerSystemHandlers(
     return instances;
   }
 
+  // ── GPU 类 ──
+
+  /** GPU vendor 工具名（探测顺序 = 优先级；首个可用者胜出） */
+  const GPU_TOOLS: Array<{ vendor: 'nvidia' | 'amd' | 'intel'; tool: string }> = [
+    { vendor: 'nvidia', tool: 'nvidia-smi' },
+    { vendor: 'amd', tool: 'rocm-smi' },
+    { vendor: 'intel', tool: 'intel_gpu_top' },
+  ];
+
+  /**
+   * GPU 工具路径解析：`HOSHINEKO_E2E_GPU_TOOLS` 指向沙箱目录时用
+   * `<dir>/<tool>`（e2e 假工具，PATH 影子化同款手法）；否则裸工具名
+   * 走 PATH。execFile 无 shell，无注入面。
+   */
+  function gpuToolPath(tool: string): string {
+    const dir = process.env.HOSHINEKO_E2E_GPU_TOOLS;
+    return dir ? path.join(dir, tool) : tool;
+  }
+
+  /** 探测首个可用的 GPU vendor 工具（--version 快速失败即无） */
+  async function detectGpuTool(): Promise<{ vendor: 'nvidia' | 'amd' | 'intel'; tool: string } | null> {
+    for (const { vendor, tool } of GPU_TOOLS) {
+      try {
+        await execFileAsync(gpuToolPath(tool), ['--version'], { timeout: 3000 });
+        return { vendor, tool };
+      } catch { /* 下一个 */ }
+    }
+    return null;
+  }
+
+  /**
+   * 枚举 GPU 类对象（vendor 工具驱动；检测到工具才显示——SMART 同款
+   * 「检测不到不显示空卡」哲学，根页空类隐藏天然兜底）。解析失败/
+   * 工具挂起（execFile timeout 杀进程）回空数组，不崩。
+   */
+  async function listGpuObjects(): Promise<ObjectInstance[]> {
+    try {
+      const det = await detectGpuTool();
+      if (!det) return [];
+      if (det.vendor === 'nvidia') {
+        const { stdout } = await execFileAsync(
+          gpuToolPath(det.tool),
+          ['--query-gpu=index,name', '--format=csv,noheader,nounits'],
+          { timeout: 5000, maxBuffer: 1024 * 1024 },
+        );
+        const instances: ObjectInstance[] = [];
+        for (const line of stdout.split('\n')) {
+          const m = /^\s*(\d+)\s*,\s*(.+?)\s*$/.exec(line.trim());
+          if (!m) continue;
+          instances.push({ id: `nvidia-${m[1]}`, name: m[2].trim(), subtitle: 'NVIDIA', kind: 'gpu', icon: 'developer_board' });
+        }
+        return instances;
+      }
+      if (det.vendor === 'amd') {
+        const { stdout } = await execFileAsync(gpuToolPath(det.tool), ['--showid'], { timeout: 5000, maxBuffer: 1024 * 1024 });
+        const instances: ObjectInstance[] = [];
+        for (const line of stdout.split('\n')) {
+          const m = /GPU\[(\d+)\]/i.exec(line);
+          if (!m) continue;
+          instances.push({ id: `amd-${m[1]}`, name: `AMD GPU ${m[1]}`, subtitle: 'AMD', kind: 'gpu', icon: 'developer_board' });
+        }
+        return instances;
+      }
+      // intel：intel_gpu_top 无可解析的一次性枚举输出——检测到工具即单实例
+      return [{ id: 'intel-0', name: 'Intel GPU', subtitle: 'Intel', kind: 'gpu', icon: 'developer_board' }];
+    } catch {
+      return [];
+    }
+  }
+
+  /** 读取 GPU 实例读数（利用率/显存/温度）。三厂商工具输出形态差异大，
+   *  尽力而为解析，字段失败回 null（「—」）；intel 工具为常驻流式输出，
+   *  靠 execFile timeout 杀掉后从缓冲里取首个 JSON——失败回 null 字段。 */
+  async function readGpuReading(instanceId: string): Promise<ObjectReading | null> {
+    if (!/^[A-Za-z0-9-]+$/.test(instanceId)) return null;
+    const dash = instanceId.indexOf('-');
+    if (dash <= 0) return null;
+    const vendor = instanceId.slice(0, dash) as 'nvidia' | 'amd' | 'intel';
+    const idx = Number(instanceId.slice(dash + 1));
+    if (!Number.isFinite(idx)) return null;
+    const num = (s: string | undefined): number | null => {
+      const v = Number((s ?? '').trim());
+      return Number.isFinite(v) ? v : null;
+    };
+    try {
+      const det = await detectGpuTool();
+      if (!det || det.vendor !== vendor) return null;
+      if (vendor === 'nvidia') {
+        const { stdout } = await execFileAsync(
+          gpuToolPath(det.tool),
+          ['--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu', '--format=csv,noheader,nounits', '-i', String(idx)],
+          { timeout: 5000, maxBuffer: 1024 * 1024 },
+        );
+        const parts = stdout.trim().split(',');
+        const memUsed = num(parts[1]);
+        const memTotal = num(parts[2]);
+        return {
+          kind: 'gpu',
+          vendor: 'nvidia',
+          utilizationPct: num(parts[0]),
+          memUsedBytes: memUsed !== null ? memUsed * 1024 * 1024 : null, // MiB → B
+          memTotalBytes: memTotal !== null ? memTotal * 1024 * 1024 : null,
+          tempC: num(parts[3]),
+        };
+      }
+      if (vendor === 'amd') {
+        const { stdout } = await execFileAsync(
+          gpuToolPath(det.tool),
+          ['--showuse', '--showtemp', '-i', String(idx)],
+          { timeout: 5000, maxBuffer: 1024 * 1024 },
+        );
+        const utilMatch = /GPU use\s*\(%\)\s*:\s*(\d+(?:\.\d+)?)/i.exec(stdout);
+        const tempMatch = /Temperature\s*\(Sensor junction\)\s*\(C\)\s*:\s*(\d+(?:\.\d+)?)/i.exec(stdout);
+        return {
+          kind: 'gpu',
+          vendor: 'amd',
+          utilizationPct: utilMatch ? Number(utilMatch[1]) : null,
+          memUsedBytes: null,
+          memTotalBytes: null,
+          tempC: tempMatch ? Number(tempMatch[1]) : null,
+        };
+      }
+      // intel：intel_gpu_top -J 持续输出 JSON——execFile timeout 杀进程后
+      // 从 error.stdout 取缓冲的首个 JSON 块解析 busy 百分比
+      let stdout = '';
+      try {
+        ({ stdout } = await execFileAsync(
+          gpuToolPath(det.tool),
+          ['-J', '-s', '250', '-o', '-'],
+          { timeout: 1500, maxBuffer: 1024 * 1024 },
+        ));
+      } catch (e) {
+        stdout = String((e as { stdout?: string })?.stdout ?? '');
+      }
+      const busy = /"busy":\s*(\d+(?:\.\d+)?)/.exec(stdout);
+      return { kind: 'gpu', vendor: 'intel', utilizationPct: busy ? Number(busy[1]) : null, memUsedBytes: null, memTotalBytes: null, tempC: null };
+    } catch {
+      return null;
+    }
+  }
+
   /** 类枚举器注册表：新增类只需加一行（类序 = 根卡片序；进程类靠后，
    *  见 searchObjects 的命中上限说明） */
   const OBJECT_CLASS_ENUMERATORS: Array<{ id: ObjectClassInfo['id']; icon: string; enumerate: () => Promise<ObjectInstance[]> }> = [
@@ -2804,6 +2946,7 @@ export function registerSystemHandlers(
     { id: 'backlight', icon: 'light_mode', enumerate: listBacklightObjects },
     { id: 'network', icon: 'wifi', enumerate: listNetworkObjects },
     { id: 'power', icon: 'battery_full', enumerate: listPowerObjects },
+    { id: 'gpu', icon: 'developer_board', enumerate: listGpuObjects },
   ];
 
   /**
@@ -3117,6 +3260,9 @@ export function registerSystemHandlers(
       }
       if (classId === 'power') {
         return await readPowerReading(instanceId);
+      }
+      if (classId === 'gpu') {
+        return await readGpuReading(instanceId);
       }
       return null;
     } catch (e) {

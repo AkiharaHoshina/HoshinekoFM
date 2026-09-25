@@ -37,6 +37,7 @@ import { useUiZoom } from "./hooks/useUiZoom";
 import { zoomIconSize } from "./utils/iconZoom";
 import { parseSearchPath, SEARCH_DEFAULT_LIMIT, SEARCH_DEFAULT_TIMEOUT } from "./utils/searchPath";
 import { parseObjectsPath } from "./utils/objectsPath";
+import { isObjectProjectionPath, type ObjectDragPayload } from "./utils/objectDrag";
 import type { ThemeConfig } from "./types/theme";
 import {
   trashFiles,
@@ -533,6 +534,37 @@ function AppContent() {
       });
     },
     [setDashboardPinned],
+  );
+
+  /**
+   * 对象投影落点（阴影投影）：Object Panel 实例行拖到侧边栏固定区/
+   * 仪表盘固定区 → 写入投影条目（导航别名，非对象副本）。同对象
+   * 重复拖入幂等（toast 提示，不重复添加）；条目 path = objects://
+   * 对象页路径，点击 = 导航到对象页。
+   */
+  const pinObjectProjection = useCallback(
+    (host: "sidebar" | "dashboard", obj: ObjectDragPayload) => {
+      if (host === "sidebar") {
+        if (pinnedDirs.some((p) => p.path === obj.objectPath)) {
+          showToast(t("sidebar.already_pinned"), "info");
+          return;
+        }
+        setPinnedDirs((prev) => [
+          ...prev,
+          { name: obj.name, path: obj.objectPath, isDir: false, icon: obj.icon },
+        ]);
+      } else {
+        if (dashboardPinned.some((p) => p.path === obj.objectPath)) {
+          showToast(t("sidebar.already_pinned"), "info");
+          return;
+        }
+        setDashboardPinned((prev) => [
+          ...prev,
+          { name: obj.name, path: obj.objectPath, isDir: false, icon: obj.icon },
+        ]);
+      }
+    },
+    [pinnedDirs, setPinnedDirs, dashboardPinned, setDashboardPinned],
   );
 
   const { clipboard, copy, cut, clear: clearClipboard } = useClipboard();
@@ -2139,6 +2171,26 @@ function AppContent() {
     ? (() => {
       const { item } = pinnedDirMenu;
       const index = pinnedDirs.findIndex((p) => p.path === item.path);
+      // 对象投影条目（阴影投影）：目录菜单条目对 objects:// 虚拟路径
+      // 无语义——手写「打开 + 取消固定」两项
+      if (isObjectProjectionPath(item.path)) {
+        return [
+          {
+            label: t("context_menu.open"),
+            icon: "open_in_new",
+            action: () => {
+              handleSidebarNavigate(item.path);
+            },
+          },
+          {
+            label: t("sidebar.unpin"),
+            icon: "push_pin",
+            action: () => {
+              unpinSidebarDir(item.path);
+            },
+          },
+        ];
+      }
       // 固定项只存 name/path/isDir：构造最小 IFile 供菜单复用
       // （菜单动作仅依赖路径/名称/目录标记，缺失字段走各自默认分支）
       const file: IFile = {
@@ -2330,6 +2382,7 @@ function AppContent() {
           onPinPath={pinSidebarDir}
           onUnpinPath={unpinSidebarDir}
           onReorderPin={reorderPinnedDir}
+          onPinObject={(obj) => pinObjectProjection("sidebar", obj)}
           onPinnedContextMenu={handlePinnedDirContextMenu}
           onPlaceContextMenu={handlePlaceContextMenu}
         />
@@ -2423,6 +2476,7 @@ function AppContent() {
                   onDashboardPinItem={pinDashboardItem}
                   onDashboardRemovePin={removeDashboardPinAt}
                   onDashboardReorderPin={reorderDashboardPin}
+                  onDashboardPinObject={(obj) => pinObjectProjection("dashboard", obj)}
                   showHomeStorageUsage={showHomeStorageUsage}
                   filePreviewEnabled={filePreviewEnabled}
                   previewWidth={previewWidth}

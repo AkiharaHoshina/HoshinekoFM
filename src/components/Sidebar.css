@@ -111,6 +111,14 @@
     background-color: var(--md-sys-color-surface-container-high);
 }
 
+/* 对象投影拖拽悬停高亮（阴影投影：Object Panel 实例行 → 固定区） */
+.sidebar-list--object-drag-over {
+    outline: 2px dashed var(--md-sys-color-primary);
+    outline-offset: -2px;
+    border-radius: 8px;
+    background-color: var(--md-sys-color-surface-container-high);
+}
+
 .sidebar-item:active {
     transform: scale(0.98);
 }

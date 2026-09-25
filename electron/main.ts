@@ -331,6 +331,9 @@ function sanitizePinnedDirs(input: unknown): PinnedDirEntry[] {
   const result: PinnedDirEntry[] = [];
   for (const item of input.slice(0, 100)) {
     const it = (item ?? {}) as Record<string, unknown>;
+    // 对象投影条目（阴影投影，path = objects://…）不满足 '/' 前缀
+    // 校验，被有意排除：选择器/保存器固定区只导航真实目录，
+    // 对象虚拟页在选择器无语义（Objects 入口本就仅主窗口）。
     if (typeof it.path !== 'string' || !it.path.startsWith('/')) continue;
     const name =
       typeof it.name === 'string' && it.name.trim()

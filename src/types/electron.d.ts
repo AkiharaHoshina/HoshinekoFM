@@ -39,7 +39,7 @@ export interface ObjectInstance {
     id: string;
     name: string;
     subtitle: string | null;
-    kind: 'disk' | 'partition' | 'mount' | 'cpu' | 'memory' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power';
+    kind: 'disk' | 'partition' | 'mount' | 'cpu' | 'memory' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power' | 'gpu';
     icon: string;
     /** 进程类列表指标（枚举时一并算出，其他类不传） */
     metrics?: { cpuPct: number; rssBytes: number; state: string };
@@ -49,7 +49,7 @@ export interface ObjectInstance {
 
 /** Object Panel 类信息（渲染层按 id 翻译显示名） */
 export interface ObjectClassInfo {
-    id: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power';
+    id: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power' | 'gpu';
     icon: string;
     instances: ObjectInstance[];
 }
@@ -63,7 +63,8 @@ export type ObjectReading =
     | { kind: 'thermal'; name: string; temps: { id: string; label: string | null; valueC: number }[]; fans: { id: string; label: string | null; rpm: number }[] }
     | { kind: 'backlight'; brightness: number; maxBrightness: number; actualBrightness: number; writable: boolean }
     | { kind: 'network'; operstate: string; speedMbps: number | null; addresses: string[]; rxBytesPerSec: number; txBytesPerSec: number; isLoopback: boolean }
-    | { kind: 'power'; capacity: number | null; status: string; energyNow: number | null; energyFull: number | null; cycleCount: number | null; type: string };
+    | { kind: 'power'; capacity: number | null; status: string; energyNow: number | null; energyFull: number | null; cycleCount: number | null; type: string }
+    | { kind: 'gpu'; vendor: 'nvidia' | 'amd' | 'intel'; utilizationPct: number | null; memUsedBytes: number | null; memTotalBytes: number | null; tempC: number | null };
 
 /** SMART 健康读数（smartctl 一次性静态信息；失败走 reason） */
 export type SmartInfo =
@@ -72,7 +73,7 @@ export type SmartInfo =
 
 /** 对象搜索命中（搜索「包含对象」开启时混入搜索结果） */
 export interface ObjectSearchHit {
-    className: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power';
+    className: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power' | 'gpu';
     instanceId: string;
     name: string;
     icon: string;

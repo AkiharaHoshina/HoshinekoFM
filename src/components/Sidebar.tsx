@@ -14,15 +14,19 @@ import { useDrag } from "../contexts/DragContext";
 import { shouldSuppressDrop } from "../utils/nativeDragTracker";
 import { setPinReorderDragActive } from "../utils/pinReorderDrag";
 import { registerKeyboardZone } from "../utils/focusZones";
+import { isObjectDrag, readObjectDrag, type ObjectDragPayload } from "../utils/objectDrag";
 
 /** 侧边栏固定目录条目（仅目录，与仪表盘固定项相互独立） */
 export interface SidebarPinnedItem {
   /** 显示名（路径最后一段） */
   name: string;
-  /** 目录绝对路径 */
+  /** 目录绝对路径；对象投影（阴影投影）= objects:// 对象页路径 */
   path: string;
-  /** 是否为目录（当前固定功能仅允许目录，字段保留以便将来支持文件） */
+  /** 是否为目录（当前固定功能仅允许目录，字段保留以便将来支持文件；
+   *  对象投影恒 false） */
   isDir: boolean;
+  /** 图标名（对象投影用实例图标；目录条目缺省，渲染回落 folder） */
+  icon?: string;
 }
 
 /**
@@ -72,6 +76,12 @@ interface SidebarProps {
    * 固定区只导航不排序（draggable 不启用）。
    */
   onReorderPin?: (fromIndex: number, toIndex: number) => void;
+  /**
+   * 对象投影落点（阴影投影，仅 default 变体）：Object Panel 实例行
+   * 拖到固定区 → App 写入投影条目（导航别名）。picker 变体不传——
+   * 选择器无对象面板且固定区只读。
+   */
+  onPinObject?: (obj: ObjectDragPayload) => void;
   /**
    * 固定项右键回调（仅 default 变体）：App 打开固定项菜单
    * （第一组复用文件区文件夹右键菜单 + 第二组上移/下移/取消固定）。
@@ -135,6 +145,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onPinPath,
   onUnpinPath,
   onReorderPin,
+  onPinObject,
   onPinnedContextMenu,
   onPlaceContextMenu,
   variant = 'default',
@@ -659,6 +670,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
    */
   const [pinDrag, setPinDrag] = useState<{ from: number; gap: number | null } | null>(null);
 
+  /** 对象投影拖拽悬停中（阴影投影：Object Panel 实例行拖到固定区高亮） */
+  const [objectDragOver, setObjectDragOver] = useState(false);
+
+  /** 对象投影拖拽悬停（固定区容器级；固定项条目自身的事件冒泡到此） */
+  const handleObjectDragOver = (e: React.DragEvent) => {
+    if (isPicker || !onPinObject || !isObjectDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setObjectDragOver(true);
+  };
+
+  /** 对象投影拖拽离开固定区（进入子元素不算离开） */
+  const handleObjectDragLeave = (e: React.DragEvent) => {
+    const el = e.currentTarget as HTMLElement;
+    if (e.relatedTarget && el.contains(e.relatedTarget as Node)) return;
+    setObjectDragOver(false);
+  };
+
+  /** 对象投影松手（固定区容器级）：解析载荷交给 App 写入投影条目 */
+  const handleObjectDrop = (e: React.DragEvent) => {
+    if (isPicker || !onPinObject) return;
+    const payload = readObjectDrag(e);
+    setObjectDragOver(false);
+    if (!payload) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onPinObject(payload);
+  };
+
   /** 拖拽会话是否仍在进行（同步于 dragstart/dragend 与 drop）：
    *  起拖时经 rAF 延迟更新状态（保证浏览器先截取拖拽图像再隐藏
    *  源条目），回调执行前拖拽可能已结束——经此 ref 丢弃过期更新。 */
@@ -730,6 +770,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
    */
   const handlePinReorderDragOver = (e: React.DragEvent, index: number) => {
     if (isPicker || !pinDrag) return;
+    // 对象投影拖拽：不 preventDefault——让事件冒泡到固定区容器级
+    // 对象落点处理器（否则投影落点被排序逻辑吞掉）
+    if (isObjectDrag(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -743,16 +786,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   /** 悬停到插入间隙占位本身：占位即当前间隙，保持并接受放置 */
   const handlePinGapDragOver = (e: React.DragEvent, gap: number) => {
     if (isPicker || !pinDrag) return;
+    if (isObjectDrag(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setPinDrag((prev) => (prev && prev.gap !== gap ? { ...prev, gap } : prev));
   };
 
-  /** 拖离固定区（进入其他区域/空白）时收起占位 */
+  /** 拖离固定区（进入其他区域/空白）时收起占位 + 清除对象投影高亮 */
   const handlePinReorderListLeave = (e: React.DragEvent) => {
     const el = e.currentTarget as HTMLElement;
     if (e.relatedTarget && el.contains(e.relatedTarget as Node)) return;
     setPinDrag((prev) => (prev ? { ...prev, gap: null } : prev));
+    setObjectDragOver(false);
   };
 
   /**
@@ -763,6 +808,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
    */
   const handlePinReorderDrop = (e: React.DragEvent, index: number) => {
     if (isPicker) return;
+    // 对象投影拖拽：不 preventDefault/stopPropagation——事件冒泡到
+    // 固定区容器级对象落点处理器
+    if (isObjectDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     const fromRaw = e.dataTransfer.getData('text/plain');
@@ -782,6 +830,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   /** 松手确认（落在插入间隙占位上）：占位的间隙即目标位置 */
   const handlePinGapDrop = (e: React.DragEvent, gap: number) => {
+    if (isObjectDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     const fromRaw = e.dataTransfer.getData('text/plain');
@@ -895,8 +944,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="sidebar-section">
           <h3 className="sidebar-title">{t("sidebar.pinned")}</h3>
           <div
-            className="sidebar-list"
+            className={`sidebar-list${objectDragOver ? ' sidebar-list--object-drag-over' : ''}`}
             onDragLeave={handlePinReorderListLeave}
+            onDragOver={handleObjectDragOver}
+            onDrop={handleObjectDrop}
           >
             {pinRenderList.map((entry) => {
               if (entry.kind === 'gap') {
@@ -939,7 +990,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   title={item.path}
                 >
                   <Icon
-                    name="folder"
+                    name={item.icon ?? "folder"}
                     className="sidebar-icon"
                     // 仅当前打开的固定目录实心：此前用 startsWith，嵌套固定
                     // （A 与 A/B 同时固定、打开 B）时 A 与 B 图标都实心
@@ -967,7 +1018,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {!isPicker && (
         <div className="sidebar-section sidebar-pin-section">
-          <div className="sidebar-list">
+          <div
+            className={`sidebar-list${objectDragOver ? ' sidebar-list--object-drag-over' : ''}`}
+            onDragOver={handleObjectDragOver}
+            onDragLeave={handleObjectDragLeave}
+            onDrop={handleObjectDrop}
+          >
             <button
               className={`sidebar-item sidebar-add-pin ${dragOverTarget === TARGET_PIN ? "drag-over" : ""}`}
               data-sidebar-target={TARGET_PIN}

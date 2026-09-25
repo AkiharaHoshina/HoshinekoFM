@@ -23,6 +23,7 @@ export const OBJECTS_CLASS_LABEL: Record<string, string> = {
   backlight: 'objects.backlight',
   network: 'objects.network',
   power: 'objects.power',
+  gpu: 'objects.gpu',
 };
 
 export interface ParsedObjectsPath {

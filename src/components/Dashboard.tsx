@@ -8,6 +8,7 @@ import { registerKeyboardZone } from '../utils/focusZones';
 import type { IFile, AllDevice } from '../types/files';
 import { getDeviceIcon } from '../utils/deviceUtils';
 import { t as ti } from '../i18n';
+import { isObjectDrag, readObjectDrag, type ObjectDragPayload } from '../utils/objectDrag';
 
 interface DashboardProps {
     onNavigate: (path: string) => void;
@@ -20,6 +21,11 @@ interface DashboardProps {
     pinnedItems: PinnedItem[];
     /** 追加一个固定项（App 侧写入持久化存储） */
     onPinItem: (name: string, path: string, isDir: boolean) => void;
+    /**
+     * 对象投影落点（阴影投影）：Object Panel 实例行拖到固定项网格 →
+     * App 写入投影条目（导航别名，path = objects:// 对象页路径）。
+     */
+    onPinObject?: (obj: ObjectDragPayload) => void;
     /** 按索引移除固定项（悬停关闭按钮） */
     onRemovePin: (index: number) => void;
     /** 拖拽排序固定项：把 fromIndex 的条目移动到 toIndex（App 侧写入持久化存储） */
@@ -134,7 +140,7 @@ const t = (text: string): string => {
   return (ti as any)(key ?? text);
 };
 
-export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pinnedItems, onPinItem, onRemovePin, onReorderPin, marqueeEnabled, showHomeStorageUsage }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pinnedItems, onPinItem, onPinObject, onRemovePin, onReorderPin, marqueeEnabled, showHomeStorageUsage }) => {
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
@@ -369,6 +375,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
   };
 
   const handlePinDragOver = (e: React.DragEvent, index: number) => {
+    // 对象投影拖拽：不 preventDefault——事件冒泡到网格容器级对象落点
+    if (isObjectDrag(e)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     // dragover 高频事件：同值早退，仅在目标变化时更新高亮状态
@@ -382,6 +390,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
   };
 
   const handlePinDrop = (e: React.DragEvent, index: number) => {
+    // 对象投影拖拽：不 preventDefault/stopPropagation——事件冒泡到
+    // 网格容器级对象落点
+    if (isObjectDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
     const fromRaw = e.dataTransfer.getData('text/plain');
@@ -393,6 +404,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
 
   const handlePinDragEnd = () => {
     setDragOverIndex(null);
+  };
+
+  /** 对象投影拖拽悬停中（网格容器级高亮） */
+  const [objectDragOver, setObjectDragOver] = useState(false);
+
+  /** 对象投影拖拽悬停（固定项网格容器级；条目自身事件冒泡到此） */
+  const handleObjectDragOver = (e: React.DragEvent) => {
+    if (!onPinObject || !isObjectDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setObjectDragOver(true);
+  };
+
+  /** 对象投影拖拽离开网格（进入子元素不算离开） */
+  const handleObjectDragLeave = (e: React.DragEvent) => {
+    const el = e.currentTarget as HTMLElement;
+    if (e.relatedTarget && el.contains(e.relatedTarget as Node)) return;
+    setObjectDragOver(false);
+  };
+
+  /** 对象投影松手（网格容器级）：解析载荷交给 App 写入投影条目 */
+  const handleObjectDrop = (e: React.DragEvent) => {
+    if (!onPinObject) return;
+    const payload = readObjectDrag(e);
+    setObjectDragOver(false);
+    if (!payload) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onPinObject(payload);
   };
 
   const formatBytes = (bytes: number) => {
@@ -486,9 +526,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
           </div>
           <div
             ref={pinnedZoneRef}
-            className="pinned-grid"
+            className={`pinned-grid${objectDragOver ? ' pinned-grid--object-drag-over' : ''}`}
             data-kb-zone="dashboard-pinned"
             onKeyDown={(e) => handleZoneKeyDown(e, '.pinned-item')}
+            onDragOver={handleObjectDragOver}
+            onDragLeave={handleObjectDragLeave}
+            onDrop={handleObjectDrop}
           >
             {pinnedItems.map((item, idx) => (
               <div
@@ -502,11 +545,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
                 onDragLeave={handlePinDragLeave}
                 onDrop={(e) => handlePinDrop(e, idx)}
                 onDragEnd={handlePinDragEnd}
-                onClick={() => item.isDir === false ? onOpenFile?.(item.path) : onNavigate(item.path)}
+                onClick={() =>
+                  item.path.startsWith('objects://')
+                    ? onNavigate(item.path)
+                    : item.isDir === false
+                      ? onOpenFile?.(item.path)
+                      : onNavigate(item.path)
+                }
               >
                 <div className="pinned-icon">
                   <Icon
-                    name={item.name === 'Home' ? 'home' : item.isDir === false ? 'insert_drive_file' : 'folder'}
+                    name={item.icon ?? (item.name === 'Home' ? 'home' : item.isDir === false ? 'insert_drive_file' : 'folder')}
                     size={32}
                   />
                 </div>

@@ -9,6 +9,7 @@ import { OutlinedTextField, Slider } from './md';
 import { showToast } from '../utils/toast';
 import { t } from '../i18n';
 import { parseObjectsPath, buildObjectsPath, OBJECTS_CLASS_LABEL } from '../utils/objectsPath';
+import { OBJECT_DRAG_MIME } from '../utils/objectDrag';
 import type { ObjectClassInfo, ObjectInstance, ObjectReading, SmartInfo } from '../types/electron.d';
 import './ObjectPanel.css';
 
@@ -52,8 +53,28 @@ const PROCESS_CLASS_POLL_MS = 3000;
  *  .object-list-virtual .object-row */
 const PROCESS_ROW_HEIGHT = 62;
 
+/**
+ * 对象投影拖拽发起（实例行，阴影投影）：dataTransfer 只带对象 MIME
+ * 载荷——不设 DragContext、不 startDrag（HTML5 会话内拖拽，同固定项
+ * 排序），文件落点（文件区/地址栏/标签页）经 dragState 守卫自然忽略；
+ * 不写 text/plain：固定项排序 drop 读到的源索引为空即 no-op。
+ */
+function startObjectDrag(e: React.DragEvent, className: string | null | undefined, inst: ObjectInstance): void {
+  e.dataTransfer.effectAllowed = 'copy';
+  e.dataTransfer.setData(
+    OBJECT_DRAG_MIME,
+    JSON.stringify({
+      objectPath: buildObjectsPath(className ?? undefined, inst.id),
+      name: inst.name,
+      icon: inst.icon,
+    }),
+  );
+}
+
 /** 进程类页筛选关键词（模块级行组件经 rowProps 接收） */
 interface ProcessRowData {
+  /** 类 id（投影拖拽载荷用） */
+  className: string;
   /** 当前可见实例（已排序 + 已筛选） */
   instances: ObjectInstance[];
   selectedId: string | null;
@@ -70,6 +91,7 @@ interface ProcessRowData {
 const ProcessListRow = ({
   index,
   style,
+  className,
   instances,
   selectedId,
   marqueeEnabled,
@@ -86,6 +108,8 @@ const ProcessListRow = ({
         className={`object-row${selectedId === inst.id ? ' object-row--selected' : ''}`}
         onClick={() => onSelect(inst.id)}
         onDoubleClick={() => void onOpen(inst)}
+        draggable
+        onDragStart={(e) => startObjectDrag(e, className, inst)}
         title={inst.subtitle ?? inst.id}
       >
         <Icon name={inst.icon} className="object-row-icon" />
@@ -418,6 +442,8 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
           push('proc', r.cpuPct);
         } else if (r.kind === 'thermal') {
           for (const t of r.temps) push(`temp:${t.id}`, t.valueC);
+        } else if (r.kind === 'gpu' && r.utilizationPct !== null) {
+          push('gpu', r.utilizationPct);
         }
         return next;
       });
@@ -980,6 +1006,40 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         </div>
       );
     }
+    if (reading.kind === 'gpu') {
+      const memPct = reading.memUsedBytes !== null && reading.memTotalBytes !== null && reading.memTotalBytes > 0
+        ? Math.min(100, Math.round((reading.memUsedBytes / reading.memTotalBytes) * 100))
+        : 0;
+      return (
+        <div className="object-readings">
+          <div className="object-series">
+            <div className="object-reading-row">
+              <span className="object-reading-label">{t('objects.gpu_util')}</span>
+              <div className="object-bar">
+                <div className="object-bar-fill" style={{ width: `${reading.utilizationPct ?? 0}%` }} />
+              </div>
+              <span className="object-reading-value">{reading.utilizationPct !== null ? `${reading.utilizationPct}%` : '—'}</span>
+            </div>
+            <Sparkline points={history['gpu'] ?? []} />
+          </div>
+          {reading.memUsedBytes !== null && reading.memTotalBytes !== null && (
+            <div className="object-reading-row">
+              <span className="object-reading-label">{t('objects.gpu_memory')}</span>
+              <div className="object-bar">
+                <div className="object-bar-fill" style={{ width: `${memPct}%` }} />
+              </div>
+              <span className="object-reading-value">{formatBytes(reading.memUsedBytes)} / {formatBytes(reading.memTotalBytes)}</span>
+            </div>
+          )}
+          {reading.tempC !== null && (
+            <div className="object-reading-row">
+              <span className="object-reading-label">{t('objects.gpu_temp')}</span>
+              <span className="object-reading-value">{reading.tempC}°C</span>
+            </div>
+          )}
+        </div>
+      );
+    }
     // storage
     return (
       <div className="object-readings">
@@ -1019,6 +1079,8 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         className={`object-row${selected ? ' object-row--selected' : ''}`}
         onClick={() => setSelectedId(inst.id)}
         onDoubleClick={() => void handleInstanceDoubleClick(inst)}
+        draggable
+        onDragStart={(e) => startObjectDrag(e, parsed?.className, inst)}
         title={inst.subtitle ?? inst.id}
       >
         <Icon name={inst.icon} className="object-row-icon" />
@@ -1193,6 +1255,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   const listInstances = sortedClassInstances ?? currentClass?.instances ?? [];
   /** 进程类虚拟化行的 rowProps（List 变化即重渲染行） */
   const processRowProps: ProcessRowData = {
+    className: parsed?.className ?? 'storage',
     instances: filteredProcessInstances ?? [],
     selectedId,
     marqueeEnabled,

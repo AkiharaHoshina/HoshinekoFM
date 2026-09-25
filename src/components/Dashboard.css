@@ -153,6 +153,14 @@
     gap: 16px;
 }
 
+/* 对象投影拖拽悬停高亮（阴影投影：Object Panel 实例行 → 固定项网格） */
+.pinned-grid--object-drag-over {
+    outline: 2px dashed var(--md-sys-color-primary);
+    outline-offset: 4px;
+    border-radius: 12px;
+    background-color: var(--md-sys-color-surface-container-high);
+}
+
 .pinned-item {
     display: flex;
     flex-direction: column;
