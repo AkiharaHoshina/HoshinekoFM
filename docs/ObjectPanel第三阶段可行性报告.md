@@ -214,4 +214,42 @@ scrollToRow 冷缓存修复已内置——见 AGENTS.md FileList 条目）：
 
 ## 十二、实施记录（2026-09-26，全量实施）
 
-（实施后填写）
+- **3.1 轻量修轮**：power 读数并行化（`readPowerReading` 六文件 `Promise.all`，
+  单 tick 最坏 12s → 2s）；走势图时间范围设置（设置 → 外观「走势图时间范围」
+  下拉 30s/60s/120s/300s，默认 60s——与全部设置项统一的 pending 确定时生效，
+  `settings.sparklineWindowSeconds` 持久化 + 恢复默认重置；ObjectPanel 按
+  「窗口时长 ÷ 采样间隔」派生历史点数上限）；背光仲裁提示（`actualBrightness
+  ≠ brightness` 时读数行下显示「实际亮度未跟随」提示，新 i18n 键 ×12）。
+- **3.2 进程类体验轮**：类页筛选输入（排序条右侧 md-outlined-text-field，
+  本地匹配 comm/cmdline/pid，先排序后过滤 + 空态文案「无匹配的进程」）；
+  进程类页 react-window 虚拟化（固定行高 62px + AutoSizer，`.object-panel--
+  virtual` 外框不滚内列表自滚；`ProcessListRow` 模块级行组件 + rowProps，
+  排序/筛选/指标列/双击全部保留；其余类保持普通 DOM）。
+- **3.3 GPU 类 + 阴影投影**：
+  - **GPU 类**：`listGpuObjects`/`readGpuReading`——vendor 工具检测驱动
+    （nvidia-smi / rocm-smi / intel_gpu_top，`--version` 探测首个可用者，
+    检测到才显示；`HOSHINEKO_E2E_GPU_TOOLS` 环境变量覆盖工具路径作 e2e
+    沙箱）；nvidia 经 `--query-gpu` CSV 稳定解析（利用率/显存 MiB→B/温度），
+    amd 尽力而为正则、intel 靠 execFile timeout 杀常驻工具取首个 JSON——
+    全部 execFile 带超时（检测 3s/查询 5s），解析失败回 null 不崩；前端
+    利用率条形 + 走势图 + 显存/温度行（`objects.gpu` 等 4 键 ×12）。
+  - **阴影投影**：`src/utils/objectDrag.ts`（`application/x-hoshineko-object`
+    MIME + JSON 载荷）；ObjectPanel 实例行 draggable（dataTransfer 只带
+    对象 MIME——不设 DragContext、不 startDrag，与文件拖拽/固定项排序
+    三分边界，排序 drop 守卫对象 MIME 早退冒泡到容器级落点）；Sidebar
+    固定区 + 仪表盘固定网格容器级落点（高亮 + 解析载荷上报 App）；
+    `pinObjectProjection(host, obj)` 去重幂等写入（sidebar.pinned /
+    dashboard.pinned 条目带 `icon`，path = objects:// 对象页路径）；投影
+    条目点击 = 导航对象页、右键菜单「打开/取消固定」（`isObjectProjectionPath`
+    分支，目录菜单条目对虚拟路径无语义）；`sanitizePinnedDirs` 有意排除
+    对象条目（选择器固定区只导航真实目录）。
+- **e2e 82**（5 段）：82a 走势图窗口（设置 30s 确定生效 → 真实 CPU 采样
+  33s 断言点数上限 30 → 重开回显草稿）；82c 虚拟化（真实 /proc 视口渲染 +
+  内部滚动换行内容）；82d GPU（假 nvidia-smi 枚举/读数 + 三工具挂起枚举
+  超时回落类隐藏）；82b 背光仲裁（不一致显示/一致隐藏）；82e 投影（合成
+  DragEvent 拖到固定区 + 点击导航 + 幂等 + 取消固定 + 仪表盘落点）。
+- **e2e 82 坑（已记 AGENTS.md）**：对象枚举缓存是主进程模块级 3s TTL——
+  任一窗口停留在进程类页会每 3s force 全量重枚举刷新缓存，GPU 工具 env
+  切换/假数据用例必须在此之前离开进程类页（或先等缓存过期，且断言前经
+  一次非 force 拉取把缓存收敛到目标 env 结果，与设备事件时序无关）。
+- **回归**：76–81 全绿；build/lint 全绿；版本保持 0.11.49-dev。
