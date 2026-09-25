@@ -31,20 +31,25 @@ export interface RegisteredMimeEntry {
 /**
  * Object Panel（objects://）对象实例。
  * kind 决定行为：disk/partition/mount 双击进目录（已挂载），
- * cpu/memory/tty 双击进详情页。
+ * cpu/memory/tty/process/thermal/backlight/network/power 双击进详情页。
  */
 export interface ObjectInstance {
-    /** 类内唯一 id：存储类=设备路径或挂载点，cpu/memory 固定，tty=tty 名 */
+    /** 类内唯一 id：存储类=设备路径或挂载点，cpu/memory 固定，tty=tty 名，
+     * 进程类=pid、thermal=hwmon 目录名、backlight/network/power=sysfs 目录名 */
     id: string;
     name: string;
     subtitle: string | null;
-    kind: 'disk' | 'partition' | 'mount' | 'cpu' | 'memory' | 'tty';
+    kind: 'disk' | 'partition' | 'mount' | 'cpu' | 'memory' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power';
     icon: string;
+    /** 进程类列表指标（枚举时一并算出，其他类不传） */
+    metrics?: { cpuPct: number; rssBytes: number; state: string };
+    /** 访问受限标记（tty 类：/dev/ttyN 不可读——非本会话控制台；管理员模式运行自然通过） */
+    restricted?: boolean;
 }
 
 /** Object Panel 类信息（渲染层按 id 翻译显示名） */
 export interface ObjectClassInfo {
-    id: 'storage' | 'processor' | 'tty';
+    id: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power';
     icon: string;
     instances: ObjectInstance[];
 }
@@ -53,11 +58,21 @@ export interface ObjectClassInfo {
 export type ObjectReading =
     | { kind: 'cpu'; model: string | null; totalPct: number; cores: { id: string; pct: number }[] }
     | { kind: 'memory'; totalBytes: number; usedBytes: number; availableBytes: number; percent: number }
-    | { kind: 'storage'; name: string; mounted: boolean; mountpoint: string | null; sizeLabel: string | null; usedBytes: number | null; totalBytes: number | null; percent: number | null; fstype: string | null };
+    | { kind: 'storage'; name: string; mounted: boolean; mountpoint: string | null; sizeLabel: string | null; usedBytes: number | null; totalBytes: number | null; percent: number | null; fstype: string | null }
+    | { kind: 'process'; pid: number; name: string; user: string | null; state: string; cpuPct: number; rssBytes: number; threads: number; nice: number; ppid: number; startedAt: number | null; exe: string | null; cwd: string | null; isSelf: boolean; ownUser: boolean }
+    | { kind: 'thermal'; name: string; temps: { id: string; label: string | null; valueC: number }[]; fans: { id: string; label: string | null; rpm: number }[] }
+    | { kind: 'backlight'; brightness: number; maxBrightness: number; actualBrightness: number; writable: boolean }
+    | { kind: 'network'; operstate: string; speedMbps: number | null; addresses: string[]; rxBytesPerSec: number; txBytesPerSec: number; isLoopback: boolean }
+    | { kind: 'power'; capacity: number | null; status: string; energyNow: number | null; energyFull: number | null; cycleCount: number | null; type: string };
+
+/** SMART 健康读数（smartctl 一次性静态信息；失败走 reason） */
+export type SmartInfo =
+    | { ok: true; model: string | null; tempC: number | null; powerOnHours: number | null; attributes: { name: string; raw: string; value: number | null; worst: number | null; threshold: number | null }[] }
+    | { ok: false; reason: 'NO_TOOL' | 'NEED_ROOT' | 'NOT_SUPPORTED' | 'NO_DEVICE' };
 
 /** 对象搜索命中（搜索「包含对象」开启时混入搜索结果） */
 export interface ObjectSearchHit {
-    className: 'storage' | 'processor' | 'tty';
+    className: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power';
     instanceId: string;
     name: string;
     icon: string;
@@ -524,6 +539,16 @@ export interface IElectronAPI {
     ttyOnData: (streamId: number, callback: (chunk: string) => void) => () => void;
     ttyOnError: (streamId: number, callback: (message: string) => void) => () => void;
     ttyOnClose: (streamId: number, callback: () => void) => () => void;
+    /** Object Panel：终止进程（TERM/KILL 白名单；SELF/EPERM/GONE 结构化错误） */
+    processSignal: (pid: number, signal: 'TERM' | 'KILL') => Promise<{ ok: boolean; error?: string }>;
+    /** Object Panel：调整进程 nice（-20..19，renice） */
+    processNice: (pid: number, nice: number) => Promise<{ ok: boolean; error?: string }>;
+    /** Object Panel：读取块设备 SMART 健康（smartctl 一次性静态信息） */
+    smartInfo: (devicePath: string) => Promise<SmartInfo>;
+    /** Object Panel：白名单写（v2 仅 backlight/brightness）；EACCES 经 pkexec 回落；回传旧值供「恢复原值」 */
+    writeObject: (classId: string, instanceId: string, key: string, value: number) => Promise<{ ok: boolean; error?: string; previous?: number | null; escalated?: boolean }>;
+    /** Object Panel：网络接口 up/down（普通用户直接尝试，EPERM 回落 pkexec） */
+    networkSet: (iface: string, up: boolean) => Promise<{ ok: boolean; error?: string; escalated?: boolean }>;
     /**
      * 系统注册文件格式枚举（按格式筛选的「添加」描述查表与「快捷添加」
      * 对话框数据源）：complete = 描述 + 扩展名 + 打开程序三样齐全。

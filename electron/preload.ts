@@ -248,6 +248,16 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on(`objects:tty-close:${streamId}`, handler);
     return () => ipcRenderer.removeListener(`objects:tty-close:${streamId}`, handler);
   },
+  /** Object Panel：终止进程（TERM/KILL 白名单；自身/跨用户由主进程护栏） */
+  processSignal: (pid: number, signal: 'TERM' | 'KILL') => ipcRenderer.invoke('system:process-signal', pid, signal),
+  /** Object Panel：调整进程 nice（-20..19，renice） */
+  processNice: (pid: number, nice: number) => ipcRenderer.invoke('system:process-nice', pid, nice),
+  /** Object Panel：读取块设备 SMART 健康（smartctl 一次性静态信息） */
+  smartInfo: (devicePath: string) => ipcRenderer.invoke('system:smart-info', devicePath),
+  /** Object Panel：白名单写（v2 仅 backlight/brightness）；回传旧值供「恢复原值」 */
+  writeObject: (classId: string, instanceId: string, key: string, value: number) => ipcRenderer.invoke('system:write-object', classId, instanceId, key, value),
+  /** Object Panel：网络接口 up/down（普通用户直接尝试，EPERM 回落 pkexec） */
+  networkSet: (iface: string, up: boolean) => ipcRenderer.invoke('system:network-set', iface, up),
   /** 系统注册文件格式枚举（按格式筛选的快捷添加/描述查表数据源） */
   listRegisteredMime: () => ipcRenderer.invoke('system:list-registered-mime'),
   getDirectorySize: (path: string, requestId?: string) => ipcRenderer.invoke('system:get-directory-size', path, requestId),

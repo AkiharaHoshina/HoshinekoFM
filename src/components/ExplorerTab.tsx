@@ -154,6 +154,12 @@ interface ExplorerTabProps {
     onUnmountDevice?: (devicePath: string) => Promise<unknown>;
     /** 弹出磁盘（Object Panel 存储类动作，App useDeviceActions） */
     onEjectDevice?: (devicePath: string) => Promise<unknown>;
+    /** 终止进程（Object Panel 进程类，App useProcessActions；L2 确认） */
+    onTerminateProcess?: (pid: number, name: string, signal: 'TERM' | 'KILL') => void;
+    /** 调整进程 nice（Object Panel 进程类，App useProcessActions；L1） */
+    onNiceProcess?: (pid: number, name: string, nice: number) => void;
+    /** 网络接口 up/down（Object Panel 网络类，App useProcessActions；down L2 确认） */
+    onNetworkToggle?: (iface: string, up: boolean) => void;
     marqueeEnabled: boolean;
     /** 拖到本标签页的内部文件请求（来自 TabBar），消费后需回调 onPendingDropHandled */
     /**
@@ -197,7 +203,7 @@ interface ExplorerTabProps {
     terminalOpen?: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, searchLimit, searchTimeout, searchObjects, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, sortControlsAutoCollapse, onSortControlsCollapsedChange, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, onUnmountDevice, onEjectDevice, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, searchLimit, searchTimeout, searchObjects, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, sortControlsAutoCollapse, onSortControlsCollapsedChange, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, onUnmountDevice, onEjectDevice, onTerminateProcess, onNiceProcess, onNetworkToggle, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -2214,11 +2220,15 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         <ObjectPanel
           path={currentPath}
           marqueeEnabled={marqueeEnabled}
+          isActive={isActive}
           onNavigate={(p: string) => loadPath(p, true)}
           onOpenLocation={(p: string) => loadPath(p, true)}
           onMountDevice={onMountDevice}
           onUnmountDevice={onUnmountDevice}
           onEjectDevice={onEjectDevice}
+          onTerminateProcess={onTerminateProcess}
+          onNiceProcess={onNiceProcess}
+          onNetworkToggle={onNetworkToggle}
         />
       ) : (
         // 内置终端打开且预览可见时：内容行向下负外边距 24px（状态栏高度），

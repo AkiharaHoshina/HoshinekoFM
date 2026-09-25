@@ -1,0 +1,18 @@
+/* Sparkline：SVG 走势图（Object Panel 实时读数历史） */
+.sparkline {
+  display: block;
+  width: 100%;
+  /* 主图高度：4 倍加高（24px → 96px），曲线变化更明显（问题修复 1） */
+  height: 96px;
+  flex-shrink: 0;
+  /* 圆角方形边框（弱化灰边：轮廓归边框，曲线/渐变保持主题色） */
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 12px;
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+/* 网格子图（CPU 每核/温度行下方的走势图；拍板 48px = 2 倍） */
+.sparkline--mini {
+  height: 48px;
+}

@@ -2035,7 +2035,7 @@ export function registerSystemHandlers(
 
   /** 对象搜索命中（名称/副标题匹配关键词） */
   interface ObjectSearchHit {
-    className: 'storage' | 'processor' | 'tty';
+    className: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power';
     instanceId: string;
     name: string;
     icon: string;
@@ -2043,10 +2043,13 @@ export function registerSystemHandlers(
     objectPath: string;
   }
 
-  /** 按关键词搜索 OP 对象（名称/副标题，不区分大小写，最多 10 条） */
+  /** 按关键词搜索 OP 对象（名称/副标题，不区分大小写，最多 10 条）。
+   *  进程类最后遍历——实例多、短关键词极易吃满命中上限，存储/处理器等
+   *  小类优先。 */
   async function searchObjects(query: string): Promise<ObjectSearchHit[]> {
     const q = query.toLowerCase();
-    const classes = await listObjectsCached();
+    const classes = (await listObjectsCached()).slice().sort((a, b) =>
+      (a.id === 'process' ? 1 : 0) - (b.id === 'process' ? 1 : 0));
     const hits: ObjectSearchHit[] = [];
     for (const cls of classes) {
       for (const inst of cls.instances) {
@@ -2366,21 +2369,28 @@ export function registerSystemHandlers(
 
   /** OP 对象实例 */
   interface ObjectInstance {
-    /** 类内唯一 id：存储类=设备路径或挂载点，cpu/memory 固定，tty=tty 名 */
+    /** 类内唯一 id：存储类=设备路径或挂载点，cpu/memory 固定，tty=tty 名，
+     *  进程类=pid、thermal=hwmon 目录名、backlight/network/power=sysfs 目录名 */
     id: string;
     /** 显示名 */
     name: string;
-    /** 副标题（模型/挂载点等；可为 null） */
+    /** 副标题（模型/挂载点/cmdline 截断等；可为 null） */
     subtitle: string | null;
     /** 实例种类（决定双击/详情页行为） */
-    kind: 'disk' | 'partition' | 'mount' | 'cpu' | 'memory' | 'tty';
+    kind: 'disk' | 'partition' | 'mount' | 'cpu' | 'memory' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power';
     /** Material Symbols 图标名 */
     icon: string;
+    /** 进程类列表指标（枚举时一并算出，其他类不传）：
+     *  cpuPct 为与上次枚举采样的差值（单核语义，钳制 0–100） */
+    metrics?: { cpuPct: number; rssBytes: number; state: string };
+    /** 访问受限标记（tty 类：/dev/ttyN 不可读——非本会话控制台）。
+     *  以管理员模式运行的进程 R_OK 预检自然通过（远期设计，见报告）。 */
+    restricted?: boolean;
   }
 
   /** OP 类信息（渲染层按 id 翻译显示名） */
   interface ObjectClassInfo {
-    id: 'storage' | 'processor' | 'tty';
+    id: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power';
     icon: string;
     instances: ObjectInstance[];
   }
@@ -2389,7 +2399,12 @@ export function registerSystemHandlers(
   type ObjectReading =
     | { kind: 'cpu'; model: string | null; totalPct: number; cores: { id: string; pct: number }[] }
     | { kind: 'memory'; totalBytes: number; usedBytes: number; availableBytes: number; percent: number }
-    | { kind: 'storage'; name: string; mounted: boolean; mountpoint: string | null; sizeLabel: string | null; usedBytes: number | null; totalBytes: number | null; percent: number | null; fstype: string | null };
+    | { kind: 'storage'; name: string; mounted: boolean; mountpoint: string | null; sizeLabel: string | null; usedBytes: number | null; totalBytes: number | null; percent: number | null; fstype: string | null }
+    | { kind: 'process'; pid: number; name: string; user: string | null; state: string; cpuPct: number; rssBytes: number; threads: number; nice: number; ppid: number; startedAt: number | null; exe: string | null; cwd: string | null; isSelf: boolean; ownUser: boolean }
+    | { kind: 'thermal'; name: string; temps: { id: string; label: string | null; valueC: number }[]; fans: { id: string; label: string | null; rpm: number }[] }
+    | { kind: 'backlight'; brightness: number; maxBrightness: number; actualBrightness: number; writable: boolean }
+    | { kind: 'network'; operstate: string; speedMbps: number | null; addresses: string[]; rxBytesPerSec: number; txBytesPerSec: number; isLoopback: boolean }
+    | { kind: 'power'; capacity: number | null; status: string; energyNow: number | null; energyFull: number | null; cycleCount: number | null; type: string };
 
   /** CPU 占用百分比缓存：/proc/stat 是单调计数，需与上次采样做差 */
   let lastCpuSample: { total: number; idle: number; perCore: Map<string, { total: number; idle: number }> } | null = null;
@@ -2399,7 +2414,8 @@ export function registerSystemHandlers(
   async function readCpuModel(): Promise<string | null> {
     if (cpuModelCache !== undefined) return cpuModelCache;
     try {
-      const content = await fs.readFile('/proc/cpuinfo', 'utf-8');
+      const content = await readFileTimed('/proc/cpuinfo', ENUM_READ_TIMEOUT_MS);
+      if (!content) return null;
       const m = /^model name\s*:\s*(.+)$/m.exec(content);
       cpuModelCache = m ? m[1].trim() : null;
     } catch {
@@ -2476,42 +2492,333 @@ export function registerSystemHandlers(
     return instances;
   }
 
-  /** 枚举 tty 类对象（/sys/class/tty 下的控制台终端 ttyN） */
+  /** sysfs 根目录（e2e 经 HOSHINEKO_E2E_SYSFS_DIR 指向沙箱；默认 /sys） */
+  function getSysfsRoot(): string {
+    return process.env.HOSHINEKO_E2E_SYSFS_DIR ?? '/sys';
+  }
+
+  /**
+   * sysfs 目录类实例 id 白名单（thermal/backlight/network/power 共用）：
+   * 允许冒号与点（power_supply 有 `ucsi-source-psy-USBC000:002`、
+   * `hid-0018:04F3:4653.0003-battery-7` 之类名字）——仍**无斜杠、无 `..` 段**，
+   * 天然防路径逃逸。枚举与读数同源，杜绝「枚举不校验、读数校验过严」的
+   * 不对称（e2e 81d 覆盖）。
+   */
+  const SYSFS_ID_RE = /^[A-Za-z0-9_.:-]+$/;
+
+  /** 枚举 tty 类对象（/sys/class/tty 下的控制台终端 ttyN；R_OK 预检标记受限） */
   async function listTtyObjects(): Promise<ObjectInstance[]> {
     const instances: ObjectInstance[] = [];
     try {
-      const entries = await fs.readdir('/sys/class/tty');
+      const entries = await fs.readdir(path.join(getSysfsRoot(), 'class', 'tty'));
       for (const name of entries) {
         if (!/^tty\d+$/.test(name)) continue;
-        instances.push({ id: name, name, subtitle: null, kind: 'tty', icon: 'terminal' });
+        // 预检可读性：非本会话控制台（root:tty 600）读不了——类页标
+        // 「需要权限」，实例页不再徒劳开流。以管理员模式运行的进程
+        // R_OK 自然通过（远期设计：管理员启动可读全部 tty）。
+        let restricted = false;
+        try {
+          await fs.access(`/dev/${name}`, fs.constants.R_OK);
+        } catch {
+          restricted = true;
+        }
+        instances.push({ id: name, name, subtitle: null, kind: 'tty', icon: 'terminal', restricted });
       }
     } catch { /* /sys/class/tty 不可用：空列表 */ }
     instances.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
     return instances;
   }
 
+  /** 枚举处理器与内存类对象（固定实例） */
+  async function listProcessorObjects(): Promise<ObjectInstance[]> {
+    return [
+      { id: 'cpu', name: 'CPU', subtitle: await readCpuModel(), kind: 'cpu', icon: 'memory' },
+      { id: 'memory', name: 'Memory', subtitle: null, kind: 'memory', icon: 'memory' },
+    ];
+  }
+
+  // ── 进程类 ──
+
+  /** Linux 用户态 HZ（jiffies/秒，/proc 计数字段单位；x86/arm64 实际均为 100） */
+  const USER_HZ = 100;
+
+  /** 解析 /proc/<pid>/stat：comm（括号字段，防空格截断）+ 关键数值字段 */
+  function parseProcStat(content: string): {
+    comm: string; state: string; ppid: number; utime: number; stime: number;
+    nice: number; threads: number; starttime: number;
+  } | null {
+    const open = content.indexOf('(');
+    const close = content.lastIndexOf(')');
+    if (open < 0 || close < open) return null;
+    const comm = content.slice(open + 1, close);
+    // comm 后的字段（stat 手册序）：0=state 1=ppid … 11=utime 12=stime
+    // 16=nice 17=num_threads 19=starttime
+    const nums = content.slice(close + 1).trim().split(/\s+/);
+    const n = (i: number): number => {
+      const v = Number(nums[i]);
+      return Number.isFinite(v) ? v : NaN;
+    };
+    return {
+      comm,
+      state: nums[0] ?? '?',
+      ppid: n(1),
+      utime: n(11),
+      stime: n(12),
+      nice: n(16),
+      threads: n(17),
+      starttime: n(19),
+    };
+  }
+
+  /** 进程 CPU 占用（与上次采样做差；单核语义，钳制 0–100；无上次采样 = 0） */
+  function procCpuPct(ticks: number, ts: number, prev: { ticks: number; ts: number } | undefined): number {
+    if (!prev) return 0;
+    const dTicks = ticks - prev.ticks;
+    const dSec = (ts - prev.ts) / 1000;
+    if (dSec <= 0 || dTicks <= 0) return 0;
+    return Math.min(100, Math.max(0, Math.round((dTicks / USER_HZ / dSec) * 100)));
+  }
+
+  /** 进程 CPU 采样：枚举与读数各持一份（间隔不同，互不污染）；pid 消失随重建自然清理 */
+  let lastProcSample: Map<string, { ticks: number; ts: number }> | null = null;
+  let lastProcReadSample: Map<string, { ticks: number; ts: number }> | null = null;
+
+  /** /etc/passwd uid→用户名缓存（30s TTL） */
+  let passwdMapCache: { ts: number; map: Map<number, string> } | null = null;
+  async function getPasswdMap(): Promise<Map<number, string>> {
+    if (passwdMapCache && Date.now() - passwdMapCache.ts < 30000) return passwdMapCache.map;
+    const map = new Map<number, string>();
+    try {
+      const content = await readFileTimed('/etc/passwd', ENUM_READ_TIMEOUT_MS);
+      if (!content) return map;
+      for (const line of content.split('\n')) {
+        const parts = line.split(':');
+        if (parts.length >= 3) {
+          const uid = Number(parts[2]);
+          if (Number.isFinite(uid)) map.set(uid, parts[0] ?? String(uid));
+        }
+      }
+    } catch { /* 无 passwd：回落数字 uid */ }
+    passwdMapCache = { ts: Date.now(), map };
+    return map;
+  }
+
+  /** 系统启动时刻（/proc/stat btime，epoch 秒；失败 null） */
+  let bootTimeCache: number | null | undefined;
+  async function getBootTime(): Promise<number | null> {
+    if (bootTimeCache !== undefined) return bootTimeCache;
+    try {
+      const stat = await readFileTimed('/proc/stat', READ_TIMEOUT_MS);
+      if (!stat) return null;
+      const m = /^btime\s+(\d+)/m.exec(stat);
+      bootTimeCache = m ? Number(m[1]) : null;
+    } catch {
+      bootTimeCache = null;
+    }
+    return bootTimeCache;
+  }
+
+  /** 枚举进程类对象（/proc 数字目录；读取竞态/无权限的 pid 跳过） */
+  async function listProcessObjects(): Promise<ObjectInstance[]> {
+    const instances: ObjectInstance[] = [];
+    let entries: string[];
+    try {
+      entries = (await fs.readdir('/proc')).filter((e) => /^\d+$/.test(e));
+    } catch {
+      return instances;
+    }
+    const now = Date.now();
+    const prevMap = lastProcSample ?? new Map();
+    const nextMap = new Map<string, { ticks: number; ts: number }>();
+    await Promise.all(entries.map(async (pid) => {
+      try {
+        const statContent = await readFileTimed(`/proc/${pid}/stat`, ENUM_READ_TIMEOUT_MS);
+        if (!statContent) return;
+        const parsed = parseProcStat(statContent);
+        if (!parsed) return;
+        const ticks = parsed.utime + parsed.stime;
+        nextMap.set(pid, { ticks, ts: now });
+        let rssBytes = 0;
+        const status = await readFileTimed(`/proc/${pid}/status`, ENUM_READ_TIMEOUT_MS);
+        if (status) {
+          const rss = /^VmRSS:\s+(\d+)/m.exec(status);
+          if (rss) rssBytes = Number(rss[1]) * 1024;
+        }
+        let cmdline: string | null = null;
+        const raw = await readFileTimed(`/proc/${pid}/cmdline`, ENUM_READ_TIMEOUT_MS);
+        if (raw) {
+          const joined = raw.split('\0').filter(Boolean).join(' ');
+          cmdline = joined ? joined.slice(0, 256) : null;
+        }
+        instances.push({
+          id: pid,
+          name: parsed.comm,
+          subtitle: cmdline ?? `[${parsed.comm}]`,
+          kind: 'process',
+          icon: 'app_shortcut',
+          metrics: {
+            cpuPct: procCpuPct(ticks, now, prevMap.get(pid)),
+            rssBytes,
+            state: parsed.state,
+          },
+        });
+      } catch { /* 进程已消失/无权限 */ }
+    }));
+    lastProcSample = nextMap;
+    instances.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    return instances;
+  }
+
+  // ── 传感器（hwmon）类 ──
+
+  /** sysfs/proc 读超时（毫秒）：读数默认 2000；枚举 1000（见各调用点）。
+   *  部分硬件（I²C/SMBus 传感器、慢固件）的 sysfs 读会阻塞——所有
+   *  fs.readFile 经此 helper 带超时，超时/失败统一回 null（「无法读取」）。 */
+  const READ_TIMEOUT_MS = 2000;
+  const ENUM_READ_TIMEOUT_MS = 1000;
+
+  /** 带超时读文件（utf-8）；超时/任何失败回 null */
+  async function readFileTimed(file: string, timeoutMs: number): Promise<string | null> {
+    try {
+      return await fs.readFile(file, { encoding: 'utf-8', signal: AbortSignal.timeout(timeoutMs) });
+    } catch {
+      return null;
+    }
+  }
+
+  /** 读 sysfs 数值文件（trim + Number；失败/超时 null） */
+  async function readSysfsNum(file: string, timeoutMs = READ_TIMEOUT_MS): Promise<number | null> {
+    const content = await readFileTimed(file, timeoutMs);
+    if (content === null) return null;
+    const v = Number(content.trim());
+    return Number.isFinite(v) ? v : null;
+  }
+
+  /** 读 sysfs 文本文件（trim；失败/超时 null） */
+  async function readSysfsStr(file: string, timeoutMs = READ_TIMEOUT_MS): Promise<string | null> {
+    const content = await readFileTimed(file, timeoutMs);
+    if (content === null) return null;
+    return content.trim() || null;
+  }
+
+  /** 枚举传感器类对象（/sys/class/hwmon；chip name + 首个温度概览） */
+  async function listThermalObjects(): Promise<ObjectInstance[]> {
+    const instances: ObjectInstance[] = [];
+    const root = path.join(getSysfsRoot(), 'class', 'hwmon');
+    try {
+      const entries = await fs.readdir(root);
+      for (const name of entries) {
+        const chipName = (await readSysfsStr(path.join(root, name, 'name'))) ?? name;
+        // 首个温度概览（读文件目录名数字最小者）
+        let overview: string | null = null;
+        try {
+          const files = await fs.readdir(path.join(root, name));
+          const first = files.filter((f) => /^temp\d+_input$/.test(f)).sort()[0];
+          if (first) {
+            const mC = await readSysfsNum(path.join(root, name, first));
+            if (mC !== null) overview = `${(mC / 1000).toFixed(1)}°C`;
+          }
+        } catch { /* 无温度文件 */ }
+        instances.push({ id: name, name: chipName, subtitle: overview, kind: 'thermal', icon: 'device_thermostat' });
+      }
+    } catch { /* hwmon 不可用：空列表 */ }
+    instances.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    return instances;
+  }
+
+  // ── 背光类 ──
+
+  /** 枚举背光类对象（/sys/class/backlight；无背光设备（台式机）为空） */
+  async function listBacklightObjects(): Promise<ObjectInstance[]> {
+    const root = path.join(getSysfsRoot(), 'class', 'backlight');
+    try {
+      const entries = await fs.readdir(root);
+      return entries
+        .map((name) => ({ id: name, name, subtitle: null, kind: 'backlight' as const, icon: 'light_mode' }))
+        .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    } catch {
+      return [];
+    }
+  }
+
+  // ── 网络类 ──
+
+  /** 枚举网络类对象（/sys/class/net；无线/有线按 wireless 目录判别图标） */
+  async function listNetworkObjects(): Promise<ObjectInstance[]> {
+    const instances: ObjectInstance[] = [];
+    const root = path.join(getSysfsRoot(), 'class', 'net');
+    try {
+      const entries = await fs.readdir(root);
+      for (const name of entries) {
+        const operstate = await readSysfsStr(path.join(root, name, 'operstate'));
+        let wireless = false;
+        try {
+          await fs.access(path.join(root, name, 'wireless'));
+          wireless = true;
+        } catch { /* 有线 */ }
+        instances.push({
+          id: name,
+          name,
+          subtitle: operstate ?? null,
+          kind: 'network',
+          icon: wireless ? 'wifi' : 'ethernet',
+        });
+      }
+    } catch { /* net 不可用：空列表 */ }
+    instances.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    return instances;
+  }
+
+  // ── 电源类 ──
+
+  /** 枚举电源类对象（/sys/class/power_supply：电池/AC 适配器） */
+  async function listPowerObjects(): Promise<ObjectInstance[]> {
+    const instances: ObjectInstance[] = [];
+    const root = path.join(getSysfsRoot(), 'class', 'power_supply');
+    try {
+      const entries = await fs.readdir(root);
+      for (const name of entries) {
+        const type = await readSysfsStr(path.join(root, name, 'type'));
+        const capacity = await readSysfsNum(path.join(root, name, 'capacity'));
+        instances.push({
+          id: name,
+          name,
+          subtitle: capacity !== null ? `${capacity}%` : (type ?? null),
+          kind: 'power',
+          icon: type === 'Battery' ? 'battery_full' : 'power',
+        });
+      }
+    } catch { /* power_supply 不可用：空列表 */ }
+    instances.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    return instances;
+  }
+
+  /** 类枚举器注册表：新增类只需加一行（类序 = 根卡片序；进程类靠后，
+   *  见 searchObjects 的命中上限说明） */
+  const OBJECT_CLASS_ENUMERATORS: Array<{ id: ObjectClassInfo['id']; icon: string; enumerate: () => Promise<ObjectInstance[]> }> = [
+    { id: 'storage', icon: 'hard_drive', enumerate: listStorageObjects },
+    { id: 'processor', icon: 'memory', enumerate: listProcessorObjects },
+    { id: 'tty', icon: 'terminal', enumerate: listTtyObjects },
+    { id: 'process', icon: 'app_shortcut', enumerate: listProcessObjects },
+    { id: 'thermal', icon: 'device_thermostat', enumerate: listThermalObjects },
+    { id: 'backlight', icon: 'light_mode', enumerate: listBacklightObjects },
+    { id: 'network', icon: 'wifi', enumerate: listNetworkObjects },
+    { id: 'power', icon: 'battery_full', enumerate: listPowerObjects },
+  ];
+
   /**
-   * 枚举全部 OP 对象（按类分组）。结果内存缓存 3s：CPU/内存/tty 枚举
-   * 稳定，存储类随设备热插拔变化——缓存短 TTL + 设备事件主动失效由
-   * 渲染层轮询自然覆盖（v1 不做事件推送，列表页可见时按需拉取）。
+   * 枚举全部 OP 对象（按类分组，类枚举器表驱动并行枚举）。结果内存缓存
+   * 3s：存储/进程类随设备与进程变化——缓存短 TTL + 设备事件主动失效由
+   * 渲染层轮询自然覆盖。
    */
   let objectsCache: { ts: number; classes: ObjectClassInfo[] } | null = null;
   async function listObjectsCached(force = false): Promise<ObjectClassInfo[]> {
     if (!force && objectsCache && Date.now() - objectsCache.ts < 3000) {
       return objectsCache.classes;
     }
-    const classes: ObjectClassInfo[] = [
-      { id: 'storage', icon: 'hard_drive', instances: await listStorageObjects() },
-      {
-        id: 'processor',
-        icon: 'memory',
-        instances: [
-          { id: 'cpu', name: 'CPU', subtitle: await readCpuModel(), kind: 'cpu', icon: 'memory' },
-          { id: 'memory', name: 'Memory', subtitle: null, kind: 'memory', icon: 'memory' },
-        ],
-      },
-      { id: 'tty', icon: 'terminal', instances: await listTtyObjects() },
-    ];
+    const classes: ObjectClassInfo[] = await Promise.all(
+      OBJECT_CLASS_ENUMERATORS.map(async (c) => ({ id: c.id, icon: c.icon, instances: await c.enumerate() })),
+    );
     objectsCache = { ts: Date.now(), classes };
     return classes;
   }
@@ -2524,7 +2831,187 @@ export function registerSystemHandlers(
     return cls && inst ? { cls, inst } : null;
   }
 
-  /** 读取对象实时读数（cpu/memory/storage；tty 走流式通道） */
+  /** 读取进程实例读数（/proc/<pid>/stat+status+exe/cwd；消失/无权限回落 null） */
+  async function readProcessReading(instanceId: string): Promise<ObjectReading | null> {
+    if (!/^\d+$/.test(instanceId)) return null;
+    const pidNum = Number(instanceId);
+    if (!Number.isFinite(pidNum) || pidNum < 1) return null;
+    try {
+      const statContent = await readFileTimed(`/proc/${instanceId}/stat`, READ_TIMEOUT_MS);
+      if (!statContent) return null;
+      const parsed = parseProcStat(statContent);
+      if (!parsed) return null;
+      const now = Date.now();
+      const ticks = parsed.utime + parsed.stime;
+      const prev = lastProcReadSample?.get(instanceId);
+      const nextMap = lastProcReadSample ? new Map(lastProcReadSample) : new Map();
+      nextMap.set(instanceId, { ticks, ts: now });
+      if (nextMap.size > 8192) nextMap.clear(); // 防 pid 频繁更替导致 map 无限增长
+      lastProcReadSample = nextMap;
+
+      const status = (await readFileTimed(`/proc/${instanceId}/status`, READ_TIMEOUT_MS)) ?? '';
+      const rss = /^VmRSS:\s+(\d+)/m.exec(status);
+      const uidMatch = /^Uid:\s+(\d+)/m.exec(status);
+      const uid = uidMatch ? Number(uidMatch[1]) : null;
+      const ownUser = uid !== null && uid === os.userInfo().uid;
+      const user = uid !== null ? ((await getPasswdMap()).get(uid) ?? null) : null;
+
+      let exe: string | null = null;
+      try { exe = await fs.readlink(`/proc/${instanceId}/exe`); } catch { exe = null; }
+      let cwd: string | null = null;
+      try { cwd = await fs.readlink(`/proc/${instanceId}/cwd`); } catch { cwd = null; }
+
+      const boot = await getBootTime();
+      const startedAt = boot !== null ? boot + Math.floor(parsed.starttime / USER_HZ) : null;
+
+      return {
+        kind: 'process',
+        pid: pidNum,
+        name: parsed.comm,
+        user,
+        state: parsed.state,
+        cpuPct: procCpuPct(ticks, now, prev),
+        rssBytes: rss ? Number(rss[1]) * 1024 : 0,
+        threads: parsed.threads,
+        nice: parsed.nice,
+        ppid: parsed.ppid,
+        startedAt,
+        exe,
+        cwd,
+        isSelf: pidNum === process.pid,
+        ownUser,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** 读取传感器实例读数（temp 与 fan 输入，毫摄氏度 → °C） */
+  async function readThermalReading(instanceId: string): Promise<ObjectReading | null> {
+    if (!SYSFS_ID_RE.test(instanceId)) return null;
+    const dir = path.join(getSysfsRoot(), 'class', 'hwmon', instanceId);
+    try {
+      const files = await fs.readdir(dir);
+      const temps: { id: string; label: string | null; valueC: number }[] = [];
+      const fans: { id: string; label: string | null; rpm: number }[] = [];
+      for (const f of files) {
+        const tm = /^temp(\d+)_input$/.exec(f);
+        if (tm) {
+          const mC = await readSysfsNum(path.join(dir, f));
+          if (mC === null) continue;
+          const label = await readSysfsStr(path.join(dir, `temp${tm[1]}_label`));
+          temps.push({ id: tm[1], label, valueC: mC / 1000 });
+          continue;
+        }
+        const fm = /^fan(\d+)_input$/.exec(f);
+        if (fm) {
+          const rpm = await readSysfsNum(path.join(dir, f));
+          if (rpm === null) continue;
+          const label = await readSysfsStr(path.join(dir, `fan${fm[1]}_label`));
+          fans.push({ id: fm[1], label, rpm });
+        }
+      }
+      const chipName = (await readSysfsStr(path.join(dir, 'name'))) ?? instanceId;
+      temps.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+      fans.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+      return { kind: 'thermal', name: chipName, temps, fans };
+    } catch {
+      return null;
+    }
+  }
+
+  /** 读取背光实例读数（brightness/max_brightness/actual_brightness + 可写性） */
+  async function readBacklightReading(instanceId: string): Promise<ObjectReading | null> {
+    if (!SYSFS_ID_RE.test(instanceId)) return null;
+    const dir = path.join(getSysfsRoot(), 'class', 'backlight', instanceId);
+    const brightness = await readSysfsNum(path.join(dir, 'brightness'));
+    if (brightness === null) return null;
+    // 可写性预检（fs.access W_OK）：root:root 644 的 intel_backlight 等
+    // 只读实例由前端「先解锁再拖」——解锁经 write-object 的 pkexec 回落
+    let writable = false;
+    try {
+      await fs.access(path.join(dir, 'brightness'), fs.constants.W_OK);
+      writable = true;
+    } catch { /* 只读 */ }
+    return {
+      kind: 'backlight',
+      brightness,
+      maxBrightness: (await readSysfsNum(path.join(dir, 'max_brightness'))) ?? brightness,
+      actualBrightness: (await readSysfsNum(path.join(dir, 'actual_brightness'))) ?? brightness,
+      writable,
+    };
+  }
+
+  /** 网络速率差值采样（ifname → { rx, tx, ts }；map 上限 256 全清） */
+  let lastNetSample: Map<string, { rx: number; tx: number; ts: number }> | null = null;
+
+  /** 读取网络接口读数（operstate/速率/地址 + rx/tx 差值速率） */
+  async function readNetworkReading(instanceId: string): Promise<ObjectReading | null> {
+    if (!SYSFS_ID_RE.test(instanceId)) return null;
+    const dir = path.join(getSysfsRoot(), 'class', 'net', instanceId);
+    try {
+      const operstate = (await readSysfsStr(path.join(dir, 'operstate'))) ?? 'unknown';
+      const speedRaw = await readSysfsNum(path.join(dir, 'speed')); // Mbit/s；-1 = 未知
+      const speedMbps = speedRaw !== null && speedRaw > 0 ? speedRaw : null;
+      const addresses: string[] = [];
+      const mac = await readSysfsStr(path.join(dir, 'address'));
+      if (mac) addresses.push(mac);
+      // IPv4 地址经 ip 命令（只读、快；失败仅回退 MAC）
+      try {
+        const { stdout } = await execFileAsync('ip', ['-o', '-4', 'addr', 'show', 'dev', instanceId], { timeout: 3000 });
+        for (const m of stdout.matchAll(/inet\s+(\S+)/g)) {
+          if (m[1]) addresses.push(m[1]);
+        }
+      } catch { /* ip 不可用 */ }
+      const rx = (await readSysfsNum(path.join(dir, 'statistics', 'rx_bytes'))) ?? 0;
+      const tx = (await readSysfsNum(path.join(dir, 'statistics', 'tx_bytes'))) ?? 0;
+      const now = Date.now();
+      const prev = lastNetSample?.get(instanceId);
+      const nextMap = lastNetSample ? new Map(lastNetSample) : new Map();
+      nextMap.set(instanceId, { rx, tx, ts: now });
+      if (nextMap.size > 256) nextMap.clear();
+      lastNetSample = nextMap;
+      let rxBytesPerSec = 0;
+      let txBytesPerSec = 0;
+      if (prev) {
+        const dSec = (now - prev.ts) / 1000;
+        if (dSec > 0) {
+          rxBytesPerSec = Math.max(0, Math.round((rx - prev.rx) / dSec));
+          txBytesPerSec = Math.max(0, Math.round((tx - prev.tx) / dSec));
+        }
+      }
+      return {
+        kind: 'network',
+        operstate,
+        speedMbps,
+        addresses,
+        rxBytesPerSec,
+        txBytesPerSec,
+        isLoopback: instanceId === 'lo',
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** 读取电源实例读数（电量/状态/能量/循环次数） */
+  async function readPowerReading(instanceId: string): Promise<ObjectReading | null> {
+    if (!SYSFS_ID_RE.test(instanceId)) return null;
+    const dir = path.join(getSysfsRoot(), 'class', 'power_supply', instanceId);
+    try {
+      const capacity = await readSysfsNum(path.join(dir, 'capacity'));
+      const status = (await readSysfsStr(path.join(dir, 'status'))) ?? 'Unknown';
+      const type = (await readSysfsStr(path.join(dir, 'type'))) ?? 'Unknown';
+      const energyNow = await readSysfsNum(path.join(dir, 'energy_now')); // µWh
+      const energyFull = await readSysfsNum(path.join(dir, 'energy_full'));
+      const cycleCount = await readSysfsNum(path.join(dir, 'cycle_count'));
+      return { kind: 'power', capacity, status, energyNow, energyFull, cycleCount, type };
+    } catch {
+      return null;
+    }
+  }
+
+  /** 读取对象实时读数（cpu/memory/storage/process/thermal/backlight/network/power；tty 走流式通道） */
   async function readObjectReading(classId: string, instanceId: string): Promise<ObjectReading | null> {
     try {
       if (classId === 'processor' && instanceId === 'cpu') {
@@ -2611,6 +3098,21 @@ export function registerSystemHandlers(
           fstype,
         };
       }
+      if (classId === 'process') {
+        return await readProcessReading(instanceId);
+      }
+      if (classId === 'thermal') {
+        return await readThermalReading(instanceId);
+      }
+      if (classId === 'backlight') {
+        return await readBacklightReading(instanceId);
+      }
+      if (classId === 'network') {
+        return await readNetworkReading(instanceId);
+      }
+      if (classId === 'power') {
+        return await readPowerReading(instanceId);
+      }
       return null;
     } catch (e) {
       console.error('read-object failed', classId, instanceId, e);
@@ -2633,6 +3135,196 @@ export function registerSystemHandlers(
 
   ipcMain.handle('system:read-object', async (_event, classId: string, instanceId: string) => {
     return await readObjectReading(classId, instanceId);
+  });
+
+  /**
+   * 终止进程（危险动作护栏收敛主进程）：信号白名单 TERM/KILL、pid 整数
+   * 校验、拒绝终止自身（SELF）。跨用户 EPERM 不引入提权——失败透传渲染层。
+   */
+  ipcMain.handle('system:process-signal', async (_event, pid: unknown, signal: unknown) => {
+    const pidNum = typeof pid === 'number' ? pid : NaN;
+    const sig = typeof signal === 'string' ? signal : '';
+    if (!Number.isInteger(pidNum) || pidNum < 1 || pidNum > 4194304) return { ok: false, error: 'INVALID_PID' };
+    if (sig !== 'TERM' && sig !== 'KILL') return { ok: false, error: 'INVALID_SIGNAL' };
+    if (pidNum === process.pid) return { ok: false, error: 'SELF' };
+    try {
+      process.kill(pidNum, `SIG${sig}` as NodeJS.Signals);
+      return { ok: true };
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === 'EPERM') return { ok: false, error: 'EPERM' };
+      if (code === 'ESRCH') return { ok: false, error: 'GONE' };
+      return { ok: false, error: String((e as Error)?.message ?? e) };
+    }
+  });
+
+  /**
+   * 调整进程 nice（-20..19；renice util-linux 通用）。跨用户/自身由
+   * renice 权限拒绝（自身进程调整语义不明，前端已禁用，此处兜底）。
+   */
+  ipcMain.handle('system:process-nice', async (_event, pid: unknown, nice: unknown) => {
+    const pidNum = typeof pid === 'number' ? pid : NaN;
+    const niceNum = typeof nice === 'number' ? nice : NaN;
+    if (!Number.isInteger(pidNum) || pidNum < 1 || pidNum > 4194304) return { ok: false, error: 'INVALID_PID' };
+    if (!Number.isInteger(niceNum) || niceNum < -20 || niceNum > 19) return { ok: false, error: 'INVALID_NICE' };
+    if (pidNum === process.pid) return { ok: false, error: 'SELF' };
+    try {
+      await execFileAsync('renice', ['-n', String(niceNum), '-p', String(pidNum)], { timeout: 5000 });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: getExecError(e) ?? String((e as Error)?.message ?? e).slice(0, 200) };
+    }
+  });
+
+  /**
+   * 兑现 v1 预留的写通道（决策 5）：仅 backlight 类 brightness 键。
+   * 三层校验：类/键白名单 + instanceId 形态（SYSFS_ID_RE，无斜杠，天然
+   * 防 ../ 逃逸）+ 值范围（0..max_brightness，写前读上限）。写前读旧值
+   * 回传供「恢复原值」。直写 EACCES/EPERM（root:root 644 的
+   * intel_backlight 等）时 pkexec 回落（位置参数形式，无注入面；
+   * polkit 授权缓存数分钟，连续拖动不重复弹密码框）。
+   */
+  ipcMain.handle('system:write-object', async (_event, classId: unknown, instanceId: unknown, key: unknown, value: unknown) => {
+    if (classId !== 'backlight') return { ok: false, error: 'UNKNOWN_CLASS' };
+    if (typeof instanceId !== 'string' || !SYSFS_ID_RE.test(instanceId)) return { ok: false, error: 'INVALID_ID' };
+    if (key !== 'brightness') return { ok: false, error: 'UNKNOWN_KEY' };
+    const base = path.join(getSysfsRoot(), 'class', 'backlight');
+    const dir = path.join(base, instanceId);
+    // 前缀双保险（instanceId 已无斜杠，防未来改动回归）
+    if (!dir.startsWith(base + path.sep)) return { ok: false, error: 'INVALID_ID' };
+    const max = await readSysfsNum(path.join(dir, 'max_brightness'));
+    if (max === null) return { ok: false, error: 'NO_DEVICE' };
+    const v = typeof value === 'number' ? value : NaN;
+    if (!Number.isInteger(v) || v < 0 || v > max) return { ok: false, error: 'OUT_OF_RANGE' };
+    const previous = await readSysfsNum(path.join(dir, 'brightness'));
+    const target = path.join(dir, 'brightness');
+    try {
+      await fs.writeFile(target, String(v));
+      return { ok: true, previous, escalated: false };
+    } catch (e1) {
+      const msg = String((e1 as NodeJS.ErrnoException)?.message ?? e1);
+      // EACCES/EPERM（root:root 644 的 intel_backlight 等）：pkexec 回落。
+      // 安全：instanceId 已过 SYSFS_ID_RE（无引号/空格/斜杠），value 已
+      // 整数校验——位置参数形式（$1/$2）双保险，无 shell 注入面。
+      if (!/EACCES|EPERM|permission denied/i.test(msg)) {
+        return { ok: false, error: msg.slice(0, 200) };
+      }
+      try {
+        await execFileAsync('pkexec', ['sh', '-c', 'printf "%s" "$1" > "$2"', 'hoshineko-write-object', String(v), target], { timeout: 30000 });
+        return { ok: true, previous, escalated: true };
+      } catch (e2) {
+        return { ok: false, error: getExecError(e2) ?? String((e2 as Error)?.message ?? e2).slice(0, 200) };
+      }
+    }
+  });
+
+  /** SMART 属性筛选关键词（id/名称包含任一者才保留，信息密度优先） */
+  const SMART_ATTR_KEYWORDS = [
+    'reallocated_sector', 'current_pending_sector', 'power_on_hours', 'temperature',
+    'wear_leveling', 'media_wearout', 'percentage_used', 'unsafe_shutdown', 'power_cycle',
+  ];
+
+  /**
+   * 读取块设备 SMART 健康（smartctl 一次性静态信息，绝不自检/写）。
+   * 工具缺失/需 root/不支持分别返回结构化 reason（渲染层占位提示），
+   * 遵循「检测到才显示、未检测到提示用户」语义。
+   */
+  ipcMain.handle('system:smart-info', async (_event, devicePath: unknown) => {
+    if (typeof devicePath !== 'string' || !devicePath.startsWith('/dev/')) {
+      return { ok: false, reason: 'NO_DEVICE' };
+    }
+    try {
+      await execFileAsync('smartctl', ['--version'], { timeout: 3000 });
+    } catch {
+      return { ok: false, reason: 'NO_TOOL' };
+    }
+    try {
+      const { stdout } = await execFileAsync('smartctl', ['-A', '-i', devicePath], { timeout: 5000, maxBuffer: 1024 * 1024 });
+      const model = /^(?:Model Family|Device Model|Model Number):\s*(.+)$/m.exec(stdout)?.[1]?.trim() ?? null;
+      const nvmeTemp = /^Temperature:\s*(\d+)\s*Celsius/m.exec(stdout)?.[1];
+      const nvmeHours = /^Power On Hours:\s*(\d+)/m.exec(stdout)?.[1];
+      const attributes: { name: string; raw: string; value: number | null; worst: number | null; threshold: number | null }[] = [];
+      for (const line of stdout.split('\n')) {
+        const m = /^\s*(\d+)\s+(\S+)\s+\S+\s+(\d+)\s+(\d+)\s+(\d+)(?:\s+\S+){2,3}\s+(\S+.*)$/.exec(line);
+        if (!m) continue;
+        const name = m[2];
+        if (!SMART_ATTR_KEYWORDS.some((k) => name.toLowerCase().includes(k))) continue;
+        attributes.push({
+          name,
+          raw: m[6].trim(),
+          value: Number(m[3]),
+          worst: Number(m[4]),
+          threshold: Number(m[5]),
+        });
+      }
+      // NVMe 输出不是 ATA 属性表：把关键健康行降级为伪属性（value/threshold 无意义）
+      if (attributes.length === 0 && /nvme/i.test(stdout)) {
+        const nvmeRows: Array<[string, RegExp]> = [
+          ['Percentage Used', /^Percentage Used:\s*(\S+)/],
+          ['Available Spare', /^Available Spare:\s*(\S+)/],
+          ['Unsafe Shutdowns', /^Unsafe Shutdowns:\s*(\S+)/],
+          ['Power Cycles', /^Power Cycles:\s*(\S+)/],
+        ];
+        for (const [name, re] of nvmeRows) {
+          const m = re.exec(stdout);
+          if (m) attributes.push({ name, raw: m[1], value: null, worst: null, threshold: null });
+        }
+      }
+      const tempC = attributes.find((a) => a.name.toLowerCase().includes('temperature'))?.raw ?? (nvmeTemp ? nvmeTemp : null);
+      const powerOnHours = attributes.find((a) => a.name.toLowerCase().includes('power_on_hours'))?.raw ?? (nvmeHours ?? null);
+      return {
+        ok: true,
+        model,
+        tempC: tempC !== null ? Number(String(tempC).replace(/\D/g, '')) || null : null,
+        powerOnHours: powerOnHours !== null ? Number(String(powerOnHours).replace(/\D/g, '')) || null : null,
+        attributes,
+      };
+    } catch (e) {
+      const out = String((e as { stdout?: string })?.stdout ?? '') + String((e as { stderr?: string })?.stderr ?? '') + String((e as Error)?.message ?? '');
+      if (/permission denied|requires root|smartctl: .*Permission/i.test(out)) return { ok: false, reason: 'NEED_ROOT' };
+      if (/unable to detect device type|doesn.t support|unsupported/i.test(out)) return { ok: false, reason: 'NOT_SUPPORTED' };
+      return { ok: false, reason: 'NOT_SUPPORTED' };
+    }
+  });
+
+  /** ip 工具绝对路径（pkexec 最小环境无 PATH）；检测一次缓存 */
+  let ipPathCache: string | null | undefined;
+  async function getIpPath(): Promise<string | null> {
+    if (ipPathCache !== undefined) return ipPathCache;
+    ipPathCache = null;
+    for (const cand of ['/usr/sbin/ip', '/usr/bin/ip', '/sbin/ip', '/bin/ip']) {
+      if (existsSync(cand)) { ipPathCache = cand; break; }
+    }
+    return ipPathCache;
+  }
+
+  /**
+   * 网络接口 up/down（L2 危险动作，确认在渲染层）。普通用户直接尝试
+   * （有 CAP_NET_ADMIN 的环境免提权）；Operation not permitted 回落
+   * pkexec 提权（ip 传绝对路径，pkexec 环境无 PATH）。lo 拒绝操作。
+   */
+  ipcMain.handle('system:network-set', async (_event, iface: unknown, up: unknown) => {
+    if (typeof iface !== 'string' || !SYSFS_ID_RE.test(iface)) return { ok: false, error: 'INVALID_IFACE' };
+    if (typeof up !== 'boolean') return { ok: false, error: 'INVALID_VALUE' };
+    if (iface === 'lo') return { ok: false, error: 'LOOPBACK' };
+    const ipPath = await getIpPath();
+    if (!ipPath) return { ok: false, error: 'NO_IP_TOOL' };
+    const args = ['link', 'set', 'dev', iface, up ? 'up' : 'down'];
+    try {
+      await execFileAsync(ipPath, args, { timeout: 8000 });
+      return { ok: true, escalated: false };
+    } catch (e1) {
+      const msg = String((e1 as { stderr?: string })?.stderr ?? '') + String((e1 as Error)?.message ?? '');
+      if (!/not permitted|permission denied/i.test(msg)) {
+        return { ok: false, error: getExecError(e1) ?? msg.slice(0, 200) };
+      }
+      try {
+        await execFileAsync('pkexec', [ipPath, ...args], { timeout: 30000 });
+        return { ok: true, escalated: true };
+      } catch (e2) {
+        return { ok: false, error: getExecError(e2) ?? String((e2 as Error)?.message ?? e2).slice(0, 200) };
+      }
+    }
   });
 
   /**

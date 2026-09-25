@@ -72,6 +72,7 @@ import { useConfirmDialog } from "./hooks/useConfirmDialog";
 import { useDragActionDialog } from "./hooks/useDragActionDialog";
 import { useCreateDialog } from "./hooks/useCreateDialog";
 import { useDeviceActions } from "./hooks/useDeviceActions";
+import { useProcessActions } from "./hooks/useProcessActions";
 import { useTitleBar } from "./hooks/useTitleBar";
 import { attachNativeDragTracker } from "./utils/nativeDragTracker";
 import { focusNextKeyboardZone, trackKeyboardZoneFocus } from "./utils/focusZones";
@@ -159,6 +160,12 @@ function AppContent() {
     handleGvfsUnmount,
     handleGvfsMount,
   } = useDeviceActions();
+
+  /**
+   * Object Panel 进程/网络动作（L2 确认走 App 级 ConfirmDialog；
+   * 终止/nice/网络开关管线见 useProcessActions）
+   */
+  const { confirmTerminate, niceProcess, toggleNetwork } = useProcessActions(confirm);
 
   /**
    * 卸载 gvfs 卷；若当前标签页正停留于该挂载点（含子目录），
@@ -2367,6 +2374,9 @@ function AppContent() {
                   searchObjects={searchObjects}
                   onUnmountDevice={handleDeviceUnmount}
                   onEjectDevice={handleDeviceEject}
+                  onTerminateProcess={confirmTerminate}
+                  onNiceProcess={niceProcess}
+                  onNetworkToggle={toggleNetwork}
                   onSortByChange={setSortBy}
                   onSortOrderChange={setSortOrder}
                   onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}

@@ -30,7 +30,8 @@ const h = require('./harness.cjs');
     })()`, true);
     h.assert.ok(entered.value, '侧边栏应有「对象」入口');
     await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
-    await h.waitFor(win, `document.querySelectorAll('.object-class-card').length === 3`, { timeout: 8000 });
+    // 第二阶段新增进程/传感器/背光/网络/电源类（空类隐藏）：至少 3 张卡
+    await h.waitFor(win, `document.querySelectorAll('.object-class-card').length >= 3`, { timeout: 8000 });
     await h.waitFor(win, `!!document.querySelector('.breadcrumb-objects-chip')`);
     // 根无返回上级按钮
     h.assert.ok(!(await h.js(win, `!!document.querySelector('[data-kb-zone="topbar-up"]')`)).value, 'objects:// 根不应有返回上级按钮');
@@ -69,7 +70,7 @@ const h = require('./harness.cjs');
     // tty 类：实例页显示只读流（无权限提示或文本区二选一）
     await h.js(win, `(() => {
       const cards = [...document.querySelectorAll('.object-class-card')];
-      const c = cards.find((x) => /终端|Terminals/.test(x.textContent ?? ''));
+      const c = cards.find((x) => /电传打字机|Teletype/.test(x.textContent ?? ''));
       if (!c) return false;
       c.click();
       return true;

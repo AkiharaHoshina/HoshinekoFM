@@ -18,6 +18,11 @@ export const OBJECTS_CLASS_LABEL: Record<string, string> = {
   storage: 'objects.storage',
   processor: 'objects.processor',
   tty: 'objects.tty',
+  process: 'objects.process',
+  thermal: 'objects.thermal',
+  backlight: 'objects.backlight',
+  network: 'objects.network',
+  power: 'objects.power',
 };
 
 export interface ParsedObjectsPath {
