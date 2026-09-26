@@ -213,15 +213,16 @@ const os = require('os');
     await h.waitFor(win, `!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub"]')`, { timeout: 8000 });
 
-    // ── 地址栏直接输入 search:// 语法发起详细搜索 ──
+    // ── 地址栏直接输入 search:// query 参数语法发起详细搜索（D1/D2 定案；
+    //    目录原样可读、仅最小转义）──
     await h.clickEl(win, '.omnibar-trigger');
     await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', `search://${dir}:s(t=d)`);
+    await h.setReactInput(win, '.omnibar-input', `search://${dir}?q=s&type=d`);
     await h.key(win, 'Enter');
     // 重搜完成信号 = 目录结果出现（乐观清空后旧条目已消失）
     await h.waitFor(win, `!!document.querySelector('.breadcrumb-search-chip')`);
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub"]')`, { timeout: 8000 });
-    h.assert.ok(!(await h.js(win, `!!document.querySelector('.file-list-item[data-path="${dir}/as.txt"]')`)).value, 'search://…(t=d) 应只显示目录');
+    h.assert.ok(!(await h.js(win, `!!document.querySelector('.file-list-item[data-path="${dir}/as.txt"]')`)).value, 'search://?type=d 应只显示目录');
 
     // ── 切换标签页再回来：搜索结果恢复（search:// 身份随标签页存活）──
     await h.clickEl(win, '.new-tab-btn');

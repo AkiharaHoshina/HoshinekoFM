@@ -1,15 +1,23 @@
 /**
- * search:// 虚拟路径编码/解析。
+ * search:// 虚拟路径编码/解析（决策 D1/D2 定案：**标准 URL query 参数**；
+ * 2026-09-27 二轮验收：**最小转义**——只转义破坏结构/百分号语义的字符，
+ * Unicode/斜杠/冒号/空格/竖线原样，内部串天然人可读写）。
  *
- * 格式：`search://<发起搜索的目录>:<encodeURIComponent(关键词)>[(t=f,size=1M-10M,ext=doc|txt)]`
- * - 关键词整体 URL 编码（目录名与关键词在 Linux 都可含 ':'，编码后
- *   关键词中不再出现字面 ':' 与括号，整串无歧义）；目录保持原样；
- * - 筛选段为可读形式（决策 D2）：`t=f|d`（文件类型）、
- *   `size=min-max`（'1M-10M'；'1M-' 仅最小、'-10M' 仅最大）、
- *   `ext=doc|txt`（扩展名白名单，不带点）；各值经 encodeURIComponent，
- *   分隔符 `=`/`,`/`|`/`-` 为字面量；
- * - 筛选段整体包裹在 ( ) 中，位于末尾——编码后的关键词不可能出现
- *   字面括号，可无损切分。
+ * 格式：`search://<目录>?q=<关键词>[&type=f|d][&min=1M][&max=10M][&ext=doc|txt]`
+ * - 目录原样（`/` 保留；仅 `%`/`?`/`#` 转义）；值仅转义 `%`（→%25）与
+ *   `?`/`#`/`&`/`=`——中文等 Unicode 字符不转义（URL 规范允许原样出现）：
+ *   `search:///home/hoshina/文档?q=啊啊啊` 可读可写；
+ * - **含 `%` 的关键词**：build 转义为 `%25`（如 `q=100%25`），parse
+ *   decode 回 `100%`；用户手输未转义的 `q=100%` 经 safeDecode 容错
+ *   原样保留——两种写法都工作；含 `&` 的关键词手输须写 `%26`（`&` 是
+ *   参数分隔符，标准 query 固有语义）；
+ * - 解析容错：按首个 `?` 切目录/参数、`&` 分段、首个 `=` 分键值，
+ *   未知键/decodeURIComponent 失败忽略（不整体失败）；
+ * - 显示层：地址栏直接显示内部串（最小转义下即人可读形态），面包屑/
+ *   标签标题经 parse 解码渲染关键词；
+ * - **e2e 必须覆盖 UTF-8/特殊字符往返**（用户点名：中文/日文关键词、
+ *   含空格与 `&%` 的关键词、含 `:` 的目录名——build → 地址栏 → parse →
+ *   搜索命中三步一致；e2e 63e）。
  */
 
 /** 搜索筛选条件（与后端 system:search 参数一一对应；limit 为临时值不入路径） */
@@ -25,7 +33,7 @@ export interface SearchPathFilter {
 }
 
 export interface ParsedSearchPath {
-  /** 发起搜索的目录（真实路径） */
+  /** 发起搜索的目录（真实路径，已解码） */
   dir: string;
   /** 搜索关键词（已解码） */
   query: string;
@@ -41,6 +49,18 @@ export const SEARCH_DEFAULT_TIMEOUT = 30;
 
 const SEARCH_PREFIX = 'search://';
 
+/** 最小转义：只转义 `%` 与 query 结构字符（及控制字符）；其余（Unicode/
+ *  斜杠/冒号/空格/竖线等）原样——内部串即人可读形态（二轮验收定案）。 */
+function escapePart(s: string): string {
+  return s
+    .replace(/%/g, '%25')
+    .replace(/\?/g, '%3F')
+    .replace(/#/g, '%23')
+    .replace(/&/g, '%26')
+    .replace(/=/g, '%3D')
+    .split('').map((c) => (c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f ? encodeURIComponent(c) : c)).join('');
+}
+
 export function isSearchPath(p: string | null | undefined): boolean {
   return !!p && p.startsWith(SEARCH_PREFIX);
 }
@@ -50,31 +70,22 @@ export function hasActiveFilter(f: SearchPathFilter | undefined): boolean {
   return !!(f && (f.type || f.minSize || f.maxSize || (f.extensions && f.extensions.length > 0)));
 }
 
-/** 关键词编码：URL 编码后补上括号转义（encodeURIComponent 不转义括号） */
-function encodeQuery(q: string): string {
-  return encodeURIComponent(q).replace(/\(/g, '%28').replace(/\)/g, '%29');
-}
-
-function encodeFilter(f: SearchPathFilter): string {
-  const parts: string[] = [];
-  if (f.type) parts.push(`t=${f.type}`);
-  if (f.minSize || f.maxSize) {
-    parts.push(`size=${encodeURIComponent(f.minSize ?? '')}-${encodeURIComponent(f.maxSize ?? '')}`);
-  }
-  if (f.extensions && f.extensions.length > 0) {
-    parts.push(`ext=${encodeURIComponent(f.extensions.map((e) => e.replace(/^\./, '')).join('|'))}`);
-  }
-  return parts.join(',');
-}
-
 /**
- * 构造 search:// 虚拟路径。无筛选时不带筛选段（「无筛选」时文件类型
- * 选框的值仍计入——t=f/d 属于筛选段的一部分）。
+ * 构造 search:// 虚拟路径（URL query 参数 + 最小转义）。
+ * 无关键词且无筛选时不带 `?`（仍为合法可解析形态）；无筛选时只有 q 段
+ * （「无筛选」时文件类型选框的值仍计入——type 属于筛选段的一部分）。
  */
 export function buildSearchPath(dir: string, query: string, filter?: SearchPathFilter): string {
-  const base = `${SEARCH_PREFIX}${dir}:${encodeQuery(query)}`;
-  if (!hasActiveFilter(filter)) return base;
-  return `${base}(${encodeFilter(filter!)})`;
+  const params: string[] = [];
+  if (query) params.push(`q=${escapePart(query)}`);
+  if (filter?.type) params.push(`type=${filter.type}`);
+  if (filter?.minSize) params.push(`min=${escapePart(filter.minSize)}`);
+  if (filter?.maxSize) params.push(`max=${escapePart(filter.maxSize)}`);
+  if (filter?.extensions && filter.extensions.length > 0) {
+    params.push(`ext=${escapePart(filter.extensions.map((e) => e.replace(/^\./, '')).join('|'))}`);
+  }
+  const qs = params.join('&');
+  return `${SEARCH_PREFIX}${escapePart(dir)}${qs ? `?${qs}` : ''}`;
 }
 
 function safeDecode(s: string): string {
@@ -85,55 +96,44 @@ function safeDecode(s: string): string {
   }
 }
 
-function parseFilterSegment(seg: string): SearchPathFilter {
-  const filter: SearchPathFilter = {};
-  for (const part of seg.split(',')) {
-    const eq = part.indexOf('=');
-    if (eq <= 0) continue;
-    const key = part.slice(0, eq).trim();
-    const val = part.slice(eq + 1).trim();
-    if (key === 't' && (val === 'f' || val === 'd')) {
-      filter.type = val;
-    } else if (key === 'size' && val) {
-      const idx = val.indexOf('-');
-      if (idx >= 0) {
-        const min = val.slice(0, idx);
-        const max = val.slice(idx + 1);
-        if (min) filter.minSize = safeDecode(min);
-        if (max) filter.maxSize = safeDecode(max);
-      } else {
-        filter.minSize = safeDecode(val);
-      }
-    } else if (key === 'ext' && val) {
-      const exts = safeDecode(val).split('|').map((e) => e.trim()).filter(Boolean);
-      if (exts.length > 0) filter.extensions = exts;
-    }
-  }
-  return filter;
-}
-
 /**
  * 解析 search:// 虚拟路径。
- * - 分隔冒号取**最后一个**：编码后的关键词/筛选段不含字面 ':'，目录
- *   名中的 ':' 都落在最后一个冒号之前；
- * - 末尾 `(…)` 为筛选段（编码后关键词无字面括号，`indexOf('(')` 即
- *   筛选段起点）；
- * - 非法形态（非 search://、无目录段）返回 null，调用方回落普通加载。
+ * - 目录段与参数段按**首个 `?`** 切分（目录中字面 `?` 已转义 %3F）；
+ * - 参数按 `&` 分段、首个 `=` 分键值，值 decodeURIComponent（容错）；
+ * - 非法形态（非 search://、目录段为空）返回 null，调用方回落普通加载；
+ *   未知键/解码失败忽略该段。
  */
 export function parseSearchPath(p: string): ParsedSearchPath | null {
   if (!isSearchPath(p)) return null;
   const rest = p.slice(SEARCH_PREFIX.length);
-  const colon = rest.lastIndexOf(':');
-  if (colon < 0) return null;
-  const dir = rest.slice(0, colon);
+  const qIdx = rest.indexOf('?');
+  const dirRaw = qIdx >= 0 ? rest.slice(0, qIdx) : rest;
+  if (!dirRaw) return null;
+  const dir = safeDecode(dirRaw);
   if (!dir) return null;
-  const tail = rest.slice(colon + 1);
-  let encodedQuery = tail;
-  let filter: SearchPathFilter = {};
-  const open = tail.indexOf('(');
-  if (open >= 0 && tail.endsWith(')') && open < tail.length - 1) {
-    encodedQuery = tail.slice(0, open);
-    filter = parseFilterSegment(tail.slice(open + 1, -1));
+
+  const filter: SearchPathFilter = {};
+  let query = '';
+  if (qIdx >= 0) {
+    for (const part of rest.slice(qIdx + 1).split('&')) {
+      if (!part) continue;
+      const eq = part.indexOf('=');
+      const key = eq > 0 ? part.slice(0, eq) : part;
+      const val = eq > 0 ? safeDecode(part.slice(eq + 1)) : '';
+      if (key === 'q') {
+        query = val;
+      } else if (key === 'type' && (val === 'f' || val === 'd')) {
+        filter.type = val;
+      } else if (key === 'min' && val) {
+        filter.minSize = val;
+      } else if (key === 'max' && val) {
+        filter.maxSize = val;
+      } else if (key === 'ext' && val) {
+        const exts = val.split('|').map((e) => e.trim()).filter(Boolean);
+        if (exts.length > 0) filter.extensions = exts;
+      }
+      // 未知键忽略（容错）
+    }
   }
-  return { dir, query: safeDecode(encodedQuery), filter };
+  return { dir, query, filter };
 }

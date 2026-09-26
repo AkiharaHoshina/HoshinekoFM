@@ -187,8 +187,8 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   const isObjectsVirtual = isObjectsPath(currentPath);
   const parsedObjects = useMemo(() => (isObjectsVirtual ? parseObjectsPath(currentPath) : null), [isObjectsVirtual, currentPath]);
   /**
-   * 对象搜索虚拟路径（objectsearch://[类]:关键词）：地址栏渲染「对象搜索
-   * 胶囊（关键词）+ 基准对象段（根/类页，点击退出搜索）」。
+   * 对象搜索虚拟路径（objectsearch://[类]?q=关键词）：地址栏渲染「对象
+   * 搜索胶囊（关键词）+ 基准对象段（根/类页，点击退出搜索）」。
    */
   const isObjectSearchVirtual = isObjectSearchPath(currentPath);
   const parsedObjectSearch = useMemo(() => (isObjectSearchVirtual ? parseObjectSearchPath(currentPath) : null), [isObjectSearchVirtual, currentPath]);

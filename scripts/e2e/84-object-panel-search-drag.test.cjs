@@ -120,10 +120,10 @@ const { ipcMain } = require('electron');
       return !!el && /无匹配的对象|No matching objects|一致するオブジェクトがありません|일치하는 객체가 없습니다|Совпадений|Збігів/.test(el.textContent ?? '');
     })()`, { timeout: 8000 });
 
-    // 地址栏手输 objectsearch:// 虚拟路径恢复搜索（root：类段为空）
+    // 地址栏手输 objectsearch:// 虚拟路径恢复搜索（root：无类段，query 参数形态）
     await h.clickEl(win, '.omnibar-trigger');
     await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', 'objectsearch://:myproc');
+    await h.setReactInput(win, '.omnibar-input', 'objectsearch://?q=myproc');
     await h.key(win, 'Enter');
     await h.waitFor(win, `(() => {
       const els = [...document.querySelectorAll('.object-search-hit')];

@@ -21,6 +21,10 @@ const { app } = require('electron');
     'sub/inner.txt': 'inside',
     'a.txt': 'hello',
     '~file.txt': 'tilde',
+    'b.txt': 'world',
+    '中文 测试&%.txt': 'utf8',
+    '喵.txt': 'meow',
+    '100%.txt': 'percent',
   });
   const sibling = h.tempDir();
   h.makeFileTree(sibling, { 'marker.txt': 'sibling' });
@@ -118,19 +122,49 @@ const { app } = require('electron');
 
     // 输入 'a.txt'（无路径语法）→ 搜索而非导航（搜索过滤行出现）；
     // search:// 虚拟路径模型（v0.11.49-dev 起）：地址栏显示
-    // search://<目录>:<关键词>，不再是搜索前的目录
+    // search://<目录>?q=<关键词>（D1/D2 定案：标准 URL query 参数 +
+    // 最小转义——Unicode/斜杠原样，人可读写）
     await enterPath(win, 'a.txt');
     await h.waitFor(win, `!!document.querySelector('.search-filter-row')`);
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`);
     let stillDir = await readAddressBar(win);
-    h.assert.ok(stillDir === `search://${dir}:a.txt`, `搜索后地址栏应为 search:// 虚拟路径：${stillDir}`);
+    h.assert.ok(stillDir === `search://${dir}?q=a.txt`, `搜索后地址栏应为 search:// query 参数形态：${stillDir}`);
 
     // 波浪号开头的文件名（~file.txt）：不是 ~ 家目录语法，应搜索而非
     // 当目录导航（回归：曾误判为路径并弹「目录不存在」）
     await enterPath(win, '~file.txt');
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/~file.txt"]')`);
     stillDir = await readAddressBar(win);
-    h.assert.ok(stillDir === `search://${dir}:~file.txt`, `~ 文件名搜索后地址栏应为 search:// 虚拟路径：${stillDir}`);
+    h.assert.ok(stillDir === `search://${dir}?q=~file.txt`, `~ 文件名搜索后地址栏应为 search:// query 参数形态：${stillDir}`);
+  });
+
+  await h.run('63e UTF-8/特殊字符 search:// 往返（D1 用户点名）', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`);
+
+    // 中文关键词（Unicode 原样显示，不转义——用户期望的可读形态）
+    await enterPath(win, '喵');
+    await h.waitFor(win, `!!document.querySelector('.search-filter-row')`);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/喵.txt"]')`);
+    let addr = await readAddressBar(win);
+    h.assert.ok(addr === `search://${dir}?q=喵`, `中文关键词应原样可读（期望 search://${dir}?q=喵，实际 ${addr}）`);
+
+    // 关键词含中文 + 空格 + & + %：最小转义——中文/空格原样、& → %26、% → %25
+    const kw = '中文 测试&%';
+    await enterPath(win, kw);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/中文 测试&%.txt"]')`);
+    addr = await readAddressBar(win);
+    h.assert.ok(addr === `search://${dir}?q=中文 测试%26%25`, `特殊字符应最小转义且其余可读（实际 ${addr}）`);
+
+    // 含 % 的关键词两种写法都工作：手输未转义 %25 与转义 %25 均命中
+    await enterPath(win, `search://${dir}?q=100%25`);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/100%.txt"]')`);
+    await enterPath(win, `search://${dir}?q=100%`);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/100%.txt"]')`);
+
+    // 非法编码段容错：坏参数忽略、q 仍解析
+    await enterPath(win, `search://${dir}?q=b.txt&bad=%E0%A4%A`);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/b.txt"]')`);
   });
 
   h.finish();
