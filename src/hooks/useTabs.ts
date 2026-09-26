@@ -44,7 +44,7 @@ export function useTabs() {
   const handleTabPathUpdate = useCallback((id: string, path: string) => {
     // 虚拟路径（仪表板/回收站/搜索态）整串作为标题，由 TabBar 的
     // getTabTitle 翻译显示（search:// 解析关键词后显示「搜索: …」）
-    const folderName = path === 'app://dashboard' || path === 'trash://' || path.startsWith('search://') || path.startsWith('objects://')
+    const folderName = path === 'app://dashboard' || path === 'trash://' || path.startsWith('search://') || path.startsWith('objects://') || path.startsWith('objectsearch://')
       ? path
       : path.split("/").pop() || path;
     setTabs((prev) => {

@@ -5,9 +5,11 @@ import { showToast } from '../utils/toast';
 import { useDrag } from '../contexts/DragContext';
 import { shouldSuppressDrop } from '../utils/nativeDragTracker';
 import { isPinReorderDragActive } from '../utils/pinReorderDrag';
+import { readObjectDrag, type ObjectDragPayload } from '../utils/objectDrag';
 import { registerKeyboardZone } from '../utils/focusZones';
 import { parseSearchPath } from '../utils/searchPath';
 import { parseObjectsPath } from '../utils/objectsPath';
+import { parseObjectSearchPath } from '../utils/objectSearchPath';
 import type { IFile } from '../types/files';
 import './TabBar.css';
 
@@ -30,6 +32,8 @@ interface TabBarProps {
       operation: "move" | "copy",
       sourcePath: string,
     ) => void;
+    /** 对象投影拖放：目标标签页打开对象页（纯导航无 move/copy 语义） */
+    onDropObject?: (tabId: string, obj: ObjectDragPayload) => void;
 }
 
 /**
@@ -74,6 +78,11 @@ const getTabTitle = (title: string): string => {
       }
       if (parsed) return t('objects.title');
     }
+    // 对象搜索虚拟路径：显示「对象搜索 · 关键词」
+    if (normalizeTitle.startsWith('objectsearch://')) {
+      const parsed = parseObjectSearchPath(title);
+      if (parsed) return `${t('objects.object_search')} · ${parsed.query}`;
+    }
     return title;
   }
 };
@@ -85,6 +94,7 @@ export const TabBar: React.FC<TabBarProps> = ({
   onTabClose,
   onNewTab,
   onDropFiles,
+  onDropObject,
 }) => {
   const { getDragState, endDrag } = useDrag();
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
@@ -155,9 +165,11 @@ export const TabBar: React.FC<TabBarProps> = ({
   // 始终指向最新的 tabs/回调，供文档级原生事件监听器使用
   const tabsRef = useRef(tabs);
   const onDropFilesRef = useRef(onDropFiles);
+  const onDropObjectRef = useRef(onDropObject);
   useEffect(() => {
     tabsRef.current = tabs;
     onDropFilesRef.current = onDropFiles;
+    onDropObjectRef.current = onDropObject;
   });
 
   /**
@@ -192,9 +204,11 @@ export const TabBar: React.FC<TabBarProps> = ({
    * 没有 drop 事件，由 nativeDragTracker 合成）。文档级捕获监听 +
    * 坐标命中是最稳妥的路由方式。
    *
-   * 只接受同窗口内部拖拽（dragState 存活）。跨窗口拖放不把标签页作为
-   * 目标：它会导致目标窗口标签页高亮卡死（无 drop/dragleave 收尾），
-   * 且路径交付不可靠，已按需求移除。
+   * 文件拖放只接受同窗口内部拖拽（dragState 存活）。跨窗口拖放不把
+   * 标签页作为目标：它会导致目标窗口标签页高亮卡死（无 drop/dragleave
+   * 收尾），且路径交付不可靠，已按需求移除。**对象投影拖拽例外**：
+   * HTML5 会话内拖拽（不 startDrag），拖拽/落点事件完整派发到本窗口，
+   * 可直接接受并路由（纯导航，无文件操作语义）。
    */
   useEffect(() => {
     /** 从光标坐标解析命中的标签页（仅可放置的标签） */
@@ -207,11 +221,42 @@ export const TabBar: React.FC<TabBarProps> = ({
       return tab;
     };
 
+    /** 对象拖拽的目标标签解析：HTML5 会话内 drop 事件直接派发到光标下
+     *  元素——composedPath 定位比 elementFromPoint 更可靠（软件渲染下
+     *  坐标命中偶发失效）；兜底回落坐标命中。 */
+    const resolveObjectTabAt = (e: DragEvent): Tab | null => {
+      const path = e.composedPath ? e.composedPath() : [];
+      for (const node of path) {
+        if (!(node instanceof Element)) continue;
+        const el = node.closest('.tab-item') as HTMLElement | null;
+        if (el?.dataset.tabId) {
+          const tab = tabsRef.current.find((t) => t.id === el.dataset.tabId);
+          if (tab && isDroppableTab(tab)) return tab;
+        }
+      }
+      return resolveTabAt(e.clientX, e.clientY);
+    };
+
     const onDragOver = (e: DragEvent) => {
       // 侧边栏固定区排序拖拽：非文件拖放，不高亮标签页（dragState 守卫
       // 之外的第二道防线——上次文件拖拽残留陈旧 dragState 时同样拦截）
       if (isPinReorderDragActive()) {
         setDragOverTabId(null);
+        return;
+      }
+      // 对象投影拖拽：纯导航语义，目标 = 可放置标签页。载荷双通道：
+      // HTML5 会话内拖拽读 MIME；原生拖出（对象行与文件 DnD 同款架构）
+      // 的 dragover 无 MIME，回落 DragContext 登记
+      const objectDragPayload = readObjectDrag(e) ?? getDragState()?.object ?? null;
+      if (objectDragPayload) {
+        const tab = resolveObjectTabAt(e);
+        if (!tab) {
+          setDragOverTabId(null);
+          return;
+        }
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        setDragOverTabId(tab.id);
         return;
       }
       const dragState = getDragState();
@@ -236,6 +281,17 @@ export const TabBar: React.FC<TabBarProps> = ({
       // 侧边栏固定区排序拖拽：非文件拖放，不消费（兜底——dragover
       // 守卫下本不会派发到此处）
       if (isPinReorderDragActive()) return;
+      // 对象投影拖拽：目标标签页打开对象页（纯导航；载荷 MIME 优先，
+      // 原生拖出回落 DragContext 登记）
+      const objectDragPayload = readObjectDrag(e) ?? getDragState()?.object ?? null;
+      if (objectDragPayload) {
+        const tab = resolveObjectTabAt(e);
+        if (!tab) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onDropObjectRef.current?.(tab.id, objectDragPayload);
+        return;
+      }
       // 幻影 drop-back（本窗口刚发起过拖拽，真实 drop 落在其他窗口）：
       // 直接忽略，防止同一次拖放被重复处理
       if (shouldSuppressDrop()) return;

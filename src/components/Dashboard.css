@@ -153,14 +153,6 @@
     gap: 16px;
 }
 
-/* 对象投影拖拽悬停高亮（阴影投影：Object Panel 实例行 → 固定项网格） */
-.pinned-grid--object-drag-over {
-    outline: 2px dashed var(--md-sys-color-primary);
-    outline-offset: 4px;
-    border-radius: 12px;
-    background-color: var(--md-sys-color-surface-container-high);
-}
-
 .pinned-item {
     display: flex;
     flex-direction: column;
@@ -179,6 +171,13 @@
 
 /* 拖拽排序：悬停目标卡以主色描边提示插入位置 */
 .pinned-item--drag-over {
+    outline: 2px dashed var(--md-sys-color-primary);
+    outline-offset: -2px;
+    background-color: var(--md-sys-color-surface-container-high);
+}
+
+/* 对象投影拖拽具体条目高亮（与文件夹拖放同款「高亮具体落点」） */
+.pinned-item--object-drag-over {
     outline: 2px dashed var(--md-sys-color-primary);
     outline-offset: -2px;
     background-color: var(--md-sys-color-surface-container-high);

@@ -491,6 +491,9 @@ const FileListComponent: React.FC<FileListProps> = ({
     (e: React.DragEvent, file: IFile) => {
       // 侧边栏固定区排序拖拽：非文件拖放，不接收也不高亮
       if (isPinReorderDragActive()) return;
+      // 对象投影拖拽（DragContext files 恒空 + object 载荷）：文件夹行
+      // 无对象落点语义——不高亮、不给可放置光标
+      if (getDragState()?.object) return;
       // 未提供文件夹落点回调（选择器/保存器）：不接收任何拖放也不高亮
       if (!onDropOnFolder) return;
       if (getDraggedPaths().has(file.path)) {
@@ -504,7 +507,7 @@ const FileListComponent: React.FC<FileListProps> = ({
       // Track for internal drop (native drag kills HTML5 drop events)
       lastDragOverFolderRef.current = file;
     },
-    [getDraggedPaths, onDropOnFolder],
+    [getDraggedPaths, getDragState, onDropOnFolder],
   );
 
   const handleFolderDragLeave = useCallback(() => {
@@ -523,10 +526,24 @@ const FileListComponent: React.FC<FileListProps> = ({
         return;
       }
       const dragState = getDragState();
+      // 对象投影拖拽（files 恒空 + object 载荷）：文件夹行无对象落点
+      // 语义——绝不把对象路径当文件移动/复制（X11 真实 drop 的
+      // dataTransfer 还带 OS 文件数据），只做登记清理
+      if (dragState?.object) {
+        setDragOverPath(null);
+        endDrag();
+        return;
+      }
       if (!dragState) {
         // 原生拖拽回落：内部 HTML5 拖拽已被系统拖拽替换，dragState 为空。
         // 不消费此事件，让其冒泡到上层容器的 onDrop 用 elementFromPoint 路由。
         setDragOverPath(null);
+        return;
+      }
+      if (dragState.files.length === 0) {
+        // 内部拖拽但无文件（理论不可达——对象拖拽已在上方守卫）：防御性早退
+        setDragOverPath(null);
+        endDrag();
         return;
       }
 

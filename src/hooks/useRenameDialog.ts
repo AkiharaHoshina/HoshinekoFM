@@ -8,10 +8,13 @@ import type { IFile } from '../types/files';
  * @param onTabRefresh - 重命名成功后刷新当前标签页列表
  * @param onRenamed - 可选：重命名成功后回调（oldPath → newPath），
  *   供 App 同步固定项等派生状态；仅在成功分支触发（失败弹 toast 不回调）
+ * @param onRenameProjection - 可选：对象投影条目重命名回调（path → 新名，
+ *   objects:// 虚拟路径无文件系统语义——只改固定项显示名不落盘）
  */
 export function useRenameDialog(
   onTabRefresh: () => void,
   onRenamed?: (oldPath: string, newPath: string) => void,
+  onRenameProjection?: (path: string, newName: string) => void,
 ) {
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameFile, setRenameFile] = useState<IFile | null>(null);
@@ -25,17 +28,21 @@ export function useRenameDialog(
 
   const handleRename = useCallback(async () => {
     if (renameFile && newName && newName !== renameFile.name) {
-      const lastSlashIndex = renameFile.path.lastIndexOf("/");
-      const parentDir = renameFile.path.substring(0, lastSlashIndex);
-      const targetPath = `${parentDir}/${newName}`;
-      await renameFileOp(renameFile.path, targetPath, () => {
-        onTabRefresh();
-        onRenamed?.(renameFile.path, targetPath);
-      });
+      if (renameFile.path.startsWith('objects://')) {
+        onRenameProjection?.(renameFile.path, newName);
+      } else {
+        const lastSlashIndex = renameFile.path.lastIndexOf("/");
+        const parentDir = renameFile.path.substring(0, lastSlashIndex);
+        const targetPath = `${parentDir}/${newName}`;
+        await renameFileOp(renameFile.path, targetPath, () => {
+          onTabRefresh();
+          onRenamed?.(renameFile.path, targetPath);
+        });
+      }
     }
     setRenameDialogOpen(false);
     setRenameFile(null);
-  }, [renameFile, newName, onTabRefresh, onRenamed]);
+  }, [renameFile, newName, onTabRefresh, onRenamed, onRenameProjection]);
 
   return {
     renameDialogOpen,

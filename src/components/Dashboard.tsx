@@ -8,7 +8,8 @@ import { registerKeyboardZone } from '../utils/focusZones';
 import type { IFile, AllDevice } from '../types/files';
 import { getDeviceIcon } from '../utils/deviceUtils';
 import { t as ti } from '../i18n';
-import { isObjectDrag, readObjectDrag, type ObjectDragPayload } from '../utils/objectDrag';
+import { readObjectDrag, type ObjectDragPayload } from '../utils/objectDrag';
+import { useDrag } from '../contexts/DragContext';
 
 interface DashboardProps {
     onNavigate: (path: string) => void;
@@ -26,6 +27,8 @@ interface DashboardProps {
      * App 写入投影条目（导航别名，path = objects:// 对象页路径）。
      */
     onPinObject?: (obj: ObjectDragPayload) => void;
+    /** 固定区互拖：侧边栏固定项拖入仪表盘网格 → App 移动（跨区） */
+    onMovePinAcross?: (from: 'sidebar' | 'dashboard', index: number, to: 'sidebar' | 'dashboard', insertAt?: number) => void;
     /** 按索引移除固定项（悬停关闭按钮） */
     onRemovePin: (index: number) => void;
     /** 拖拽排序固定项：把 fromIndex 的条目移动到 toIndex（App 侧写入持久化存储） */
@@ -140,7 +143,18 @@ const t = (text: string): string => {
   return (ti as any)(key ?? text);
 };
 
-export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pinnedItems, onPinItem, onPinObject, onRemovePin, onReorderPin, marqueeEnabled, showHomeStorageUsage }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pinnedItems, onPinItem, onPinObject, onMovePinAcross, onRemovePin, onReorderPin, marqueeEnabled, showHomeStorageUsage }) => {
+  /**
+   * 对象投影载荷双通道解析（与文件 DnD 同款架构）：HTML5 会话内拖拽
+   * 读 dataTransfer MIME；原生拖出（对象行）的 drop 无 MIME（Wayland
+   * 走 nativeDragTracker 合成 drop、X11 真实 drop 也只带 OS 文件数据）
+   * ——回落 DragContext 登记。files 恒空的拖拽状态不会被任何文件落点
+   * 误判为文件拖拽。
+   */
+  const { getDragState } = useDrag();
+  const resolveObjectPayload = (e: { dataTransfer: DataTransfer | null }): ObjectDragPayload | null =>
+    readObjectDrag(e) ?? getDragState()?.object ?? null;
+
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
@@ -368,15 +382,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
    * 拖拽只影响排序，不经过文件拖拽系统（startDrag/claim 均不涉及）。
    */
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  /** 对象投影拖拽悬停的具体条目下标（null = 未命中具体条目） */
+  const [objectDragOverIndex, setObjectDragOverIndex] = useState<number | null>(null);
 
   const handlePinDragStart = (e: React.DragEvent, index: number) => {
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(index));
+    e.dataTransfer.setData('text/plain', `dashboard:${index}`);
   };
 
   const handlePinDragOver = (e: React.DragEvent, index: number) => {
-    // 对象投影拖拽：不 preventDefault——事件冒泡到网格容器级对象落点
-    if (isObjectDrag(e)) return;
+    // 对象投影拖拽：高亮具体条目（与文件夹拖放同款「具体落点」高亮；
+    // stopPropagation 阻止冒泡到网格容器处理器）
+    if (resolveObjectPayload(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'copy';
+      if (objectDragOverIndex !== index) setObjectDragOverIndex(index);
+      return;
+    }
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     // dragover 高频事件：同值早退，仅在目标变化时更新高亮状态
@@ -387,52 +410,87 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
     const el = e.currentTarget as HTMLElement;
     if (e.relatedTarget && el.contains(e.relatedTarget as Node)) return;
     setDragOverIndex(null);
+    setObjectDragOverIndex(null);
   };
 
   const handlePinDrop = (e: React.DragEvent, index: number) => {
-    // 对象投影拖拽：不 preventDefault/stopPropagation——事件冒泡到
-    // 网格容器级对象落点
-    if (isObjectDrag(e)) return;
+    // 对象投影拖拽：本条目的具体落点——解析载荷写入投影条目
+    const payload = resolveObjectPayload(e);
+    if (payload) {
+      setObjectDragOverIndex(null);
+      e.preventDefault();
+      e.stopPropagation();
+      onPinObject?.(payload);
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     const fromRaw = e.dataTransfer.getData('text/plain');
     setDragOverIndex(null);
-    const from = Number(fromRaw);
-    if (!fromRaw || !Number.isFinite(from) || from === index) return;
+    if (fromRaw.startsWith('sidebar:')) {
+      const from = Number(fromRaw.slice('sidebar:'.length));
+      if (Number.isInteger(from)) onMovePinAcross?.('sidebar', from, 'dashboard', index);
+      return;
+    }
+    if (!fromRaw.startsWith('dashboard:')) return;
+    const from = Number(fromRaw.slice('dashboard:'.length));
+    if (!Number.isFinite(from) || from === index) return;
     onReorderPin(from, index);
   };
 
   const handlePinDragEnd = () => {
     setDragOverIndex(null);
+    setObjectDragOverIndex(null);
   };
 
-  /** 对象投影拖拽悬停中（网格容器级高亮） */
-  const [objectDragOver, setObjectDragOver] = useState(false);
-
-  /** 对象投影拖拽悬停（固定项网格容器级；条目自身事件冒泡到此） */
+  /** 对象投影拖拽悬停（网格容器级；条目自身事件已 stopPropagation）——
+   *  间隙/空白处**不做任何容器高亮**（整块网格高亮在条目间隙处会
+   *  闪烁成「旧的全选框」，已移除），仅清条目高亮；侧边栏固定项跨区
+   *  拖入（text/plain 'sidebar:' 前缀）在空白处同样接受落点 */
   const handleObjectDragOver = (e: React.DragEvent) => {
-    if (!onPinObject || !isObjectDrag(e)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-    setObjectDragOver(true);
+    if (resolveObjectPayload(e)) {
+      if (!onPinObject) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      setObjectDragOverIndex(null);
+      return;
+    }
+    if ((e.dataTransfer.getData('text/plain') ?? '').startsWith('sidebar:')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setObjectDragOverIndex(null);
+    }
   };
 
   /** 对象投影拖拽离开网格（进入子元素不算离开） */
   const handleObjectDragLeave = (e: React.DragEvent) => {
     const el = e.currentTarget as HTMLElement;
     if (e.relatedTarget && el.contains(e.relatedTarget as Node)) return;
-    setObjectDragOver(false);
+    setObjectDragOverIndex(null);
   };
 
-  /** 对象投影松手（网格容器级）：解析载荷交给 App 写入投影条目 */
+  /** 对象投影松手（网格容器级兜底）：解析载荷交给 App 写入投影条目；
+   *  侧边栏固定项跨区松手在空白处 → 移动（追加末尾） */
   const handleObjectDrop = (e: React.DragEvent) => {
-    if (!onPinObject) return;
-    const payload = readObjectDrag(e);
-    setObjectDragOver(false);
-    if (!payload) return;
-    e.preventDefault();
-    e.stopPropagation();
-    onPinObject(payload);
+    const payload = resolveObjectPayload(e);
+    if (payload) {
+      if (!onPinObject) return;
+      setObjectDragOverIndex(null);
+      e.preventDefault();
+      e.stopPropagation();
+      onPinObject(payload);
+      return;
+    }
+    const raw = e.dataTransfer.getData('text/plain');
+    if (raw.startsWith('sidebar:')) {
+      const from = Number(raw.slice('sidebar:'.length));
+      setObjectDragOverIndex(null);
+      if (Number.isInteger(from)) {
+        e.preventDefault();
+        e.stopPropagation();
+        onMovePinAcross?.('sidebar', from, 'dashboard');
+      }
+    }
   };
 
   const formatBytes = (bytes: number) => {
@@ -526,7 +584,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
           </div>
           <div
             ref={pinnedZoneRef}
-            className={`pinned-grid${objectDragOver ? ' pinned-grid--object-drag-over' : ''}`}
+            className="pinned-grid"
             data-kb-zone="dashboard-pinned"
             onKeyDown={(e) => handleZoneKeyDown(e, '.pinned-item')}
             onDragOver={handleObjectDragOver}
@@ -536,7 +594,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
             {pinnedItems.map((item, idx) => (
               <div
                 key={idx}
-                className={`pinned-item${dragOverIndex === idx ? ' pinned-item--drag-over' : ''}`}
+                className={`pinned-item${dragOverIndex === idx ? ' pinned-item--drag-over' : ''}${objectDragOverIndex === idx ? ' pinned-item--object-drag-over' : ''}`}
                 role="button"
                 tabIndex={-1}
                 draggable
@@ -579,6 +637,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
               className="pinned-item add-pin"
               role="button"
               tabIndex={-1}
+              onDragOver={(e) => {
+                // 侧边栏固定项跨区拖到「添加」按钮 = 追加到尾部
+                if ((e.dataTransfer.getData('text/plain') ?? '').startsWith('sidebar:')) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = 'move';
+                }
+              }}
+              onDrop={(e) => {
+                const raw = e.dataTransfer.getData('text/plain');
+                if (raw.startsWith('sidebar:')) {
+                  const from = Number(raw.slice('sidebar:'.length));
+                  if (Number.isInteger(from)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onMovePinAcross?.('sidebar', from, 'dashboard');
+                  }
+                }
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 setRefreshMenuPos(null);

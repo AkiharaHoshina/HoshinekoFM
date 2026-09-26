@@ -38,6 +38,15 @@ interface SettingsDialogProps {
    *  Object Panel 实例页走势图历史窗口，点数按采样间隔派生） */
   sparklineWindowSeconds: number;
   onSparklineWindowSecondsChange: (seconds: number) => void;
+  /** 对象面板温度告警阈值（°C，默认 85；确定时生效） */
+  alertTempC: number;
+  onAlertTempCChange: (value: number) => void;
+  /** 对象面板磁盘使用告警阈值（%，默认 90；确定时生效） */
+  alertDiskPct: number;
+  onAlertDiskPctChange: (value: number) => void;
+  /** 最近搜索 UI 展示条数（0/3/5/8/10，默认 5；确定时生效） */
+  searchRecentCount: number;
+  onSearchRecentCountChange: (value: number) => void;
   locale: Locale;
   onLocaleChange: (locale: Locale) => void;
   /** 滚动文本（跑马灯标题）开关；确定时生效 */
@@ -148,6 +157,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onSortControlsAutoCollapseChange,
   sparklineWindowSeconds,
   onSparklineWindowSecondsChange,
+  alertTempC,
+  onAlertTempCChange,
+  alertDiskPct,
+  onAlertDiskPctChange,
+  searchRecentCount,
+  onSearchRecentCountChange,
   locale,
   onLocaleChange,
   marqueeEnabled,
@@ -362,6 +377,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   const [pendingSortControlsAutoCollapse, setPendingSortControlsAutoCollapse] = useState<boolean>(sortControlsAutoCollapse);
   /** 走势图时间范围草稿（确定时生效，与其余设置项同款 pending） */
   const [pendingSparklineWindowSeconds, setPendingSparklineWindowSeconds] = useState<number>(sparklineWindowSeconds);
+  /** 对象面板温度告警阈值草稿（确定时生效） */
+  const [pendingAlertTempC, setPendingAlertTempC] = useState<number>(alertTempC);
+  /** 对象面板磁盘使用告警阈值草稿（确定时生效） */
+  const [pendingAlertDiskPct, setPendingAlertDiskPct] = useState<number>(alertDiskPct);
+  /** 最近搜索展示条数草稿（确定时生效） */
+  const [pendingSearchRecentCount, setPendingSearchRecentCount] = useState<number>(searchRecentCount);
   const [pendingShowHomeStorageUsage, setPendingShowHomeStorageUsage] = useState<boolean>(showHomeStorageUsage);
   const [pendingCalculateDirSize, setPendingCalculateDirSize] = useState<boolean>(calculateDirSize);
   /** 新建标签页目录草稿：二级对话框确认只写入草稿，外层确定才应用 */
@@ -484,7 +505,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setPendingCalculateDirSize(calculateDirSize);
     setPendingNewTabPath(newTabPath);
     setPendingSparklineWindowSeconds(sparklineWindowSeconds);
-  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, searchLimit, searchTimeout, searchObjects, marqueeEnabled, filePreviewEnabled, autoCreateDesktopEntry, autoCreateAppMenuEntry, showHiddenFiles, viewMode, iconSize, filledIcons, sortControlsAutoCollapse, showHomeStorageUsage, calculateDirSize, newTabPath, sparklineWindowSeconds]);
+    setPendingAlertTempC(alertTempC);
+    setPendingAlertDiskPct(alertDiskPct);
+    setPendingSearchRecentCount(searchRecentCount);
+  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, searchLimit, searchTimeout, searchObjects, marqueeEnabled, filePreviewEnabled, autoCreateDesktopEntry, autoCreateAppMenuEntry, showHiddenFiles, viewMode, iconSize, filledIcons, sortControlsAutoCollapse, showHomeStorageUsage, calculateDirSize, newTabPath, sparklineWindowSeconds, alertTempC, alertDiskPct, searchRecentCount]);
 
   /**
    * 应用全部 pending 设置（不关闭对话框）：「应用」与「确定」共用
@@ -514,6 +538,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     if (pendingCalculateDirSize !== calculateDirSize) onCalculateDirSizeChange(pendingCalculateDirSize);
     if (pendingNewTabPath !== newTabPath) onNewTabPathChange(pendingNewTabPath);
     if (pendingSparklineWindowSeconds !== sparklineWindowSeconds) onSparklineWindowSecondsChange(pendingSparklineWindowSeconds);
+    if (pendingAlertTempC !== alertTempC) onAlertTempCChange(pendingAlertTempC);
+    if (pendingAlertDiskPct !== alertDiskPct) onAlertDiskPctChange(pendingAlertDiskPct);
+    if (pendingSearchRecentCount !== searchRecentCount) onSearchRecentCountChange(pendingSearchRecentCount);
   };
 
   /** 确定：应用全部 pending 设置并关闭对话框 */
@@ -723,6 +750,76 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
                 <SelectOption value="60"><div slot="headline">{t("settings.sparkline_1m")}</div></SelectOption>
                 <SelectOption value="120"><div slot="headline">{t("settings.sparkline_2m")}</div></SelectOption>
                 <SelectOption value="300"><div slot="headline">{t("settings.sparkline_5m")}</div></SelectOption>
+              </OutlinedSelect>
+            </div>
+
+            {/* 对象面板温度告警阈值（确定时生效：实例页温度读数超阈值
+              显示警示与 toast） */}
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="thermostat" />
+                <div className="settings-row__label">
+                  {t("settings.object_alert_temp")}
+                </div>
+              </div>
+              <OutlinedSelect
+                className="settings-select settings-select--compact"
+                value={String(pendingAlertTempC)}
+                onInput={(e) => {
+                  const val = Number((e.target as HTMLSelectElement).value);
+                  if (val && val !== pendingAlertTempC) setPendingAlertTempC(val);
+                }}
+              >
+                {[75, 80, 85, 90, 95].map((v) => (
+                  <SelectOption key={v} value={String(v)}><div slot="headline">{v}°C</div></SelectOption>
+                ))}
+              </OutlinedSelect>
+            </div>
+
+            {/* 对象面板磁盘使用告警阈值（确定时生效） */}
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="hard_drive" />
+                <div className="settings-row__label">
+                  {t("settings.object_alert_disk")}
+                </div>
+              </div>
+              <OutlinedSelect
+                className="settings-select settings-select--compact"
+                value={String(pendingAlertDiskPct)}
+                onInput={(e) => {
+                  const val = Number((e.target as HTMLSelectElement).value);
+                  if (val && val !== pendingAlertDiskPct) setPendingAlertDiskPct(val);
+                }}
+              >
+                {[80, 85, 90, 95, 99].map((v) => (
+                  <SelectOption key={v} value={String(v)}><div slot="headline">{v}%</div></SelectOption>
+                ))}
+              </OutlinedSelect>
+            </div>
+
+            {/* 最近搜索展示条数（确定时生效：文件/对象搜索的词条行展示
+              条数，0 = 不显示） */}
+            <div className="settings-row">
+              <div className="settings-row__start">
+                <Icon name="history" />
+                <div className="settings-row__label">
+                  {t("settings.search_recent_count")}
+                </div>
+              </div>
+              <OutlinedSelect
+                className="settings-select settings-select--compact"
+                value={String(pendingSearchRecentCount)}
+                onInput={(e) => {
+                  const val = Number((e.target as HTMLSelectElement).value);
+                  if (val !== pendingSearchRecentCount) setPendingSearchRecentCount(val);
+                }}
+              >
+                {[0, 3, 5, 8, 10].map((v) => (
+                  <SelectOption key={v} value={String(v)}>
+                    <div slot="headline">{v === 0 ? t("settings.search_recent_off") : String(v)}</div>
+                  </SelectOption>
+                ))}
               </OutlinedSelect>
             </div>
 

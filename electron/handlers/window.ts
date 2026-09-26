@@ -40,6 +40,13 @@ interface ActiveDrag {
   sourceId: number;
   /** 发起时间戳，用于超时清理 */
   startedAt: number;
+  /**
+   * 对象面板拖出标记（对象行原生拖出，非文件拖拽）：登记只用于让
+   * claim 返回 'object' 哨兵——对象拖拽绝不走文件移动/复制管线
+   * （跨窗口把对象行拖到文件区时按此拒绝），本应用内投影落点由
+   * 渲染层 DragContext 解析，不经过本登记。
+   */
+  objectDrag?: boolean;
 }
 
 let activeDrag: ActiveDrag | null = null;
@@ -52,11 +59,14 @@ const ACTIVE_DRAG_TTL = 30_000;
  * - granted：本窗口获得处理权（数据已随返回移交，登记立即清空）
  * - consumed：登记已被其他窗口拿走 → 本次 drop 是幻影 drop-back/重复处理
  * - none：没有活跃拖拽（外部应用拖入）
+ * - object：活跃拖拽是对象面板拖出（非文件）——文件落点管线收到此
+ *   哨兵必须静默放弃，绝不把对象路径当文件移动/复制
  */
 export type DragClaimResult =
   | { status: 'granted'; files: DragFileMeta[] }
   | { status: 'consumed' }
-  | { status: 'none' };
+  | { status: 'none' }
+  | { status: 'object' };
 
 /**
  * 拖拽登记仲裁：同一次跨窗口拖放会在落点窗口与源窗口各触发一次
@@ -73,6 +83,13 @@ async function claimActiveDrag(senderId: number): Promise<DragClaimResult> {
   if (!drag || Date.now() - drag.startedAt >= ACTIVE_DRAG_TTL) {
     activeDrag = null;
     return { status: 'none' };
+  }
+
+  // 对象面板拖出：任何窗口 claim 都只拿到 object 哨兵（登记清空）——
+  // 对象拖拽没有文件落点语义，防跨窗口/幻影 drop 把对象路径当文件处理
+  if (drag.objectDrag) {
+    activeDrag = null;
+    return { status: 'object' };
   }
 
   if (senderId !== drag.sourceId) {
@@ -250,7 +267,7 @@ export function registerWindowHandlers(
     }
   });
 
-  ipcMain.on('dnd:start', (event, payload: string | string[] | { paths: string[]; files: DragFileMeta[] }) => {
+  ipcMain.on('dnd:start', (event, payload: string | string[] | { paths: string[]; files: DragFileMeta[]; object?: boolean }) => {
     const paths = Array.isArray(payload) || typeof payload === 'string' ? (Array.isArray(payload) ? payload : [payload]) : payload.paths;
     const files = Array.isArray(payload) || typeof payload === 'string' ? [] : (payload.files ?? []);
     // 登记活跃拖拽（路径 + 元数据），供同应用其他窗口的 drop 回退取用。
@@ -260,6 +277,7 @@ export function registerWindowHandlers(
       files,
       sourceId: event.sender.id,
       startedAt: Date.now(),
+      objectDrag: typeof payload === 'object' && payload !== null && !Array.isArray(payload) ? payload.object === true : false,
     };
     const cachedPath = getCachedDragIconPath('insert_drive_file');
     if (!existsSync(cachedPath)) {

@@ -324,8 +324,8 @@ const { ipcMain } = require('electron');
       return true;
     })()`, true);
 
-    // 拖到侧边栏固定区（初始无固定项 → 落在 add-pin 区）
-    await dragTo('.sidebar-pin-section .sidebar-list');
+    // 拖到侧边栏「添加固定」按钮（对象落点只有添加按钮——已固定条目对文件夹拖放是移动/复制进去语义，对象无此语义不接受）
+    await dragTo('.sidebar-pin-section .sidebar-add-pin');
     await h.waitFor(win, `!!document.querySelector('.sidebar-item[title^="objects://"]')`, { timeout: 8000 });
     const pinInfo = await h.js(win, `(() => {
       const el = document.querySelector('.sidebar-item[title^="objects://"]');
@@ -361,7 +361,7 @@ const { ipcMain } = require('electron');
     })()`, true);
     await h.waitFor(win, `!!document.querySelector('.object-row[data-id="sda1"]')`, { timeout: 8000 });
     const before = await h.js(win, `document.querySelectorAll('.sidebar-item[title^="objects://"]').length`);
-    await dragTo('.sidebar-pin-section .sidebar-list');
+    await dragTo('.sidebar-pin-section .sidebar-add-pin');
     await h.sleep(400);
     const after = await h.js(win, `document.querySelectorAll('.sidebar-item[title^="objects://"]').length`);
     h.assert.ok(before.value === 1 && after.value === 1, `重复拖入应幂等（before=${before.value} after=${after.value}）`);

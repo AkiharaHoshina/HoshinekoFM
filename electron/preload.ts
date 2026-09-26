@@ -178,7 +178,7 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('window:maximized-changed', handler);
     return () => ipcRenderer.removeListener('window:maximized-changed', handler);
   },
-  startDrag: (paths: string | string[], files?: { path: string; name: string; isDirectory: boolean; trashOriginalPath?: string }[]) => ipcRenderer.send('dnd:start', { paths, files }),
+  startDrag: (paths: string | string[], files?: { path: string; name: string; isDirectory: boolean; trashOriginalPath?: string }[], object?: boolean) => ipcRenderer.send('dnd:start', { paths, files, object }),
   claimDragFiles: () => ipcRenderer.invoke('dnd:claim-files'),
   consumeDrag: () => ipcRenderer.invoke('dnd:consume'),
   onDragConsumedExternally: (callback: () => void) => {
@@ -254,6 +254,22 @@ contextBridge.exposeInMainWorld('electron', {
   processNice: (pid: number, nice: number) => ipcRenderer.invoke('system:process-nice', pid, nice),
   /** Object Panel：提前授权进程优先级（「解锁」按钮——一次 pkexec，本会话有效） */
   processNiceAuth: () => ipcRenderer.invoke('system:process-nice-auth'),
+  /** Object Panel：撤销进程优先级授权（「锁定」按钮——kill 持久助手） */
+  processNiceLock: () => ipcRenderer.invoke('system:process-nice-lock'),
+  /** Object Panel：撤销 sysfs 写授权（背光/充电阈值共用「锁定」按钮） */
+  sysfsWriteLock: (classId: string, instanceId: string, key: string) => ipcRenderer.invoke('system:sysfs-write-lock', classId, instanceId, key),
+  /** Object Panel：批量终止进程（多选；逐项聚合结果） */
+  processSignalBatch: (pids: number[], signal: 'TERM' | 'KILL') => ipcRenderer.invoke('system:process-signal-batch', pids, signal),
+  /** Object Panel：批量调整进程 nice（多选预设档；逐项聚合结果） */
+  processNiceBatch: (pids: number[], nice: number) => ipcRenderer.invoke('system:process-nice-batch', pids, nice),
+  /** Object Panel：读取性能模式（power-profiles-daemon；检测到才显示） */
+  powerProfileInfo: () => ipcRenderer.invoke('system:power-profile-info'),
+  /** Object Panel：设置性能模式（白名单档位；EPERM 经 pkexec 回落） */
+  powerProfileSet: (mode: string) => ipcRenderer.invoke('system:power-profile-set', mode),
+  /** 读取搜索历史（'file' | 'object'；~/.config/HoshinekoFM 落盘） */
+  loadSearchHistory: (kind: 'file' | 'object') => ipcRenderer.invoke('system:load-search-history', kind),
+  /** 保存搜索历史（原子写；逐条校验 + 上限 100） */
+  saveSearchHistory: (kind: 'file' | 'object', entries: unknown[]) => ipcRenderer.invoke('system:save-search-history', kind, entries),
   /** Object Panel：读取块设备 SMART 健康（smartctl 一次性静态信息） */
   smartInfo: (devicePath: string) => ipcRenderer.invoke('system:smart-info', devicePath),
   /** Object Panel：白名单写（v2 仅 backlight/brightness）；回传旧值供「恢复原值」 */

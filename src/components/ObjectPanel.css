@@ -115,7 +115,9 @@
   background: var(--md-sys-color-surface-container);
 }
 
-.object-row--selected {
+/* 选中态须与 :hover 同特异性（0,2,0）且排在其后——悬停已选中行时
+ * 高亮保持不褪色（单类选择器 0,1,0 会被 :hover 压过） */
+.object-row.object-row--selected {
   background: var(--md-sys-color-secondary-container);
 }
 
@@ -144,6 +146,184 @@
 
 .object-row-details {
   flex-shrink: 0;
+}
+
+/* ── 地址栏对象搜索（面板内搜索态；根页跨类命中 / 类页过滤） ── */
+.object-search-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 8px;
+}
+
+.object-search-header-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.object-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.object-search-hit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.object-search-hit:hover,
+.object-search-hit:focus-visible {
+  background: var(--md-sys-color-surface-container);
+  outline: none;
+}
+
+.object-search-hit-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.object-search-hit-name {
+  min-width: 0;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.object-search-hit-sub {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 命中关键词加亮 */
+.object-search-mark {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* 命中分组（组头 = 类名 + 计数） */
+.object-search-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+/* 最近搜索词条行（根页无搜索时） */
+.object-search-recent {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 2px 0 8px;
+}
+
+.object-search-recent-label {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-right: 4px;
+}
+
+.object-search-recent-chip {
+  font-size: 12.5px;
+}
+
+.object-search-recent-clear {
+  margin-left: 4px;
+}
+
+.object-search-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface-variant);
+  padding: 4px 12px;
+}
+
+.object-batch-count {
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-right: 4px;
+}
+
+/* 树模式行箭头（进程类） */
+.object-row-tree-toggle {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin-left: -8px;
+}
+
+/* 类卡片排序拖拽悬停目标 */
+.object-class-card--sort-over {
+  outline: 2px dashed var(--md-sys-color-primary);
+  outline-offset: -2px;
+  background: var(--md-sys-color-surface-container-high);
+}
+
+/* 告警徽标（类卡片角标：该类存在超阈值实例数） */
+.object-class-card {
+  position: relative;
+}
+
+.object-class-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  background: var(--md-sys-color-error);
+  color: var(--md-sys-color-on-error);
+}
+
+/* 实例页告警提示行 */
+.object-alert-hint {
+  margin-top: 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  background: color-mix(in srgb, var(--md-sys-color-error) 12%, transparent);
+  color: var(--md-sys-color-error);
+}
+
+/* 性能模式区块（power 实例页；检测到才显示） */
+.object-power-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.object-power-profile-label {
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.object-power-profile-modes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* ── 实例页：读数与操作 ── */
@@ -274,9 +454,70 @@
 /* ── 进程类页：排序条与指标列 ── */
 .object-sortbar {
   display: flex;
-  align-items: center;
-  gap: 2px;
+  flex-direction: column;
+  gap: 6px;
   flex-shrink: 0;
+}
+
+/* 第一行：排序键 + 升降序 + 树模式，平均平铺满一行 */
+.object-sortbar-keys {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.object-sortbar-keys > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* 第二行：多选提示（恒常占位，未选中时留空不跳动） */
+.object-sortbar-hint {
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+  width: 100%;
+}
+
+/* 第三行：多选操作（恒常占位、禁用态排满整行） */
+.object-sortbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.object-sortbar-actions > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* 批量 nice 组（滑条 + 解锁/锁定，占第三行更宽份额） */
+.object-sortbar-actions .object-batch-nice {
+  flex: 2.5 1 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.object-batch-nice-label {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.object-batch-nice-slider {
+  flex: 1;
+  min-width: 80px;
+}
+
+.object-batch-nice-value {
+  flex-shrink: 0;
+  font-size: 13px;
+  min-width: 20px;
+  text-align: right;
 }
 
 .object-sortbar-key {
@@ -305,12 +546,36 @@
 .object-list-virtual {
   flex: 1;
   min-height: 0;
+  position: relative;
+  outline: none;
 }
 
-/* 虚拟化行固定高（与 ObjectPanel.tsx 的 PROCESS_ROW_HEIGHT=62 同步） */
+/* 框选矩形（文件区同款视觉；pointer-events 不拦截行交互） */
+.object-selection-box {
+  position: absolute;
+  background: color-mix(in srgb, var(--md-sys-color-primary) 15%, transparent);
+  border: 1px solid var(--md-sys-color-primary);
+  border-radius: 2px;
+  z-index: 100;
+  pointer-events: none;
+}
+
+/* 虚拟化行（与 ObjectPanel.tsx 的 PROCESS_ROW_HEIGHT=54 同步：行本体
+   48px + margin 上下 3px；左右缩进 6px——行间留缝、宽度略缩，多选时
+   各行边界清晰不粘连） */
 .object-list-virtual .object-row {
-  height: 62px;
+  height: 48px;
+  margin: 3px 6px;
   box-sizing: border-box;
+  padding: 4px 10px;
+}
+
+.object-list-virtual .object-row-name {
+  line-height: 1.35;
+}
+
+.object-list-virtual .object-row-sub {
+  line-height: 1.35;
 }
 
 .object-row-cpu {

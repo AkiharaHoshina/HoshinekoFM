@@ -52,11 +52,15 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `document.querySelectorAll('.object-row-cpu').length >= 1`);
 
     // 自身进程（测试主进程 pid）必在列表中——虚拟化后视口只渲染可见
-    // 行，直接查询可能不可见：经筛选输入定位（同时覆盖筛选功能）
+    // 行，直接查询可能不可见：经地址栏搜索定位（本地筛选输入已移除，
+    // 筛选规则并入类页地址栏搜索——同时覆盖该链路）
     const selfPid = String(process.pid);
-    await h.setReactInput(win, '.object-process-filter', selfPid);
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
+    await h.setReactInput(win, '.omnibar-input', selfPid);
+    await h.key(win, 'Enter');
     await h.waitFor(win, `!!document.querySelector('.object-row[data-id="${selfPid}"]')`, { timeout: 8000 });
-    // 筛选输入只留自身进程一行
+    // 搜索只留自身进程一行
     const allMatch = await h.js(win, `(() => {
       const q = ${JSON.stringify(selfPid)};
       return [...document.querySelectorAll('.object-row')].every((r) => {
@@ -163,21 +167,34 @@ const { ipcMain } = require('electron');
       return names[0] === 'bbb' && names[2] === 'aaa';
     })()`, { timeout: 8000 });
 
-    // 筛选：pid 匹配（"200" → 只留 bbb）
-    await h.setReactInput(win, '.object-process-filter', '200');
+    // 筛选：pid 匹配（"200" → 只留 bbb）——本地筛选输入已移除，
+    // 规则并入类页地址栏搜索
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
+    await h.setReactInput(win, '.omnibar-input', '200');
+    await h.key(win, 'Enter');
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
     const filteredNames = await h.js(win, `[...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim())`);
     h.assert.ok(JSON.stringify(filteredNames.value) === JSON.stringify(['bbb']), `按 pid 筛选应只留 bbb：${JSON.stringify(filteredNames.value)}`);
 
     // 无匹配：空态文案（12 语言双匹配）
-    await h.setReactInput(win, '.object-process-filter', 'zzz-no-match');
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
+    await h.setReactInput(win, '.omnibar-input', 'zzz-no-match');
+    await h.key(win, 'Enter');
     await h.waitFor(win, `(() => {
       const el = document.querySelector('.object-load-failed');
       return !!el && /无匹配|No matching|一致|일치|подходящих|відповідних/.test(el.textContent ?? '');
     })()`, { timeout: 8000 });
 
-    // 清空筛选恢复全量
-    await h.setReactInput(win, '.object-process-filter', '');
+    // 清除搜索恢复全量（搜索头清除按钮）
+    await h.js(win, `(() => {
+      const btns = [...document.querySelectorAll('.object-search-header > *')];
+      const b = btns.find((x) => /清除搜索|Clear Search|検索をクリア|검색 지우기|Очистить поиск|Очистити пошук/.test(x.textContent ?? ''));
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 3`, { timeout: 8000 });
 
     // 实例页：读数 + 状态翻译 + nice 值

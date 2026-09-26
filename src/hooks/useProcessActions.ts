@@ -83,6 +83,42 @@ export function useProcessActions(confirm: ConfirmFn) {
   }, []);
 
   /**
+   * 批量终止进程（多选）：一次确认（文案含数量 + 示例名；KILL 更严厉）
+   * + 结果汇总 toast（成功/失败计数）。逐项结果由主进程聚合。
+   */
+  const batchTerminate = useCallback((pids: number[], example: string, signal: 'TERM' | 'KILL') => {
+    void (async () => {
+      const ok = await confirm(
+        signal === 'KILL' ? t('objects.confirm_batch_kill_title', pids.length) : t('objects.confirm_batch_terminate_title', pids.length),
+        signal === 'KILL'
+          ? t('objects.confirm_batch_kill_message', pids.length, example)
+          : t('objects.confirm_batch_terminate_message', pids.length, example),
+      );
+      if (!ok) return;
+      const res = await window.electron.processSignalBatch(pids, signal);
+      const results = res.results ?? [];
+      const okCount = results.filter((r) => r.ok).length;
+      const fail = results.length - okCount;
+      showToast(t('objects.batch_result', okCount, fail), fail > 0 ? 'warning' : 'success');
+    })();
+  }, [confirm]);
+
+  /**
+   * 批量调整进程 nice（多选预设档）：无确认（可逆低危），成功/失败
+   * 汇总 toast。减小 nice 时主进程经持久助手回落（须已解锁——
+   * ObjectPanel 未解锁时不提供该入口）。
+   */
+  const batchNice = useCallback((pids: number[], nice: number) => {
+    void (async () => {
+      const res = await window.electron.processNiceBatch(pids, nice);
+      const results = res.results ?? [];
+      const okCount = results.filter((r) => r.ok).length;
+      const fail = results.length - okCount;
+      showToast(t('objects.batch_nice_result', nice, okCount, fail), fail > 0 ? 'warning' : 'success');
+    })();
+  }, []);
+
+  /**
    * 网络接口 up/down：down = L2 强警告确认（断网/断远程风险，需
    * pkexec 授权）；up 直接尝试。结果 toast。
    */
@@ -104,5 +140,5 @@ export function useProcessActions(confirm: ConfirmFn) {
     })();
   }, [confirm]);
 
-  return { confirmTerminate, niceProcess, unlockNice, toggleNetwork };
+  return { confirmTerminate, niceProcess, unlockNice, batchTerminate, batchNice, toggleNetwork };
 }

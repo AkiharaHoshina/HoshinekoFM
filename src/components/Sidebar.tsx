@@ -83,6 +83,15 @@ interface SidebarProps {
    */
   onPinObject?: (obj: ObjectDragPayload) => void;
   /**
+   * 固定区互拖（仅 default 变体）：仪表盘固定项拖入侧边栏固定区 →
+   * App 移动（from='dashboard' 移除 + 追加到 pinnedDirs）。picker 不传。
+   */
+  onMovePinAcross?: (from: 'sidebar' | 'dashboard', index: number, to: 'sidebar' | 'dashboard', insertAt?: number) => void;
+  /**
+   * Ctrl 按住时显示固定区序号角标（Ctrl+1..9 跳转语义；App 键盘监听驱动）
+   */
+  showPinBadges?: boolean;
+  /**
    * 固定项右键回调（仅 default 变体）：App 打开固定项菜单
    * （第一组复用文件区文件夹右键菜单 + 第二组上移/下移/取消固定）。
    * picker 变体不传——选择器内固定区只读，无右键菜单。
@@ -112,8 +121,10 @@ const TARGET_PREFIX_GVFS = "gvfs:";
 /** 固定按钮的拖放目标标识（拖单个文件夹到按钮上固定） */
 const TARGET_PIN = "pin:";
 
-/** 拖拽自动滚动：距侧边栏上下边缘多近开始滚动（像素） */
-const EDGE_ZONE_PX = 64;
+/** 拖拽自动滚动：距侧边栏上下边缘多近开始滚动（像素）。
+ *  此前 64px 触发区过小——长 Places/固定列表拖到边缘要贴得很近才滚动，
+ *  放宽到 96px（速度仍随靠近边缘线性升至最大） */
+const EDGE_ZONE_PX = 96;
 /** 拖拽自动滚动：每帧最大滚动速度（像素/帧，约 60fps 下 ≈ 960px/s） */
 const AUTO_SCROLL_MAX_STEP = 16;
 
@@ -146,6 +157,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUnpinPath,
   onReorderPin,
   onPinObject,
+  onMovePinAcross,
+  showPinBadges = false,
   onPinnedContextMenu,
   onPlaceContextMenu,
   variant = 'default',
@@ -231,11 +244,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const devicesRef = useRef(devices);
   const gvfsVolumesRef = useRef(gvfsVolumes);
   const onDropFilesRef = useRef(onDropFiles);
+  const onPinObjectRef = useRef(onPinObject);
+  const onMovePinAcrossRef = useRef(onMovePinAcross);
   useEffect(() => {
     placesRef.current = places;
     devicesRef.current = devices;
     gvfsVolumesRef.current = gvfsVolumes;
     onDropFilesRef.current = onDropFiles;
+    onPinObjectRef.current = onPinObject;
+    onMovePinAcrossRef.current = onMovePinAcross;
   });
 
   useEffect(() => {
@@ -473,6 +490,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
 
     const onDragOver = (e: DragEvent) => {
+      // 对象投影拖拽：**只有「添加固定」按钮接受**（TARGET_PIN）。
+      // 已固定条目对文件夹拖放是「移动/复制进去」语义，对象无此语义
+      // ——悬停已固定条目/间隙/其他区域一律不 preventDefault（浏览器
+      // 不派发 drop，落上无反应）。载荷来源双通道：HTML5 会话内拖拽的
+      // dragover 直接派发到光标下元素（composedPath 定位比 elementFromPoint
+      // 更可靠——软件渲染下坐标命中偶发失效，TabBar 同款手法）；原生
+      // 拖出（对象行与文件 DnD 同款架构）的 dragover 无 MIME，回落
+      // DragContext 登记。
+      const objectDragPayload = readObjectDrag(e) ?? getDragState()?.object ?? null;
+      if (objectDragPayload) {
+        const path = e.composedPath ? e.composedPath() : [];
+        const hit = path.find((n): n is Element => n instanceof Element) ?? null;
+        // 在侧边栏内即驱动边缘自动滚动（固定项多时「添加固定」按钮
+        // 可能被推到折叠线下方——拖到上下边缘滚动以露出落点）
+        if (hit?.closest?.('.sidebar')) {
+          updateAutoScroll(e.clientY);
+        } else {
+          stopAutoScroll();
+          setDragOverTarget(null);
+          return;
+        }
+        const targetEl = hit?.closest?.('[data-sidebar-target]') as HTMLElement | null;
+        const target = targetEl?.dataset.sidebarTarget ?? null;
+        if (target !== TARGET_PIN) {
+          setDragOverTarget(null);
+          return;
+        }
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        setDragOverTarget(target);
+        return;
+      }
+      // 固定区互拖（仪表盘固定项拖入）：固定区内 preventDefault 使 drop
+      // 派发（条目级 reorder 处理器对非本侧起拖不 preventDefault——pinDrag
+      // 为 null 早退；载荷前缀自证来源，无需全局排序标志——仪表盘起拖
+      // 不置该标志）
+      if ((e.dataTransfer?.getData('text/plain') ?? '').startsWith('dashboard:')) {
+        const path = e.composedPath ? e.composedPath() : [];
+        const hit = path.find((n): n is Element => n instanceof Element) ?? null;
+        if (hit?.closest?.('[data-sidebar-pin-zone]')) {
+          e.preventDefault();
+          e.dataTransfer!.dropEffect = 'move';
+        }
+        return;
+      }
       const dragState = getDragState();
       if (!dragState || dragState.files.length === 0) {
         // 非内部拖拽：不接受，也不高亮
@@ -496,6 +558,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const onDrop = (e: DragEvent) => {
       setDragOverTarget(null);
       stopAutoScroll();
+      // 对象投影松手：只有「添加固定」按钮接受（与 dragover 同源判定；
+      // 载荷 MIME 优先，原生拖出回落 DragContext 登记）
+      const objectDragPayload = readObjectDrag(e) ?? getDragState()?.object ?? null;
+      if (objectDragPayload) {
+        const path = e.composedPath ? e.composedPath() : [];
+        const hit = path.find((n): n is Element => n instanceof Element) ?? null;
+        const targetEl = hit?.closest?.('[data-sidebar-target]') as HTMLElement | null;
+        if (targetEl?.dataset.sidebarTarget !== TARGET_PIN) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onPinObjectRef.current?.(objectDragPayload);
+        return;
+      }
+      // 固定区互拖：仪表盘固定项松手在固定区（含列表空白/间隙）→ 移动
+      // 到侧边栏（末尾追加；松手在具体条目上时不消费——条目级 drop
+      // 处理器按插入位置移动，见 handlePinReorderDrop/handlePinGapDrop）
+      if ((e.dataTransfer?.getData('text/plain') ?? '').startsWith('dashboard:')) {
+        const path = e.composedPath ? e.composedPath() : [];
+        const hit = path.find((n): n is Element => n instanceof Element) ?? null;
+        if (hit?.closest?.('.sidebar-item[data-sidebar-target]')) return;
+        if (hit?.closest?.('[data-sidebar-pin-zone]')) {
+          const from = Number((e.dataTransfer?.getData('text/plain') ?? '').slice('dashboard:'.length));
+          if (Number.isInteger(from)) {
+            e.preventDefault();
+            e.stopPropagation();
+            onMovePinAcrossRef.current?.('dashboard', from, 'sidebar');
+          }
+        }
+        return;
+      }
       // 幻影 drop-back（本窗口刚发起过拖拽，真实 drop 落在其他窗口）：忽略
       if (shouldSuppressDrop()) return;
       const dragState = getDragState();
@@ -670,35 +762,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
    */
   const [pinDrag, setPinDrag] = useState<{ from: number; gap: number | null } | null>(null);
 
-  /** 对象投影拖拽悬停中（阴影投影：Object Panel 实例行拖到固定区高亮） */
-  const [objectDragOver, setObjectDragOver] = useState(false);
-
-  /** 对象投影拖拽悬停（固定区容器级；固定项条目自身的事件冒泡到此） */
-  const handleObjectDragOver = (e: React.DragEvent) => {
-    if (isPicker || !onPinObject || !isObjectDrag(e)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-    setObjectDragOver(true);
-  };
-
-  /** 对象投影拖拽离开固定区（进入子元素不算离开） */
-  const handleObjectDragLeave = (e: React.DragEvent) => {
-    const el = e.currentTarget as HTMLElement;
-    if (e.relatedTarget && el.contains(e.relatedTarget as Node)) return;
-    setObjectDragOver(false);
-  };
-
-  /** 对象投影松手（固定区容器级）：解析载荷交给 App 写入投影条目 */
-  const handleObjectDrop = (e: React.DragEvent) => {
-    if (isPicker || !onPinObject) return;
-    const payload = readObjectDrag(e);
-    setObjectDragOver(false);
-    if (!payload) return;
-    e.preventDefault();
-    e.stopPropagation();
-    onPinObject(payload);
-  };
-
   /** 拖拽会话是否仍在进行（同步于 dragstart/dragend 与 drop）：
    *  起拖时经 rAF 延迟更新状态（保证浏览器先截取拖拽图像再隐藏
    *  源条目），回调执行前拖拽可能已结束——经此 ref 丢弃过期更新。 */
@@ -752,7 +815,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return;
     }
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(index));
+    e.dataTransfer.setData('text/plain', `sidebar:${index}`);
     pinReorderActiveRef.current = true;
     // 全局排序拖拽标志：文件落点目标（文件区/地址栏/标签页等）据此
     // 忽略本次拖拽，不显示「可放置」的误导性高亮（dragend 时清除）
@@ -792,12 +855,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setPinDrag((prev) => (prev && prev.gap !== gap ? { ...prev, gap } : prev));
   };
 
-  /** 拖离固定区（进入其他区域/空白）时收起占位 + 清除对象投影高亮 */
+  /** 拖离固定区（进入其他区域/空白）时收起占位 */
   const handlePinReorderListLeave = (e: React.DragEvent) => {
     const el = e.currentTarget as HTMLElement;
     if (e.relatedTarget && el.contains(e.relatedTarget as Node)) return;
     setPinDrag((prev) => (prev ? { ...prev, gap: null } : prev));
-    setObjectDragOver(false);
   };
 
   /**
@@ -814,7 +876,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     e.preventDefault();
     e.stopPropagation();
     const fromRaw = e.dataTransfer.getData('text/plain');
-    const from = Number(fromRaw);
+    if (fromRaw.startsWith('dashboard:')) {
+      const from = Number(fromRaw.slice('dashboard:'.length));
+      setPinDrag(null);
+      if (Number.isInteger(from)) onMovePinAcross?.('dashboard', from, 'sidebar', index);
+      return;
+    }
+    if (!fromRaw.startsWith('sidebar:')) {
+      setPinDrag(null);
+      return;
+    }
+    const from = Number(fromRaw.slice('sidebar:'.length));
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const mid = rect.top + rect.height / 2;
     let gap: number;
@@ -824,7 +896,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       gap = computePinReorderGap(index, e.clientY, rect, from);
     }
     setPinDrag(null);
-    if (!fromRaw || !Number.isFinite(from) || from === gap) return;
+    if (!Number.isFinite(from) || from === gap) return;
     onReorderPin?.(from, gap);
   };
 
@@ -834,9 +906,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
     e.preventDefault();
     e.stopPropagation();
     const fromRaw = e.dataTransfer.getData('text/plain');
-    const from = Number(fromRaw);
+    if (fromRaw.startsWith('dashboard:')) {
+      const from = Number(fromRaw.slice('dashboard:'.length));
+      setPinDrag(null);
+      if (Number.isInteger(from)) onMovePinAcross?.('dashboard', from, 'sidebar', gap);
+      return;
+    }
+    if (!fromRaw.startsWith('sidebar:')) {
+      setPinDrag(null);
+      return;
+    }
+    const from = Number(fromRaw.slice('sidebar:'.length));
     setPinDrag(null);
-    if (!fromRaw || !Number.isFinite(from) || from === gap) return;
+    if (!Number.isFinite(from) || from === gap) return;
     onReorderPin?.(from, gap);
   };
 
@@ -944,10 +1026,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="sidebar-section">
           <h3 className="sidebar-title">{t("sidebar.pinned")}</h3>
           <div
-            className={`sidebar-list${objectDragOver ? ' sidebar-list--object-drag-over' : ''}`}
+            className="sidebar-list"
+            data-sidebar-pin-zone=""
             onDragLeave={handlePinReorderListLeave}
-            onDragOver={handleObjectDragOver}
-            onDrop={handleObjectDrop}
           >
             {pinRenderList.map((entry) => {
               if (entry.kind === 'gap') {
@@ -999,6 +1080,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className="sidebar-label sidebar-pin-label">
                     <MarqueeText enabled={marqueeEnabled}>{item.name}</MarqueeText>
                   </span>
+                  {showPinBadges && origIndex < 9 && (
+                    <span className="sidebar-pin-badge">{origIndex + 1}</span>
+                  )}
                   {!isPicker && (
                     <IconButton
                       variant="standard"
@@ -1018,12 +1102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {!isPicker && (
         <div className="sidebar-section sidebar-pin-section">
-          <div
-            className={`sidebar-list${objectDragOver ? ' sidebar-list--object-drag-over' : ''}`}
-            onDragOver={handleObjectDragOver}
-            onDragLeave={handleObjectDragLeave}
-            onDrop={handleObjectDrop}
-          >
+          <div className="sidebar-list" data-sidebar-pin-zone="">
             <button
               className={`sidebar-item sidebar-add-pin ${dragOverTarget === TARGET_PIN ? "drag-over" : ""}`}
               data-sidebar-target={TARGET_PIN}

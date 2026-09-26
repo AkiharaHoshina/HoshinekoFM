@@ -10,6 +10,8 @@ import { useDrag } from '../contexts/DragContext';
 import { extractDropPaths } from '../utils/dragDrop';
 import { shouldSuppressDrop } from '../utils/nativeDragTracker';
 import { isPinReorderDragActive } from '../utils/pinReorderDrag';
+import { readObjectDrag, type ObjectDragPayload } from '../utils/objectDrag';
+import { parseObjectsPath } from '../utils/objectsPath';
 import './TerminalPane.css';
 
 /** 右键菜单位置（null 表示关闭） */
@@ -107,16 +109,34 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdR
   const [focused, setFocused] = useState(false);
 
   /**
+   * 对象投影拖放（Object Panel 实例行）：仅存储类有路径语义——已挂载
+   * 则 cd 到挂载点（sendCd：PTY 存活发 cd、已退出则于该目录重启）；
+   * 未挂载 toast 提示；其他类（进程/传感器等）无路径语义，静默忽略。
+   * 定义在 sendCd 之后（依赖它）；handleTerminalDrop 经 ref 调用（防
+   * 前向引用 TDZ——deps 数组在渲染期求值）。
+   */
+  const handleObjectDropRef = useRef<((obj: ObjectDragPayload) => void) | null>(null);
+
+  /**
    * 拖放目标：把文件区域（或其他窗口/应用）拖入的条目完整路径粘贴到
    * 终端**光标位置**。与文件列表落点同一套判定管线：
    * - 幻影 drop-back（本窗口发起拖拽会话期间的真实 drop）静默忽略；
    * - 路径优先取本窗口 DragContext（同窗口内部拖拽），否则从
    *   dataTransfer 提取（跨窗口/外部应用）；
    * - 含空格/引号的路径单引号包裹转义，多路径空格分隔一次粘贴。
+   * 对象投影拖拽（自定义 MIME）分流到 handleObjectDrop（cd 语义）。
    */
   const handleTerminalDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     if (shouldSuppressDrop()) return;
+
+    // 对象投影拖拽（MIME 优先；原生拖出回落 DragContext 登记——对象行
+    // 与文件 DnD 同款架构）分流到 handleObjectDrop（cd 语义）
+    const obj = readObjectDrag(e) ?? getDragState()?.object ?? null;
+    if (obj) {
+      handleObjectDropRef.current?.(obj);
+      return;
+    }
 
     const dragState = getDragState();
     let paths: string[];
@@ -378,6 +398,22 @@ export const TerminalPane: React.FC<TerminalPaneProps> = ({ cwd, currentDir, cdR
       spawnPty(path);
     }
   }, [spawnPty]);
+
+  /** 对象投影拖放执行体（定义在 sendCd 之后；经 handleObjectDropRef 调用） */
+  const handleObjectDrop = useCallback((obj: ObjectDragPayload) => {
+    const parsed = parseObjectsPath(obj.objectPath);
+    if (!parsed || parsed.className !== 'storage' || parsed.instanceId === null) return;
+    void window.electron.readObject('storage', parsed.instanceId).then((r) => {
+      if (r?.kind === 'storage' && r.mounted && r.mountpoint) {
+        sendCd(r.mountpoint);
+      } else {
+        showToast(t('objects.not_mounted'), 'info');
+      }
+    });
+  }, [sendCd]);
+  useEffect(() => {
+    handleObjectDropRef.current = handleObjectDrop;
+  }, [handleObjectDrop]);
 
   /**
    * 显式 cd 请求（「在此打开终端」等显式动作）：

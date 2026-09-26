@@ -11,6 +11,7 @@ import { createAddressBarDropHandler } from "../utils/addressBarDrop";
 import { isPinReorderDragActive } from "../utils/pinReorderDrag";
 import { isSearchPath, parseSearchPath } from "../utils/searchPath";
 import { isObjectsPath, parseObjectsPath, buildObjectsPath, OBJECTS_CLASS_LABEL } from "../utils/objectsPath";
+import { isObjectSearchPath, parseObjectSearchPath, objectSearchBasePath } from "../utils/objectSearchPath";
 import { t } from "../i18n";
 
 /** 局部别名（JSX 内更短）：objects 路径构建 */
@@ -173,7 +174,8 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   /**
    * 搜索态虚拟路径（search://目录:关键词）：地址栏渲染「搜索胶囊 +
    * 基础目录段」——基础目录段点击退出搜索进入该目录（普通面包屑
-   * 语义），搜索胶囊不可导航（仅展示，点击重跑当前搜索）。
+   * 语义）；**搜索胶囊单击 = 返回发起搜索的目录**（虚拟目录如
+   * trash:// 同语义，与向上按钮一致）。
    */
   const isSearchVirtual = isSearchPath(currentPath);
   const parsedSearch = useMemo(() => (isSearchVirtual ? parseSearchPath(currentPath) : null), [isSearchVirtual, currentPath]);
@@ -184,6 +186,12 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
    */
   const isObjectsVirtual = isObjectsPath(currentPath);
   const parsedObjects = useMemo(() => (isObjectsVirtual ? parseObjectsPath(currentPath) : null), [isObjectsVirtual, currentPath]);
+  /**
+   * 对象搜索虚拟路径（objectsearch://[类]:关键词）：地址栏渲染「对象搜索
+   * 胶囊（关键词）+ 基准对象段（根/类页，点击退出搜索）」。
+   */
+  const isObjectSearchVirtual = isObjectSearchPath(currentPath);
+  const parsedObjectSearch = useMemo(() => (isObjectSearchVirtual ? parseObjectSearchPath(currentPath) : null), [isObjectSearchVirtual, currentPath]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastRef = useRef<HTMLSpanElement>(null);
 
@@ -258,7 +266,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   useEffect(() => {
     // 回收站/搜索态/Object Panel 虚拟路径无真实目录段，跳过软链接检测
     // （segmentPaths 会是无意义的前缀，如 /trash:）
-    if (isTrashVirtual || isSearchVirtual || isObjectsVirtual) return;
+    if (isTrashVirtual || isSearchVirtual || isObjectsVirtual || isObjectSearchVirtual) return;
     const segmentPaths = parts.map(
       (_, i) => "/" + parts.slice(0, i + 1).join("/"),
     );
@@ -284,7 +292,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentPath, parts, isTrashVirtual, isSearchVirtual, isObjectsVirtual]);
+  }, [currentPath, parts, isTrashVirtual, isSearchVirtual, isObjectsVirtual, isObjectSearchVirtual]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     dropHandler?.handleDragOver(e);
@@ -489,7 +497,8 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
 
   // 所有胶囊统一为同一份右键跳转菜单：与「主页」胶囊在主页时的
   // 内容、分组、顺序完全一致——第一组 = 主页 + 根目录 + 回收站；
-  // 第二组 = 设备目录（/dev）+ 特殊挂载。不再按当前胶囊动态增删条目。
+  // 第二组 = 设备目录（/dev）+ 特殊挂载；「转到对象面板」独立底置
+  // （其上一条分界线）。不再按当前胶囊动态增删条目。
   const ctxMenuNode = breadcrumbCtxMenu ? (() => {
     const items: ContextMenuItem[] = [];
     if (ownHome) {
@@ -543,7 +552,19 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       })),
     ];
 
-    items.push({ divider: true, label: "", action: () => {} }, ...specialGroup);
+    items.push(
+      { divider: true, label: "", action: () => {} },
+      ...specialGroup,
+      { divider: true, label: "", action: () => {} },
+      {
+        label: t("breadcrumbs.go_to_objects"),
+        icon: "widgets",
+        action: () => {
+          onNavigate("objects://");
+          setBreadcrumbCtxMenu(null);
+        },
+      },
+    );
 
     return (
       <ContextMenu
@@ -554,6 +575,44 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       />
     );
   })() : null;
+
+  // 对象搜索虚拟路径：渲染「对象搜索胶囊（关键词）+ 基准对象段（根/类页，
+  // 点击退出搜索）」。对象搜索胶囊单击同样返回基准对象页。所有 hooks
+  // 已执行。
+  if (isObjectSearchVirtual && parsedObjectSearch) {
+    return (
+      <div
+        ref={scrollRef}
+        className="breadcrumb-container"
+        onWheel={(e) => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollLeft += e.deltaY;
+          }
+        }}
+      >
+        <Chip
+          title={t('objects.object_search')}
+          onClick={() => onNavigate(objectSearchBasePath(parsedObjectSearch))}
+          onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
+          className="breadcrumb-chip breadcrumb-objectsearch-chip"
+        >
+          <Icon name="search" slot="icon" />
+          <span style={{ fontWeight: 600 }}>{t('objects.object_search')} · {parsedObjectSearch.query}</span>
+        </Chip>
+        <span className="breadcrumb-separator">/</span>
+        <Button
+          variant="text"
+          className="breadcrumb-item"
+          onClick={() => onNavigate(objectSearchBasePath(parsedObjectSearch))}
+        >
+          {parsedObjectSearch.className !== null
+            ? t(OBJECTS_CLASS_LABEL[parsedObjectSearch.className] ?? 'objects.title')
+            : t('objects.title')}
+        </Button>
+        {ctxMenuNode}
+      </div>
+    );
+  }
 
   // Object Panel 虚拟路径：渲染「对象胶囊 + 类段 + 实例段」。段点击导航
   // 对应虚拟路径；对象页无真实目录，段不接收拖放。所有 hooks 已执行。
@@ -610,7 +669,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
 
   // 搜索态虚拟路径：渲染「搜索胶囊 + 基础目录段」。基础目录段为真实
   // 路径（可点击退出搜索进入、可拖放，语义与普通面包屑一致）；搜索胶囊
-  // 仅展示（点击重跑当前搜索）。所有 hooks 已在此处之前执行完毕。
+  // 单击 = 返回发起搜索的目录。所有 hooks 已在此处之前执行完毕。
   if (isSearchVirtual && parsedSearch) {
     const dirParts = parsedSearch.dir.split('/').filter(Boolean);
     return (
@@ -625,7 +684,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
       >
         <Chip
           title={t('tab.search', parsedSearch.query)}
-          onClick={() => onNavigate(currentPath)}
+          onClick={() => onNavigate(parsedSearch.dir)}
           onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
           className="breadcrumb-chip breadcrumb-search-chip"
         >

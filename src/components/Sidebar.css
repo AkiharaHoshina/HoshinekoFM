@@ -111,14 +111,6 @@
     background-color: var(--md-sys-color-surface-container-high);
 }
 
-/* 对象投影拖拽悬停高亮（阴影投影：Object Panel 实例行 → 固定区） */
-.sidebar-list--object-drag-over {
-    outline: 2px dashed var(--md-sys-color-primary);
-    outline-offset: -2px;
-    border-radius: 8px;
-    background-color: var(--md-sys-color-surface-container-high);
-}
-
 .sidebar-item:active {
     transform: scale(0.98);
 }
@@ -240,6 +232,21 @@
     flex-shrink: 0;
     opacity: 0;
     transition: opacity 0.15s ease;
+}
+
+/* Ctrl+数字快捷键序号角标（按住 Ctrl 时显示，App 键盘监听驱动） */
+.sidebar-pin-badge {
+    flex-shrink: 0;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 18px;
+    text-align: center;
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
 }
 
 .sidebar-item:hover .sidebar-pin-remove {

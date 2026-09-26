@@ -42,9 +42,20 @@ export interface ObjectInstance {
     kind: 'disk' | 'partition' | 'mount' | 'cpu' | 'memory' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power' | 'gpu';
     icon: string;
     /** 进程类列表指标（枚举时一并算出，其他类不传） */
-    metrics?: { cpuPct: number; rssBytes: number; state: string };
+    metrics?: { cpuPct: number; rssBytes: number; state: string; ppid?: number };
     /** 访问受限标记（tty 类：/dev/ttyN 不可读——非本会话控制台；管理员模式运行自然通过） */
     restricted?: boolean;
+    /** 原生拖出路径（对象行拖到其他应用等价拖该路径；存储类 = 挂载点
+     *  （已挂载）或块设备节点（未挂载）、tty = /dev/ttyN、power/thermal/
+     *  backlight/network = sysfs 类目录、process = /proc/<pid>、
+     *  cpu = /proc/stat、memory = /proc/meminfo、gpu = /dev/dri 设备节点；
+     *  无路径语义的类不传） */
+    nativePath?: string;
+    /** 原生拖出路径是否为目录（挂载点/sysfs/proc 目录 = true；设备节点/
+     *  统计文件 = false；无 nativePath 时不传） */
+    nativeIsDir?: boolean;
+    /** 充电阈值支持标记（power 类电池；检测到才显示） */
+    chargeControl?: boolean;
 }
 
 /** Object Panel 类信息（渲染层按 id 翻译显示名） */
@@ -63,7 +74,7 @@ export type ObjectReading =
     | { kind: 'thermal'; name: string; temps: { id: string; label: string | null; valueC: number }[]; fans: { id: string; label: string | null; rpm: number }[]; currs?: { id: string; label: string | null; mA: number }[]; voltages?: { id: string; label: string | null; mV: number }[] }
     | { kind: 'backlight'; brightness: number; maxBrightness: number; actualBrightness: number; writable: boolean }
     | { kind: 'network'; operstate: string; speedMbps: number | null; addresses: string[]; rxBytesPerSec: number; txBytesPerSec: number; isLoopback: boolean }
-    | { kind: 'power'; capacity: number | null; status: string; energyNow: number | null; energyFull: number | null; cycleCount: number | null; type: string }
+    | { kind: 'power'; capacity: number | null; status: string; energyNow: number | null; energyFull: number | null; cycleCount: number | null; type: string; chargeThreshold?: number | null }
     | { kind: 'gpu'; vendor: 'nvidia' | 'amd' | 'intel'; utilizationPct: number | null; memUsedBytes: number | null; memTotalBytes: number | null; tempC: number | null };
 
 /** SMART 健康读数（smartctl 一次性静态信息；失败走 reason） */
@@ -181,7 +192,8 @@ export interface DragFileMeta {
 export type DragClaimResult =
   | { status: 'granted'; files: DragFileMeta[] }
   | { status: 'consumed' }
-  | { status: 'none' };
+  | { status: 'none' }
+  | { status: 'object' };
 
 export interface IElectronAPI {
     getThemeCss: () => Promise<string | null>;
@@ -471,7 +483,7 @@ export interface IElectronAPI {
     newWindow: () => Promise<void>;
     /** 订阅最大化状态变化（标题栏 最大化/还原 图标切换） */
     onWindowMaximizeChange: (callback: (maximized: boolean) => void) => () => void;
-    startDrag: (paths: string | string[], files?: DragFileMeta[]) => void;
+    startDrag: (paths: string | string[], files?: DragFileMeta[], object?: boolean) => void;
     claimDragFiles: () => Promise<DragClaimResult>;
     consumeDrag: () => Promise<void>;
     onDragConsumedExternally: (callback: () => void) => () => void;
@@ -546,6 +558,22 @@ export interface IElectronAPI {
     processNice: (pid: number, nice: number) => Promise<{ ok: boolean; error?: string }>;
     /** Object Panel：提前授权进程优先级（「解锁」按钮——一次 pkexec，本会话有效） */
     processNiceAuth: () => Promise<{ ok: boolean; error?: string }>;
+    /** Object Panel：撤销进程优先级授权（「锁定」按钮——kill 持久助手） */
+    processNiceLock: () => Promise<{ ok: boolean; error?: string }>;
+    /** Object Panel：撤销 sysfs 写授权（背光/充电阈值共用「锁定」按钮） */
+    sysfsWriteLock: (classId: string, instanceId: string, key: string) => Promise<{ ok: boolean; error?: string }>;
+    /** Object Panel：批量终止进程（多选；逐项聚合结果） */
+    processSignalBatch: (pids: number[], signal: 'TERM' | 'KILL') => Promise<{ ok: boolean; error?: string; results?: { pid: unknown; ok: boolean; error?: string }[] }>;
+    /** Object Panel：批量调整进程 nice（多选预设档；逐项聚合结果） */
+    processNiceBatch: (pids: number[], nice: number) => Promise<{ ok: boolean; error?: string; results?: { pid: unknown; ok: boolean; error?: string }[] }>;
+    /** Object Panel：读取性能模式（power-profiles-daemon；检测到才显示） */
+    powerProfileInfo: () => Promise<{ ok: boolean; reason?: string; available?: string[]; active?: string }>;
+    /** Object Panel：设置性能模式（白名单档位；EPERM 经 pkexec 回落） */
+    powerProfileSet: (mode: string) => Promise<{ ok: boolean; error?: string; escalated?: boolean }>;
+    /** 读取搜索历史（'file' | 'object'；~/.config/HoshinekoFM 落盘） */
+    loadSearchHistory: (kind: 'file' | 'object') => Promise<unknown[]>;
+    /** 保存搜索历史（原子写；逐条校验 + 上限 100） */
+    saveSearchHistory: (kind: 'file' | 'object', entries: unknown[]) => Promise<{ ok: boolean; error?: string }>;
     /** Object Panel：读取块设备 SMART 健康（smartctl 一次性静态信息） */
     smartInfo: (devicePath: string) => Promise<SmartInfo>;
     /** Object Panel：白名单写（v2 仅 backlight/brightness）；EACCES 经 pkexec 回落；回传旧值供「恢复原值」 */

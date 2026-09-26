@@ -2381,11 +2381,24 @@ export function registerSystemHandlers(
     /** Material Symbols 图标名 */
     icon: string;
     /** 进程类列表指标（枚举时一并算出，其他类不传）：
-     *  cpuPct 为与上次枚举采样的差值（单核语义，钳制 0–100） */
-    metrics?: { cpuPct: number; rssBytes: number; state: string };
+     *  cpuPct 为与上次枚举采样的差值（单核语义，钳制 0–100）；
+     *  ppid 供树视图建层级（进程类专有） */
+    metrics?: { cpuPct: number; rssBytes: number; state: string; ppid?: number };
     /** 访问受限标记（tty 类：/dev/ttyN 不可读——非本会话控制台）。
      *  以管理员模式运行的进程 R_OK 预检自然通过（远期设计，见报告）。 */
     restricted?: boolean;
+    /** 原生拖出路径（对象行拖到其他应用等价拖该路径）——存储类 =
+     *  挂载点（已挂载）或块设备节点（未挂载）、tty = /dev/ttyN、
+     *  power/thermal/backlight/network = sysfs 类目录、process =
+     *  /proc/<pid>、cpu = /proc/stat、memory = /proc/meminfo、
+     *  gpu = /dev/dri 设备节点；无路径语义的类不传 */
+    nativePath?: string;
+    /** 原生拖出路径是否为目录（挂载点/sysfs/proc 目录 = true；
+     *  设备节点/统计文件 = false；无 nativePath 时不传） */
+    nativeIsDir?: boolean;
+    /** 充电阈值支持标记（power 类电池：charge_control_end_threshold
+     *  文件存在——检测到才显示；写入是否生效靠写后读回校验兜底） */
+    chargeControl?: boolean;
   }
 
   /** OP 类信息（渲染层按 id 翻译显示名） */
@@ -2404,7 +2417,7 @@ export function registerSystemHandlers(
     | { kind: 'thermal'; name: string; temps: { id: string; label: string | null; valueC: number }[]; fans: { id: string; label: string | null; rpm: number }[]; currs: { id: string; label: string | null; mA: number }[]; voltages: { id: string; label: string | null; mV: number }[] }
     | { kind: 'backlight'; brightness: number; maxBrightness: number; actualBrightness: number; writable: boolean }
     | { kind: 'network'; operstate: string; speedMbps: number | null; addresses: string[]; rxBytesPerSec: number; txBytesPerSec: number; isLoopback: boolean }
-    | { kind: 'power'; capacity: number | null; status: string; energyNow: number | null; energyFull: number | null; cycleCount: number | null; type: string }
+    | { kind: 'power'; capacity: number | null; status: string; energyNow: number | null; energyFull: number | null; cycleCount: number | null; type: string; chargeThreshold?: number | null }
     | { kind: 'gpu'; vendor: 'nvidia' | 'amd' | 'intel'; utilizationPct: number | null; memUsedBytes: number | null; memTotalBytes: number | null; tempC: number | null };
 
   /** CPU 占用百分比缓存：/proc/stat 是单调计数，需与上次采样做差 */
@@ -2456,6 +2469,9 @@ export function registerSystemHandlers(
             subtitle: d.model && d.model !== d.name ? d.model : (d.size ?? null),
             kind: 'disk',
             icon: 'hard_drive',
+            // 未挂载磁盘的原生拖出路径 = 块设备节点（挂载点在分区实例上）
+            nativePath: d.devicePath ?? `/dev/${d.name}`,
+            nativeIsDir: false,
           });
         } else if (d.type === 'part') {
           const name = d.label ?? d.name;
@@ -2465,6 +2481,8 @@ export function registerSystemHandlers(
             subtitle: d.mountpoint ?? (d.fstype ?? null),
             kind: 'partition',
             icon: 'storage',
+            nativePath: d.mountpoint ?? d.devicePath ?? `/dev/${d.name}`,
+            nativeIsDir: !!d.mountpoint,
           });
           if (d.mountpoint) seenMountpoints.add(d.mountpoint);
         }
@@ -2485,6 +2503,8 @@ export function registerSystemHandlers(
           subtitle: info.source,
           kind: 'mount',
           icon: 'folder_open',
+          nativePath: mp,
+          nativeIsDir: true,
         });
       }
     } catch { /* 挂载表不可用：仅 lsblk 结果 */ }
@@ -2523,18 +2543,19 @@ export function registerSystemHandlers(
         } catch {
           restricted = true;
         }
-        instances.push({ id: name, name, subtitle: null, kind: 'tty', icon: 'terminal', restricted });
+        instances.push({ id: name, name, subtitle: null, kind: 'tty', icon: 'terminal', restricted, nativePath: `/dev/${name}`, nativeIsDir: false });
       }
     } catch { /* /sys/class/tty 不可用：空列表 */ }
     instances.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
     return instances;
   }
 
-  /** 枚举处理器与内存类对象（固定实例） */
+  /** 枚举处理器与内存类对象（固定实例；原生拖出路径 = 聚合统计的
+   *  真实来源文件——cpu = /proc/stat、memory = /proc/meminfo） */
   async function listProcessorObjects(): Promise<ObjectInstance[]> {
     return [
-      { id: 'cpu', name: 'CPU', subtitle: await readCpuModel(), kind: 'cpu', icon: 'memory' },
-      { id: 'memory', name: 'Memory', subtitle: null, kind: 'memory', icon: 'memory' },
+      { id: 'cpu', name: 'CPU', subtitle: await readCpuModel(), kind: 'cpu', icon: 'memory', nativePath: '/proc/stat', nativeIsDir: false },
+      { id: 'memory', name: 'Memory', subtitle: null, kind: 'memory', icon: 'memory', nativePath: '/proc/meminfo', nativeIsDir: false },
     ];
   }
 
@@ -2657,10 +2678,13 @@ export function registerSystemHandlers(
           subtitle: cmdline ?? `[${parsed.comm}]`,
           kind: 'process',
           icon: 'app_shortcut',
+          nativePath: `/proc/${pid}`,
+          nativeIsDir: true,
           metrics: {
             cpuPct: procCpuPct(ticks, now, prevMap.get(pid)),
             rssBytes,
             state: parsed.state,
+            ppid: parsed.ppid,
           },
         });
       } catch { /* 进程已消失/无权限 */ }
@@ -2720,7 +2744,7 @@ export function registerSystemHandlers(
             if (mC !== null) overview = `${(mC / 1000).toFixed(1)}°C`;
           }
         } catch { /* 无温度文件 */ }
-        instances.push({ id: name, name: chipName, subtitle: overview, kind: 'thermal', icon: 'device_thermostat' });
+        instances.push({ id: name, name: chipName, subtitle: overview, kind: 'thermal', icon: 'device_thermostat', nativePath: path.join(root, name), nativeIsDir: true });
       }
     } catch { /* hwmon 不可用：空列表 */ }
     instances.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
@@ -2735,7 +2759,7 @@ export function registerSystemHandlers(
     try {
       const entries = await fs.readdir(root);
       return entries
-        .map((name) => ({ id: name, name, subtitle: null, kind: 'backlight' as const, icon: 'light_mode' }))
+        .map((name) => ({ id: name, name, subtitle: null, kind: 'backlight' as const, icon: 'light_mode', nativePath: path.join(root, name), nativeIsDir: true }))
         .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
     } catch {
       return [];
@@ -2763,6 +2787,8 @@ export function registerSystemHandlers(
           subtitle: operstate ?? null,
           kind: 'network',
           icon: wireless ? 'wifi' : 'ethernet',
+          nativePath: path.join(root, name),
+          nativeIsDir: true,
         });
       }
     } catch { /* net 不可用：空列表 */ }
@@ -2781,12 +2807,22 @@ export function registerSystemHandlers(
       for (const name of entries) {
         const type = await readSysfsStr(path.join(root, name, 'type'));
         const capacity = await readSysfsNum(path.join(root, name, 'capacity'));
+        // 充电阈值支持预检（charge_control_end_threshold 文件存在才显示
+        // ——检测到才显示哲学；厂商差异靠写后读回校验兜底）
+        let chargeControl = false;
+        try {
+          await fs.access(path.join(root, name, 'charge_control_end_threshold'));
+          chargeControl = true;
+        } catch { /* 不支持 */ }
         instances.push({
           id: name,
           name,
           subtitle: capacity !== null ? `${capacity}%` : (type ?? null),
           kind: 'power',
           icon: type === 'Battery' ? 'battery_full' : 'power',
+          nativePath: path.join(root, name),
+          nativeIsDir: true,
+          chargeControl,
         });
       }
     } catch { /* power_supply 不可用：空列表 */ }
@@ -2825,6 +2861,25 @@ export function registerSystemHandlers(
   }
 
   /**
+   * 解析 GPU 的 DRI 设备节点（原生拖出路径语义）：优先首个 card*（设备
+   * 本体），回落 renderD*（渲染节点）；无 /dev/dri 回 null。e2e 沙箱
+   * 经 `HOSHINEKO_E2E_DRI_DIR` 覆盖（与 sysfs/GPU 工具同款手法）。
+   */
+  let driNodeCache: string | null | undefined;
+  async function resolveDriNode(): Promise<string | null> {
+    if (driNodeCache !== undefined) return driNodeCache;
+    driNodeCache = null;
+    const driDir = process.env.HOSHINEKO_E2E_DRI_DIR ?? '/dev/dri';
+    try {
+      const entries = await fs.readdir(driDir);
+      const first = (re: RegExp) => entries.filter((e) => re.test(e)).sort()[0];
+      driNodeCache = first(/^card\d+$/) ?? first(/^renderD\d+$/) ?? null;
+      if (driNodeCache) driNodeCache = path.join(driDir, driNodeCache);
+    } catch { /* 无 DRI */ }
+    return driNodeCache;
+  }
+
+  /**
    * 枚举 GPU 类对象（vendor 工具驱动；检测到工具才显示——SMART 同款
    * 「检测不到不显示空卡」哲学，根页空类隐藏天然兜底）。解析失败/
    * 工具挂起（execFile timeout 杀进程）回空数组，不崩。
@@ -2833,6 +2888,15 @@ export function registerSystemHandlers(
     try {
       const det = await detectGpuTool();
       if (!det) return [];
+      const dri = await resolveDriNode();
+      const gpuNative = (id: string, name: string, subtitle: string): ObjectInstance => ({
+        id,
+        name,
+        subtitle,
+        kind: 'gpu',
+        icon: 'developer_board',
+        ...(dri ? { nativePath: dri, nativeIsDir: false } : {}),
+      });
       if (det.vendor === 'nvidia') {
         const { stdout } = await execFileAsync(
           gpuToolPath(det.tool),
@@ -2843,7 +2907,7 @@ export function registerSystemHandlers(
         for (const line of stdout.split('\n')) {
           const m = /^\s*(\d+)\s*,\s*(.+?)\s*$/.exec(line.trim());
           if (!m) continue;
-          instances.push({ id: `nvidia-${m[1]}`, name: m[2].trim(), subtitle: 'NVIDIA', kind: 'gpu', icon: 'developer_board' });
+          instances.push(gpuNative(`nvidia-${m[1]}`, m[2].trim(), 'NVIDIA'));
         }
         return instances;
       }
@@ -2853,12 +2917,12 @@ export function registerSystemHandlers(
         for (const line of stdout.split('\n')) {
           const m = /GPU\[(\d+)\]/i.exec(line);
           if (!m) continue;
-          instances.push({ id: `amd-${m[1]}`, name: `AMD GPU ${m[1]}`, subtitle: 'AMD', kind: 'gpu', icon: 'developer_board' });
+          instances.push(gpuNative(`amd-${m[1]}`, `AMD GPU ${m[1]}`, 'AMD'));
         }
         return instances;
       }
       // intel：intel_gpu_top 无可解析的一次性枚举输出——检测到工具即单实例
-      return [{ id: 'intel-0', name: 'Intel GPU', subtitle: 'Intel', kind: 'gpu', icon: 'developer_board' }];
+      return [gpuNative('intel-0', 'Intel GPU', 'Intel')];
     } catch {
       return [];
     }
@@ -3204,15 +3268,16 @@ export function registerSystemHandlers(
     if (!SYSFS_ID_RE.test(instanceId)) return null;
     const dir = path.join(getSysfsRoot(), 'class', 'power_supply', instanceId);
     try {
-      const [capacity, status, type, energyNow, energyFull, cycleCount] = await Promise.all([
+      const [capacity, status, type, energyNow, energyFull, cycleCount, chargeThreshold] = await Promise.all([
         readSysfsNum(path.join(dir, 'capacity')),
         readSysfsStr(path.join(dir, 'status')),
         readSysfsStr(path.join(dir, 'type')),
         readSysfsNum(path.join(dir, 'energy_now')), // µWh
         readSysfsNum(path.join(dir, 'energy_full')),
         readSysfsNum(path.join(dir, 'cycle_count')),
+        readSysfsNum(path.join(dir, 'charge_control_end_threshold')), // 缺失 = 不支持
       ]);
-      return { kind: 'power', capacity, status: status ?? 'Unknown', energyNow, energyFull, cycleCount, type: type ?? 'Unknown' };
+      return { kind: 'power', capacity, status: status ?? 'Unknown', energyNow, energyFull, cycleCount, type: type ?? 'Unknown', chargeThreshold };
     } catch {
       return null;
     }
@@ -3534,7 +3599,8 @@ export function registerSystemHandlers(
   const backlightHelpers = new Map<string, PrivilegedHelper>();
 
   /**
-   * 获取（或拉起）target 的写助手；授权失败/超时回 null。写入侧调用——
+   * 获取（或拉起）target 的写助手（背光/充电阈值等 sysfs 写目标共用——
+   * 助手脚本通用「写值到 $1」）；授权失败/超时回 null。写入侧调用——
    * 非 null 即已收到 ready 行（pkexec 授权成功、sh 就绪）。
    */
   async function ensureBacklightHelper(target: string): Promise<PrivilegedHelper | null> {
@@ -3602,9 +3668,9 @@ export function registerSystemHandlers(
 
   /**
    * 提前授权进程优先级调整（前端「解锁」按钮）：直接拉起持久 nice 助手
-   * ——一次 pkexec 授权，**本会话内有效**（助手常驻到主进程退出，与
-   * polkit 5 分钟临时授权缓存无关：缓存只影响「重新 spawn pkexec」，
-   * 而助手只 spawn 一次、后续写走 stdin 行协议零弹框）。失败码：
+   * ——一次 pkexec 授权，**本会话有效**（助手常驻到主进程退出，与
+   * polkit 5 分钟临时授权缓存无关——缓存只影响重新 spawn pkexec，助手
+   * 只 spawn 一次；后续写走 stdin 行协议零弹框）。失败码：
    * NO_TOOL（renice 缺失）/AUTH_FAILED（授权取消/超时/助手拉起失败）。
    */
   ipcMain.handle('system:process-nice-auth', async () => {
@@ -3617,6 +3683,291 @@ export function registerSystemHandlers(
     }
   });
 
+  /** 终止持久特权助手（kill 进程；exit 事件会结算挂起写队列并移出 registry） */
+  function killPrivilegedHelper(registry: Map<string, PrivilegedHelper>, key: string): void {
+    const helper = registry.get(key);
+    if (!helper) return;
+    try { helper.proc.kill(); } catch { /* 已退出 */ }
+  }
+
+  /**
+   * 撤销进程优先级授权（前端「锁定」按钮）：kill nice 单例助手——下次
+   * 减小 nice 重新弹 pkexec 授权。与解锁对称，补齐「一次授权会话有效」
+   * 的收回入口。
+   */
+  ipcMain.handle('system:process-nice-lock', () => {
+    killPrivilegedHelper(niceHelpers, 'nice');
+    return { ok: true };
+  });
+
+  /**
+   * 撤销 sysfs 写授权（前端「锁定」按钮；背光/充电阈值共用）：按
+   * 类/键/实例定位写目标（与 write-object 同源校验）kill 助手
+   * （registry key 与 ensureBacklightHelper 同源）。
+   */
+  ipcMain.handle('system:sysfs-write-lock', (_event, classId: unknown, instanceId: unknown, key: unknown) => {
+    if (typeof instanceId !== 'string' || !SYSFS_ID_RE.test(instanceId)) return { ok: false, error: 'INVALID_ID' };
+    let target: string;
+    if (classId === 'backlight' && key === 'brightness') {
+      target = path.join(getSysfsRoot(), 'class', 'backlight', instanceId, 'brightness');
+    } else if (classId === 'power' && key === 'chargeThreshold') {
+      target = path.join(getSysfsRoot(), 'class', 'power_supply', instanceId, 'charge_control_end_threshold');
+    } else {
+      return { ok: false, error: 'UNKNOWN_CLASS' };
+    }
+    killPrivilegedHelper(backlightHelpers, target);
+    return { ok: true };
+  });
+
+  /** 批量进程操作单次上限（防误伤；与搜索结果上限同精神） */
+  const PROCESS_BATCH_MAX = 50;
+
+  /** 性能模式白名单（power-profiles-daemon 标准档位） */
+  const POWER_PROFILE_MODES = new Set(['performance', 'balanced', 'power-saver']);
+
+  /** ppd D-Bus 读取（无 CLI 时回落）：UPower.PowerProfiles 属性——
+   *  Fedora 等发行版守护进程默认在而 powerprofilesctl CLI 可能未安装 */
+  async function readPowerProfilesDbus(): Promise<{ available: string[]; active: string } | null> {
+    try {
+      const bus = dbus.systemBus();
+      const obj = await bus.getProxyObject('org.freedesktop.UPower.PowerProfiles', '/org/freedesktop/UPower/PowerProfiles');
+      const props = obj.getInterface('org.freedesktop.DBus.Properties');
+      const profiles = await props.Get('org.freedesktop.UPower.PowerProfiles', 'Profiles');
+      const active = await props.Get('org.freedesktop.UPower.PowerProfiles', 'ActiveProfile');
+      const available = ((profiles.value ?? []) as Array<{ Profile?: { value?: string } }>)
+        .map((p) => p.Profile?.value ?? '')
+        .filter(Boolean);
+      const activeMode = (active.value as string) ?? '';
+      if (available.length === 0) return null;
+      return { available, active: available.includes(activeMode) ? activeMode : available[0] };
+    } catch {
+      return null;
+    }
+  }
+
+  /** ppd D-Bus 设置档位（守护进程侧 polkit 授权，活跃本地会话通常免密） */
+  async function setPowerProfileDbus(mode: string): Promise<void> {
+    const bus = dbus.systemBus();
+    const obj = await bus.getProxyObject('org.freedesktop.UPower.PowerProfiles', '/org/freedesktop/UPower/PowerProfiles');
+    // 新版 ppd（HoldProfile/ReleaseProfile API）已移除 SetActiveProfile
+    // 方法且 introspect 不宣布属性——档位经 Properties.Set 写
+    // ActiveProfile（实测 gdbus 直设可写）；旧版保留方法的优先调用
+    const iface = obj.getInterface('org.freedesktop.UPower.PowerProfiles');
+    if (typeof (iface as unknown as Record<string, unknown>).SetActiveProfile === 'function') {
+      await (iface as unknown as { SetActiveProfile: (m: string) => Promise<void> }).SetActiveProfile(mode);
+      return;
+    }
+    const props = obj.getInterface('org.freedesktop.DBus.Properties');
+    await props.Set('org.freedesktop.UPower.PowerProfiles', 'ActiveProfile', new dbus.Variant('s', mode));
+  }
+
+  /** powerprofilesctl 绝对路径解析（pkexec 环境无 PATH；会话内缓存。
+   *  `HOSHINEKO_E2E_POWER_PROFILES` 沙箱覆盖（e2e 假工具） */
+  let powerProfilesPathCache: string | null | undefined;
+  async function getPowerProfilesctlPath(): Promise<string | null> {
+    if (powerProfilesPathCache !== undefined) return powerProfilesPathCache;
+    powerProfilesPathCache = null;
+    const override = process.env.HOSHINEKO_E2E_POWER_PROFILES;
+    if (override) {
+      powerProfilesPathCache = override;
+      return powerProfilesPathCache;
+    }
+    try {
+      const { stdout } = await execFileAsync('sh', ['-c', 'command -v powerprofilesctl'], { timeout: 3000 });
+      powerProfilesPathCache = stdout.trim() || null;
+    } catch { /* 工具缺失 */ }
+    return powerProfilesPathCache;
+  }
+
+  /**
+   * 读取性能模式（power-profiles-daemon）：优先 `powerprofilesctl list`
+   * 解析可用档位 + 当前档位（`*` 前缀行）；CLI 缺失回落 D-Bus
+   * UPower.PowerProfiles 属性。两者皆不可用回 NO_TOOL（检测到才显示
+   * 哲学——守护进程在而 CLI 未安装的系统也能用）。
+   */
+  ipcMain.handle('system:power-profile-info', async () => {
+    const tool = await getPowerProfilesctlPath();
+    if (tool) {
+      try {
+        const { stdout } = await execFileAsync(tool, ['list'], { timeout: 5000 });
+        const modes: string[] = [];
+        let active: string | null = null;
+        for (const line of stdout.split('\n')) {
+          const m = /^\s*(\*?)\s*([a-z-]+):\s*$/.exec(line);
+          if (!m) continue;
+          modes.push(m[2]);
+          if (m[1]) active = m[2];
+        }
+        if (modes.length > 0) return { ok: true, available: modes, active: active ?? modes[0] };
+      } catch { /* CLI 失败——回落 D-Bus */ }
+    }
+    const dbusInfo = await readPowerProfilesDbus();
+    if (dbusInfo) return { ok: true, ...dbusInfo };
+    return { ok: false, reason: 'NO_TOOL' };
+  });
+
+  /**
+   * 设置性能模式：优先直试 `powerprofilesctl set <mode>`（白名单档位），
+   * 权限错误（polkit 授权）经 pkexec 绝对路径回落（network-set 同款）；
+   * CLI 缺失回落 D-Bus SetActiveProfile（守护进程侧 polkit 授权）。
+   */
+  ipcMain.handle('system:power-profile-set', async (_event, mode: unknown) => {
+    if (typeof mode !== 'string' || !POWER_PROFILE_MODES.has(mode)) return { ok: false, error: 'INVALID_MODE' };
+    const tool = await getPowerProfilesctlPath();
+    if (tool) {
+      try {
+        await execFileAsync(tool, ['set', mode], { timeout: 8000 });
+        return { ok: true, escalated: false };
+      } catch (e) {
+        const msg = getExecError(e).message;
+        if (PERMISSION_DENIED_RE.test(msg)) {
+          try {
+            await execFileAsync('pkexec', [tool, 'set', mode], { timeout: 30000 });
+            return { ok: true, escalated: true };
+          } catch (e2) {
+            return { ok: false, error: getExecError(e2).message.slice(0, 200) || 'AUTH_FAILED' };
+          }
+        }
+        return { ok: false, error: msg.slice(0, 200) || 'UNKNOWN' };
+      }
+    }
+    try {
+      await setPowerProfileDbus(mode);
+      return { ok: true, escalated: false };
+    } catch (e) {
+      return { ok: false, error: getExecError(e).message.slice(0, 200) || 'AUTH_FAILED' };
+    }
+  });
+
+  // ── 搜索历史（文件/对象；数据非设置，落盘 ~/.config/HoshinekoFM） ──
+
+  /** 单条历史上限（各 100 条；UI 展示条数由设置 searchRecentCount 控制） */
+  const SEARCH_HISTORY_MAX = 100;
+
+  /** 搜索历史落盘目录（`HOSHINEKO_E2E_CONFIG_DIR` 沙箱覆盖——e2e 防写真实配置） */
+  function searchHistoryDir(): string {
+    return process.env.HOSHINEKO_E2E_CONFIG_DIR || path.join(os.homedir(), '.config', 'HoshinekoFM');
+  }
+  function searchHistoryFile(kind: 'file' | 'object'): string {
+    return path.join(searchHistoryDir(), `search-history-${kind}.json`);
+  }
+
+  /** 读取搜索历史（损坏/缺失回空数组；逐条校验形态 + 截断上限） */
+  ipcMain.handle('system:load-search-history', async (_event, kind: unknown) => {
+    if (kind !== 'file' && kind !== 'object') return [];
+    try {
+      const raw = await fs.readFile(searchHistoryFile(kind), 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      if (kind === 'object') {
+        return parsed.filter((x): x is string => typeof x === 'string' && !!x).slice(0, SEARCH_HISTORY_MAX);
+      }
+      return parsed
+        .filter((x): x is { dir: string; query: string } =>
+          !!x && typeof x === 'object' && typeof x.dir === 'string' && typeof x.query === 'string' && !!x.query)
+        .slice(0, SEARCH_HISTORY_MAX);
+    } catch {
+      return [];
+    }
+  });
+
+  /** 保存搜索历史（原子写：临时文件 + rename；逐条校验 + 截断上限） */
+  ipcMain.handle('system:save-search-history', async (_event, kind: unknown, entries: unknown) => {
+    if (kind !== 'file' && kind !== 'object') return { ok: false, error: 'INVALID_KIND' };
+    const list = kind === 'object'
+      ? (Array.isArray(entries) ? entries.filter((x): x is string => typeof x === 'string' && !!x).slice(0, SEARCH_HISTORY_MAX) : [])
+      : (Array.isArray(entries)
+        ? entries.filter((x): x is { dir: string; query: string } =>
+          !!x && typeof x === 'object' && typeof x.dir === 'string' && typeof x.query === 'string' && !!x.query).slice(0, SEARCH_HISTORY_MAX)
+        : []);
+    try {
+      const file = searchHistoryFile(kind);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      const tmp = `${file}.${process.pid}.tmp`;
+      await fs.writeFile(tmp, JSON.stringify(list, null, 2), 'utf-8');
+      await fs.rename(tmp, file);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String((e as Error)?.message ?? e) };
+    }
+  });
+
+  /**
+   * 批量终止进程（多选）：逐 pid 执行信号（TERM/KILL 白名单、自身拒绝、
+   * EPERM/GONE 结构化）并聚合结果——单次上限 PROCESS_BATCH_MAX。确认与
+   * 汇总在渲染层（一次确认 + 结果 toast）。
+   */
+  ipcMain.handle('system:process-signal-batch', async (_event, pids: unknown, signal: unknown) => {
+    const sig = typeof signal === 'string' ? signal : '';
+    if (sig !== 'TERM' && sig !== 'KILL') return { ok: false, error: 'INVALID_SIGNAL' };
+    if (!Array.isArray(pids) || pids.length === 0 || pids.length > PROCESS_BATCH_MAX) return { ok: false, error: 'INVALID_PIDS' };
+    const results: { pid: unknown; ok: boolean; error?: string }[] = [];
+    for (const pid of pids) {
+      const pidNum = typeof pid === 'number' ? pid : NaN;
+      if (!Number.isInteger(pidNum) || pidNum < 1 || pidNum > 4194304) {
+        results.push({ pid, ok: false, error: 'INVALID_PID' });
+        continue;
+      }
+      if (pidNum === process.pid) {
+        results.push({ pid, ok: false, error: 'SELF' });
+        continue;
+      }
+      try {
+        process.kill(pidNum, `SIG${sig}` as NodeJS.Signals);
+        results.push({ pid, ok: true });
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException).code;
+        results.push({ pid, ok: false, error: code === 'EPERM' ? 'EPERM' : code === 'ESRCH' ? 'GONE' : String((e as Error)?.message ?? e) });
+      }
+    }
+    return { ok: true, results };
+  });
+
+  /**
+   * 批量调整进程 nice（多选预设档）：逐 pid 复刻 process-nice 语义——
+   * 直跑 renice、EPERM（减小 nice 提高优先级）经持久助手回落；聚合
+   * 结果（成功/失败逐项）。渲染层在未解锁时不提供该入口。
+   */
+  ipcMain.handle('system:process-nice-batch', async (_event, pids: unknown, nice: unknown) => {
+    const niceNum = typeof nice === 'number' ? nice : NaN;
+    if (!Number.isInteger(niceNum) || niceNum < -20 || niceNum > 19) return { ok: false, error: 'INVALID_NICE' };
+    if (!Array.isArray(pids) || pids.length === 0 || pids.length > PROCESS_BATCH_MAX) return { ok: false, error: 'INVALID_PIDS' };
+    const results: { pid: unknown; ok: boolean; error?: string }[] = [];
+    for (const pid of pids) {
+      const pidNum = typeof pid === 'number' ? pid : NaN;
+      if (!Number.isInteger(pidNum) || pidNum < 1 || pidNum > 4194304) {
+        results.push({ pid, ok: false, error: 'INVALID_PID' });
+        continue;
+      }
+      try {
+        await execFileAsync('renice', ['-n', String(niceNum), '-p', String(pidNum)], { timeout: 5000 });
+        results.push({ pid, ok: true });
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+          results.push({ pid, ok: false, error: 'NO_TOOL' });
+          continue;
+        }
+        const msg = getExecError(e).message;
+        if (PERMISSION_DENIED_RE.test(msg)) {
+          try {
+            const helper = await ensureNiceHelper();
+            if (!helper) {
+              results.push({ pid, ok: false, error: 'AUTH_FAILED' });
+              continue;
+            }
+            const wrote = await privilegedHelperWrite(helper, `${niceNum} ${pidNum}`);
+            results.push(wrote ? { pid, ok: true } : { pid, ok: false, error: 'HELPER_FAILED' });
+          } catch (e2) {
+            results.push({ pid, ok: false, error: getExecError(e2).message.slice(0, 200) || 'AUTH_FAILED' });
+          }
+        } else {
+          results.push({ pid, ok: false, error: msg.slice(0, 200) || 'UNKNOWN' });
+        }
+      }
+    }
+    return { ok: true, results };
+  });
+
   /**
    * 兑现 v1 预留的写通道（决策 5）：仅 backlight 类 brightness 键。
    * 三层校验：类/键白名单 + instanceId 形态（SYSFS_ID_RE，无斜杠，天然
@@ -3626,19 +3977,30 @@ export function registerSystemHandlers(
    * 重复弹框，见 BacklightHelper 注释）。
    */
   ipcMain.handle('system:write-object', async (_event, classId: unknown, instanceId: unknown, key: unknown, value: unknown) => {
-    if (classId !== 'backlight') return { ok: false, error: 'UNKNOWN_CLASS' };
     if (typeof instanceId !== 'string' || !SYSFS_ID_RE.test(instanceId)) return { ok: false, error: 'INVALID_ID' };
-    if (key !== 'brightness') return { ok: false, error: 'UNKNOWN_KEY' };
-    const base = path.join(getSysfsRoot(), 'class', 'backlight');
-    const dir = path.join(base, instanceId);
-    // 前缀双保险（instanceId 已无斜杠，防未来改动回归）
-    if (!dir.startsWith(base + path.sep)) return { ok: false, error: 'INVALID_ID' };
-    const max = await readSysfsNum(path.join(dir, 'max_brightness'));
-    if (max === null) return { ok: false, error: 'NO_DEVICE' };
+    let target: string;
+    let rangeMax: number | null;
+    let previous: number | null;
+    if (classId === 'backlight' && key === 'brightness') {
+      const base = path.join(getSysfsRoot(), 'class', 'backlight');
+      const dir = path.join(base, instanceId);
+      if (!dir.startsWith(base + path.sep)) return { ok: false, error: 'INVALID_ID' };
+      rangeMax = await readSysfsNum(path.join(dir, 'max_brightness'));
+      if (rangeMax === null) return { ok: false, error: 'NO_DEVICE' };
+      previous = await readSysfsNum(path.join(dir, 'brightness'));
+      target = path.join(dir, 'brightness');
+    } else if (classId === 'power' && key === 'chargeThreshold') {
+      const base = path.join(getSysfsRoot(), 'class', 'power_supply');
+      const dir = path.join(base, instanceId);
+      if (!dir.startsWith(base + path.sep)) return { ok: false, error: 'INVALID_ID' };
+      rangeMax = 100;
+      previous = await readSysfsNum(path.join(dir, 'charge_control_end_threshold'));
+      target = path.join(dir, 'charge_control_end_threshold');
+    } else {
+      return { ok: false, error: 'UNKNOWN_CLASS' };
+    }
     const v = typeof value === 'number' ? value : NaN;
-    if (!Number.isInteger(v) || v < 0 || v > max) return { ok: false, error: 'OUT_OF_RANGE' };
-    const previous = await readSysfsNum(path.join(dir, 'brightness'));
-    const target = path.join(dir, 'brightness');
+    if (!Number.isInteger(v) || v < 0 || v > rangeMax) return { ok: false, error: 'OUT_OF_RANGE' };
     try {
       await fs.writeFile(target, String(v));
       return { ok: true, previous, escalated: false };

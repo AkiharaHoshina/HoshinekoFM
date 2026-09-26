@@ -4,6 +4,7 @@ import type { DragClaimResult } from '../types/electron.d';
 import { extractDropPaths, samePathSet } from './dragDrop';
 import { shouldSuppressDrop } from './nativeDragTracker';
 import { isPinReorderDragActive } from './pinReorderDrag';
+import type { ObjectDragPayload } from './objectDrag';
 
 /**
  * 面包屑/地址栏类「路径落点」共用的拖放处理工厂。
@@ -19,8 +20,9 @@ import { isPinReorderDragActive } from './pinReorderDrag';
  * 仅目标路径不同：胶囊 = 各自代表的目录，地址栏背景 = 当前目录。
  */
 export interface AddressBarDropDeps {
-  /** 同窗口内部拖拽状态（DragContext） */
-  getDragState: () => { files: IFile[]; sourcePath: string } | null;
+  /** 同窗口内部拖拽状态（DragContext；object 字段非空 = 对象投影
+   *  拖拽——地址栏/面包屑无对象落点语义，必须早退绝不当文件处理） */
+  getDragState: () => { files: IFile[]; sourcePath: string; object: ObjectDragPayload | null } | null;
   /** 内部拖拽收尾（DragContext） */
   endDrag: () => void;
   /** 内部/跨窗口拖拽落点（移动/复制管线） */
@@ -35,6 +37,9 @@ export function createAddressBarDropHandler(deps: AddressBarDropDeps) {
   const handleDragOver = (e: DragEvent<Element>) => {
     // 侧边栏固定区排序拖拽：非文件拖放，不接收也不给光标提示
     if (isPinReorderDragActive()) return;
+    // 对象投影拖拽（DragContext files 恒空 + object 载荷）：地址栏/面包屑
+    // 无对象落点语义——不高亮、不给可放置光标
+    if (getDragState()?.object) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = e.shiftKey ? 'copy' : 'move';
@@ -50,8 +55,16 @@ export function createAddressBarDropHandler(deps: AddressBarDropDeps) {
     // 直接忽略，防止同一次拖放被重复处理
     if (shouldSuppressDrop()) return;
 
-    // 1) 同窗口内部拖拽（dragState 存活）
+    // 0) 对象投影拖拽（DragContext files 恒空 + object 载荷）：对象没有
+    // 文件移动/复制语义——绝不把对象路径（X11 真实 drop 时 dataTransfer
+    // 还带 OS 文件数据）当文件处理，只做登记清理
     const dragState = getDragState();
+    if (dragState?.object) {
+      endDrag();
+      return;
+    }
+
+    // 1) 同窗口内部拖拽（dragState 存活）
     if (dragState && dragState.files.length > 0) {
       if (dragState.sourcePath === targetPath) {
         return;
@@ -72,6 +85,10 @@ export function createAddressBarDropHandler(deps: AddressBarDropDeps) {
     }
     if (claim.status === 'consumed') {
       // 幻影 drop-back（同一次拖放已被另一窗口处理）：静默退出
+      return;
+    }
+    if (claim.status === 'object') {
+      // 对象面板拖出（本应用其他窗口发起）：对象无文件落点语义，静默退出
       return;
     }
     if (claim.status === 'granted') {

@@ -166,7 +166,7 @@ function AppContent() {
    * Object Panel 进程/网络动作（L2 确认走 App 级 ConfirmDialog；
    * 终止/nice/网络开关管线见 useProcessActions）
    */
-  const { confirmTerminate, niceProcess, unlockNice, toggleNetwork } = useProcessActions(confirm);
+  const { confirmTerminate, niceProcess, unlockNice, batchTerminate, batchNice, toggleNetwork } = useProcessActions(confirm);
 
   /**
    * 卸载 gvfs 卷；若当前标签页正停留于该挂载点（含子目录），
@@ -306,6 +306,20 @@ function AppContent() {
   );
 
   /**
+   * 拖到标签页的对象投影（对象拖拽只导航不操作）：目标标签页导航到
+   * 对象页并激活——handleTabPathUpdate 更新 path/title（objects:// 整串
+   * 标题由 TabBar getTabTitle 翻译），ExplorerTab initialPath effect 触发
+   * loadPath。与文件落点不同：无 move/copy 语义、无需 pendingTabDrop。
+   */
+  const handleDropObjectOnTab = useCallback(
+    (tabId: string, obj: ObjectDragPayload) => {
+      handleTabPathUpdate(tabId, obj.objectPath);
+      setActiveTabId(tabId);
+    },
+    [handleTabPathUpdate, setActiveTabId],
+  );
+
+  /**
    * 拖到侧边栏条目（位置/设备）的内部拖放请求，由当前活动标签页的
    * ExplorerTab 消费。与标签页落点的区别：带显式 targetPath（目标
    * 不是当前目录，ExplorerTab 需先拉取目标目录列表再执行）。
@@ -434,6 +448,11 @@ function AppContent() {
     [],
   );
 
+  /** 投影条目重命名：只改固定项显示名（objects:// 路径无文件系统语义） */
+  const renameProjection = useCallback((path: string, newName: string) => {
+    setPinnedDirs((prev) => prev.map((p) => (p.path === path ? { ...p, name: newName } : p)));
+  }, [setPinnedDirs]);
+
   const {
     renameDialogOpen,
     setRenameDialogOpen,
@@ -441,7 +460,7 @@ function AppContent() {
     setNewName,
     handleRename,
     openRenameDialog,
-  } = useRenameDialog(refreshActiveTab, syncPinnedDirsAfterRename);
+  } = useRenameDialog(refreshActiveTab, syncPinnedDirsAfterRename, renameProjection);
 
   /**
    * 固定项上报主进程（含首次挂载）：主进程原子落盘快照到 GUI 的
@@ -567,6 +586,41 @@ function AppContent() {
     [pinnedDirs, setPinnedDirs, dashboardPinned, setDashboardPinned],
   );
 
+  /**
+   * 固定区互拖（侧边栏固定区 ⇄ 仪表盘固定网格）：把源区第 index 项
+   * 移动到目标区（insertAt 指定插入位置，缺省末尾追加）。同区不处理
+   * （各自区内排序走 onReorderPin）。
+   */
+  const movePinnedAcross = useCallback(
+    (from: "sidebar" | "dashboard", index: number, to: "sidebar" | "dashboard", insertAt = -1) => {
+      if (from === to) return;
+      if (from === "sidebar") {
+        const item = pinnedDirs[index];
+        if (!item) return;
+        setPinnedDirs((prev) => prev.filter((_, i) => i !== index));
+        setDashboardPinned((prev) => {
+          const entry = { name: item.name, path: item.path, isDir: item.isDir, icon: item.icon };
+          const next = [...prev];
+          const at = insertAt >= 0 && insertAt <= next.length ? insertAt : next.length;
+          next.splice(at, 0, entry);
+          return next;
+        });
+      } else {
+        const item = dashboardPinned[index];
+        if (!item) return;
+        setDashboardPinned((prev) => prev.filter((_, i) => i !== index));
+        setPinnedDirs((prev) => {
+          const entry = { name: item.name, path: item.path, isDir: item.isDir ?? false, icon: item.icon };
+          const next = [...prev];
+          const at = insertAt >= 0 && insertAt <= next.length ? insertAt : next.length;
+          next.splice(at, 0, entry);
+          return next;
+        });
+      }
+    },
+    [pinnedDirs, setPinnedDirs, dashboardPinned, setDashboardPinned],
+  );
+
   const { clipboard, copy, cut, clear: clearClipboard } = useClipboard();
 
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
@@ -631,6 +685,81 @@ function AppContent() {
   const [sparklineWindowSeconds, setSparklineWindowSeconds] = useLocalStorage<number>(
     "settings.sparklineWindowSeconds",
     60,
+  );
+  /** 对象面板温度告警阈值（°C；实例页读数超阈值警示 + toast） */
+  const [alertTempC, setAlertTempC] = useLocalStorage<number>(
+    "settings.objectAlertTempC",
+    85,
+  );
+  /** 对象面板磁盘使用告警阈值（%；storage percent 超阈值警示） */
+  const [alertDiskPct, setAlertDiskPct] = useLocalStorage<number>(
+    "settings.objectAlertDiskPct",
+    90,
+  );
+  /**
+   * 对象面板主页类卡片顺序（类 id 数组，仅排序不含隐藏；缺省 = 默认
+   * 枚举器序）。类卡片拖拽换序写回；恢复默认设置重置为空。
+   */
+  const [objectClassOrder, setObjectClassOrder] = useLocalStorage<string[]>(
+    "settings.objectClassOrder",
+    [],
+  );
+  /**
+   * 对象面板搜索历史（最近搜索词，最多 100 条、去重、最近在前）。
+   * 落盘 ~/.config/HoshinekoFM（数据非设置——恢复默认不清空）；挂载
+   * 时经 IPC 加载、变更即原子写回。
+   */
+  const [objectSearchHistory, setObjectSearchHistory] = useState<string[]>([]);
+  /**
+   * 文件搜索历史（{dir, query} 对，最多 100 条、按目录+关键词去重）。
+   * 落盘 ~/.config/HoshinekoFM；挂载加载、变更写回。
+   */
+  const [fileSearchHistory, setFileSearchHistory] = useState<{ dir: string; query: string }[]>([]);
+  useEffect(() => {
+    void window.electron.loadSearchHistory('object').then((list) => {
+      setObjectSearchHistory(list.filter((x): x is string => typeof x === 'string' && !!x).slice(0, 100));
+    });
+    void window.electron.loadSearchHistory('file').then((list) => {
+      setFileSearchHistory(
+        (list as Array<{ dir: string; query: string }>)
+          .filter((x) => !!x && typeof x.dir === 'string' && typeof x.query === 'string' && !!x.query)
+          .slice(0, 100),
+      );
+    });
+  }, []);
+  /** 记录对象搜索词（去重 + 上限 100 + 原子写回） */
+  const recordObjectSearch = useCallback((query: string) => {
+    const q = query.trim();
+    if (!q) return;
+    const next = [q, ...objectSearchHistory.filter((x) => x !== q)].slice(0, 100);
+    setObjectSearchHistory(next);
+    void window.electron.saveSearchHistory('object', next);
+  }, [objectSearchHistory]);
+  /** 清空对象搜索历史 */
+  const clearObjectSearchHistory = useCallback(() => {
+    setObjectSearchHistory([]);
+    void window.electron.saveSearchHistory('object', []);
+  }, []);
+  /** 记录文件搜索（按目录+关键词去重 + 上限 100 + 原子写回） */
+  const recordFileSearch = useCallback((dir: string, query: string) => {
+    const q = query.trim();
+    if (!q) return;
+    const next = [
+      { dir, query: q },
+      ...fileSearchHistory.filter((x) => !(x.dir === dir && x.query === q)),
+    ].slice(0, 100);
+    setFileSearchHistory(next);
+    void window.electron.saveSearchHistory('file', next);
+  }, [fileSearchHistory]);
+  /** 清空文件搜索历史 */
+  const clearFileSearchHistory = useCallback(() => {
+    setFileSearchHistory([]);
+    void window.electron.saveSearchHistory('file', []);
+  }, []);
+  /** 最近搜索 UI 展示条数（默认 5；0 = 不显示） */
+  const [searchRecentCount, setSearchRecentCount] = useLocalStorage<number>(
+    "settings.searchRecentCount",
+    5,
   );
   /**
    * 外观预览收起状态（设置对话框 sticky 预览区，默认展开 = false）：
@@ -1469,6 +1598,10 @@ function AppContent() {
     setSortControlsAutoCollapse(false);
     setPreviewCollapsed(false);
     setSparklineWindowSeconds(60);
+    setAlertTempC(85);
+    setAlertDiskPct(90);
+    setObjectClassOrder([]);
+    setSearchRecentCount(5);
     setAutoCreateDesktopEntry(true);
     setAutoCreateAppMenuEntry(true);
     setNewTabPath("/");
@@ -1503,6 +1636,10 @@ function AppContent() {
     setSortControlsAutoCollapse,
     setPreviewCollapsed,
     setSparklineWindowSeconds,
+    setAlertTempC,
+    setAlertDiskPct,
+    setObjectClassOrder,
+    setSearchRecentCount,
     setAutoCreateDesktopEntry,
     setAutoCreateAppMenuEntry,
     setNewTabPath,
@@ -1571,6 +1708,43 @@ function AppContent() {
     window.addEventListener('wheel', handler, { passive: false });
     return () => window.removeEventListener('wheel', handler);
   }, [setIconSize]);
+
+  /**
+   * 固定项数字快捷键：Ctrl+1..9 跳转侧边栏固定区第 N 项；按住 Ctrl
+   * 时侧边栏显示序号角标（Ctrl 松开隐藏）。焦点在输入框/对话框内
+   * 不拦截（与标签页快捷键同款守卫）。
+   */
+  const [showPinBadges, setShowPinBadges] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (document.querySelector('md-dialog[open], .context-menu, [role="dialog"]')) return;
+      if (!e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+      if (e.key === 'Control') {
+        setShowPinBadges(true);
+        return;
+      }
+      if (e.key >= '1' && e.key <= '9') {
+        e.preventDefault();
+        const idx = Number(e.key) - 1;
+        const pin = pinnedDirs[idx];
+        if (pin) {
+          // 不隐藏角标：Ctrl 仍按住时应继续显示序号，松开（keyup）才收起
+          handleSidebarNavigate(pin.path);
+        }
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control') setShowPinBadges(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [pinnedDirs, handleSidebarNavigate]);
 
   /**
    * 键盘分区框架（见 utils/focusZones）：
@@ -2172,7 +2346,7 @@ function AppContent() {
       const { item } = pinnedDirMenu;
       const index = pinnedDirs.findIndex((p) => p.path === item.path);
       // 对象投影条目（阴影投影）：目录菜单条目对 objects:// 虚拟路径
-      // 无语义——手写「打开 + 取消固定」两项
+      // 无语义——手写「打开 + 重命名 + 取消固定」三项
       if (isObjectProjectionPath(item.path)) {
         return [
           {
@@ -2180,6 +2354,21 @@ function AppContent() {
             icon: "open_in_new",
             action: () => {
               handleSidebarNavigate(item.path);
+            },
+          },
+          {
+            label: t("context_menu.rename"),
+            icon: "edit",
+            action: () => {
+              setPinnedDirMenu(null);
+              openRenameDialog({
+                name: item.name,
+                path: item.path,
+                isDirectory: false,
+                size: 0,
+                mtime: new Date(),
+                mime: null,
+              });
             },
           },
           {
@@ -2383,6 +2572,8 @@ function AppContent() {
           onUnpinPath={unpinSidebarDir}
           onReorderPin={reorderPinnedDir}
           onPinObject={(obj) => pinObjectProjection("sidebar", obj)}
+          onMovePinAcross={movePinnedAcross}
+          showPinBadges={showPinBadges}
           onPinnedContextMenu={handlePinnedDirContextMenu}
           onPlaceContextMenu={handlePlaceContextMenu}
         />
@@ -2396,6 +2587,7 @@ function AppContent() {
               onTabClose={handleCloseTab}
               onNewTab={() => handleAddTab(newTabPath)}
               onDropFiles={handleDropOnTab}
+              onDropObject={handleDropObjectOnTab}
             />
           </header>
 
@@ -2442,6 +2634,18 @@ function AppContent() {
                   onTerminateProcess={confirmTerminate}
                   onNiceProcess={niceProcess}
                   onUnlockNice={unlockNice}
+                  onPinObject={(host, obj) => pinObjectProjection(host, obj)}
+                  onBatchTerminate={batchTerminate}
+                  onBatchNice={batchNice}
+                  objectClassOrder={objectClassOrder}
+                  onObjectClassOrderChange={setObjectClassOrder}
+                  objectSearchHistory={objectSearchHistory}
+                  onObjectSearchRecord={recordObjectSearch}
+                  onObjectSearchHistoryClear={clearObjectSearchHistory}
+                  fileSearchHistory={fileSearchHistory}
+                  onFileSearchRecord={recordFileSearch}
+                  onFileSearchHistoryClear={clearFileSearchHistory}
+                  searchRecentCount={searchRecentCount}
                   onNetworkToggle={toggleNetwork}
                   onSortByChange={setSortBy}
                   onSortOrderChange={setSortOrder}
@@ -2451,6 +2655,8 @@ function AppContent() {
                   sortControlsAutoCollapse={sortControlsAutoCollapse}
                   onSortControlsCollapsedChange={setSortControlsCollapsed}
                   sparklineWindowSeconds={sparklineWindowSeconds}
+                  alertTempC={alertTempC}
+                  alertDiskPct={alertDiskPct}
                   refreshSignal={tab.version}
                   scrollToFileName={tab.pendingSelectFile}
                   onScrollToComplete={handleScrollToComplete}
@@ -2478,6 +2684,7 @@ function AppContent() {
                   onDashboardRemovePin={removeDashboardPinAt}
                   onDashboardReorderPin={reorderDashboardPin}
                   onDashboardPinObject={(obj) => pinObjectProjection("dashboard", obj)}
+                  onMovePinAcross={movePinnedAcross}
                   showHomeStorageUsage={showHomeStorageUsage}
                   filePreviewEnabled={filePreviewEnabled}
                   previewWidth={previewWidth}
@@ -2865,6 +3072,12 @@ function AppContent() {
             onSortControlsAutoCollapseChange={setSortControlsAutoCollapse}
             sparklineWindowSeconds={sparklineWindowSeconds}
             onSparklineWindowSecondsChange={setSparklineWindowSeconds}
+            searchRecentCount={searchRecentCount}
+            onSearchRecentCountChange={setSearchRecentCount}
+            alertTempC={alertTempC}
+            onAlertTempCChange={setAlertTempC}
+            alertDiskPct={alertDiskPct}
+            onAlertDiskPctChange={setAlertDiskPct}
             locale={locale}
             onLocaleChange={handleLocaleChange}
             marqueeEnabled={marqueeEnabled}

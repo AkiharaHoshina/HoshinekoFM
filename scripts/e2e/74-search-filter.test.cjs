@@ -13,8 +13,11 @@
 const h = require('./harness.cjs');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 (async () => {
+  // 搜索历史落盘沙箱（防写真实 ~/.config/HoshinekoFM）
+  process.env.HOSHINEKO_E2E_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-cfg74-'));
   await h.setupApp();
 
   await h.run('74 搜索筛选重构 + search:// 虚拟路径', async () => {
@@ -237,6 +240,43 @@ const path = require('path');
       `[...document.querySelectorAll('.tab-item')][0].querySelector('.tab-title')?.textContent ?? ''`,
     );
     h.assert.ok(/搜|Search/.test(titleCheck.value), `搜索标签页标题应含搜索语义：${titleCheck.value}`);
+
+    // ── 搜索胶囊单击 = 返回发起搜索的目录（退出搜索） ──
+    await h.clickEl(win, '.breadcrumb-search-chip');
+    await h.waitFor(win, `!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub"]')`, { timeout: 8000 });
+    const chipGone = await h.js(win, `!document.querySelector('.breadcrumb-search-chip')`);
+    h.assert.ok(chipGone.value === true, '搜索胶囊单击后应退出搜索回到发起目录');
+  });
+
+  await h.run('74c 文件搜索最近词条（显示/点击重搜/去重/清除）', async () => {
+    const dir = h.tempDir();
+    h.makeFileTree(dir, { 'as.txt': 'a', 'bs.txt': 'b' });
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    // 唯一词条防跨用例历史污染
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
+    await h.setReactInput(win, '.omnibar-input', 'recent-uniq');
+    await h.key(win, 'Enter');
+    await h.waitFor(win, `!!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
+    // 词条行出现（含本次查询）
+    await h.waitFor(win, `(() => {
+      const chips = [...document.querySelectorAll('.search-recent-chip')];
+      return chips.some((x) => /recent-uniq/.test(x.textContent ?? ''));
+    })()`, { timeout: 8000 });
+    // 同词再搜 → 去重仍一条
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
+    await h.setReactInput(win, '.omnibar-input', 'recent-uniq');
+    await h.key(win, 'Enter');
+    await h.waitFor(win, `!!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
+    await h.sleep(300);
+    const dupCount = await h.js(win, `[...document.querySelectorAll('.search-recent-chip')].filter((x) => /recent-uniq/.test(x.textContent ?? '')).length`);
+    h.assert.ok(dupCount.value === 1, `同词应去重（实际 ${dupCount.value} 条）`);
+    // 清除全部历史
+    await h.js(win, `document.querySelector('.search-recent-clear')?.click()`, true);
+    await h.waitFor(win, `!document.querySelector('.search-recent-chip')`, { timeout: 8000 });
   });
 
   await h.run('74b 设置默认搜索结果上限（设置行 → 二级对话框 → 确定生效）', async () => {

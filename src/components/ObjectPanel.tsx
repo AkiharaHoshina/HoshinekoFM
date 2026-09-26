@@ -1,16 +1,24 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
-import { List, type RowComponentProps } from 'react-window';
+import { List, type RowComponentProps, useListRef, useListCallbackRef } from 'react-window';
 import { Icon } from './Icon';
 import { Button } from './Button';
+import { IconButton } from './IconButton';
 import { MarqueeText } from './MarqueeText';
 import { Sparkline } from './Sparkline';
-import { OutlinedTextField, Slider } from './md';
+import { Slider } from './md';
 import { showToast } from '../utils/toast';
 import { t } from '../i18n';
 import { parseObjectsPath, buildObjectsPath, OBJECTS_CLASS_LABEL } from '../utils/objectsPath';
-import { OBJECT_DRAG_MIME } from '../utils/objectDrag';
+import { buildObjectSearchPath } from '../utils/objectSearchPath';
+import { startNativeDragTracking } from '../utils/nativeDragTracker';
+import { OBJECT_DRAG_MIME, type ObjectDragPayload } from '../utils/objectDrag';
+import { useDrag } from '../contexts/DragContext';
+import { ContextMenu } from './ContextMenu';
+import type { ContextMenuItem } from './ContextMenu';
+import { useRubberBandSelection } from '../hooks/useRubberBandSelection';
 import type { ObjectClassInfo, ObjectInstance, ObjectReading, SmartInfo } from '../types/electron.d';
+import type { IFile } from '../types/files';
 import './ObjectPanel.css';
 
 interface ObjectPanelProps {
@@ -44,6 +52,32 @@ interface ObjectPanelProps {
   onUnlockNice?: (onDone?: (ok: boolean) => void) => void;
   /** 网络接口 up/down（down 的 L2 确认由 App 侧承担） */
   onNetworkToggle?: (iface: string, up: boolean) => void;
+  /** 地址栏发起的对象搜索关键词（'' = 无搜索；根页跨类搜、类页类内搜；
+   *  实例页由 ExplorerTab 拦截 toast，不会带词进入） */
+  searchQuery: string;
+  /** 清除对象搜索（面板内搜索头 × 按钮/命中点击） */
+  onSearchClear: () => void;
+  /** 右键菜单固定对象投影（host = 侧边栏 Places / 仪表盘；App 侧
+   *  pinObjectProjection 接线——与拖拽投影同一落点管线） */
+  onPinObject?: (host: 'sidebar' | 'dashboard', obj: ObjectDragPayload) => void;
+  /** 批量终止进程（多选；L2 确认与汇总 toast 由 App 侧承担） */
+  onBatchTerminate?: (pids: number[], example: string, signal: 'TERM' | 'KILL') => void;
+  /** 批量调整进程 nice（多选预设档；App 侧承担汇总 toast） */
+  onBatchNice?: (pids: number[], nice: number) => void;
+  /** 主页类卡片顺序（类 id 数组；缺省条目按默认序排尾） */
+  objectClassOrder: string[];
+  /** 类卡片拖拽换序后的新顺序（含全部类 id） */
+  onObjectClassOrderChange: (order: string[]) => void;
+  /** 温度告警阈值（°C；thermal/GPU 读数超阈值警示 + toast） */
+  alertTempC: number;
+  /** 磁盘使用告警阈值（%；storage 读数超阈值警示 + toast） */
+  alertDiskPct: number;
+  /** 对象搜索历史（最近搜索词；App 持久化，根页词条行展示） */
+  searchHistory: string[];
+  /** 清空对象搜索历史 */
+  onSearchHistoryClear: () => void;
+  /** 最近搜索 UI 展示条数（0 = 不显示） */
+  searchRecentCount: number;
 }
 
 /** tty 输出流缓冲上限（字符，防无限增长） */
@@ -52,10 +86,48 @@ const TTY_TEXT_CAP = 50000;
 /** 进程类页轮询间隔（枚举含 /proc 全量扫描，3s 与后端 TTL 对齐） */
 const PROCESS_CLASS_POLL_MS = 3000;
 
-/** 进程类页虚拟化行高（px）：名称 14px×1.5 + 副行 12px×1.5 + 2px 间距
- *  + 10px 上下内边距 ≈ 61px，取 62 留 1px 余量；CSS 同步见
- *  .object-list-virtual .object-row */
-const PROCESS_ROW_HEIGHT = 62;
+/** 进程类页虚拟化行槽高（px）：行本体 48px + 上下各 3px 间隙 = 54——
+ *  行间留缝 + 左右缩进，多选时各行边界清晰不粘连；CSS 同步见
+ *  .object-list-virtual .object-row（行本体 height 48 + margin 3px 6px） */
+const PROCESS_ROW_HEIGHT = 54;
+
+/**
+ * 性能模式区块（power 类实例页；powerprofilesctl 检测到才显示——与
+ * SMART 同款哲学）：一次性读取可用档位 + 当前档位，三态按钮切换；
+ * 写入失败 toast。独立组件承载 hooks（实例页条件渲染内不可挂 hooks）。
+ */
+const PowerProfileSection: React.FC = () => {
+  const [info, setInfo] = useState<{ ok: boolean; available?: string[]; active?: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void window.electron.powerProfileInfo().then((r) => {
+      if (!cancelled) setInfo(r);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  if (!info || !info.ok || !info.available || info.available.length === 0) return null;
+  return (
+    <div className="object-power-profile">
+      <div className="object-power-profile-label">{t('objects.power_profile')}</div>
+      <div className="object-power-profile-modes">
+        {info.available.map((m) => (
+          <Button
+            key={m}
+            variant={m === info.active ? 'tonal' : 'outlined'}
+            onClick={() => {
+              void window.electron.powerProfileSet(m).then((res) => {
+                if (res.ok) setInfo((prev) => (prev ? { ...prev, active: m } : prev));
+                else showToast(t('objects.power_profile_failed', res.error ?? ''), 'error');
+              });
+            }}
+          >
+            {t(`objects.power_profile_${m}`)}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 /**
  * 亮度紧急恢复注册表（模块级：instanceId → 入口初始亮度）。
@@ -67,34 +139,140 @@ const PROCESS_ROW_HEIGHT = 62;
 const backlightUndoRegistry = new Map<string, number>();
 
 /**
- * 对象投影拖拽发起（实例行，阴影投影）：dataTransfer 只带对象 MIME
- * 载荷——不设 DragContext、不 startDrag（HTML5 会话内拖拽，同固定项
- * 排序），文件落点（文件区/地址栏/标签页）经 dragState 守卫自然忽略；
- * 不写 text/plain：固定项排序 drop 读到的源索引为空即 no-op。
+ * 构造对象投影载荷（dataTransfer 对象 MIME + DragContext 共用）。
+ * 与文件 DnD 同款架构：文件落点（文件区/地址栏/标签页等）经
+ * DragContext 的 files.length === 0 守卫自然忽略对象拖拽。
  */
-function startObjectDrag(e: React.DragEvent, className: string | null | undefined, inst: ObjectInstance): void {
+function buildObjectPayload(className: string | null | undefined, name: string, icon: string, instId?: string): ObjectDragPayload {
+  return { objectPath: buildObjectsPath(className ?? undefined, instId), name, icon };
+}
+
+/**
+ * 对象投影拖拽发起（实例行/实例页头，阴影投影）：载荷始终写入
+ * dataTransfer 对象 MIME **并**登记进 DragContext（object 字段）——
+ * 与文件 DnD 同款架构：**所有对象都有原生路径语义**（storage 挂载点/
+ * 块设备节点、tty /dev/ttyN、power/thermal/backlight/network 的 sysfs
+ * 目录、process /proc/<pid>、cpu /proc/stat、memory /proc/meminfo、
+ * gpu /dev/dri 节点），普通拖拽即同步发起原生 OS 拖出（其他应用收到
+ * 真实路径），HTML5 会话立即终止——内部投影落点（侧边栏添加固定/
+ * 仪表盘网格/标签页/终端）改经 DragContext 解析载荷（X11 真实 drop
+ * 事件仍可读 MIME，Wayland 走 nativeDragTracker 合成 drop）。无
+ * nativePath（理论不可达——枚举器全量填充；防御分支）维持纯 HTML5
+ * 会话内投影。
+ * files 恒空：文件落点管线按 files.length === 0 早退，对象载荷
+ * 绝不参与移动/复制语义；主进程登记带 object 标记，claim 回 object
+ * 哨兵兜底（防跨窗口把对象路径当文件处理）。
+ * @param registerObjectDrag 把对象载荷登记进 DragContext（调用方经
+ *  useDrag 提供；与文件拖拽共用同一登记槽，files 恒传空数组）
+ */
+function startObjectDrag(
+  e: React.DragEvent,
+  className: string | null | undefined,
+  inst: ObjectInstance,
+  registerObjectDrag?: (files: IFile[], sourcePath: string, object: ObjectDragPayload) => void,
+): void {
+  const payload = buildObjectPayload(className ?? undefined, inst.name, inst.icon, inst.id);
+  e.dataTransfer.setData(OBJECT_DRAG_MIME, JSON.stringify(payload));
+  if (inst.nativePath) {
+    const p = inst.nativePath;
+    e.dataTransfer.setData('text/uri-list', `file://${p}`);
+    e.dataTransfer.setData('text/plain', p);
+    registerObjectDrag?.([], '', payload);
+    if (window.electron) {
+      e.preventDefault();
+      e.dataTransfer.effectAllowed = 'copyMove';
+      startNativeDragTracking();
+      window.electron.startDrag(
+        [p],
+        [{ path: p, name: inst.name, isDirectory: inst.nativeIsDir === true }],
+        true,
+      );
+    }
+    return;
+  }
   e.dataTransfer.effectAllowed = 'copy';
-  e.dataTransfer.setData(
-    OBJECT_DRAG_MIME,
-    JSON.stringify({
-      objectPath: buildObjectsPath(className ?? undefined, inst.id),
-      name: inst.name,
-      icon: inst.icon,
-    }),
-  );
+  registerObjectDrag?.([], '', payload);
+}
+
+/** 类卡片拖拽（钉类页 + 网格内排序）：载荷 = objects://<类id>（无实例段）
+ *  + 排序 MIME（源类 id）——网格内 drop 排序、拖出网格投影 */
+function startObjectClassDrag(
+  e: React.DragEvent,
+  cls: ObjectClassInfo,
+  registerObjectDrag?: (files: IFile[], sourcePath: string, object: ObjectDragPayload) => void,
+): void {
+  e.dataTransfer.effectAllowed = 'copy';
+  const payload = buildObjectPayload(cls.id, t(OBJECTS_CLASS_LABEL[cls.id] ?? 'objects.title'), cls.icon);
+  e.dataTransfer.setData(OBJECT_DRAG_MIME, JSON.stringify(payload));
+  e.dataTransfer.setData(CLASS_SORT_MIME, cls.id);
+  registerObjectDrag?.([], '', payload);
+}
+
+/** 对象实例关键词匹配（name/subtitle/id，不区分大小写；id 覆盖进程
+ *  pid——与后端 searchObjects 同源语义） */
+function matchObjectInstance(inst: ObjectInstance, q: string): boolean {
+  return inst.name.toLowerCase().includes(q) ||
+    (inst.subtitle ?? '').toLowerCase().includes(q) ||
+    inst.id.toLowerCase().includes(q);
+}
+
+/** 根页跨类搜索命中上限（进程类实例多，超限截断并提示） */
+const OBJECT_SEARCH_LIMIT = 200;
+
+/** 类卡片排序拖拽 MIME（仅本应用内排序语义；与对象投影 MIME 同一次
+ *  dragstart 一并写入——网格内 drop 按排序处理、拖出网格按投影处理） */
+const CLASS_SORT_MIME = 'application/x-hoshineko-class-sort';
+
+/** 进程比较器（树模式子树内排序与平铺排序同源） */
+function compareProcessInstances(a: ObjectInstance, b: ObjectInstance, key: ProcessSortKey, desc: boolean): number {
+  const dir = desc ? -1 : 1;
+  if (key === 'name') return dir * a.name.localeCompare(b.name, undefined, { numeric: true });
+  if (key === 'pid') return dir * (Number(a.id) - Number(b.id));
+  if (key === 'cpu') return dir * ((a.metrics?.cpuPct ?? 0) - (b.metrics?.cpuPct ?? 0));
+  return dir * ((a.metrics?.rssBytes ?? 0) - (b.metrics?.rssBytes ?? 0));
+}
+
+/** 搜索命中关键词加亮（大小写不敏感、逐个匹配片段 <mark>） */
+function highlightMatch(text: string, q: string): React.ReactNode {
+  if (!q) return text;
+  const lower = text.toLowerCase();
+  const ql = q.toLowerCase();
+  const nodes: React.ReactNode[] = [];
+  let i = 0;
+  while (true) {
+    const idx = lower.indexOf(ql, i);
+    if (idx < 0) {
+      nodes.push(text.slice(i));
+      break;
+    }
+    if (idx > i) nodes.push(text.slice(i, idx));
+    nodes.push(<mark key={idx} className="object-search-mark">{text.slice(idx, idx + ql.length)}</mark>);
+    i = idx + ql.length;
+  }
+  return nodes;
 }
 
 /** 进程类页筛选关键词（模块级行组件经 rowProps 接收） */
 interface ProcessRowData {
   /** 类 id（投影拖拽载荷用） */
   className: string;
-  /** 当前可见实例（已排序 + 已筛选） */
+  /** 当前可见实例（已排序 + 已筛选；树模式 = 展开后的深度优先行序） */
   instances: ObjectInstance[];
-  selectedId: string | null;
+  /** 多选集合（文件区同款模型） */
+  selectedIds: Set<string>;
   marqueeEnabled: boolean;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, e: React.MouseEvent) => void;
   onOpen: (inst: ObjectInstance) => void;
   onDetails: (inst: ObjectInstance) => void;
+  /** 行右键菜单（固定到侧边栏/仪表盘） */
+  onRowContextMenu: (e: React.MouseEvent, inst: ObjectInstance) => void;
+  /** 树模式行元数据（与 instances 行序一一对应；null = 平铺模式） */
+  tree?: { depth: number; hasChildren: boolean; collapsed: boolean }[] | null;
+  /** 树模式展开/折叠切换（pid） */
+  onToggleTree?: (id: string) => void;
+  /** 对象投影载荷登记（DragContext——行拖拽与文件 DnD 同款架构；经
+   *  ObjectPanel 的 useDrag 注入） */
+  registerObjectDrag: (files: IFile[], sourcePath: string, object: ObjectDragPayload) => void;
 }
 
 /**
@@ -106,25 +284,46 @@ const ProcessListRow = ({
   style,
   className,
   instances,
-  selectedId,
+  selectedIds,
   marqueeEnabled,
   onSelect,
   onOpen,
   onDetails,
+  onRowContextMenu,
+  tree,
+  onToggleTree,
+  registerObjectDrag,
 }: RowComponentProps<ProcessRowData>): React.ReactElement | null => {
   const inst = instances[index];
   if (!inst) return null;
+  const meta = tree?.[index] ?? null;
+  const selected = selectedIds.has(inst.id);
   return (
     <div style={style}>
       <div
         data-id={inst.id}
-        className={`object-row${selectedId === inst.id ? ' object-row--selected' : ''}`}
-        onClick={() => onSelect(inst.id)}
+        className={`object-row${selected ? ' object-row--selected' : ''}`}
+        style={meta ? { paddingLeft: 8 + meta.depth * 16 } : undefined}
+        onClick={(e) => onSelect(inst.id, e)}
         onDoubleClick={() => void onOpen(inst)}
         draggable
-        onDragStart={(e) => startObjectDrag(e, className, inst)}
+        onDragStart={(e) => startObjectDrag(e, className, inst, registerObjectDrag)}
+        onContextMenu={(e) => onRowContextMenu(e, inst)}
         title={inst.subtitle ?? inst.id}
       >
+        {meta?.hasChildren && (
+          <IconButton
+            variant="standard"
+            className="object-row-tree-toggle"
+            title={meta.collapsed ? '▶' : '▼'}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleTree?.(inst.id);
+            }}
+          >
+            <Icon name={meta.collapsed ? 'chevron_right' : 'expand_more'} />
+          </IconButton>
+        )}
         <Icon name={inst.icon} className="object-row-icon" />
         <div className="object-row-main">
           <MarqueeText enabled={marqueeEnabled} className="object-row-name">
@@ -321,7 +520,34 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   onNiceProcess,
   onUnlockNice,
   onNetworkToggle,
+  searchQuery,
+  onSearchClear,
+  onPinObject,
+  onBatchTerminate,
+  onBatchNice,
+  objectClassOrder,
+  onObjectClassOrderChange,
+  alertTempC,
+  alertDiskPct,
+  searchHistory,
+  onSearchHistoryClear,
+  searchRecentCount,
 }) => {
+  /**
+   * 对象拖拽与文件 DnD 同款架构：起拖时把对象载荷登记进 DragContext
+   * （files 恒空——文件落点管线按 files.length === 0 早退），拖拽结束
+   * （真实 dragend / nativeDragTracker 合成 dragend）清空登记。有原生
+   * 路径语义的对象行走 startDrag 原生拖出（HTML5 会话终止），内部投影
+   * 落点改经 DragContext 解析——与文件拖拽共用同一登记槽，互斥由
+   * files 长度与 object 字段天然区分。
+   */
+  const { startDrag: registerObjectDragStart, endDrag: endObjectDrag } = useDrag();
+  useEffect(() => {
+    const onDragEnd = () => endObjectDrag();
+    document.addEventListener('dragend', onDragEnd, true);
+    return () => document.removeEventListener('dragend', onDragEnd, true);
+  }, [endObjectDrag]);
+
   /**
    * parsed 必须 memo 化：parseObjectsPath 每次调用返回**新对象**，若直接
    * 在组件体内解构并放进 effect 依赖，每次渲染依赖身份都「变化」→
@@ -346,12 +572,16 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   const [history, setHistory] = useState<Record<string, number[]>>({});
   /** 进程类页排序 */
   const [processSort, setProcessSort] = useState<{ key: ProcessSortKey; desc: boolean }>({ key: 'name', desc: false });
-  /** 进程类页筛选关键词（本地过滤 comm/cmdline/pid，零 IPC） */
-  const [processFilter, setProcessFilter] = useState('');
+  /** 批量 nice 滑条值（多选操作栏；路径切换复位 0） */
+  const [batchNiceValue, setBatchNiceValue] = useState(0);
   /** 存储实例页 SMART 健康（进入实例页一次性拉取，不进轮询） */
   const [smart, setSmart] = useState<SmartInfo | null>(null);
   /** 背光页入口亮度（「恢复原值」目标） */
   const [backlightInitial, setBacklightInitial] = useState<number | null>(null);
+  /** 充电上限入口值（「恢复原值」目标；路径切换复位） */
+  const [chargeInitial, setChargeInitial] = useState<number | null>(null);
+  /** 充电上限会话解锁（「先解锁再拖」；路径切换复位） */
+  const [chargeUnlocked, setChargeUnlocked] = useState(false);
   /** 进程页入口 nice（「恢复优先级」目标） */
   const [processInitialNice, setProcessInitialNice] = useState<number | null>(null);
   /** 背光会话解锁（「先解锁再拖」流程 B；路径切换复位） */
@@ -359,9 +589,70 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   /** nice 会话解锁（「先解锁再拖」——所有进程滑条默认锁定；助手为全局
    *  单例，授权一次覆盖任意进程，故**路径切换不复位**，仅面板卸载复位） */
   const [processUnlocked, setProcessUnlocked] = useState(false);
+  /** 进程类页多选（与文件区同款模型：鼠标框选 + 快捷键；
+   *  processAnchor = Shift 范围/框选锚点，processCursor = 方向键游标） */
+  const [processSelected, setProcessSelected] = useState<Set<string>>(new Set());
+  const [processAnchor, setProcessAnchor] = useState<string | null>(null);
+  const [processCursor, setProcessCursor] = useState<string | null>(null);
+  /** 进程类页树模式（与平铺并存切换；路径切换复位回平铺） */
+  const [processTreeMode, setProcessTreeMode] = useState(false);
+  /** 树模式折叠节点（pid 集合；进程消失/重建随行序自然忽略） */
+  const [treeCollapsed, setTreeCollapsed] = useState<Set<string>>(new Set());
+  /** 类卡片排序拖拽悬停目标（类 id；null = 未悬停） */
+  const [classSortOver, setClassSortOver] = useState<string | null>(null);
+  /** 告警状态（instanceKey → 是否超阈值；实例页轮询更新、跨路径保留——
+   *  根页类卡片据此显示徽标） */
+  const [alertOver, setAlertOver] = useState<Record<string, boolean>>({});
+  const alertOverRef = useRef<Record<string, boolean>>({});
+  /** 告警 toast 节流（instanceKey → 上次 toast 时间戳；5 分钟一次） */
+  const alertToastLastRef = useRef<Record<string, number>>({});
+  /** 告警迟滞（阈值回撤幅度：回落低于 阈值-3 才清除，防临界抖动） */
+  const ALERT_HYSTERESIS = 3;
   /** 实例页读数连续失败计数（≥3 显示「无法读取」，不再永久「正在读取…」；
    *  状态而非 ref——渲染期复位块可同步清零，避免 render 期读写 ref） */
   const [readFailCount, setReadFailCount] = useState(0);
+  /** 对象行/卡片/实例页头右键菜单（固定到 Places/仪表盘 + 打开；
+   *  载荷与拖拽投影同源——openPath 为 null 时不显示「打开」项） */
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; payload: ObjectDragPayload; openPath: string | null } | null>(null);
+
+  /** 打开对象右键菜单（实例行/类卡片/实例页头共用） */
+  const openObjectRowMenu = useCallback((e: React.MouseEvent, payload: ObjectDragPayload, openPath: string | null) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setRowMenu({ x: e.clientX, y: e.clientY, payload, openPath });
+  }, []);
+
+  /** 对象右键菜单节点（渲染在各视图分支末尾） */
+  const rowMenuNode = rowMenu ? (() => {
+    const items: ContextMenuItem[] = [];
+    if (rowMenu.openPath) {
+      items.push({
+        label: t('context_menu.open'),
+        icon: 'open_in_new',
+        action: () => { onNavigate(rowMenu.openPath!); setRowMenu(null); },
+      });
+    }
+    items.push(
+      {
+        label: t('objects.pin_to_sidebar'),
+        icon: 'push_pin',
+        action: () => { onPinObject?.('sidebar', rowMenu.payload); setRowMenu(null); },
+      },
+      {
+        label: t('objects.pin_to_dashboard'),
+        icon: 'dashboard',
+        action: () => { onPinObject?.('dashboard', rowMenu.payload); setRowMenu(null); },
+      },
+    );
+    return (
+      <ContextMenu
+        x={rowMenu.x}
+        y={rowMenu.y}
+        items={items}
+        onClose={() => setRowMenu(null)}
+      />
+    );
+  })() : null;
 
   /** 拉取对象枚举（缓存 3s；force 用于设备动作后/进程类页轮询刷新） */
   const reloadObjects = useCallback(async (force = false) => {
@@ -414,10 +705,18 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     setSmart(null);
     setBacklightInitial(null);
     setProcessInitialNice(null);
+    setChargeInitial(null);
     setProcessSort({ key: 'name', desc: false });
-    setProcessFilter('');
     setBacklightUnlocked(false);
+    setChargeUnlocked(false);
     setReadFailCount(0);
+    setProcessSelected(new Set());
+    setProcessAnchor(null);
+    setProcessCursor(null);
+    setProcessTreeMode(false);
+    setTreeCollapsed(new Set());
+    setClassSortOver(null);
+    setBatchNiceValue(0);
     // tty 缓冲复位同样在此（渲染期复位）——effect 内同步 setState
     // 会因 parsed 身份变化形成无限渲染循环（见 parsed memo 注释）
     setTty({ text: '', error: null, closed: false });
@@ -456,9 +755,47 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         return;
       }
       setReadFailCount(0);
+      // 阈值告警检查（thermal 温度取最大/GPU 温度/storage 使用率）：
+      // 迟滞回落（阈值-3）、toast 节流（每实例 5 分钟一次）、状态跨
+      // 路径保留（根页类卡片徽标用）
+      if (r.kind === 'thermal' || r.kind === 'gpu' || r.kind === 'storage') {
+        const key = `${parsed.className}:${parsed.instanceId}`;
+        const prevOver = alertOverRef.current[key] ?? false;
+        const value = r.kind === 'thermal'
+          ? (r.temps.length > 0 ? Math.max(...r.temps.map((t) => t.valueC)) : null)
+          : r.kind === 'gpu'
+            ? r.tempC
+            : r.percent;
+        const threshold = r.kind === 'storage' ? alertDiskPct : alertTempC;
+        let over = false;
+        if (value !== null && value !== undefined) {
+          over = prevOver ? value >= threshold - ALERT_HYSTERESIS : value >= threshold;
+        }
+        if (over !== prevOver) {
+          alertOverRef.current = { ...alertOverRef.current, [key]: over };
+          setAlertOver(alertOverRef.current);
+        }
+        if (over && !prevOver) {
+          const now = Date.now();
+          const last = alertToastLastRef.current[key] ?? 0;
+          if (now - last > 5 * 60 * 1000) {
+            alertToastLastRef.current[key] = now;
+            const alertName = r.kind === 'gpu' ? r.vendor : r.name;
+            if (r.kind === 'storage') {
+              showToast(t('objects.alert_disk_toast', alertName, Math.round(value as number)), 'warning');
+            } else {
+              showToast(t('objects.alert_temp_toast', alertName, Math.round(value as number)), 'warning');
+            }
+          }
+        }
+      }
       // 入口值快照（恢复原值/恢复优先级目标；路径切换已复位为 null）
       if (r.kind === 'backlight') setBacklightInitial((prev) => prev ?? r.brightness);
       if (r.kind === 'process') setProcessInitialNice((prev) => prev ?? r.nice);
+      if (r.kind === 'power' && r.chargeThreshold != null) {
+        const ct = r.chargeThreshold;
+        setChargeInitial((prev) => prev ?? ct);
+      }
       setHistory((prev) => {
         const next = { ...prev };
         const push = (k: string, v: number) => {
@@ -491,7 +828,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [parsed, currentInstance, readingPaused, sparklineWindowSeconds]);
+  }, [parsed, currentInstance, readingPaused, sparklineWindowSeconds, alertTempC, alertDiskPct]);
 
   /** 存储实例页 SMART 一次性拉取（smartctl 慢，绝不进轮询循环；
    *  路径切换的复位在渲染期复位块内） */
@@ -731,10 +1068,17 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
                 {t('objects.unlock')}
               </Button>
             )}
-            {processUnlocked && processInitialNice !== null && processInitialNice !== r.nice && (
-              <Button variant="text" onClick={() => onNiceProcess?.(r.pid, r.name, processInitialNice, () => setReading((prev) => (prev?.kind === 'process' ? { ...prev, nice: processInitialNice } : prev)))}>
-                {t('objects.restore_value')}
-              </Button>
+            {processUnlocked && (
+              <>
+                <Button variant="text" onClick={() => { void window.electron.processNiceLock(); setProcessUnlocked(false); }}>
+                  {t('objects.lock')}
+                </Button>
+                {processInitialNice !== null && processInitialNice !== r.nice && (
+                  <Button variant="text" onClick={() => onNiceProcess?.(r.pid, r.name, processInitialNice, () => setReading((prev) => (prev?.kind === 'process' ? { ...prev, nice: processInitialNice } : prev)))}>
+                    {t('objects.restore_value')}
+                  </Button>
+                )}
+              </>
             )}
           </div>
           <div className="object-hint">
@@ -799,10 +1143,19 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
               {t('objects.unlock')}
             </Button>
           )}
-          {unlocked && backlightInitial !== null && backlightInitial !== r.brightness && (
-            <Button variant="text" onClick={() => write(backlightInitial, true)}>
-              {t('objects.restore_value')}
-            </Button>
+          {unlocked && (
+            <>
+              {!r.writable && (
+                <Button variant="text" onClick={() => { void window.electron.sysfsWriteLock('backlight', inst.id, 'brightness'); setBacklightUnlocked(false); }}>
+                  {t('objects.lock')}
+                </Button>
+              )}
+              {backlightInitial !== null && backlightInitial !== r.brightness && (
+                <Button variant="text" onClick={() => write(backlightInitial, true)}>
+                  {t('objects.restore_value')}
+                </Button>
+              )}
+            </>
           )}
         </div>
         {/* 提示独立第二行（与进程 nice 同款）：只读设备锁定 = 授权与有效期
@@ -816,9 +1169,93 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     );
   };
 
+  /**
+   * 充电上限操作区（power 类电池实例页；charge_control_end_threshold
+   * 检测到才显示——读数 chargeThreshold 非 null）。「先解锁再拖」与背光
+   * 同款（写通道 write-object 的 power/chargeThreshold 键 + 持久助手
+   * 回落）；写后读回校验——读回值 ≠ 写入值则提示设备不支持（厂商差异
+   * 兜底），不乐观更新。
+   */
+  const renderChargeActions = (inst: ObjectInstance) => {
+    const r = reading && reading.kind === 'power' ? reading : null;
+    if (!r) return null;
+    // 电池实例但无充电阈值接口（内核未暴露 charge_control_end_threshold）：
+    // 显式提示「不支持」——静默缺失会让用户误以为功能坏了（实测 HP
+    // OmniBook X Flip 等机型无该 sysfs 接口）；非电池电源（适配器/USB）
+    // 不显示
+    if (r.chargeThreshold == null) {
+      return r.type === 'Battery' ? (
+        <div className="object-hint">{t('objects.charge_threshold_unsupported')}</div>
+      ) : null;
+    }
+    /** 当前阈值（收窄后的本地引用——闭包内保持 number 类型） */
+    const threshold: number = r.chargeThreshold;
+    const write = (v: number, optimistic: boolean, onOk?: () => void) => {
+      void window.electron.writeObject('power', inst.id, 'chargeThreshold', v).then(async (res) => {
+        if (!res.ok) {
+          setChargeUnlocked(false);
+          showToast(res.error === 'AUTH_FAILED' ? t('objects.write_auth_failed') : t('objects.write_failed', res.error ?? ''), 'error');
+          return;
+        }
+        // 写后读回校验：部分设备文件存在但写无效
+        const back = await window.electron.readObject('power', inst.id);
+        const backValue = back?.kind === 'power' ? back.chargeThreshold : null;
+        if (backValue !== v) {
+          setChargeUnlocked(false);
+          showToast(t('objects.charge_threshold_unsupported'), 'warning');
+          return;
+        }
+        if (optimistic) setReading({ ...r, chargeThreshold: v });
+        onOk?.();
+      });
+    };
+    return (
+      <div className="object-actions-block object-actions-block--slider">
+        <div className="object-actions object-actions--slider">
+          <span className="object-reading-label">{t('objects.charge_threshold')}</span>
+          <Slider
+            className="object-brightness-slider"
+            value={threshold}
+            min={0}
+            max={100}
+            step={1}
+            labeled
+            disabled={!chargeUnlocked}
+            title={chargeUnlocked ? undefined : t('objects.need_permission')}
+            onChange={(e) => {
+              const v = Number((e.target as HTMLInputElement).value);
+              if (!Number.isFinite(v) || v === threshold) return;
+              write(v, true);
+            }}
+          />
+          <span className="object-reading-value">{threshold}%</span>
+          {!chargeUnlocked && (
+            <Button variant="tonal" onClick={() => write(threshold, false, () => setChargeUnlocked(true))}>
+              {t('objects.unlock')}
+            </Button>
+          )}
+          {chargeUnlocked && (
+            <>
+              <Button variant="text" onClick={() => { void window.electron.sysfsWriteLock('power', inst.id, 'chargeThreshold'); setChargeUnlocked(false); }}>
+                {t('objects.lock')}
+              </Button>
+              {chargeInitial !== null && chargeInitial !== threshold && (
+                <Button variant="text" onClick={() => write(chargeInitial, true)}>
+                  {t('objects.restore_value')}
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+        <div className="object-hint">
+          {chargeUnlocked ? t('objects.charge_threshold_unlocked_hint') : t('objects.charge_threshold_lock_hint')}
+        </div>
+      </div>
+    );
+  };
+
   /** 网络类实例页操作区（up/down 开关；lo 隐藏） */
-  const renderNetworkActions = (inst: ObjectInstance) => {
-    const r = reading && reading.kind === 'network' ? reading : null;
+  const renderNetworkActions = (inst: ObjectInstance) => {    const r = reading && reading.kind === 'network' ? reading : null;
     if (!r || r.isLoopback || !onNetworkToggle) return null;
     const isUp = r.operstate === 'up' || r.operstate === 'unknown';
     return (
@@ -1214,7 +1651,12 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         onClick={() => setSelectedId(inst.id)}
         onDoubleClick={() => void handleInstanceDoubleClick(inst)}
         draggable
-        onDragStart={(e) => startObjectDrag(e, parsed?.className, inst)}
+        onDragStart={(e) => startObjectDrag(e, parsed?.className, inst, registerObjectDragStart)}
+        onContextMenu={(e) => openObjectRowMenu(
+          e,
+          buildObjectPayload(parsed?.className, inst.name, inst.icon, inst.id),
+          buildObjectsPath(parsed?.className ?? undefined, inst.id),
+        )}
         title={inst.subtitle ?? inst.id}
       >
         <Icon name={inst.icon} className="object-row-icon" />
@@ -1264,92 +1706,476 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     if (!currentClass || currentClass.id !== 'process') return null;
     const list = [...currentClass.instances];
     const { key, desc } = processSort;
-    const dir = desc ? -1 : 1;
-    list.sort((a, b) => {
-      if (key === 'name') return dir * a.name.localeCompare(b.name, undefined, { numeric: true });
-      if (key === 'pid') return dir * (Number(a.id) - Number(b.id));
-      if (key === 'cpu') return dir * ((a.metrics?.cpuPct ?? 0) - (b.metrics?.cpuPct ?? 0));
-      return dir * ((a.metrics?.rssBytes ?? 0) - (b.metrics?.rssBytes ?? 0));
-    });
+    list.sort((a, b) => compareProcessInstances(a, b, key, desc));
     return list;
   }, [currentClass, processSort]);
 
-  /** 进程类页筛选（本地匹配 comm/cmdline/pid，不区分大小写；先排序后过滤） */
+  /** 进程类页筛选（地址栏搜索：本地匹配 comm/cmdline/pid，不区分大小写；
+   *  先排序后过滤——本地筛选输入已移除，规则并入 objects:// 类页的
+   *  地址栏对象搜索） */
   const filteredProcessInstances = useMemo(() => {
     if (!sortedClassInstances) return null;
-    const q = processFilter.trim().toLowerCase();
-    if (!q) return sortedClassInstances;
-    return sortedClassInstances.filter((i) =>
-      i.name.toLowerCase().includes(q) ||
-      (i.subtitle ?? '').toLowerCase().includes(q) ||
-      i.id.toLowerCase().includes(q),
-    );
-  }, [sortedClassInstances, processFilter]);
+    const oq = searchQuery.trim().toLowerCase();
+    if (!oq) return sortedClassInstances;
+    return sortedClassInstances.filter((i) => matchObjectInstance(i, oq));
+  }, [sortedClassInstances, searchQuery]);
+
+  /** 树模式源列表：无搜索 = 全量；有搜索 = 命中 + 祖先链（保证命中
+   *  节点在树中可见） */
+  const treeSourceInstances = useMemo(() => {
+    if (!sortedClassInstances || !processTreeMode) return null;
+    const oq = searchQuery.trim().toLowerCase();
+    if (!oq) return sortedClassInstances;
+    const byId = new Map(sortedClassInstances.map((i) => [i.id, i]));
+    const included = new Set<string>();
+    for (const i of sortedClassInstances) {
+      if (!matchObjectInstance(i, oq)) continue;
+      let cur: ObjectInstance | undefined = i;
+      while (cur && !included.has(cur.id)) {
+        included.add(cur.id);
+        cur = cur.metrics?.ppid != null ? byId.get(String(cur.metrics.ppid)) : undefined;
+      }
+    }
+    return sortedClassInstances.filter((i) => included.has(i.id));
+  }, [sortedClassInstances, searchQuery, processTreeMode]);
+
+  /** 树模式展开后的深度优先行序（depth/hasChildren/collapsed 与行一一
+   *  对应；子树内按当前排序键排列） */
+  const treeRows = useMemo(() => {
+    if (!treeSourceInstances || !processTreeMode) return null;
+    const byId = new Map(treeSourceInstances.map((i) => [i.id, i]));
+    const childrenMap = new Map<string, ObjectInstance[]>();
+    const roots: ObjectInstance[] = [];
+    for (const i of treeSourceInstances) {
+      const ppid = i.metrics?.ppid;
+      if (ppid != null && byId.has(String(ppid))) {
+        const arr = childrenMap.get(String(ppid)) ?? [];
+        arr.push(i);
+        childrenMap.set(String(ppid), arr);
+      } else {
+        roots.push(i);
+      }
+    }
+    const { key, desc } = processSort;
+    const cmp = (a: ObjectInstance, b: ObjectInstance) => compareProcessInstances(a, b, key, desc);
+    roots.sort(cmp);
+    for (const arr of childrenMap.values()) arr.sort(cmp);
+    const rows: { inst: ObjectInstance; depth: number; hasChildren: boolean; collapsed: boolean }[] = [];
+    const walk = (inst: ObjectInstance, depth: number) => {
+      const kids = childrenMap.get(inst.id) ?? [];
+      const collapsed = treeCollapsed.has(inst.id);
+      rows.push({ inst, depth, hasChildren: kids.length > 0, collapsed });
+      if (collapsed) return;
+      for (const c of kids) walk(c, depth + 1);
+    };
+    for (const r of roots) walk(r, 0);
+    return rows;
+  }, [treeSourceInstances, processTreeMode, processSort, treeCollapsed]);
+
+  /** 进程类页可见行列表（树模式 = 展开后的 DFS 行序；平铺 = 筛选结果） */
+  const processVisibleList = useMemo(() => {
+    if (processTreeMode) return treeRows?.map((r) => r.inst) ?? [];
+    return filteredProcessInstances ?? [];
+  }, [processTreeMode, treeRows, filteredProcessInstances]);
+
+  // ── 进程多选（文件区同款模型：鼠标框选 + Ctrl/Shift 点击 + 快捷键）──
+
+  /** 虚拟列表容器（框选坐标空间 + 选框渲染层 + 键盘焦点） */
+  const processListContainerRef = useRef<HTMLDivElement | null>(null);
+  /** 虚拟列表命令式句柄（框选边界滚动 + 方向键 scrollToRow） */
+  const [processListEl, setProcessListEl] = useListCallbackRef();
+  const processListImperativeRef = useListRef(null);
+  // eslint-disable-next-line react-hooks/refs -- 渲染期同步命令式 ref（框选经 .element 读取）
+  processListImperativeRef.current = processListEl ?? null;
+  /** 可见行包围盒（框选判定用；行高固定 62、全宽，按行序算术生成） */
+  const processItemBoxesRef = useRef<{ path: string; top: number; left: number; width: number; height: number }[]>([]);
+  useEffect(() => {
+    const width = processListContainerRef.current?.getBoundingClientRect().width ?? 10000;
+    processItemBoxesRef.current = processVisibleList.map((inst, i) => ({
+      path: inst.id,
+      top: i * PROCESS_ROW_HEIGHT,
+      left: 0,
+      width,
+      height: PROCESS_ROW_HEIGHT,
+    }));
+  }, [processVisibleList]);
+
+  /** 框选钩子（与 FileList 同款：空白处按下起框、Ctrl 并集、Shift 交集、
+   *  Ctrl+Shift 差集；拖动到边缘自动滚动） */
+  const {
+    isSelectingRef: processSelectingRef,
+    didSelectRef: processDidSelectRef,
+    selectionBox: processSelectionBox,
+    handleBackgroundMouseDown: handleProcessBackgroundMouseDown,
+  } = useRubberBandSelection(
+    processListContainerRef,
+    processListImperativeRef,
+    processItemBoxesRef,
+    processSelected,
+    (paths, mode, corners) => {
+      setProcessSelected(new Set(paths));
+      if (mode === 'replace' && corners?.startPath) setProcessAnchor(corners.startPath);
+      if (corners?.endPath) setProcessCursor(corners.endPath);
+    },
+    undefined,
+  );
+
+  /** 行点击选择（plain 单选 / Ctrl 切换 / Shift 范围——与文件区同款语义） */
+  const handleProcessRowSelect = useCallback((e: React.MouseEvent, inst: ObjectInstance) => {
+    if (processSelectingRef.current) return;
+    if (processDidSelectRef.current) {
+      processDidSelectRef.current = false;
+      return;
+    }
+    processListContainerRef.current?.focus({ preventScroll: true });
+    const ids = processVisibleList.map((i) => i.id);
+    setProcessCursor(inst.id);
+    const isModifier = e.ctrlKey || e.metaKey;
+    const isRange = e.shiftKey;
+    if (isModifier) {
+      setProcessSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(inst.id)) next.delete(inst.id);
+        else next.add(inst.id);
+        return next;
+      });
+      setProcessAnchor(inst.id);
+      return;
+    }
+    if (isRange && processAnchor !== null) {
+      const a = ids.indexOf(processAnchor);
+      const b = ids.indexOf(inst.id);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setProcessSelected(new Set(ids.slice(lo, hi + 1)));
+      }
+      return;
+    }
+    setProcessSelected(new Set([inst.id]));
+    setProcessAnchor(inst.id);
+  }, [processSelectingRef, processDidSelectRef, processVisibleList, processAnchor]);
+
+  /** 列表快捷键（方向键移动/Shift 扩展/Ctrl+A 全选/Esc 清除） */
+  const handleProcessListKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const ids = processVisibleList.map((i) => i.id);
+    if (ids.length === 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const idx = processCursor !== null ? ids.indexOf(processCursor) : -1;
+      const next = e.key === 'ArrowDown'
+        ? Math.min(ids.length - 1, idx + 1)
+        : Math.max(0, idx - 1);
+      setProcessCursor(ids[next]);
+      const anchorIdx = processAnchor !== null ? ids.indexOf(processAnchor) : -1;
+      if (e.shiftKey && anchorIdx >= 0) {
+        const [lo, hi] = anchorIdx < next ? [anchorIdx, next] : [next, anchorIdx];
+        setProcessSelected(new Set(ids.slice(lo, hi + 1)));
+      } else {
+        setProcessSelected(new Set([ids[next]]));
+        setProcessAnchor(ids[next]);
+      }
+      processListImperativeRef.current?.scrollToRow?.({ index: next, align: 'smart' });
+      return;
+    }
+    if ((e.key === 'a' || e.key === 'A') && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      setProcessSelected(new Set(ids));
+      setProcessAnchor(ids[0]);
+      setProcessCursor(ids[ids.length - 1]);
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setProcessSelected(new Set());
+      setProcessAnchor(null);
+      // 显式取消选择会话：清掉框选遗留的 didSelect 守卫——否则下一次
+      // 点选会被吞掉（文件区框选后鼠标抬起自带的 click 由容器消化，
+      // 键盘 Esc 路径没有这个 click，必须在此复位）
+      processDidSelectRef.current = false;
+      return;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- processListImperativeRef 为稳定 ref 对象
+  }, [processVisibleList, processCursor, processAnchor]);
+
+  /** 通用类页实例（地址栏搜索过滤；进程类在 filteredProcessInstances 组合） */
+  const genericFilteredInstances = useMemo(() => {
+    if (!currentClass || currentClass.id === 'process') return null;
+    const oq = searchQuery.trim().toLowerCase();
+    if (!oq) return currentClass.instances;
+    return currentClass.instances.filter((i) => matchObjectInstance(i, oq));
+  }, [currentClass, searchQuery]);
 
   const renderSortBar = () => (
     <div className="object-sortbar">
-      {PROCESS_SORT_KEYS.map((k) => (
+      {/* 第一行：排序键 + 升降序 + 树模式，平均平铺满一行 */}
+      <div className="object-sortbar-keys">
+        {PROCESS_SORT_KEYS.map((k) => (
+          <Button
+            key={k}
+            variant="text"
+            className={`object-sortbar-key${processSort.key === k ? ' object-sortbar-key--active' : ''}`}
+            onClick={() => setProcessSort((prev) =>
+              prev.key === k ? { key: k, desc: !prev.desc } : { key: k, desc: k === 'cpu' || k === 'memory' })}
+          >
+            {t(`objects.sort_${k}`)}
+          </Button>
+        ))}
         <Button
-          key={k}
           variant="text"
-          className={`object-sortbar-key${processSort.key === k ? ' object-sortbar-key--active' : ''}`}
-          onClick={() => setProcessSort((prev) =>
-            prev.key === k ? { key: k, desc: !prev.desc } : { key: k, desc: k === 'cpu' || k === 'memory' })}
+          title={processSort.desc ? '↓' : '↑'}
+          onClick={() => setProcessSort((prev) => ({ ...prev, desc: !prev.desc }))}
         >
-          {t(`objects.sort_${k}`)}
+          <Icon name={processSort.desc ? 'arrow_downward' : 'arrow_upward'} />
         </Button>
-      ))}
-      <Button
-        variant="text"
-        title={processSort.desc ? '↓' : '↑'}
-        onClick={() => setProcessSort((prev) => ({ ...prev, desc: !prev.desc }))}
-      >
-        <Icon name={processSort.desc ? 'arrow_downward' : 'arrow_upward'} />
-      </Button>
-      <OutlinedTextField
-        className="object-process-filter"
-        value={processFilter}
-        placeholder={t('objects.process_filter')}
-        onInput={(e) => setProcessFilter((e.target as HTMLInputElement).value)}
-      >
-        <Icon name="search" slot="leading-icon" />
-      </OutlinedTextField>
+        <Button
+          variant={processTreeMode ? 'tonal' : 'text'}
+          title={t('objects.tree_mode')}
+          className="object-sortbar-tree"
+          onClick={() => setProcessTreeMode((v) => !v)}
+        >
+          <Icon name="account_tree" />
+        </Button>
+      </div>
+      {/* 第二行：多选提示（恒常占位——未选中时留空，布局不跳动） */}
+      <div className="object-sortbar-hint">
+        <span className="object-batch-count">
+          {batchSelectedInstances.length >= 1 ? t('objects.batch_selected', batchSelectedInstances.length) : '\u00A0'}
+        </span>
+      </div>
+      {/* 第三行：多选操作（恒常占位——未选中时禁用态，排满整行）：
+          终止/强制结束 + nice 滑条（批量优先级，先解锁再拖与实例页同款） */}
+      <div className="object-sortbar-actions">
+        <Button
+          variant="outlined"
+          disabled={batchSelectedInstances.length < 1}
+          onClick={() => onBatchTerminate?.(
+            batchSelectedInstances.map((i) => Number(i.id)),
+            batchSelectedInstances[0]?.name ?? '',
+            'TERM',
+          )}
+        >
+          {t('objects.terminate')}
+        </Button>
+        <Button
+          variant="outlined"
+          className="object-action-danger"
+          disabled={batchSelectedInstances.length < 1}
+          onClick={() => onBatchTerminate?.(
+            batchSelectedInstances.map((i) => Number(i.id)),
+            batchSelectedInstances[0]?.name ?? '',
+            'KILL',
+          )}
+        >
+          {t('objects.kill')}
+        </Button>
+        <div className="object-batch-nice">
+          <span className="object-batch-nice-label">{t('objects.process_nice')}</span>
+          <Slider
+            className="object-batch-nice-slider"
+            value={batchNiceValue}
+            min={-20}
+            max={19}
+            step={1}
+            labeled
+            disabled={batchSelectedInstances.length < 1 || !processUnlocked}
+            title={processUnlocked ? undefined : t('objects.need_permission')}
+            onChange={(e) => {
+              const v = Number((e.target as HTMLInputElement).value);
+              if (!Number.isFinite(v)) return;
+              setBatchNiceValue(v);
+              onBatchNice?.(batchSelectedInstances.map((i) => Number(i.id)), v);
+            }}
+          />
+          <span className="object-batch-nice-value">{batchNiceValue}</span>
+          {!processUnlocked ? (
+            <Button variant="tonal" disabled={batchSelectedInstances.length < 1} onClick={() => onUnlockNice?.((ok) => { if (ok) setProcessUnlocked(true); })}>
+              {t('objects.unlock')}
+            </Button>
+          ) : (
+            <Button variant="text" disabled={batchSelectedInstances.length < 1} onClick={() => { void window.electron.processNiceLock(); setProcessUnlocked(false); }}>
+              {t('objects.lock')}
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   );
 
   // ── 视图分派 ──
 
-  // 根：类卡片（parsed null 兜底按根渲染；空类隐藏——无背光/无电池的机器不显示空卡）
+  // 根：类卡片（parsed null 兜底按根渲染；空类隐藏——无背光/无电池的机器不显示空卡）。
+  // 地址栏搜索激活时（B 方案）：跨类对象搜索命中列表（按类别分组 +
+  // 关键词加亮）替换类卡片网格。
   if (!parsed || parsed.className === null) {
     const visibleClasses = classes?.filter((c) => c.instances.length > 0) ?? [];
+    /** 类别排序：按 objectClassOrder 重排（未列出的类按默认序稳定排尾） */
+    const orderedVisibleClasses = [...visibleClasses].sort((a, b) => {
+      const ia = objectClassOrder.indexOf(a.id);
+      const ib = objectClassOrder.indexOf(b.id);
+      if (ia === -1 && ib === -1) return 0;
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+    const q = searchQuery.trim();
+    /** 跨类命中（name/subtitle/id；超限截断——进程类实例多） */
+    const hits: { cls: ObjectClassInfo; inst: ObjectInstance }[] = [];
+    if (q !== '' && classes !== null && !loadError) {
+      for (const cls of classes) {
+        for (const inst of cls.instances) {
+          if (matchObjectInstance(inst, q.toLowerCase())) hits.push({ cls, inst });
+          if (hits.length >= OBJECT_SEARCH_LIMIT) break;
+        }
+        if (hits.length >= OBJECT_SEARCH_LIMIT) break;
+      }
+    }
+    /** 命中按类别分组（组头 = 类名 + 计数） */
+    const groupedHits: { cls: ObjectClassInfo; insts: ObjectInstance[] }[] = [];
+    for (const h of hits) {
+      const last = groupedHits[groupedHits.length - 1];
+      if (last && last.cls.id === h.cls.id) last.insts.push(h.inst);
+      else groupedHits.push({ cls: h.cls, insts: [h.inst] });
+    }
     return (
       <div className="object-panel">
         <div className="object-panel-header">
           <Icon name="widgets" className="object-panel-header-icon" />
           <div className="object-panel-title">{t('objects.title')}</div>
         </div>
-        <div className="object-panel-hint">{t('objects.root_hint')}</div>
-        {loadError ? (
-          <div className="object-load-failed">{t('objects.load_failed')}</div>
-        ) : classes === null ? (
-          <div className="object-load-failed">{t('objects.loading')}</div>
-        ) : (
-          <div className="object-class-grid">
-            {visibleClasses.map((cls) => (
-              <div
-                key={cls.id}
-                className="object-class-card"
-                onClick={() => onNavigate(buildObjectsPath(cls.id))}
-                role="button"
-                tabIndex={0}
-              >
-                <Icon name={cls.icon} className="object-class-icon" />
-                <div className="object-class-name">{t(OBJECTS_CLASS_LABEL[cls.id] ?? 'objects.title')}</div>
-                <div className="object-class-count">{t('objects.instance_count', cls.instances.length)}</div>
+        {q !== '' ? (
+          <>
+            <div className="object-search-header">
+              <span className="object-search-header-text">{t('objects.search_header', q, hits.length)}</span>
+              <Button variant="text" onClick={onSearchClear}>{t('search.clear')}</Button>
+            </div>
+            {hits.length === 0 ? (
+              <div className="object-load-failed">{t('objects.search_no_match')}</div>
+            ) : (
+              <div className="object-search-results">
+                {groupedHits.map(({ cls, insts }) => (
+                  <div className="object-search-group" key={cls.id}>
+                    <div className="object-search-group-title">
+                      {t(OBJECTS_CLASS_LABEL[cls.id] ?? 'objects.title')} · {insts.length}
+                    </div>
+                    {insts.map((inst) => (
+                      <div
+                        key={`${cls.id}/${inst.id}`}
+                        data-id={`${cls.id}:${inst.id}`}
+                        className="object-search-hit"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => onNavigate(buildObjectsPath(cls.id, inst.id))}
+                        onContextMenu={(e) => openObjectRowMenu(
+                          e,
+                          buildObjectPayload(cls.id, inst.name, inst.icon, inst.id),
+                          buildObjectsPath(cls.id, inst.id),
+                        )}
+                        title={inst.subtitle ?? inst.id}
+                      >
+                        <Icon name={inst.icon} className="object-row-icon" />
+                        <div className="object-search-hit-main">
+                          <span className="object-search-hit-name">{highlightMatch(inst.name, q)}</span>
+                          {inst.subtitle && (
+                            <span className="object-search-hit-sub">{highlightMatch(inst.subtitle, q)}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="object-panel-hint">{t('objects.root_hint')}</div>
+            {/* 最近搜索词条（根页无搜索时显示；点击词条恢复搜索；
+                展示条数由设置控制，超出一行自动换行） */}
+            {searchHistory.length > 0 && searchRecentCount > 0 && (
+              <div className="object-search-recent">
+                <span className="object-search-recent-label">{t('objects.search_recent')}</span>
+                {searchHistory.slice(0, searchRecentCount).map((q) => (
+                  <Button
+                    key={q}
+                    variant="text"
+                    className="object-search-recent-chip"
+                    onClick={() => onNavigate(buildObjectSearchPath(null, q))}
+                  >
+                    {q}
+                  </Button>
+                ))}
+                <Button
+                  variant="text"
+                  className="object-search-recent-clear"
+                  title={t('objects.search_clear_history')}
+                  onClick={onSearchHistoryClear}
+                >
+                  <Icon name="delete" />
+                </Button>
+              </div>
+            )}
+            {loadError ? (
+              <div className="object-load-failed">{t('objects.load_failed')}</div>
+            ) : classes === null ? (
+              <div className="object-load-failed">{t('objects.loading')}</div>
+            ) : (
+              <div className="object-class-grid">
+                {orderedVisibleClasses.map((cls) => (
+                  <div
+                    key={cls.id}
+                    className={`object-class-card${classSortOver === cls.id ? ' object-class-card--sort-over' : ''}`}
+                    onClick={() => onNavigate(buildObjectsPath(cls.id))}
+                    role="button"
+                    tabIndex={0}
+                    draggable
+                    onDragStart={(e) => startObjectClassDrag(e, cls, registerObjectDragStart)}
+                    onDragOver={(e) => {
+                      // 排序拖拽（同一次 dragstart 双 MIME）：网格内按排序语义
+                      if (!Array.from(e.dataTransfer.types).includes(CLASS_SORT_MIME)) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setClassSortOver(cls.id);
+                    }}
+                    onDragLeave={() => setClassSortOver((prev) => (prev === cls.id ? null : prev))}
+                    onDrop={(e) => {
+                      const fromId = e.dataTransfer.getData(CLASS_SORT_MIME);
+                      setClassSortOver(null);
+                      if (!fromId || fromId === cls.id) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const list: string[] = orderedVisibleClasses.map((c) => c.id);
+                      const fromIdx = list.indexOf(fromId);
+                      if (fromIdx < 0) return;
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      const after = e.clientY > rect.top + rect.height / 2;
+                      const next = [...list];
+                      const [moved] = next.splice(fromIdx, 1);
+                      let insertAt = next.indexOf(cls.id);
+                      if (after) insertAt += 1;
+                      next.splice(insertAt, 0, moved);
+                      onObjectClassOrderChange(next);
+                    }}
+                    onDragEnd={() => setClassSortOver(null)}
+                    onContextMenu={(e) => openObjectRowMenu(
+                      e,
+                      buildObjectPayload(cls.id, t(OBJECTS_CLASS_LABEL[cls.id] ?? 'objects.title'), cls.icon),
+                      buildObjectsPath(cls.id),
+                    )}
+                  >
+                    <Icon name={cls.icon} className="object-class-icon" />
+                    {(() => {
+                      const alertCount = Object.entries(alertOver).filter(([k, v]) => v && k.startsWith(`${cls.id}:`)).length;
+                      return alertCount > 0 ? <span className="object-class-badge">{alertCount}</span> : null;
+                    })()}
+                    <div className="object-class-name">{t(OBJECTS_CLASS_LABEL[cls.id] ?? 'objects.title')}</div>
+                    <div className="object-class-count">{t('objects.instance_count', cls.instances.length)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
+        {rowMenuNode}
       </div>
     );
   }
@@ -1360,7 +2186,16 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     const isPolled = inst.kind !== 'tty';
     return (
       <div className="object-panel">
-        <div className="object-panel-header">
+        <div
+          className="object-panel-header"
+          draggable
+          onDragStart={(e) => startObjectDrag(e, parsed.className, inst, registerObjectDragStart)}
+          onContextMenu={(e) => openObjectRowMenu(
+            e,
+            buildObjectPayload(parsed.className, inst.name, inst.icon, inst.id),
+            null,
+          )}
+        >
           <Icon name={inst.icon} className="object-panel-header-icon" />
           <div className="object-panel-title">{inst.name}</div>
           {inst.subtitle && <div className="object-panel-subtitle">{inst.subtitle}</div>}
@@ -1374,31 +2209,89 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
             </div>
           )}
           {renderReading(inst)}
+          {inst.kind === 'power' ? <PowerProfileSection /> : null}
+          {inst.kind === 'power' ? renderChargeActions(inst) : null}
+          {reading && (reading.kind === 'thermal' || reading.kind === 'gpu' || reading.kind === 'storage') && alertOver[`${parsed.className}:${inst.id}`] && (
+            <div className="object-alert-hint">
+              {reading.kind === 'storage' ? t('objects.alert_disk_hint') : t('objects.alert_temp_hint')}
+            </div>
+          )}
           {inst.kind === 'disk' || inst.kind === 'partition' ? renderSmartSection(inst) : null}
           {inst.kind === 'disk' || inst.kind === 'partition' || inst.kind === 'mount' ? renderStorageActions(inst) : null}
           {inst.kind === 'process' ? renderProcessActions() : null}
           {inst.kind === 'backlight' ? renderBacklightActions(inst) : null}
           {inst.kind === 'network' ? renderNetworkActions(inst) : null}
         </div>
+        {rowMenuNode}
       </div>
     );
   }
 
   // 类页
   const isProcessClass = parsed?.className === 'process';
-  const listInstances = sortedClassInstances ?? currentClass?.instances ?? [];
+  /** 类页空态文案：搜索激活且无命中 → 无匹配对象；否则类空态 */
+  const searchActiveClass = searchQuery.trim() !== '';
+  const shownCount = isProcessClass
+    ? processVisibleList.length
+    : (genericFilteredInstances?.length ?? 0);
   /** 进程类虚拟化行的 rowProps（List 变化即重渲染行） */
   const processRowProps: ProcessRowData = {
     className: parsed?.className ?? 'storage',
-    instances: filteredProcessInstances ?? [],
-    selectedId,
+    instances: processVisibleList,
+    selectedIds: processSelected,
     marqueeEnabled,
-    onSelect: setSelectedId,
+    onSelect: (id, e) => {
+      const inst = processVisibleList.find((i) => i.id === id);
+      if (inst) handleProcessRowSelect(e, inst);
+    },
     onOpen: (inst) => { void handleInstanceDoubleClick(inst); },
     onDetails: (inst) => onNavigate(buildObjectsPath(parsed?.className ?? undefined, inst.id)),
+    onRowContextMenu: (e, inst) => openObjectRowMenu(
+      e,
+      buildObjectPayload(parsed?.className, inst.name, inst.icon, inst.id),
+      buildObjectsPath(parsed?.className ?? undefined, inst.id),
+    ),
+    tree: processTreeMode ? treeRows?.map((r) => ({ depth: r.depth, hasChildren: r.hasChildren, collapsed: r.collapsed })) ?? [] : null,
+    onToggleTree: (id) => setTreeCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    }),
+    registerObjectDrag: registerObjectDragStart,
+  };
+  /** 批量操作选中集（按可见行序取选中实例） */
+  const batchSelectedInstances = isProcessClass
+    ? processVisibleList.filter((i) => processSelected.has(i.id))
+    : [];
+  /** 框选/清选守卫的可交互元素（行与按钮/输入框——这些区域按下不
+   *  起框选、点击不清选） */
+  const isProcessInteractiveTarget = (t: EventTarget | null): boolean => {
+    const el = t as HTMLElement | null;
+    return !!el?.closest?.('.object-row, md-text-button, md-outlined-button, md-tonal-button, md-filled-button, md-icon-button, md-outlined-text-field');
   };
   return (
-    <div className={`object-panel${isProcessClass ? ' object-panel--virtual' : ''}`}>
+    <div
+      className={`object-panel${isProcessClass ? ' object-panel--virtual' : ''}`}
+      onMouseDown={isProcessClass ? (e) => {
+        // 文件区边界内、进程行边界外（面板空白/标题/排序条空隙/行间隙）
+        // 均可发起框选——与文件区同款：条目与交互控件上按下不框选
+        if (!isProcessInteractiveTarget(e.target)) {
+          handleProcessBackgroundMouseDown(e);
+        }
+      } : undefined}
+      onClick={isProcessClass ? (e) => {
+        // 空白处点击清除多选（框选/条目点击守卫同源）
+        if (processDidSelectRef.current) {
+          processDidSelectRef.current = false;
+          return;
+        }
+        if (!isProcessInteractiveTarget(e.target)) {
+          setProcessSelected(new Set());
+          setProcessAnchor(null);
+        }
+      } : undefined}
+    >
       <div className="object-panel-header">
         <Icon name={currentClass?.icon ?? 'widgets'} className="object-panel-header-icon" />
         <div className="object-panel-title">{t(OBJECTS_CLASS_LABEL[parsed?.className ?? ''] ?? 'objects.title')}</div>
@@ -1409,33 +2302,69 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         <div className="object-load-failed">{t('objects.loading')}</div>
       ) : currentClass.instances.length === 0 ? (
         <div className="object-load-failed">{t('objects.class_empty')}</div>
-      ) : isProcessClass ? (
+      ) : (
         <>
-          {renderSortBar()}
-          {(filteredProcessInstances?.length ?? 0) === 0 ? (
-            <div className="object-load-failed">{t('objects.process_no_match')}</div>
-          ) : (
-            <div className="object-list-virtual">
-              <AutoSizer
-                renderProp={({ height, width }) =>
-                  height == null || width == null ? null : (
-                    <List
-                      style={{ height, width }}
-                      rowComponent={ProcessListRow}
-                      rowProps={processRowProps}
-                      rowCount={filteredProcessInstances?.length ?? 0}
-                      rowHeight={PROCESS_ROW_HEIGHT}
-                      overscanCount={5}
-                    />
-                  )
-                }
-              />
+          {searchActiveClass && (
+            <div className="object-search-header">
+              <span className="object-search-header-text">{t('objects.search_header', searchQuery.trim(), shownCount)}</span>
+              <Button variant="text" onClick={onSearchClear}>{t('search.clear')}</Button>
             </div>
           )}
+          {isProcessClass ? (
+            <>
+              {renderSortBar()}
+              {shownCount === 0 ? (
+                <div className="object-load-failed">
+                  {searchActiveClass ? t('objects.search_no_match') : t('objects.process_no_match')}
+                </div>
+              ) : (
+                <div
+                  ref={processListContainerRef}
+                  className="object-list-virtual"
+                  tabIndex={0}
+                  onKeyDown={handleProcessListKeyDown}
+                >
+                  <AutoSizer
+                    renderProp={({ height, width }) =>
+                      height == null || width == null ? null : (
+                        <List
+                          listRef={setProcessListEl}
+                          style={{ height, width }}
+                          rowComponent={ProcessListRow}
+                          rowProps={processRowProps}
+                          rowCount={processVisibleList.length}
+                          rowHeight={PROCESS_ROW_HEIGHT}
+                          overscanCount={5}
+                        />
+                      )
+                    }
+                  />
+                  {processSelectionBox && (processSelectionBox.w > 0 || processSelectionBox.h > 0) && (
+                    <div
+                      className="object-selection-box"
+                      style={{
+                        left: processSelectionBox.x,
+                        top: processSelectionBox.y,
+                        width: Math.max(1, processSelectionBox.w),
+                        height: Math.max(1, processSelectionBox.h),
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {searchActiveClass && shownCount === 0 ? (
+                <div className="object-load-failed">{t('objects.search_no_match')}</div>
+              ) : (
+                <div className="object-list">{(genericFilteredInstances ?? []).map(renderInstanceRow)}</div>
+              )}
+            </>
+          )}
         </>
-      ) : (
-        <div className="object-list">{listInstances.map(renderInstanceRow)}</div>
       )}
+      {rowMenuNode}
     </div>
   );
 };

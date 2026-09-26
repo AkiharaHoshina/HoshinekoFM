@@ -126,6 +126,10 @@ function resolveTargetKey(x: number, y: number): string | null {
   // 否则会被归类为文件列表背景）
   const terminal = el.closest('[data-drop-target="terminal"]') as HTMLElement | null;
   if (terminal) return 'terminal:';
+  // 仪表盘固定项网格：对象投影落点（原生拖出经本合成 drop 兜底；文件
+  // 拖放无仪表盘语义，合成 drop 在 Dashboard 各处理器内无分支即 no-op）
+  const pinnedGrid = el.closest('.pinned-grid') as HTMLElement | null;
+  if (pinnedGrid) return 'dashboard:';
   // 文件浏览区（含空回收站占位等 FileList 未铺满的区域）整体视为背景目标
   const fileList = el.closest('[data-drop-target], .file-list-container') as HTMLElement | null;
   if (fileList) return 'bg:filelist';
