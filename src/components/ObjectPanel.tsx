@@ -36,6 +36,10 @@ interface ObjectPanelProps {
   onNavigate: (p: string) => void;
   /** 打开真实目录（loadPath——双击已挂载存储对象/「打开位置」） */
   onOpenLocation: (p: string) => void;
+  /** 定位对象位置（右键菜单「定位至对象位置」）：导航到 fullPath 所在
+   *  目录并自动选中对应条目（App 侧 onRevealFile 同款接线——搜索态
+   *  「定位到所在文件夹」共用该管线） */
+  onLocateObject?: (fullPath: string, name: string) => void;
   /** 挂载块设备（App useDeviceActions；L2 动作用现成管线） */
   onMountDevice?: (devicePath: string) => Promise<{ success: boolean; mountpoint?: string; error?: string }>;
   /** 卸载块设备 */
@@ -523,6 +527,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   searchQuery,
   onSearchClear,
   onPinObject,
+  onLocateObject,
   onBatchTerminate,
   onBatchNice,
   objectClassOrder,
@@ -611,16 +616,37 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   /** 实例页读数连续失败计数（≥3 显示「无法读取」，不再永久「正在读取…」；
    *  状态而非 ref——渲染期复位块可同步清零，避免 render 期读写 ref） */
   const [readFailCount, setReadFailCount] = useState(0);
-  /** 对象行/卡片/实例页头右键菜单（固定到 Places/仪表盘 + 打开；
-   *  载荷与拖拽投影同源——openPath 为 null 时不显示「打开」项） */
-  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; payload: ObjectDragPayload; openPath: string | null } | null>(null);
+  /** 对象行/卡片/实例页头右键菜单（固定到 Places/仪表盘 + 打开 +
+   *  定位项；载荷与拖拽投影同源——openPath 为 null 时不显示「打开」项；
+   *  inst 为 null（类卡片）时不显示定位项） */
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; payload: ObjectDragPayload; openPath: string | null; inst: ObjectInstance | null } | null>(null);
 
-  /** 打开对象右键菜单（实例行/类卡片/实例页头共用） */
-  const openObjectRowMenu = useCallback((e: React.MouseEvent, payload: ObjectDragPayload, openPath: string | null) => {
+  /** 打开对象右键菜单（实例行/类卡片/实例页头共用；inst 供定位项计算） */
+  const openObjectRowMenu = useCallback((e: React.MouseEvent, payload: ObjectDragPayload, openPath: string | null, inst: ObjectInstance | null = null) => {
     e.preventDefault();
     e.stopPropagation();
-    setRowMenu({ x: e.clientX, y: e.clientY, payload, openPath });
+    setRowMenu({ x: e.clientX, y: e.clientY, payload, openPath, inst });
   }, []);
+
+  /**
+   * 「定位至对象位置」执行体：主进程解析位置（进程读 exe、磁盘/分区回
+   * 块设备节点、其余回 nativePath）→ 导航到父目录并选中对应条目
+   * （onLocateObject = App 侧 onRevealFile 同款管线）。exe 已删除仍
+   * 导航（loadPath 最近可用父级回落）并先 toast 说明；进程无 exe /
+   * 无路径语义 toast 提示后放弃。
+   */
+  const locateObject = useCallback(async (inst: ObjectInstance) => {
+    const res = await window.electron.resolveObjectLocation(inst);
+    if (!res.ok) {
+      showToast(res.reason === 'NO_EXE' ? t('objects.locate_no_exe') : t('objects.locate_failed'), 'warning');
+      return;
+    }
+    if (res.deleted) showToast(t('objects.locate_deleted'), 'warning');
+    const full = res.path!;
+    const slash = full.lastIndexOf('/');
+    const name = slash >= 0 ? full.slice(slash + 1) : full;
+    onLocateObject?.(full, name || full);
+  }, [onLocateObject]);
 
   /** 对象右键菜单节点（渲染在各视图分支末尾） */
   const rowMenuNode = rowMenu ? (() => {
@@ -631,6 +657,29 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         icon: 'open_in_new',
         action: () => { onNavigate(rowMenu.openPath!); setRowMenu(null); },
       });
+    }
+    if (rowMenu.inst) {
+      const inst = rowMenu.inst;
+      // 已挂载分区（nativePath = 挂载点目录）与 mount 实例：挂载点定位
+      const isMountedPartition = inst.kind === 'partition' && inst.nativeIsDir === true;
+      if (inst.kind === 'mount' || isMountedPartition) {
+        const mp = inst.nativePath;
+        if (mp) {
+          items.push({
+            label: t('objects.locate_mountpoint'),
+            icon: 'folder_open',
+            action: () => { setRowMenu(null); onNavigate(mp); },
+          });
+        }
+      }
+      // 对象位置：mount 实例只有挂载点语义（不重复）；其余全部可定位
+      if (inst.kind !== 'mount') {
+        items.push({
+          label: t('objects.locate'),
+          icon: 'my_location',
+          action: () => { setRowMenu(null); void locateObject(inst); },
+        });
+      }
     }
     items.push(
       {
@@ -654,11 +703,17 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     );
   })() : null;
 
-  /** 拉取对象枚举（缓存 3s；force 用于设备动作后/进程类页轮询刷新） */
+  /** 拉取对象枚举（缓存 3s；force 用于设备动作后/进程类页轮询刷新）。
+   *  timeout 哨兵（主进程整体截止超时）与异常同语义：显示加载失败——
+   *  把「永久挂起、无数据无报错」转成可见错误（用户反馈诉求） */
   const reloadObjects = useCallback(async (force = false) => {
     try {
       const list = await window.electron.listObjects(force);
-      setClasses(list);
+      if (list && typeof list === 'object' && !Array.isArray(list) && 'timeout' in list) {
+        setLoadError(true);
+        return;
+      }
+      setClasses(list as ObjectClassInfo[]);
       setLoadError(false);
     } catch {
       setLoadError(true);
@@ -846,7 +901,15 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   /** tty 只读流：进入 tty 实例页启动，离开/卸载停止。
    *  restricted 实例（非本会话控制台，root:tty 600）不尝试开流——
    *  枚举时已 R_OK 预检。仅订阅/清理（无同步 setState——缓冲复位在
-   *  渲染期复位块内） */
+   *  渲染期复位块内）。
+   *  **竞态回收（实测资源泄漏修复）**：ttyStart 是异步 IPC——主进程在
+   *  IPC 到达时就已 createReadStream（每条流占死一个 libuv 线程池线程
+   *  等数据，永不 EOF）。若在 IPC 返回前离开页面（cleanup 已置
+   *  cancelled、ref 尚未登记 streamId），旧实现直接 return 漏掉 stop——
+   *  同一标签反复进出 tty 页就会永久泄漏线程，4 条即耗尽线程池导致
+   *  全应用文件 I/O 冻结。修复：cancelled 分支对已返回的 streamId
+   *  显式 ttyStop 回收（主进程读流上限守卫兜底，见 objects:tty-start）。
+   */
   useEffect(() => {
     ttyStreamIdRef.current = null;
     if (!parsed?.instanceId || currentInstance?.kind !== 'tty') return;
@@ -855,7 +918,13 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     let cancelled = false;
     void (async () => {
       const res = await window.electron.ttyStart(currentInstance.id);
-      if (cancelled) return;
+      if (cancelled) {
+        // IPC 已飞出、主进程侧流已开：必须回收，否则读流泄漏占死线程
+        if (res.ok && res.streamId !== undefined) {
+          void window.electron.ttyStop(res.streamId);
+        }
+        return;
+      }
       if (!res.ok || res.streamId === undefined) {
         setTty((prev) => ({ ...prev, error: res.error ?? 'START_FAILED', closed: true }));
         return;
@@ -1319,7 +1388,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   const renderReading = (inst: ObjectInstance) => {
     if (inst.kind === 'tty') {
       if (inst.restricted || tty.error) {
-        return <div className="object-tty-denied">{t('objects.tty_denied')}</div>;
+        return <div className="object-tty-denied">{tty.error === 'TOO_MANY' ? t('objects.tty_too_many') : t('objects.tty_denied')}</div>;
       }
       return (
         <div className="object-tty">
@@ -1656,6 +1725,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
           e,
           buildObjectPayload(parsed?.className, inst.name, inst.icon, inst.id),
           buildObjectsPath(parsed?.className ?? undefined, inst.id),
+          inst,
         )}
         title={inst.subtitle ?? inst.id}
       >
@@ -2194,6 +2264,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
             e,
             buildObjectPayload(parsed.className, inst.name, inst.icon, inst.id),
             null,
+            inst,
           )}
         >
           <Icon name={inst.icon} className="object-panel-header-icon" />
@@ -2250,6 +2321,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       e,
       buildObjectPayload(parsed?.className, inst.name, inst.icon, inst.id),
       buildObjectsPath(parsed?.className ?? undefined, inst.id),
+      inst,
     ),
     tree: processTreeMode ? treeRows?.map((r) => ({ depth: r.depth, hasChildren: r.hasChildren, collapsed: r.collapsed })) ?? [] : null,
     onToggleTree: (id) => setTreeCollapsed((prev) => {

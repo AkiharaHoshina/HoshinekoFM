@@ -229,6 +229,10 @@ contextBridge.exposeInMainWorld('electron', {
   listObjects: (force?: boolean) => ipcRenderer.invoke('system:list-objects', force),
   /** Object Panel：读取对象实时读数（cpu/memory/storage；tty 走流式通道） */
   readObject: (classId: string, instanceId: string) => ipcRenderer.invoke('system:read-object', classId, instanceId),
+  /** Object Panel：解析对象在文件系统中的位置（右键菜单「定位至对象位置」；
+   *  传入点击时的实例快照——进程读 /proc/<pid>/exe、磁盘/分区回块设备节点、
+   *  其余回枚举的 nativePath） */
+  resolveObjectLocation: (inst: unknown) => ipcRenderer.invoke('system:resolve-object-location', inst),
   /** Object Panel：开始读取 tty 输出流（v1 只读） */
   ttyStart: (ttyId: string) => ipcRenderer.invoke('objects:tty-start', ttyId),
   /** Object Panel：停止 tty 输出流 */

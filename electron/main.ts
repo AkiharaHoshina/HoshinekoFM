@@ -18,6 +18,14 @@ import { ensureLauncherEntry, removeLauncherEntry, type LauncherEntryEnv, type L
 import { initJobHandlers } from './jobs';
 
 /**
+ * libuv 线程池扩容（默认 4，须在首个 fs 操作前设置）：对象枚举每轮
+ * ~1800 个并行 fs 读，tty 读流等阻塞读每条占死一个线程——4 线程被占满
+ * 时全应用文件 I/O 冻结（无报错、只剩旧缓存值）。8 线程 + 读流上限
+ * 守卫 + 枚举/读数整体超时三保险（见 docs/ObjectPanel进程类加载阻塞排查报告.md）。
+ */
+process.env.UV_THREADPOOL_SIZE ||= '8';
+
+/**
  * 运行时应用名：任务栏/DMS 等把窗口显示为「应用名 · 窗口标题」——
  * package.json 的 name（npm 包名 hoshineko-fm）作为前缀不够友好，
  * 改为品牌名 HoshinekoFM。注意 setName 会连带改变 userData 默认

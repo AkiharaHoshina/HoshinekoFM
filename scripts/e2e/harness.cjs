@@ -41,6 +41,9 @@ const { execFileSync } = require('child_process');
 const { createReadStream } = require('fs');
 const { Readable } = require('stream');
 
+// 与 main.ts 同源：libuv 线程池扩容须在首个 fs 操作前（harness 即主进程）
+process.env.UV_THREADPOOL_SIZE ||= '8';
+
 const ROOT = path.resolve(__dirname, '..', '..');
 const DIST = path.join(ROOT, 'dist');
 const DIST_ELECTRON = path.join(ROOT, 'dist-electron');

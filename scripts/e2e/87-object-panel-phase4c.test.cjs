@@ -269,6 +269,223 @@ exit 0
     h.assert.ok(dndStarts.length === 3, `无路径行拖拽不应发起原生拖出（实际 ${dndStarts.length} 次）`);
   });
 
+  await h.run('87d 定位对象位置（挂载点/块设备/sysfs 目录/进程 exe + 无 exe toast）', async () => {
+    // 假列表：挂载分区（沙箱挂载点目录）、整块磁盘（真实 /dev 节点）、
+    // 电源（真实 sysfs 路径）、进程（自身 pid 真 exe + kthreadd 无 exe）。
+    // system:resolve-object-location 是**真实 handler**（渲染层传实例快照，
+    // 不经枚举缓存——假行也能解析）。
+    const mountDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-mnt87d-'));
+    fs.writeFileSync(path.join(mountDir, 'hello.txt'), 'x');
+    ipcMain.removeHandler('system:list-objects');
+    ipcMain.handle('system:list-objects', async () => [
+      { id: 'storage', icon: 'hard_drive', instances: [
+        { id: '/dev/nvme0n1', name: 'nvme0n1', subtitle: 'Fake Disk', kind: 'disk', icon: 'hard_drive', nativePath: '/dev/nvme0n1', nativeIsDir: false },
+        { id: '/dev/sda1', name: 'sda1', subtitle: mountDir, kind: 'partition', icon: 'storage', nativePath: mountDir, nativeIsDir: true },
+      ] },
+      { id: 'power', icon: 'battery_full', instances: [
+        { id: 'BAT0', name: 'BAT0', subtitle: 'Fake Battery', kind: 'power', icon: 'battery_full', nativePath: '/sys/class/power_supply/BAT0', nativeIsDir: true },
+      ] },
+      { id: 'process', icon: 'app_shortcut', instances: [
+        { id: String(process.pid), name: 'e2e-self', subtitle: null, kind: 'process', icon: 'app_shortcut', nativePath: `/proc/${process.pid}`, nativeIsDir: true },
+        { id: '2', name: 'kthreadd', subtitle: null, kind: 'process', icon: 'app_shortcut', nativePath: '/proc/2', nativeIsDir: true },
+      ] },
+    ]);
+
+    const dir = h.tempDir();
+    h.makeFileTree(dir, { 'a.txt': 'x' });
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+
+    const goObjects = async () => {
+      await h.js(win, `(() => {
+        const b = [...document.querySelectorAll('.sidebar-item')].find((x) => /对象|Objects/.test(x.textContent ?? ''));
+        b.click(); return true;
+      })()`, true);
+      await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
+    };
+    const goClass = async (cardRe) => {
+      await h.js(win, `(() => {
+        const c = [...document.querySelectorAll('.object-class-card')].find((x) => ${cardRe}.test(x.textContent ?? ''));
+        if (!c) return false;
+        c.click(); return true;
+      })()`, true);
+      await h.waitFor(win, `!!document.querySelector('.object-row')`, { timeout: 8000 });
+    };
+    const rightClickRow = async (rowSel) => {
+      await h.js(win, `(() => {
+        const el = document.querySelector(${JSON.stringify(rowSel)});
+        if (!el) return false;
+        el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+        return true;
+      })()`, true);
+      await h.waitFor(win, `!!document.querySelector('.context-menu')`, { timeout: 8000 });
+    };
+    const menuTexts = async () => h.js(win, `[...document.querySelectorAll('.context-menu md-list-item')].map((x) => (x.textContent ?? '').trim())`);
+    const clickMenuItem = async (re) => {
+      await h.js(win, `(() => {
+        const items = [...document.querySelectorAll('.context-menu md-list-item')];
+        const it = items.find((x) => ${re}.test(x.textContent ?? ''));
+        if (!it) return false;
+        it.click();
+        return true;
+      })()`, true);
+    };
+    // 地址栏非编辑态是面包屑——进入编辑态读输入框值（63 号手法），读完 Escape 退出
+    const readOmnibar = async () => {
+      await h.clickEl(win, '.omnibar-trigger');
+      await h.waitFor(win, `!!document.querySelector('.omnibar-input')`, { timeout: 8000 });
+      const r = await h.js(win, `document.querySelector('.omnibar-input').value`);
+      await h.js(win, `(() => {
+        const el = document.querySelector('.omnibar-input');
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        return true;
+      })()`, true);
+      return r.value;
+    };
+    const waitOmnibar = async (val) => {
+      for (let i = 0; i < 40; i++) {
+        const v = await readOmnibar();
+        if (v === val) return;
+        await h.sleep(200);
+      }
+      throw new Error(`omnibar never became ${val}`);
+    };
+    const waitSelected = (path) => h.waitFor(win, `(() => {
+      const el = document.querySelector('.file-list-item[data-path=${JSON.stringify(path)}]');
+      return !!el && el.classList.contains('selected');
+    })()`, { timeout: 8000 });
+
+    // a) 挂载分区：菜单含「定位至挂载点」+「定位至对象位置」；
+    //    点挂载点 → 导航进挂载点目录
+    await goObjects();
+    await goClass(`/存储|Storage|ストレージ/`);
+    await rightClickRow('.object-row[data-id="/dev/sda1"]');
+    const partItems = await menuTexts();
+    h.assert.ok(
+      partItems.value.some((x) => /定位至挂载点|Locate mountpoint|マウントポイントを開く|마운트 지점으로 이동/.test(x)) &&
+      partItems.value.some((x) => /定位至对象位置|定位至物件位置|Locate object position|オブジェクトの場所を開く|개체 위치로 이동/.test(x)),
+      `挂载分区菜单应含挂载点与对象位置两项（实际：${JSON.stringify(partItems.value)}`,
+    );
+    await clickMenuItem(`/定位至挂载点|Locate mountpoint|マウントポイントを開く|마운트 지점으로 이동/`);
+    await waitOmnibar(mountDir);
+
+    // b) 挂载分区：定位至对象位置 → 块设备所在目录（/dev）
+    await goObjects();
+    await goClass(`/存储|Storage|ストレージ/`);
+    await rightClickRow('.object-row[data-id="/dev/sda1"]');
+    await clickMenuItem(`/定位至对象位置|定位至物件位置|Locate object position|オブジェクトの場所を開く|개체 위치로 이동/`);
+    await waitOmnibar('/dev');
+
+    // c) 整块磁盘行：菜单无「定位至挂载点」（未挂载无挂载点语义）；
+    //    定位至对象位置 → /dev + 选中块设备节点
+    await goObjects();
+    await goClass(`/存储|Storage|ストレージ/`);
+    await rightClickRow('.object-row[data-id="/dev/nvme0n1"]');
+    const diskItems = await menuTexts();
+    h.assert.ok(!diskItems.value.some((x) => /定位至挂载点|Locate mountpoint|マウントポイントを開く|마운트 지점으로 이동/.test(x)), `磁盘行菜单不应含挂载点项（实际：${JSON.stringify(diskItems.value)}`);
+    await clickMenuItem(`/定位至对象位置|定位至物件位置|Locate object position|オブジェクトの場所を開く|개체 위치로 이동/`);
+    await waitOmnibar('/dev');
+    await waitSelected('/dev/nvme0n1');
+
+    // d) BAT0：定位至对象位置 → /sys/class/power_supply + 选中 BAT0
+    await goObjects();
+    await goClass(`/电源|Power|バッテリー|전원/`);
+    await rightClickRow('.object-row[data-id="BAT0"]');
+    await clickMenuItem(`/定位至对象位置|定位至物件位置|Locate object position|オブジェクトの場所を開く|개체 위치로 이동/`);
+    await waitOmnibar('/sys/class/power_supply');
+    await waitSelected('/sys/class/power_supply/BAT0');
+
+    // e) 自身进程：定位至对象位置 → exe 父目录 + 选中可执行文件
+    await goObjects();
+    await goClass(`/进程|Process|プロセス|프로세스/`);
+    await rightClickRow(`.object-list-virtual .object-row[data-id="${process.pid}"]`);
+    await clickMenuItem(`/定位至对象位置|定位至物件位置|Locate object position|オブジェクトの場所を開く|개체 위치로 이동/`);
+    const exeParent = process.execPath.substring(0, process.execPath.lastIndexOf('/'));
+    await waitOmnibar(exeParent);
+    await waitSelected(process.execPath);
+
+    // f) 内核线程（无 exe）：toast 提示
+    await goObjects();
+    await goClass(`/进程|Process|プロセス|프로セス/`);
+    await rightClickRow('.object-list-virtual .object-row[data-id="2"]');
+    await clickMenuItem(`/定位至对象位置|定位至物件位置|Locate object position|オブジェクトの場所を開く|개체 위치로 이동/`);
+    await h.waitFor(win, `(() => {
+      const msgs = [...document.querySelectorAll('.toast-message')];
+      return msgs.some((m) => /无可执行文件|無可執行文件|no executable file|実行可能ファイルがありません|실행 파일이 없습니다/.test(m.textContent ?? ''));
+    })()`, { timeout: 8000 });
+  });
+
+  await h.run('87e tty 读流泄漏回归（非阻塞轮询——进出页面不占死线程池线程）', async () => {
+    // 假列表仅 tty1（restricted false）——真实 objects:tty-start handler +
+    // 真实 /dev/tty1（本机 hoshina 可读）。旧阻塞实现：同一标签反复进出
+    // tty1 页会泄漏 createReadStream 读流（close 打不断已阻塞的 read(2)），
+    // 每条占死一个 libuv 线程 → 4 条即耗尽线程池、全应用文件 I/O 冻结。
+    ipcMain.removeHandler('system:list-objects');
+    ipcMain.handle('system:list-objects', async () => [
+      { id: 'tty', icon: 'terminal', instances: [
+        { id: 'tty1', name: 'tty1', subtitle: null, kind: 'tty', icon: 'terminal', restricted: false, nativePath: '/dev/tty1', nativeIsDir: false },
+      ] },
+    ]);
+
+    const dir = h.tempDir();
+    h.makeFileTree(dir, { 'a.txt': 'x' });
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+
+    const navTo = async (path) => {
+      await h.clickEl(win, '.omnibar-trigger');
+      await h.waitFor(win, `!!document.querySelector('.omnibar-input')`, { timeout: 8000 });
+      await h.js(win, `(() => {
+        const el = document.querySelector('.omnibar-input');
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+        setter.call(el, ${JSON.stringify(path)});
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        return true;
+      })()`, true);
+      await h.sleep(100);
+    };
+
+    // 同一标签反复进出 tty1 实例页 ×8（触发 start/stop 竞态窗口）
+    for (let i = 0; i < 8; i++) {
+      await navTo('objects://tty/tty1');
+      await navTo(dir);
+    }
+    // 最后一次停在 tty1 页：读流应正常开启且不触发 TOO_MANY（每轮都已回收）
+    await navTo('objects://tty/tty1');
+    await h.sleep(1500);
+    const pageState = await h.js(win, `(() => {
+      const panel = document.querySelector('.object-panel');
+      const denied = document.querySelector('.object-tty-denied');
+      return {
+        hasTtyText: !!document.querySelector('.object-tty-text'),
+        deniedText: denied ? (denied.textContent ?? '') : null,
+      };
+    })()`);
+    h.assert.ok(pageState.value.hasTtyText === true, `最后一次进入 tty1 应正常开流（实际：${JSON.stringify(pageState.value)}`);
+    h.assert.ok(!/过多|Too many|多すぎます|너무 많습니다/.test(pageState.value.deniedText ?? ''), `读流应每轮回收、不得触发 TOO_MANY（实际：${JSON.stringify(pageState.value)}`);
+
+    // 线程级断言：本测试进程即主进程——不得有阻塞在 tty 读上的线程
+    // （旧阻塞实现这里会有 4+ 个 n_tty_read）
+    const me = process.pid;
+    let ttyBlocked = 0;
+    for (const t of fs.readdirSync(`/proc/${me}/task`)) {
+      try {
+        if (fs.readFileSync(`/proc/${me}/task/${t}/wchan`, 'utf-8').trim() === 'n_tty_read') ttyBlocked++;
+      } catch { /* 线程已退出 */ }
+    }
+    h.assert.ok(ttyBlocked === 0, `不得有阻塞在 n_tty_read 的线程（实际 ${ttyBlocked} 个）`);
+
+    // 枚举链路不被拖垮：listObjects 应在数秒内返回
+    const t0 = Date.now();
+    const r = await Promise.race([
+      h.js(win, `window.electron.listObjects(true)`),
+      new Promise((res) => setTimeout(() => res({ __timeout: true }), 8000)),
+    ]);
+    h.assert.ok(!r.__timeout, `进出 tty 页后 listObjects 应正常返回（挂起 = 线程池被占死）`);
+    console.log(`87e listObjects ${Date.now() - t0}ms`);
+  });
+
   const code = h.finish();
   process.exitCode = code;
 })();

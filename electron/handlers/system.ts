@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow, app } from 'electron';
 import path from 'path';
-import { promises as fs, watch as fsWatch, existsSync, createReadStream } from 'fs';
+import { promises as fs, watch as fsWatch, existsSync, constants, open as fsOpen, read as fsRead, close as fsClose } from 'fs';
 import os from 'os';
 import { spawn, exec, execFile } from 'child_process';
 import { promisify } from 'util';
@@ -3395,13 +3395,42 @@ export function registerSystemHandlers(
     }
   }
 
-  /** 活跃的 tty 读流（streamId → ReadStream） */
-  const ttyStreams = new Map<number, ReturnType<typeof createReadStream>>();
+  /** 活跃的 tty 读流（streamId → 非阻塞轮询句柄：fd + 定时器） */
+  const ttyStreams = new Map<number, { fd: number; timer: ReturnType<typeof setInterval> }>();
   let ttyStreamSeq = 0;
+
+  /**
+   * 给异步任务加整体截止时间：超时回 fallback（unref 计时器不阻退出）。
+   * 对象枚举/读数的底层 sysfs·proc 读单个有超时，但整条链路没有总闸——
+   * 线程池被阻塞读占满时任务会**永久挂起**（既不 resolve 也不 reject，
+   * 前端无数据也无报错、只剩旧缓存值）。总闸把「永久挂起」变成
+   * 「按超时报错」：list-objects 回 timeout 哨兵（前端显示加载失败）、
+   * read-object 回 null（前端连续失败计数 → 「无法读取」）。
+   */
+  async function withDeadline<T>(task: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        task,
+        new Promise<T>((resolve) => {
+          timer = setTimeout(() => resolve(fallback), timeoutMs);
+          timer.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
 
   ipcMain.handle('system:list-objects', async (_event, force?: boolean) => {
     try {
-      return await listObjectsCached(force === true);
+      // 整体截止 12s（正常枚举 ~0.2–3s；GPU 探测最坏 ~9s 留余量）
+      const result = await withDeadline(listObjectsCached(force === true), 12000, null);
+      if (result === null) {
+        console.error('list-objects timed out');
+        return { timeout: true };
+      }
+      return result;
     } catch (e) {
       console.error('list-objects failed', e);
       return [];
@@ -3409,7 +3438,61 @@ export function registerSystemHandlers(
   });
 
   ipcMain.handle('system:read-object', async (_event, classId: string, instanceId: string) => {
-    return await readObjectReading(classId, instanceId);
+    // 整体截止 5s（单读超时 2s + 并行聚合余量）；超时回 null = 读数失败语义
+    return await withDeadline(readObjectReading(classId, instanceId), 5000, null);
+  });
+
+  /**
+   * 带超时 readlink（/proc/<pid>/exe 等）：D 状态进程的 readlink 会阻塞，
+   * Promise.race + unref 计时器 2s 超时回 null（超时后遗留的 readlink
+   * 承诺自然收尾，无泄漏风险——菜单点击频率低）。
+   */
+  async function readlinkTimed(file: string, timeoutMs = READ_TIMEOUT_MS): Promise<string | null> {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        fs.readlink(file),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), timeoutMs);
+          timer.unref?.();
+        }),
+      ]);
+    } catch {
+      return null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  /**
+   * 解析对象在文件系统中的位置（对象行右键菜单「定位至对象位置」）。
+   * 渲染层传入**点击时的实例快照**（枚举可能已刷新，点击行数据才是
+   * 用户所见——与「先排序后过滤」同源语义）：进程类读 /proc/<pid>/exe
+   * （内核线程/僵尸/已退出回 NO_EXE；带 ` (deleted)` 后缀 = 可执行文件
+   * 已删除——剥离后缀回传 deleted 标记，渲染层提示后仍按路径导航，
+   * loadPath 的最近可用父级回落兜底）；磁盘/分区 = 块设备节点（枚举
+   * id 即 devicePath）；其余类 = 枚举时算好的 nativePath/nativeIsDir。
+   * 不 join 入参进路径（无注入面）：实例字段只做形态校验后原样回传。
+   */
+  ipcMain.handle('system:resolve-object-location', async (_event, inst: unknown) => {
+    const o = (inst ?? {}) as Partial<ObjectInstance>;
+    if (typeof o.id !== 'string' || typeof o.kind !== 'string') return { ok: false, reason: 'INVALID' };
+    if (o.kind === 'process') {
+      if (!/^\d+$/.test(o.id)) return { ok: false, reason: 'INVALID' };
+      const exe = await readlinkTimed(`/proc/${o.id}/exe`);
+      if (!exe) return { ok: false, reason: 'NO_EXE' };
+      const DELETED_SUFFIX = ' (deleted)';
+      if (exe.endsWith(DELETED_SUFFIX)) {
+        return { ok: true, path: exe.slice(0, -DELETED_SUFFIX.length), isDir: false, deleted: true };
+      }
+      return { ok: true, path: exe, isDir: false };
+    }
+    if (o.kind === 'disk' || o.kind === 'partition') {
+      if (!o.id.startsWith('/dev/')) return { ok: false, reason: 'NO_PATH' };
+      return { ok: true, path: o.id, isDir: false };
+    }
+    if (typeof o.nativePath !== 'string' || !o.nativePath) return { ok: false, reason: 'NO_PATH' };
+    return { ok: true, path: o.nativePath, isDir: o.nativeIsDir === true };
   });
 
   /**
@@ -4133,49 +4216,82 @@ export function registerSystemHandlers(
   /**
    * 开始读取 tty 输出流（v1 只读）：白名单 ttyN（防任意设备路径）。
    * 数据经 `objects:tty-data:<streamId>` 事件推送；错误/关闭各有事件。
-   * **写入预留**：未来交互式终端只需在本通道加写分支（保持 start/stop
-   * 契约不变），不新开协议。
+   *
+   * **非阻塞轮询实现（线程池泄漏修复）**：旧实现 createReadStream 阻塞
+   * 读 tty——等数据、永不 EOF，每条流**占死一个 libuv 线程池线程**；
+   * 且 `stream.destroy()` 无法打断已阻塞的 read(2)（实测 close 后线程
+   * 仍卡 n_tty_read 直到 tty 有新输入），渲染层「离开页面即回收」竞态
+   * 再一叠加，反复进出 tty 页就永久泄漏线程、4 条即耗尽线程池导致
+   * 全应用文件 I/O 冻结（排查报告 §3）。现改为 **O_NONBLOCK 打开 +
+   * 定时轮询**：每次 read 立即返回（EAGAIN 静默），线程只在 syscall
+   * 瞬间被占用——流关闭后线程即时释放，无泄漏面。上限守卫防 fd 泄漏
+   * 兜底。**写入预留**：未来交互式终端只需在本通道加写分支（保持
+   * start/stop 契约不变），不新开协议。
    */
-  ipcMain.handle('objects:tty-start', (event, ttyId: string) => {
+  const MAX_TTY_STREAMS = 16;
+  /** tty 轮询间隔（毫秒）：非阻塞读开销极小，500ms 足够及时 */
+  const TTY_POLL_MS = 500;
+  ipcMain.handle('objects:tty-start', async (event, ttyId: string) => {
     if (typeof ttyId !== 'string' || !/^tty\d+$/.test(ttyId)) {
       return { ok: false, error: 'INVALID_ID' };
     }
+    if (ttyStreams.size >= MAX_TTY_STREAMS) {
+      return { ok: false, error: 'TOO_MANY' };
+    }
+    let fd: number;
+    try {
+      fd = await new Promise<number>((resolve, reject) => {
+        fsOpen(`/dev/${ttyId}`, constants.O_RDONLY | constants.O_NONBLOCK, (err, f) => {
+          if (err) reject(err);
+          else resolve(f);
+        });
+      });
+    } catch {
+      return { ok: false, error: 'OPEN_FAILED' };
+    }
     const streamId = ++ttyStreamSeq;
-    const stream = createReadStream(`/dev/${ttyId}`, { encoding: 'utf8' });
-    ttyStreams.set(streamId, stream);
-    stream.on('data', (chunk) => {
-      if (!event.sender.isDestroyed()) {
-        event.sender.send(`objects:tty-data:${streamId}`, String(chunk));
-      }
-    });
-    stream.on('error', (err) => {
+    const buffer = Buffer.alloc(4096);
+    const cleanup = () => {
+      const entry = ttyStreams.get(streamId);
+      if (!entry) return;
       ttyStreams.delete(streamId);
-      if (!event.sender.isDestroyed()) {
-        event.sender.send(`objects:tty-error:${streamId}`, String((err as Error)?.message ?? err));
-      }
-    });
-    stream.on('close', () => {
-      ttyStreams.delete(streamId);
+      clearInterval(entry.timer);
+      fsClose(entry.fd, () => { /* 忽略关闭错误 */ });
+    };
+    const timer = setInterval(() => {
+      fsRead(fd, buffer, 0, buffer.length, null, (err, bytesRead) => {
+        if (err) {
+          if ((err as NodeJS.ErrnoException).code === 'EAGAIN') return; // 无数据，静默
+          cleanup();
+          if (!event.sender.isDestroyed()) {
+            event.sender.send(`objects:tty-error:${streamId}`, String(err.message ?? err));
+          }
+          return;
+        }
+        if (bytesRead === 0) return; // 无数据
+        if (!event.sender.isDestroyed()) {
+          event.sender.send(`objects:tty-data:${streamId}`, buffer.toString('utf8', 0, bytesRead));
+        }
+      });
+    }, TTY_POLL_MS);
+    timer.unref?.();
+    ttyStreams.set(streamId, { fd, timer });
+    event.sender.once('destroyed', () => {
+      cleanup();
       if (!event.sender.isDestroyed()) {
         event.sender.send(`objects:tty-close:${streamId}`);
-      }
-    });
-    event.sender.once('destroyed', () => {
-      const s = ttyStreams.get(streamId);
-      if (s) {
-        ttyStreams.delete(streamId);
-        try { s.destroy(); } catch { /* 已销毁 */ }
       }
     });
     return { ok: true, streamId };
   });
 
-  /** 停止 tty 输出流 */
+  /** 停止 tty 输出流（关闭 fd + 清轮询；已停止幂等） */
   ipcMain.handle('objects:tty-stop', (_event, streamId: number) => {
-    const s = ttyStreams.get(streamId);
-    if (s) {
+    const entry = ttyStreams.get(streamId);
+    if (entry) {
       ttyStreams.delete(streamId);
-      try { s.destroy(); } catch { /* 已销毁 */ }
+      clearInterval(entry.timer);
+      fsClose(entry.fd, () => { /* 忽略关闭错误 */ });
     }
     return true;
   });

@@ -2332,6 +2332,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           sparklineWindowSeconds={sparklineWindowSeconds}
           onNavigate={(p: string) => loadPath(p, true)}
           onOpenLocation={(p: string) => loadPath(p, true)}
+          onLocateObject={onRevealFile}
           onMountDevice={onMountDevice}
           onUnmountDevice={onUnmountDevice}
           onEjectDevice={onEjectDevice}

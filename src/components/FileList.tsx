@@ -258,9 +258,14 @@ const FileListComponent: React.FC<FileListProps> = ({
     if (scrollKey === prevScrollTargetRef.current) return;
 
     // 列表尚未挂载（首次渲染的后续提交才挂 List）：不消费目标，
-    // 等 listEl 就绪（state 变化触发效果重试）后再滚动/选中
+    // 等 listEl 就绪（state 变化触发效果重试）后再滚动/选中。
+    // 换视图（objects:// → 文件视图）重挂 List 时，首帧 imperative
+    // handle 的 element getter 仍是 null（容器 DOM 在下一提交才挂上，
+    // h 状态更新后 handle 重建、listEl 再次变化触发重试）——若此时
+    // 消费目标，scrollToRow 对 null 容器静默 no-op，选中又立即
+    // onScrollToComplete 清掉目标，定位永远停在半途（实测坑）。
     const listElNow = listImperativeRef.current;
-    if (!listElNow) return; // 列表未挂载：不消费目标，等挂载后重试
+    if (!listElNow || !listElNow.element) return; // 列表未挂载/容器未就绪：不消费目标，等挂载后重试
 
     prevScrollTargetRef.current = scrollKey;
 

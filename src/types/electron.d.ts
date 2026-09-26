@@ -58,9 +58,23 @@ export interface ObjectInstance {
     chargeControl?: boolean;
 }
 
+/** 对象位置解析结果（system:resolve-object-location） */
+export interface ObjectLocationResult {
+  ok: boolean;
+  /** 定位目标绝对路径（ok 时存在） */
+  path?: string;
+  /** 目标是否为目录（ok 时存在） */
+  isDir?: boolean;
+  /** 可执行文件已被删除（exe 带 " (deleted)" 后缀；路径已剥离——
+   *  渲染层提示后仍导航，loadPath 最近可用父级回落兜底） */
+  deleted?: boolean;
+  /** 失败原因：INVALID（入参形态非法）/NO_EXE（进程无可执行文件）/
+   *  NO_PATH（无原生路径语义） */
+  reason?: 'INVALID' | 'NO_EXE' | 'NO_PATH';
+}
+
 /** Object Panel 类信息（渲染层按 id 翻译显示名） */
-export interface ObjectClassInfo {
-    id: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power' | 'gpu';
+export interface ObjectClassInfo {    id: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power' | 'gpu';
     icon: string;
     instances: ObjectInstance[];
 }
@@ -542,9 +556,13 @@ export interface IElectronAPI {
     /** 取消当前窗口正在进行的搜索（搜索页「取消搜索」按钮） */
     cancelSearch: () => Promise<boolean>;
     /** Object Panel：枚举全部对象（按类分组，主进程短 TTL 缓存） */
-    listObjects: (force?: boolean) => Promise<ObjectClassInfo[]>;
+    listObjects: (force?: boolean) => Promise<ObjectClassInfo[] | { timeout: true }>;
     /** Object Panel：读取对象实时读数（cpu/memory/storage；tty 走流式通道） */
     readObject: (classId: string, instanceId: string) => Promise<ObjectReading | null>;
+    /** Object Panel：解析对象在文件系统中的位置（右键菜单「定位至对象位置」；
+     *  传入点击时的实例快照——进程读 /proc/<pid>/exe、磁盘/分区回块设备
+     *  节点、其余回枚举的 nativePath；失败按 reason 翻译提示） */
+    resolveObjectLocation: (inst: ObjectInstance) => Promise<ObjectLocationResult>;
     /** Object Panel：开始读取 tty 输出流（v1 只读） */
     ttyStart: (ttyId: string) => Promise<{ ok: boolean; streamId?: number; error?: string }>;
     /** Object Panel：停止 tty 输出流 */
