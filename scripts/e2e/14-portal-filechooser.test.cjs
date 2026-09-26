@@ -144,7 +144,7 @@ const FC_IFACE = 'org.freedesktop.impl.portal.FileChooser';
         handle_token: new dbus.Variant('s', 'e2e-token-3'),
         current_name: new dbus.Variant('s', 'report.txt'),
         current_folder: new dbus.Variant('ay', Buffer.from(dir, 'utf-8')),
-        accept_label: new dbus.Variant('s', '保存文件'),
+        accept_label: new dbus.Variant('s', '保存文件(_S)'),
       },
     );
     let picker3 = null;
@@ -165,7 +165,7 @@ const FC_IFACE = 'org.freedesktop.impl.portal.FileChooser';
     h.assert.strictEqual(saveCfg.value.mode, 'save', '应为保存模式');
     h.assert.strictEqual(saveCfg.value.defaultFileName, 'report.txt', '默认文件名应为 current_name');
     h.assert.strictEqual(saveCfg.value.initialPath, dir, '初始目录应为 current_folder');
-    h.assert.strictEqual(saveCfg.value.acceptLabel, '保存文件', '确定按钮文案应为 accept_label');
+    h.assert.strictEqual(saveCfg.value.acceptLabel, '保存文件', '确定按钮文案应为 accept_label（剥掉 GTK 助记符与括号快捷键提示）');
 
     // 初始目录已导航到 fixture 目录，文件名输入框预填 current_name
     await h.waitFor(picker3, `(() => {

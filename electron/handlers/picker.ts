@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import path from 'path';
 import { EXT_TO_MIME } from '../mimeMap';
+import { stripMnemonicLabel } from '../shared';
 
 /**
  * 文件选择器模式：第三方程序接入时以此声明可选条目类型。
@@ -243,7 +244,7 @@ function sanitizeOptions(options: unknown): PickerConfig {
     if (name && name !== '.' && name !== '..') config.defaultFileName = name;
   }
   if (typeof raw.acceptLabel === 'string' && raw.acceptLabel) {
-    config.acceptLabel = raw.acceptLabel.slice(0, 64);
+    config.acceptLabel = stripMnemonicLabel(raw.acceptLabel).slice(0, 64);
   }
 
   if (Array.isArray(raw.filters)) {

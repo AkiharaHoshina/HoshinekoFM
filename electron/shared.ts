@@ -20,6 +20,24 @@ export async function resolveAccessibleParent(startPath: string): Promise<string
   return null;
 }
 
+/**
+ * 剥掉 GTK 助记符下划线与尾部单字母括号快捷键提示（portal accept_label
+ * 可含 mnemonic——单下划线标记助记键字母、双下划线转义字面下划线，且
+ * 部分调用方会把快捷键写成「保存(_S)」括号后缀）。本应用按钮不实现
+ * 助记键，原样显示会让用户误以为存在快捷键（实测点 Ctrl+S 无效、历史
+ * 决策也从未定义过该快捷键）。剥离后「保存(_S)」→「保存」、「保_存」
+ * →「保存」；仅剥尾部单个字母数字的括号提示（「(S)」「(1)」等），
+ * 多字符括号内容保留（可能是合法文案）。
+ */
+export function stripMnemonicLabel(label: string): string {
+  const ESCAPED_UNDERSCORE = '\uE000'; // 私有区占位：先保护双下划线
+  const stripped = label
+    .replace(/__/g, ESCAPED_UNDERSCORE)
+    .replace(/_([\s\S])/g, '$1')
+    .replace(new RegExp(ESCAPED_UNDERSCORE, 'g'), '_');
+  return stripped.replace(/\s*\([A-Za-z0-9]\)\s*$/, '');
+}
+
 /** TTL (ms) for mount-map cache. Mounts rarely change during normal browsing. */
 const MOUNT_MAP_CACHE_TTL = 30_000;
 

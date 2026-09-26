@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import dbus from 'dbus-next';
 import { openPickerWindow, type PickerConfig, type PickerFilter } from './picker';
 import { BACKEND_VERSION_PROPERTY } from './backendInfo';
+import { stripMnemonicLabel } from '../shared';
 
 /**
  * xdg-desktop-portal FileChooser 后端（二期）。
@@ -199,7 +200,7 @@ function mapSaveOptions(options: Record<string, unknown>): PickerConfig {
   if (currentFolder) config.initialPath = currentFolder;
   const acceptLabel = unwrap(options.accept_label);
   if (typeof acceptLabel === 'string' && acceptLabel) {
-    config.acceptLabel = acceptLabel.slice(0, 64);
+    config.acceptLabel = stripMnemonicLabel(acceptLabel).slice(0, 64);
   }
   return config;
 }
