@@ -308,15 +308,14 @@ exit 0
     await h.sleep(400);
     h.assert.ok(signalCalls.length === 1 && signalCalls[0].signal === 'TERM' && JSON.stringify(signalCalls[0].pids.sort()) === JSON.stringify([10, 11]), `应记录批量 TERM（实际：${JSON.stringify(signalCalls)}`);
 
-    // 鼠标框选（文件区同款）：从**列表外的面板标题区**按下（文件区边界内、
-    // 进程行边界外均可起框）→ 拖过全部行 → 全选 4 个
+    // 鼠标框选（文件区同款）：框选只能在虚拟列表区域内发起（review 7 bug
+    // 定案）——从容器空白（列表顶部 2px 处，行槽间隙非行本体）按下，
+    // 拖过全部行 → 全选 4 个
     await h.js(win, `(() => {
-      const header = document.querySelector('.object-panel-header');
       const box = document.querySelector('.object-list-virtual');
-      if (!header || !box) return false;
-      const hr = header.getBoundingClientRect();
+      if (!box) return false;
       const br = box.getBoundingClientRect();
-      header.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: hr.left + hr.width / 2, clientY: hr.top + hr.height / 2 }));
+      box.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: br.left + br.width / 2, clientY: br.top + 2 }));
       document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: br.left + 20, clientY: br.bottom - 4 }));
       document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: br.left + 20, clientY: br.bottom - 4 }));
       return true;
@@ -327,6 +326,45 @@ exit 0
     })()`, { timeout: 8000 });
     const boxSelected = await h.js(win, `document.querySelectorAll('.object-row--selected').length`);
     h.assert.ok(boxSelected.value === 4, `框选应选中全部 4 行（实际 ${boxSelected.value} 行）`);
+
+    // 回归（review 7 bug）：非 .object-list-virtual 区域（面板标题/排序条）
+    // 开始拖动不得触发虚拟列表框选——Esc 清选后从标题区/排序条按下拖过
+    // 列表，断言无选框、无选中
+    await h.js(win, `(() => {
+      const box = document.querySelector('.object-list-virtual');
+      box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      return true;
+    })()`, true);
+    await h.waitFor(win, `(() => {
+      const h = document.querySelector('.object-sortbar-hint .object-batch-count');
+      return !!h && !/[0-9]/.test(h.textContent ?? '');
+    })()`, { timeout: 8000 });
+    await h.js(win, `(() => {
+      const header = document.querySelector('.object-panel-header');
+      const sortbar = document.querySelector('.object-sortbar');
+      const box = document.querySelector('.object-list-virtual');
+      if (!header || !box) return false;
+      const br = box.getBoundingClientRect();
+      const hr = header.getBoundingClientRect();
+      header.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: hr.left + hr.width / 2, clientY: hr.top + hr.height / 2 }));
+      document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: br.left + 20, clientY: br.bottom - 4 }));
+      document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: br.left + 20, clientY: br.bottom - 4 }));
+      if (sortbar) {
+        const sr = sortbar.getBoundingClientRect();
+        sortbar.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: sr.left + sr.width / 2, clientY: sr.top + sr.height / 2 }));
+        document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: br.left + 20, clientY: br.bottom - 4 }));
+        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: br.left + 20, clientY: br.bottom - 4 }));
+      }
+      return true;
+    })()`, true);
+    await h.sleep(200);
+    const noRubberFromOutside = await h.js(win, `(() => {
+      const sel = document.querySelector('.object-selection-box');
+      const hint = document.querySelector('.object-sortbar-hint .object-batch-count');
+      const selected = document.querySelectorAll('.object-row--selected').length;
+      return (!sel || (sel.offsetWidth === 0 && sel.offsetHeight === 0)) && selected === 0 && !!hint && !/[0-9]/.test(hint.textContent ?? '');
+    })()`);
+    h.assert.ok(noRubberFromOutside.value === true, '非列表区域拖动不得触发框选（无选框、无选中）');
 
     // Esc 清除多选 → 批量条消失
     await h.js(win, `(() => {

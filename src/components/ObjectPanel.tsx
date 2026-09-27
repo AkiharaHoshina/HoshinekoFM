@@ -2449,27 +2449,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     return !!el?.closest?.('.object-row, md-text-button, md-outlined-button, md-tonal-button, md-filled-button, md-icon-button, md-outlined-text-field');
   };
   return (
-    <div
-      className={`object-panel${isProcessClass ? ' object-panel--virtual' : ''}`}
-      onMouseDown={isProcessClass ? (e) => {
-        // 文件区边界内、进程行边界外（面板空白/标题/排序条空隙/行间隙）
-        // 均可发起框选——与文件区同款：条目与交互控件上按下不框选
-        if (!isProcessInteractiveTarget(e.target)) {
-          handleProcessBackgroundMouseDown(e);
-        }
-      } : undefined}
-      onClick={isProcessClass ? (e) => {
-        // 空白处点击清除多选（框选/条目点击守卫同源）
-        if (processDidSelectRef.current) {
-          processDidSelectRef.current = false;
-          return;
-        }
-        if (!isProcessInteractiveTarget(e.target)) {
-          setProcessSelected(new Set());
-          setProcessAnchor(null);
-        }
-      } : undefined}
-    >
+    <div className={`object-panel${isProcessClass ? ' object-panel--virtual' : ''}`}>
       <div className="object-panel-header">
         <Icon name={currentClass?.icon ?? 'widgets'} className="object-panel-header-icon" />
         <div className="object-panel-title">{t(OBJECTS_CLASS_LABEL[parsed?.className ?? ''] ?? 'objects.title')}</div>
@@ -2528,6 +2508,26 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
                   className="object-list-virtual"
                   tabIndex={0}
                   onKeyDown={handleProcessListKeyDown}
+                  onMouseDown={(e) => {
+                    // 框选只在虚拟列表区域内发起（review 7 bug 定案：非列表
+                    // 区域——面板标题/排序条/搜索头——拖动不得触发框选）；
+                    // 与文件区同款：条目与交互控件上按下不框选，行间隙/
+                    // 左右缩进/容器空白可起框
+                    if (!isProcessInteractiveTarget(e.target)) {
+                      handleProcessBackgroundMouseDown(e);
+                    }
+                  }}
+                  onClick={(e) => {
+                    // 空白处点击清除多选（框选/条目点击守卫同源）
+                    if (processDidSelectRef.current) {
+                      processDidSelectRef.current = false;
+                      return;
+                    }
+                    if (!isProcessInteractiveTarget(e.target)) {
+                      setProcessSelected(new Set());
+                      setProcessAnchor(null);
+                    }
+                  }}
                 >
                   <AutoSizer
                     renderProp={({ height, width }) =>
