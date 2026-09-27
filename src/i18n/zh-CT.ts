@@ -302,6 +302,7 @@ const zhCT = {
   'toast.permissions_changed': '權限已改',
   'error.chmod_failed': (msg: string) => `改權限失敗: ${msg}`,
   'error.chmod_invalid_mode': '權限格式冇效（應該係 3 位八進制）',
+  'error.address_not_exist': '地址唔存在',
   'error.cannot_open_dir': (msg: string) => `無法打開目錄: ${msg}`,
   'error.search_failed': (msg: string) => `搜尋失敗: ${msg}`,
   'error.name_exists': (name: string) => `改名失敗：${name} 已經存在`,
@@ -651,6 +652,11 @@ const zhCT = {
   'omnibar.placeholder': '輸入路徑或者搜尋...',
   'omnibar.button_tip': '點擊編輯路徑或者搜尋',
   'omnibar.flatten_symlinks': '展平符號連結',
+  'omnibar.placeholder_address': '輸入路徑或者地址...',
+  'omnibar.placeholder_query': '輸入搜尋關鍵詞...',
+  'omnibar.enter_search': '進入搜尋',
+  'omnibar.back_to_address': '返去地址欄',
+  'omnibar.start_search': '開始搜尋',
 
   // ── 面包屑 ──
   'breadcrumbs.root': '根目錄',

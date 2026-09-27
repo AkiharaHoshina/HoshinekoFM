@@ -344,6 +344,7 @@ const ruUA = {
   'toast.permissions_changed': 'Права изменены',
   'error.chmod_failed': (msg: string) => `Не удалось изменить права: ${msg}`,
   'error.chmod_invalid_mode': 'Неверный формат прав (нужны 3 восьмеричные цифры)',
+  'error.address_not_exist': 'Адрес не существует',
   'error.cannot_open_dir': (msg: string) => `Не удалось открыть каталог: ${msg}`,
   'error.search_failed': (msg: string) => `Поиск не удался: ${msg}`,
   'error.name_exists': (name: string) => `Не удалось переименовать: «${name}» существует`,
@@ -693,6 +694,11 @@ const ruUA = {
   'omnibar.placeholder': 'Введите путь или поиск...',
   'omnibar.button_tip': 'Нажмите, чтобы изменить путь или выполнить поиск',
   'omnibar.flatten_symlinks': 'Разрешить символьные ссылки',
+  'omnibar.placeholder_address': 'Введите путь или адрес...',
+  'omnibar.placeholder_query': 'Введите ключевые слова...',
+  'omnibar.enter_search': 'Войти в поиск',
+  'omnibar.back_to_address': 'Вернуться к адресной строке',
+  'omnibar.start_search': 'Начать поиск',
 
   // ── 面包屑 ──
   'breadcrumbs.root': 'Корень',

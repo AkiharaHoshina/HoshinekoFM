@@ -312,6 +312,7 @@ const koCN = {
   'toast.permissions_changed': '권한이 변경되었습니다',
   'error.chmod_failed': (msg: string) => `권한 변경 실패: ${msg}`,
   'error.chmod_invalid_mode': '잘못된 권한 형식 (8진수 3자리 필요)',
+  'error.address_not_exist': '주소가 존재하지 않습니다',
   'error.cannot_open_dir': (msg: string) => `디렉토리를 열 수 없습니다: ${msg}`,
   'error.search_failed': (msg: string) => `검색 실패: ${msg}`,
   'error.name_exists': (name: string) => `이름 변경 실패: ${name}이(가) 이미 존재함`,
@@ -661,6 +662,11 @@ const koCN = {
   'omnibar.placeholder': '경로 입력 또는 검색...',
   'omnibar.button_tip': '경로를 편집하거나 검색하려면 클릭하십시오',
   'omnibar.flatten_symlinks': '심볼릭 링크 해결',
+  'omnibar.placeholder_address': '경로 또는 주소 입력...',
+  'omnibar.placeholder_query': '검색 키워드 입력...',
+  'omnibar.enter_search': '검색 입력',
+  'omnibar.back_to_address': '주소란으로 돌아가기',
+  'omnibar.start_search': '검색 시작',
 
   // ── 빵가루 내비게이션 ──
   'breadcrumbs.root': '루트',

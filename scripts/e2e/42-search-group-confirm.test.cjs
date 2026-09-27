@@ -30,10 +30,7 @@ const h = require('./harness.cjs');
     await h.waitFor(win, `localStorage.getItem('settings.groupingEnabled') === 'false'`, 5000);
 
     // 搜索 'a'（默认 settings.searchGroupByDir=true）→ 结果按目录分组
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', 'a');
-    await h.key(win, 'Enter');
+    await h.searchViaOmnibar(win, 'a');
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub/a.txt"]')`, { timeout: 8000 });
     await h.waitFor(win, dirHeaders, 8000);
 

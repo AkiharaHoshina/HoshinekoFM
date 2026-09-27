@@ -11,6 +11,24 @@
 }
 
 /* ── 结果行 ── */
+/* 搜索基准目录行（结果行上方常驻）：次要色调 + 超长省略，悬停 title 看全 */
+.search-filter-path {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.search-filter-path span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .search-filter-summary {
   display: flex;
   align-items: center;

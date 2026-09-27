@@ -37,11 +37,9 @@ const path = require('path');
     await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 3`);
 
     try {
-      // omnibar 输入 proc → Enter 搜索（不含 '/' = 搜索而非路径导航）
-      await h.clickEl(win, '.omnibar-trigger');
-      await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-      await h.setReactInput(win, '.omnibar-input', 'proc');
-      await h.key(win, 'Enter');
+      // 搜索态入口：编辑 → 「进入搜索」→ 输词 → Enter（旧「地址栏直接
+      // 输词」入口已废弃——编辑态只认路径/schema，见 e2e 88）
+      await h.searchViaOmnibar(win, 'proc');
 
       // 可访问部分的匹配结果应显示（修复前：整体零结果）
       await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/proc-data.txt"]')`);
@@ -133,10 +131,7 @@ const path = require('path');
       // ── 关闭搜索分类：回到语义分组（组头不再是目录路径）──
       await h.js(win, `localStorage.setItem('settings.searchGroupByDir', JSON.stringify(false)); location.reload();`);
       await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/other.txt"]')`);
-      await h.clickEl(win, '.omnibar-trigger');
-      await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-      await h.setReactInput(win, '.omnibar-input', 'proc');
-      await h.key(win, 'Enter');
+      await h.searchViaOmnibar(win, 'proc');
       await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub/proc-nested.txt"]')`, { timeout: 8000 });
       const noDirHeaders = await h.js(
         win,

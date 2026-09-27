@@ -906,6 +906,52 @@ async function waitDialogAnim() {
 }
 
 /**
+ * 经地址栏显式状态机发起搜索（v0.11.49-dev FM 搜索重构起）：
+ * 已在搜索态 → 直接在搜索输入框改词回车（改 query 重搜，选项沿用）；
+ * 否则点编辑 → 点「进入搜索」按钮 → 输入关键词 → Enter。
+ * 旧「地址栏直接输词」入口已废弃——编辑态只认路径/schema，输词必须
+ * 先切搜索态（否则 toast「地址不存在」）。Enter 经合成 KeyboardEvent
+ * 派发到搜索输入框（React onKeyDown 可达；焦点落点不可靠时不依赖
+ * 原生 key 派发——与 87d 的 Escape 同手法）。
+ */
+async function searchViaOmnibar(win, query) {
+  const inSearch = await js(win, `!!document.querySelector('.omnibar.mode-search .omnibar-input')`);
+  if (!inSearch.value) {
+    await clickEl(win, '.omnibar-trigger');
+    await waitFor(win, `!!document.querySelector('.omnibar-input')`);
+    await clickEl(win, '.omnibar-enter-search');
+    await waitFor(win, `!!document.querySelector('.omnibar.mode-search .omnibar-input')`);
+  }
+  await setReactInput(win, '.omnibar.mode-search .omnibar-input', query);
+  await js(
+    win,
+    `(() => {
+      const el = document.querySelector('.omnibar.mode-search .omnibar-input');
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return true;
+    })()`,
+    true,
+  );
+}
+
+/**
+ * 搜索态按 Esc 显式退出（导航回进入搜索前的 url）：合成派发到搜索
+ * 输入框（B3 定案——不靠焦点判断，Esc 由输入框 onKeyDown 处理）。
+ */
+async function escCloseSearch(win) {
+  await js(
+    win,
+    `(() => {
+      const el = document.querySelector('.omnibar.mode-search .omnibar-input');
+      if (!el) return false;
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return true;
+    })()`,
+    true,
+  );
+}
+
+/**
  * js 点击设置对话框底部「确定」按钮（应用全部草稿并关闭）。
  * v0.11.48 起 Escape/遮罩关闭语义改为「取消」（丢弃草稿不保存退出，
  * 与主题颜色对话框一致）——e2e 里「应用并退出」必须显式点击确定
@@ -1033,6 +1079,8 @@ module.exports = {
   key,
   hotkey,
   setReactInput,
+  searchViaOmnibar,
+  escCloseSearch,
   scrollIntoView,
   selectOption,
   waitDialogAnim,

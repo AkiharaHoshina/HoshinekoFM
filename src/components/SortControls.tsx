@@ -25,9 +25,9 @@ interface SortControlsProps {
    * 搜索态强制分组（settings.searchGroupByDir 开启且搜索进行中）：
    * 分组按钮强制高亮（filled）且点击无效，退出搜索后恢复可点——
    * 搜索结果的分组渲染由调用方（groupByDir）控制，此开关只锁定按钮。
-   * 折叠态下仅强制分组时「更多」按钮以 filled 变体提示，分组开关
-   * 自身状态不改动按钮（避免「更多」按钮被误读为激活态）；溢出菜单
-   * 中分组项禁用、勾选标记仍显示实际分组状态。
+   * 折叠态「更多」按钮**恒 standard 不 filled**（用户评审定案：filled
+   * 会与搜索态的其他高亮按钮混淆，分组开关自身状态也不改动按钮）；
+   * 溢出菜单中分组项禁用、勾选标记仍显示实际分组状态。
    */
   groupingForced?: boolean;
   /** 当前视图模式（网格/列表） */
@@ -60,7 +60,7 @@ interface SortControlsProps {
  * 视图模式切换按钮图标/tooltip 显示切换目标（列表模式显示网格图标）。
  *
  * 折叠（collapsed）：展开态五按钮右端为「收起」把手；折叠后仅剩
- * 「更多」按钮（tune，仅搜索强制分组时 filled），点击弹出 md-menu
+ * 「更多」按钮（tune，恒 standard 变体），点击弹出 md-menu
  * 溢出菜单（popover 锚定「更多」按钮）——菜单项复用五项动作（分组
  * 开关带勾选标记、排序当前项带勾选 + 升降箭头），底部「展开控件」
  * 项恢复展开。折叠状态持久化与跨窗口同步由调用方负责
@@ -145,7 +145,7 @@ export const SortControls: React.FC<SortControlsProps> = ({
         <>
           <IconButton
             id={moreButtonId}
-            variant={groupingForced ? 'filled' : 'standard'}
+            variant="standard"
             onClick={() => setMenuOpen((v) => !v)}
             title={t('sort.more')}
           >

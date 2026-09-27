@@ -3,8 +3,9 @@
  * - 真实目录：`..` 上级、`.` 当前、`./x` 与 `../x` 相对解析、`~` 家目录；
  * - 虚拟路径：`trash://` 上 `..` 回落真实根 `/`（仪表盘不渲染地址栏，
  *   无 UI 入口，`..` 语义由 utils/addressPath 覆盖）；
- * - 无斜杠输入与**波浪号开头的文件名**（如 `~file.txt`）走搜索而非
- *   路径导航（回归：曾把 ~ 文件名误判为目录并弹「目录不存在」）。
+ * - 无斜杠输入与**波浪号开头的文件名**（如 `~file.txt`）：编辑态只认
+ *   路径/schema，一律 toast「地址不存在」（FM 搜索重构行为变更）；搜索
+ *   态任何输入都当关键词正常搜索（63d/63e）。
  * 断言方式：轮询「进入编辑模式读取地址栏值」（= 当前显示路径）直到
  * 目标路径——Enter 后 loadPath 异步完成，且 /tmp 等大目录的条目在
  * 虚拟列表里不一定渲染，条目断言不可靠。
@@ -29,21 +30,40 @@ const { app } = require('electron');
   const sibling = h.tempDir();
   h.makeFileTree(sibling, { 'marker.txt': 'sibling' });
 
-  /** 进入编辑模式输入路径并回车 */
+  /**
+   * 进入编辑模式输入路径并回车。搜索态下无编辑触发钮——先经
+   * 「返回地址栏」按钮回编辑态（输入框显示完整虚拟路径，可改写）。
+   */
   const enterPath = async (win, value) => {
-    await h.waitFor(win, `!!document.querySelector('.omnibar-trigger')`);
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', value);
+    const inSearch = await h.js(win, `!!document.querySelector('.omnibar.mode-search')`);
+    if (inSearch.value) {
+      await h.clickEl(win, '.omnibar-back-address');
+      await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    } else {
+      await h.waitFor(win, `!!document.querySelector('.omnibar-trigger')`);
+      await h.clickEl(win, '.omnibar-trigger');
+      await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    }
+    await h.setReactInput(win, '.omnibar.mode-edit .omnibar-input', value);
     await h.key(win, 'Enter');
   };
 
-  /** 重新进入编辑模式读取地址栏当前显示路径（读后退回面包屑形态） */
+  /**
+   * 读取地址栏当前显示路径：面包屑态点编辑触发钮；搜索态先经
+   * 「返回地址栏」进编辑态（编辑框 = 完整虚拟路径），读后退回
+   * 面包屑形态。
+   */
   const readAddressBar = async (win) => {
-    await h.waitFor(win, `!!document.querySelector('.omnibar-trigger')`);
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    const r = await h.js(win, `document.querySelector('.omnibar-input').value`);
+    const inSearch = await h.js(win, `!!document.querySelector('.omnibar.mode-search')`);
+    if (inSearch.value) {
+      await h.clickEl(win, '.omnibar-back-address');
+      await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    } else {
+      await h.waitFor(win, `!!document.querySelector('.omnibar-trigger')`);
+      await h.clickEl(win, '.omnibar-trigger');
+      await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    }
+    const r = await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').value`);
     await h.key(win, 'Escape');
     return r.value;
   };
@@ -116,26 +136,38 @@ const { app } = require('electron');
     await waitAddressBar(win, '/');
   });
 
-  await h.run('63d 无斜杠输入与带 ~ 的文件名走搜索（回归）', async () => {
+  await h.run('63d 编辑态不接收搜索词（toast 地址不存在）；搜索态输词搜索（行为变更回归）', async () => {
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`);
 
-    // 输入 'a.txt'（无路径语法）→ 搜索而非导航（搜索过滤行出现）；
-    // search:// 虚拟路径模型（v0.11.49-dev 起）：地址栏显示
-    // search://<目录>?q=<关键词>（D1/D2 定案：标准 URL query 参数 +
-    // 最小转义——Unicode/斜杠原样，人可读写）
+    // 编辑态输入 'a.txt'（无路径语法，也不是 schema）→ toast「地址不存在」
+    // 且不导航不搜索（FM 搜索重构行为变更：编辑态只认路径/schema）
     await enterPath(win, 'a.txt');
+    await h.waitFor(win, `[...document.querySelectorAll('.toast-message')].some((m) => /地址不存在|Address does not exist|アドレスが存在しません|주소가 존재하지 않습니다|Адрес не существует|Адреса не існує|位址不存在|地址唔存在/.test(m.textContent ?? ''))`, { timeout: 8000 });
+    h.assert.ok((await h.js(win, `!!document.querySelector('.omnibar.mode-edit')`)).value, '非法输入后应停留在编辑态');
+    await h.key(win, 'Escape');
+
+    // 搜索态输入 'a.txt' → 搜索而非导航
+    await h.searchViaOmnibar(win, 'a.txt');
     await h.waitFor(win, `!!document.querySelector('.search-filter-row')`);
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`);
-    let stillDir = await readAddressBar(win);
-    h.assert.ok(stillDir === `search://${dir}?q=a.txt`, `搜索后地址栏应为 search:// query 参数形态：${stillDir}`);
+    // 搜索态地址栏 = 关键词输入框（不显示完整 url——编辑态才能看到）
+    const inSearchVal = await h.js(win, `document.querySelector('.omnibar.mode-search .omnibar-input')?.value ?? null`);
+    h.assert.strictEqual(inSearchVal.value, 'a.txt', '搜索态输入框应显示关键词');
+    // 「返回地址栏」→ 编辑态显示完整 search:// query 参数形态（D1/D2 定案）
+    await h.clickEl(win, '.omnibar-back-address');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    const addr = await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').value`);
+    h.assert.ok(addr.value === `search://${dir}?q=a.txt`, `编辑态应显示完整 search:// 形态：${addr.value}`);
+    await h.key(win, 'Escape');
 
-    // 波浪号开头的文件名（~file.txt）：不是 ~ 家目录语法，应搜索而非
-    // 当目录导航（回归：曾误判为路径并弹「目录不存在」）
+    // 波浪号开头的文件名（~file.txt）：编辑态不是 ~ 家目录语法 → 同样
+    // toast 地址不存在（不误判为目录导航、也不搜索）；搜索态正常搜索
     await enterPath(win, '~file.txt');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit')`, { timeout: 8000 });
+    await h.key(win, 'Escape');
+    await h.searchViaOmnibar(win, '~file.txt');
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/~file.txt"]')`);
-    stillDir = await readAddressBar(win);
-    h.assert.ok(stillDir === `search://${dir}?q=~file.txt`, `~ 文件名搜索后地址栏应为 search:// query 参数形态：${stillDir}`);
   });
 
   await h.run('63e UTF-8/特殊字符 search:// 往返（D1 用户点名）', async () => {
@@ -143,7 +175,7 @@ const { app } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`);
 
     // 中文关键词（Unicode 原样显示，不转义——用户期望的可读形态）
-    await enterPath(win, '喵');
+    await h.searchViaOmnibar(win, '喵');
     await h.waitFor(win, `!!document.querySelector('.search-filter-row')`);
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/喵.txt"]')`);
     let addr = await readAddressBar(win);
@@ -151,7 +183,7 @@ const { app } = require('electron');
 
     // 关键词含中文 + 空格 + & + %：最小转义——中文/空格原样、& → %26、% → %25
     const kw = '中文 测试&%';
-    await enterPath(win, kw);
+    await h.searchViaOmnibar(win, kw);
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/中文 测试&%.txt"]')`);
     addr = await readAddressBar(win);
     h.assert.ok(addr === `search://${dir}?q=中文 测试%26%25`, `特殊字符应最小转义且其余可读（实际 ${addr}）`);

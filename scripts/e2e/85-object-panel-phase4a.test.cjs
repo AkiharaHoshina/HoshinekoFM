@@ -429,10 +429,7 @@ exit 0
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     await goObjects(win);
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', 'svc');
-    await h.key(win, 'Enter');
+    await h.searchViaOmnibar(win, 'svc');
     await h.waitFor(win, `!!document.querySelector('.object-search-results')`, { timeout: 8000 });
     const grouped = await h.js(win, `(() => ({
       groups: document.querySelectorAll('.object-search-group').length,

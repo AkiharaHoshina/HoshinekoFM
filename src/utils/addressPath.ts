@@ -11,9 +11,12 @@
  * 语义约定（文件管理器地址栏惯例）：
  * - 软链接路径按**词法**父级折叠（与 shell 的逻辑 PWD 不同）；
  * - `trash://…` 视为根级虚拟目录：`..` 越过 trash:// 根后回落 `/`；
+ * - `search://…`：`..` 回到**发起目录的父级**（虚拟路径内记录的目录
+ *   才是搜索身份的真实位置），越过基准目录根后钳制在 `/`；
  * - 仪表盘（app://dashboard / dashboard://）同视为根级：`..` → `/`，
  *   `.` → 仪表盘自身，相对段自 `/` 起算。
  */
+import { parseSearchPath } from './searchPath';
 
 /**
  * 地址栏输入是否按「路径导航」处理（否则按搜索）。
@@ -50,7 +53,8 @@ export function normalizePosixPath(input: string): string {
 /**
  * 在**当前显示路径**上解析相对段（`.`, `..`，可混入普通段）。
  * @param cwd - 当前显示路径：真实绝对路径 / `trash://…` 虚拟路径 /
- *   `app://dashboard`（或 `dashboard://`）
+ *   `app://dashboard`（或 `dashboard://`）/ `search://…`（以其中记录的
+ *   发起目录为基准）/ `objectsearch://…`（以类名为基准段）
  * @param rel - 相对输入（如 `./x`、`../../y`、`.`、`..`）
  */
 export function resolveRelativePath(cwd: string, rel: string): string {
@@ -59,6 +63,14 @@ export function resolveRelativePath(cwd: string, rel: string): string {
   if (cwd.startsWith('trash://')) {
     scheme = 'trash://';
     baseSegs = cwd.slice('trash://'.length).split('/').filter(Boolean);
+  } else if (cwd.startsWith('search://')) {
+    // search:// 搜索态：`..` 回到发起目录的父级（`search:///a/b?q=x` +
+    // `..` → `/a`）；越出基准目录根后回落真实根
+    const parsed = parseSearchPath(cwd);
+    baseSegs = parsed ? parsed.dir.split('/').filter(Boolean) : [];
+  } else if (cwd.startsWith('objectsearch://')) {
+    scheme = 'objectsearch://';
+    baseSegs = cwd.slice('objectsearch://'.length).split('/').filter(Boolean);
   } else if (cwd === 'app://dashboard' || cwd === 'dashboard://') {
     baseSegs = [];
   } else {
@@ -70,7 +82,7 @@ export function resolveRelativePath(cwd: string, rel: string): string {
       if (baseSegs.length > 0) {
         baseSegs.pop();
       } else if (scheme) {
-        // trash:// 根之上的 `..`：回落真实根
+        // 虚拟目录根之上的 `..`：回落真实根
         scheme = null;
       }
       // 真实根之上的 `..`：钳制在根（不再弹出）

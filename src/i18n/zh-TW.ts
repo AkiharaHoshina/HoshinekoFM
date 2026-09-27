@@ -302,6 +302,7 @@ const zhTW = {
   'toast.permissions_changed': '權限已修改',
   'error.chmod_failed': (msg: string) => `修改權限失敗: ${msg}`,
   'error.chmod_invalid_mode': '無效的權限格式（應為 3 位八進位）',
+  'error.address_not_exist': '位址不存在',
   'error.cannot_open_dir': (msg: string) => `無法開啟目錄：${msg}`,
   'error.search_failed': (msg: string) => `搜尋失敗：${msg}`,
   'error.name_exists': (name: string) => `重新命名失敗：${name} 已存在`,
@@ -651,6 +652,11 @@ const zhTW = {
   'omnibar.placeholder': '輸入路徑或搜尋...',
   'omnibar.button_tip': '點擊編輯路徑或搜尋',
   'omnibar.flatten_symlinks': '展平捷徑',
+  'omnibar.placeholder_address': '輸入路徑或網址...',
+  'omnibar.placeholder_query': '輸入搜尋關鍵字...',
+  'omnibar.enter_search': '進入搜尋',
+  'omnibar.back_to_address': '返回網址列',
+  'omnibar.start_search': '開始搜尋',
 
   // ── 麵包屑 ──
   'breadcrumbs.root': '根目錄',

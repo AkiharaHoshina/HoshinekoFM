@@ -302,6 +302,7 @@ const jaJP = {
   'toast.permissions_changed': '権限を変更しました',
   'error.chmod_failed': (msg: string) => `権限の変更に失敗しました: ${msg}`,
   'error.chmod_invalid_mode': '無効な権限形式（8 進数 3 桁が必要です）',
+  'error.address_not_exist': 'アドレスが存在しません',
   'error.cannot_open_dir': (msg: string) => `ディレクトリを開けません: ${msg}`,
   'error.search_failed': (msg: string) => `検索に失敗しました: ${msg}`,
   'error.name_exists': (name: string) => `名前の変更に失敗しました: ${name} は既に存在します`,
@@ -651,6 +652,11 @@ const jaJP = {
   'omnibar.placeholder': 'パスを入力するか検索...',
   'omnibar.button_tip': 'クリックしてパスを編集または検索',
   'omnibar.flatten_symlinks': 'シンボリックリンクを解決',
+  'omnibar.placeholder_address': 'パスまたはアドレスを入力...',
+  'omnibar.placeholder_query': 'キーワードを入力...',
+  'omnibar.enter_search': '検索に入る',
+  'omnibar.back_to_address': 'アドレスバーに戻る',
+  'omnibar.start_search': '検索を開始',
 
   // ── 面包屑 ──
   'breadcrumbs.root': 'ルートディレクトリ',

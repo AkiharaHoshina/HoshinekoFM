@@ -302,6 +302,7 @@ const zhCN = {
   'toast.permissions_changed': '权限已修改',
   'error.chmod_failed': (msg: string) => `修改权限失败: ${msg}`,
   'error.chmod_invalid_mode': '无效的权限格式（应为 3 位八进制）',
+  'error.address_not_exist': '地址不存在',
   'error.cannot_open_dir': (msg: string) => `无法打开目录: ${msg}`,
   'error.search_failed': (msg: string) => `搜索失败: ${msg}`,
   'error.name_exists': (name: string) => `重命名失败：${name} 已存在`,
@@ -651,6 +652,11 @@ const zhCN = {
   'omnibar.placeholder': '输入路径或搜索...',
   'omnibar.button_tip': '点击编辑路径或搜索',
   'omnibar.flatten_symlinks': '展平软链接',
+  'omnibar.placeholder_address': '输入路径或地址...',
+  'omnibar.placeholder_query': '输入搜索关键词...',
+  'omnibar.enter_search': '进入搜索',
+  'omnibar.back_to_address': '返回地址栏',
+  'omnibar.start_search': '开始搜索',
 
   // ── 面包屑 ──
   'breadcrumbs.root': '根目录',

@@ -297,6 +297,23 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   // eslint-disable-next-line react-hooks/refs -- keep ref in sync for stable callbacks during render
   currentPathRef.current = currentPath;
 
+  /**
+   * 进入搜索会话前的浏览 url（搜索状态显式退出的回退目标，B3/C7 定案）：
+   * 只在 currentPath 为**非搜索 schema** 时更新——搜索态内改 query/筛选
+   * 重搜（currentPath 仍为 search://）不覆盖本记录（边界 1 定案：修改
+   * 状态前检查是否是 search schema，是就 no-op）。渲染期同步（官方
+   * adjusting-state-during-render 模式，与 prevPathForReset 同款）。初始
+   * 为空（如新标签页直接打开搜索路径）时退出回落家目录。
+   */
+  const [lastBrowsePath, setLastBrowsePath] = useState('');
+  if (
+    !isSearchPath(currentPath) &&
+    !isObjectSearchPath(currentPath) &&
+    lastBrowsePath !== currentPath
+  ) {
+    setLastBrowsePath(currentPath);
+  }
+
   const lastToastKeyRef = useRef('');
 
   const [searchActive, setSearchActive] = useState(false);
@@ -472,6 +489,30 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     const dir = parsed ? parsed.dir : currentPath;
     void loadPathRef.current?.(dir, true);
   }, [currentPath]);
+
+  /**
+   * 搜索状态显式退出（Omnibar 搜索态 Esc/关闭按钮，B3 定案）：
+   * 取消在途搜索、导航回**进入搜索会话前的 url**（lastBrowsePathRef，
+   * search url 一并清除，tab 标题/地址栏/文件区随 loadPath 同步还原）。
+   * 回退记录仍是搜索 url（异常锁死）或从未有浏览路径 → 回落家目录
+   * （C7）。未执行的搜索模式/回收站名称过滤：currentPath 本就不是
+   * 搜索 schema，重载当前路径即复位搜索态回浏览视图。
+   */
+  const handleCloseSearch = useCallback(async () => {
+    searchSeqRef.current++; // 丢弃迟到结果
+    void window.electron.cancelSearch?.();
+    setSearchPending(false);
+    if (isSearchPath(currentPath) || isObjectSearchPath(currentPath)) {
+      if (lastBrowsePath && !isSearchPath(lastBrowsePath) && !isObjectSearchPath(lastBrowsePath)) {
+        await loadPathRef.current?.(lastBrowsePath, true);
+      } else {
+        const home = await window.electron.getHomePath().catch(() => '/');
+        await loadPathRef.current?.(home, true);
+      }
+      return;
+    }
+    await loadPathRef.current?.(currentPath, true);
+  }, [currentPath, lastBrowsePath]);
 
   /**
    * 发起搜索（地址栏搜索 / 右键菜单重搜）。对象面板内走 B 方案语义：
@@ -1287,6 +1328,10 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
    */
   const handleTopBarKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
     const container = e.currentTarget;
+    // 输入框（Omnibar 编辑/搜索态）内的方向键/Enter/Escape 归输入框自身
+    // 处理——不拦截，否则编辑路径/关键词时方向键会被分区按钮循环劫走
+    const tag = (e.target as HTMLElement | null)?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     const btns = Array.from(container.querySelectorAll<HTMLElement>(TOP_BAR_BTN_SELECTOR));
     if (btns.length === 0) return;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -2262,8 +2307,19 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           <div ref={omnibarZoneRef} data-kb-zone="topbar-omnibar" onKeyDown={handleTopBarKeyDown} style={{ flex: 1, overflow: 'hidden', minWidth: effectiveSortCollapsed ? 0 : OMNIBAR_MIN_WIDTH_EXPANDED }}>
             <Omnibar
               currentPath={displayPath}
+              searchStateEnabled
               onNavigate={(p: string) => loadPath(p, true)}
-              onSearch={handleSearch}
+              onSearch={(q: string) => {
+                // 搜索态重搜（标签页已在搜索状态）：沿用本次会话的筛选
+                // 选项（「输入 + 下方选项一起拼接成 url」，feedback A1）
+                const parsed = isSearchPath(currentPathRef.current)
+                  ? parseSearchPath(currentPathRef.current)
+                  : null;
+                void handleSearch(q, parsed ? { ...searchOptionsRef.current } : undefined);
+              }}
+              onCloseSearch={() => {
+                void handleCloseSearch();
+              }}
               onDropFiles={handleDropOnBreadcrumb}
               onDropExternalFiles={handleExternalDropOnBreadcrumb}
             />
@@ -2388,6 +2444,13 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               resultsCapped={effectiveSearchLimit !== null && files.length >= effectiveSearchLimit}
               marqueeEnabled={marqueeEnabled}
               nameFilterOnly={currentPath === 'trash://'}
+              searchPath={
+                isSearchPath(currentPath)
+                  ? (parseSearchPath(currentPath)?.dir ?? '')
+                  : currentPath === 'trash://'
+                    ? t('trash.title')
+                    : undefined
+              }
               onTypeChange={(type) => commitSearchOptions({ type })}
               onFilterCommit={(f) => commitSearchOptions({
                 type: f.type,

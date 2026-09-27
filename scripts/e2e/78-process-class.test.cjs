@@ -55,10 +55,7 @@ const { ipcMain } = require('electron');
     // 行，直接查询可能不可见：经地址栏搜索定位（本地筛选输入已移除，
     // 筛选规则并入类页地址栏搜索——同时覆盖该链路）
     const selfPid = String(process.pid);
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', selfPid);
-    await h.key(win, 'Enter');
+    await h.searchViaOmnibar(win, selfPid);
     await h.waitFor(win, `!!document.querySelector('.object-row[data-id="${selfPid}"]')`, { timeout: 8000 });
     // 搜索只留自身进程一行
     const allMatch = await h.js(win, `(() => {
@@ -169,19 +166,13 @@ const { ipcMain } = require('electron');
 
     // 筛选：pid 匹配（"200" → 只留 bbb）——本地筛选输入已移除，
     // 规则并入类页地址栏搜索
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', '200');
-    await h.key(win, 'Enter');
+    await h.searchViaOmnibar(win, '200');
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
     const filteredNames = await h.js(win, `[...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim())`);
     h.assert.ok(JSON.stringify(filteredNames.value) === JSON.stringify(['bbb']), `按 pid 筛选应只留 bbb：${JSON.stringify(filteredNames.value)}`);
 
     // 无匹配：空态文案（12 语言双匹配）
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', 'zzz-no-match');
-    await h.key(win, 'Enter');
+    await h.searchViaOmnibar(win, 'zzz-no-match');
     await h.waitFor(win, `(() => {
       const el = document.querySelector('.object-load-failed');
       return !!el && /无匹配|No matching|一致|일치|подходящих|відповідних/.test(el.textContent ?? '');

@@ -123,10 +123,7 @@ const h = require('./harness.cjs');
     await h.waitFor(win, `localStorage.getItem('settings.searchObjects') === 'true'`, 8000);
 
     // 搜索 'cpu' → 对象命中条出现 → 点击进 objects:// 实例页
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', 'cpu');
-    await h.key(win, 'Enter');
+    await h.searchViaOmnibar(win, 'cpu');
     await h.waitFor(win, `!!document.querySelector('.search-object-results')`, { timeout: 8000 });
     await h.waitFor(win, `document.querySelectorAll('.search-object-hit').length >= 1`, { timeout: 8000 });
     await h.clickEl(win, '.search-object-hit');

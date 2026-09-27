@@ -70,10 +70,7 @@ const { ipcMain } = require('electron');
     })()`, true);
   };
   const omnibarSearch = async (win, q) => {
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', q);
-    await h.key(win, 'Enter');
+    await h.searchViaOmnibar(win, q);
   };
 
   await h.run('84a 根页跨类搜索（命中进实例页 + 无命中空态）', async () => {
@@ -85,12 +82,12 @@ const { ipcMain } = require('electron');
 
     await omnibarSearch(win, 'myproc');
     await h.waitFor(win, `!!document.querySelector('.object-search-header')`, { timeout: 8000 });
-    // 虚拟路径形态：面包屑对象搜索胶囊 + 标签标题含关键词
+    // 搜索态：地址栏 = 关键词输入框（不显示完整 url），标签标题含关键词
     const pathProbe = await h.js(win, `(() => ({
-      chip: document.querySelector('.breadcrumb-objectsearch-chip')?.textContent ?? '',
+      input: document.querySelector('.omnibar.mode-search .omnibar-input')?.value ?? '',
       tab: document.querySelector('.tab-item.active')?.textContent ?? '',
     }))()`);
-    h.assert.ok(/myproc/.test(pathProbe.value.chip), `面包屑应有「对象搜索」胶囊（实际：${pathProbe.value.chip}`);
+    h.assert.ok(pathProbe.value.input === 'myproc', `搜索态输入框应为关键词（实际：${pathProbe.value.input}）`);
     h.assert.ok(/myproc/.test(pathProbe.value.tab), `标签标题应含关键词（实际：${pathProbe.value.tab}`);
     const hits = await h.js(win, `(() => {
       const els = [...document.querySelectorAll('.object-search-hit')];
@@ -120,17 +117,23 @@ const { ipcMain } = require('electron');
       return !!el && /无匹配的对象|No matching objects|一致するオブジェクトがありません|일치하는 객체가 없습니다|Совпадений|Збігів/.test(el.textContent ?? '');
     })()`, { timeout: 8000 });
 
-    // 地址栏手输 objectsearch:// 虚拟路径恢复搜索（root：无类段，query 参数形态）
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', 'objectsearch://?q=myproc');
+    // 地址栏（返回地址栏按钮 → 编辑态，输入框显示完整虚拟路径）手输
+    // objectsearch:// 恢复搜索（root：无类段，query 参数形态）
+    await h.clickEl(win, '.omnibar-back-address');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.setReactInput(win, '.omnibar.mode-edit .omnibar-input', 'objectsearch://?q=myproc');
     await h.key(win, 'Enter');
     await h.waitFor(win, `(() => {
       const els = [...document.querySelectorAll('.object-search-hit')];
       return els.length === 1 && /myproc/.test(els[0]?.textContent ?? '');
     })()`, { timeout: 8000 });
 
-    // 对象搜索胶囊单击 = 返回基准对象页（退出搜索）
+    // 对象搜索胶囊单击 = 返回基准对象页（退出搜索）——胶囊在面包屑态
+    // 渲染：搜索态先经「返回地址栏」进编辑态、blur 取消回面包屑
+    await h.clickEl(win, '.omnibar-back-address');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').blur()`, true);
+    await h.waitFor(win, `!!document.querySelector('.breadcrumb-objectsearch-chip')`, { timeout: 8000 });
     await h.clickEl(win, '.breadcrumb-objectsearch-chip');
     await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
     const searchGone = await h.js(win, `!document.querySelector('.object-search-results')`);
@@ -486,16 +489,22 @@ const { ipcMain } = require('electron');
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     await goObjects(win);
+    /** 搜索态回根：面包屑只在面包屑态渲染——先「返回地址栏」进编辑态、
+     *  blur 取消回面包屑，再点基准对象段（objectsearch 面包屑 = 对象搜索
+     *  胶囊 + .breadcrumb-item 基准段，无 .breadcrumb-objects-chip） */
+    const backToRoot = async () => {
+      await h.clickEl(win, '.omnibar-back-address');
+      await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+      await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').blur()`, true);
+      await h.waitFor(win, `!!document.querySelector('.breadcrumb-objectsearch-chip')`, { timeout: 8000 });
+      await h.js(win, `document.querySelector('.breadcrumb-item').click()`, true);
+      await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
+    };
     // 用唯一词条避免与先前用例的 localStorage 历史混淆
     await omnibarSearch(win, 'sdb1');
     await h.waitFor(win, `!!document.querySelector('.object-search-results')`, { timeout: 8000 });
     // 回根 → 词条出现
-    await h.js(win, `(() => {
-      const chip = document.querySelector('.breadcrumb-objects-chip') || document.querySelector('.breadcrumb-item');
-      if (!chip) return false;
-      chip.click();
-      return true;
-    })()`, true);
+    await backToRoot();
     await h.waitFor(win, `(() => {
       const chips = [...document.querySelectorAll('.object-search-recent-chip')];
       return chips.some((x) => /sdb1/.test(x.textContent ?? ''));
@@ -503,12 +512,7 @@ const { ipcMain } = require('electron');
     // 再次搜索同词（去重：词条仍只一条）
     await omnibarSearch(win, 'sdb1');
     await h.waitFor(win, `!!document.querySelector('.object-search-results')`, { timeout: 8000 });
-    await h.js(win, `(() => {
-      const chip = document.querySelector('.breadcrumb-objects-chip') || document.querySelector('.breadcrumb-item');
-      chip.click();
-      return true;
-    })()`, true);
-    await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
+    await backToRoot();
     const dupCount = await h.js(win, `[...document.querySelectorAll('.object-search-recent-chip')].filter((x) => /sdb1/.test(x.textContent ?? '')).length`);
     h.assert.ok(dupCount.value === 1, `同词搜索应去重（实际 ${dupCount.value} 条）`);
     // 点击词条 → 恢复搜索
@@ -521,12 +525,7 @@ const { ipcMain } = require('electron');
     })()`, true);
     await h.waitFor(win, `!!document.querySelector('.object-search-results')`, { timeout: 8000 });
     // 回根 → 清除历史
-    await h.js(win, `(() => {
-      const chip = document.querySelector('.breadcrumb-objects-chip') || document.querySelector('.breadcrumb-item');
-      chip.click();
-      return true;
-    })()`, true);
-    await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
+    await backToRoot();
     await h.js(win, `document.querySelector('.object-search-recent-clear')?.click()`, true);
     await h.waitFor(win, `!document.querySelector('.object-search-recent-chip')`, { timeout: 8000 });
   });

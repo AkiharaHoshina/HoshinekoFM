@@ -55,6 +55,14 @@ interface SearchFilterBarProps {
   onTimeoutRemoved: () => void;
   /** 回收站名称过滤：无 system:search，隐藏筛选 UI */
   nameFilterOnly?: boolean;
+  /**
+   * 搜索基准目录（结果行上方常驻显示——搜索态地址栏已被关键词输入框
+   * 取代，搜索路径需在此可见）。未提供（选择器/保存器、对象搜索）
+   * 不显示。**未来对象搜索显示搜索条件时**：须避免与结果行文案重复
+   * （「搜索 "C" · 1 个对象」/「为您找到 N 个关于 "C" 的结果」只保留
+   * 其一，用户评审定案）。
+   */
+  searchPath?: string;
 }
 
 /**
@@ -81,6 +89,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   onLimitRemoved,
   onTimeoutRemoved,
   nameFilterOnly = false,
+  searchPath,
 }) => {
   /** 筛选模式：none（占位「筛选模式」）/ size / format——纯 UI 态，
    *  提交的筛选由 options（已生效值）反映；切换模式先提交无筛选 */
@@ -273,6 +282,14 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
 
   return (
     <div className="search-filter-bar">
+      {/* 搜索基准目录：搜索态地址栏被关键词输入框取代，路径常驻于此
+          （用户评审定案）；悬停 title 显示完整路径，超长省略 */}
+      {searchPath && (
+        <div className="search-filter-path" title={searchPath}>
+          <Icon name="folder_open" size={14} />
+          <span>{searchPath}</span>
+        </div>
+      )}
       {/* 结果行：计数 + 上限提示/调整 + 清除 */}
       <div className="search-filter-summary">
         <Icon name="search" />

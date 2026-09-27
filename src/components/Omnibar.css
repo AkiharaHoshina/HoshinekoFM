@@ -16,6 +16,33 @@
     padding: 0 12px;
 }
 
+/*
+ * 显式状态机编辑/搜索态（主窗口，用户评审定案）：
+ * - 仅左 12px 内边距——右侧按钮组贴住容器右缘（无右 padding）；
+ * - 布局：图标 ←8px→ 输入框 ←8px→ 按钮组（按钮间无 gap、连续排列）。
+ * 旧入口（选择器/保存器）保持左右 12px 与均匀 gap 不变。
+ */
+.omnibar.mode-edit,
+.omnibar.mode-search {
+    background: var(--md-sys-color-surface-container-highest);
+    padding: 0 0 0 12px;
+}
+
+.omnibar.mode-edit .omnibar-input-wrapper,
+.omnibar.mode-search .omnibar-input-wrapper {
+    gap: 0;
+}
+
+.omnibar.mode-edit .omnibar-icon,
+.omnibar.mode-search .omnibar-icon {
+    margin-right: 8px;
+}
+
+.omnibar.mode-edit .omnibar-input,
+.omnibar.mode-search .omnibar-input {
+    margin-right: 8px;
+}
+
 .omnibar-input-wrapper {
     display: flex;
     align-items: center;

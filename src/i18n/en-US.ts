@@ -313,6 +313,7 @@ const enUS = {
   'toast.permissions_changed': 'Permissions changed',
   'error.chmod_failed': (msg: string) => `Failed to change permissions: ${msg}`,
   'error.chmod_invalid_mode': 'Invalid permission format (3 octal digits required)',
+  'error.address_not_exist': 'Address does not exist',
   'error.cannot_open_dir': (msg: string) => `Cannot open directory: ${msg}`,
   'error.search_failed': (msg: string) => `Search failed: ${msg}`,
   'error.name_exists': (name: string) => `Rename failed: ${name} exists`,
@@ -662,6 +663,11 @@ const enUS = {
   'omnibar.placeholder': 'Enter path or search...',
   'omnibar.button_tip': 'Click to edit path or search',
   'omnibar.flatten_symlinks': 'Resolve Symlinks',
+  'omnibar.placeholder_address': 'Enter path or address...',
+  'omnibar.placeholder_query': 'Enter keywords...',
+  'omnibar.enter_search': 'Enter search',
+  'omnibar.back_to_address': 'Back to address bar',
+  'omnibar.start_search': 'Start search',
 
   // ── 面包屑 ──
   'breadcrumbs.root': 'Root',

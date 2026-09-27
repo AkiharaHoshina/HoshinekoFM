@@ -9,13 +9,16 @@ import { useDrag } from "../contexts/DragContext";
 import { createAddressBarDropHandler } from "../utils/addressBarDrop";
 import { t } from "../i18n";
 import { expandAddressPath, looksLikePathInput } from "../utils/addressPath";
-import { isSearchPath } from "../utils/searchPath";
+import { isSearchPath, parseSearchPath } from "../utils/searchPath";
+import { isObjectSearchPath, parseObjectSearchPath } from "../utils/objectSearchPath";
+import { isObjectsPath } from "../utils/objectsPath";
+import { showToast } from "../utils/toast";
 import "./Omnibar.css";
 
 interface OmnibarProps {
   currentPath: string;
   onNavigate: (path: string) => void;
-  onSearch: (query: string, options?: { type?: 'f' | 'd'; minSize?: string; maxSize?: string }) => void;
+  onSearch: (query: string) => void;
   /**
    * 内部/跨窗口拖放落点（移动到当前目录）。未提供（选择器/保存器）时
    * 地址栏与面包屑不接收任何拖放——不 preventDefault、不给光标提示。
@@ -23,23 +26,69 @@ interface OmnibarProps {
   onDropFiles?: (targetPath: string, files: IFile[], operation: "move" | "copy") => void;
   /** 外部应用拖入落点（复制导入）。未提供时不接收拖放 */
   onDropExternalFiles?: (targetPath: string, filePaths: string[]) => void;
+  /**
+   * 显式状态机（面包屑/编辑/搜索三态 + 显式退出，FM 搜索重构定案）：
+   * 主窗口启用。不传（选择器/保存器）保持旧「路径/搜索隐式二合一」
+   * 行为（C5 定案：选择器先别动，主窗口稳定后再评估共用）。
+   */
+  searchStateEnabled?: boolean;
+  /**
+   * 搜索状态显式退出（Esc/关闭按钮，不靠焦点判断）：由主窗口接线为
+   * 「导航回进入搜索会话前的 url」（search url 一并清除）。
+   */
+  onCloseSearch?: () => void;
 }
+
+/** 地址栏三种状态：面包屑（只读）→ 编辑（仅路径/schema）→ 搜索（全输入 = query） */
+type OmnibarMode = 'breadcrumbs' | 'edit' | 'search';
 
 interface OmnibarCtxMenuState {
   x: number;
   y: number;
 }
 
-export const Omnibar: React.FC<OmnibarProps> = ({
+/**
+ * 地址栏编辑态直接放行的虚拟地址（schema 直通，不做存在性校验）——
+ * 地址栏编辑状态可以输入 search:// 等虚拟路径（搜索态则把该串当关键词，
+ * 见 FM 搜索重构报告 §3.9）。
+ */
+function isVirtualAddressInput(v: string): boolean {
+  return (
+    isSearchPath(v) ||
+    isObjectSearchPath(v) ||
+    isObjectsPath(v) ||
+    v === 'trash://' ||
+    v.startsWith('trash://') ||
+    v === 'app://dashboard' ||
+    v === 'dashboard://'
+  );
+}
+
+/** 搜索虚拟路径内记录的关键词（搜索态编辑框只显示 query 文本而非完整 url） */
+function searchQueryOf(p: string): string {
+  return parseSearchPath(p)?.query ?? parseObjectSearchPath(p)?.query ?? '';
+}
+
+/** 面包屑态公共部分：拖放落点 / 软链接检测与右键菜单 / 渲染（两种入口模式共用） */
+interface OmnibarCommon {
+  addressBarDrop: ReturnType<typeof createAddressBarDropHandler> | null;
+  handleAddressBarDragOver: (e: React.DragEvent) => void;
+  handleAddressBarDrop: (e: React.DragEvent) => void;
+  hasPathSymlinks: boolean;
+  omnibarCtxMenu: OmnibarCtxMenuState | null;
+  setOmnibarCtxMenu: React.Dispatch<React.SetStateAction<OmnibarCtxMenuState | null>>;
+  omnibarCtxMenuItems: ContextMenuItem[];
+  handleEditContextMenu: (e: React.MouseEvent) => void;
+  breadcrumbsEl: (triggerOnClick: () => void) => React.ReactElement;
+  ctxMenuEl: React.ReactElement | null;
+}
+
+function useOmnibarCommon({
   currentPath,
   onNavigate,
-  onSearch,
   onDropFiles,
   onDropExternalFiles,
-}) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [inputValue, setInputValue] = useState(currentPath);
-  const inputRef = useRef<HTMLInputElement>(null);
+}: OmnibarProps): OmnibarCommon {
   const { getDragState, endDrag } = useDrag();
 
   /**
@@ -69,24 +118,16 @@ export const Omnibar: React.FC<OmnibarProps> = ({
   /** 编辑按钮右键菜单位置 */
   const [omnibarCtxMenu, setOmnibarCtxMenu] = useState<OmnibarCtxMenuState | null>(null);
 
-  useEffect(() => {
-    if (!isEditing) {
-      setInputValue(currentPath); // eslint-disable-line react-hooks/set-state-in-effect
-    }
-  }, [currentPath, isEditing]);
-
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [isEditing]);
-
   /** 检测当前路径中是否有任意段是软链接 */
   useEffect(() => {
-    // 回收站虚拟路径（trash://…）与搜索态虚拟路径（search://…）无真实
-    // 目录段，跳过软链接检测
-    if (currentPath.startsWith('trash://') || currentPath.startsWith('search://')) return;
+    // 虚拟路径（trash://…、search://…、objectsearch://…）无真实目录段，
+    // 跳过软链接检测
+    if (
+      currentPath.startsWith('trash://') ||
+      isSearchPath(currentPath) ||
+      isObjectSearchPath(currentPath) ||
+      isObjectsPath(currentPath)
+    ) return;
     const segments = currentPath.split('/').filter(Boolean)
       .map((_, i, arr) => '/' + arr.slice(0, i + 1).join('/'));
 
@@ -138,6 +179,270 @@ export const Omnibar: React.FC<OmnibarProps> = ({
       },
     }]
     : [];
+
+  const breadcrumbsEl = (triggerOnClick: () => void): React.ReactElement => (
+    <div
+      className="omnibar-breadcrumbs"
+      onDragOver={handleAddressBarDragOver}
+      onDrop={handleAddressBarDrop}
+    >
+      <Breadcrumbs
+        currentPath={currentPath}
+        onNavigate={onNavigate}
+        onDropFiles={onDropFiles}
+        onDropExternalFiles={onDropExternalFiles}
+      />
+      <IconButton
+        variant="standard"
+        className="omnibar-trigger"
+        onClick={triggerOnClick}
+        onContextMenu={handleEditContextMenu}
+        title={t("omnibar.button_tip")}
+      >
+        <Icon name="edit" className="edit-icon" />
+      </IconButton>
+    </div>
+  );
+
+  const ctxMenuEl = omnibarCtxMenu && omnibarCtxMenuItems.length > 0 ? (
+    <ContextMenu
+      x={omnibarCtxMenu.x}
+      y={omnibarCtxMenu.y}
+      items={omnibarCtxMenuItems}
+      onClose={() => setOmnibarCtxMenu(null)}
+    />
+  ) : null;
+
+  return {
+    addressBarDrop,
+    handleAddressBarDragOver,
+    handleAddressBarDrop,
+    hasPathSymlinks,
+    omnibarCtxMenu,
+    setOmnibarCtxMenu,
+    omnibarCtxMenuItems,
+    handleEditContextMenu,
+    breadcrumbsEl,
+    ctxMenuEl,
+  };
+}
+
+/**
+ * 地址栏显式状态机（FM 搜索重构阶段 1）：
+ * - **面包屑**：只读（Breadcrumbs + 编辑触发钮）；
+ * - **编辑**：仅接受路径/schema（虚拟地址白名单直通；真实路径经存在性
+ *   校验，失败 toast「地址不存在」）；右侧「进入搜索」按钮切入搜索态；
+ * - **搜索**：任何输入都当关键词（编辑框显示 query 文本、不把 search://
+ *   当 url 解析——用户可以搜 `search://` 这个词）；右侧「返回地址栏」
+ *   （回编辑态显示完整 url，可复制/改写）与「关闭搜索」；Enter 执行搜索，
+ *   Esc/关闭按钮 = 显式退出（导航回进入搜索前的 url），**不靠焦点判断**
+ *   （下拉弹层/切标签/打开对话框均不触发退出）。
+ */
+const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = ({
+  currentPath,
+  onNavigate,
+  onSearch,
+  onCloseSearch,
+  common,
+}) => {
+  const [mode, setMode] = useState<OmnibarMode>(() =>
+    (isSearchPath(currentPath) || isObjectSearchPath(currentPath)) ? 'search' : 'breadcrumbs');
+  const [inputValue, setInputValue] = useState(() =>
+    (isSearchPath(currentPath) || isObjectSearchPath(currentPath))
+      ? searchQueryOf(currentPath)
+      : currentPath);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * 路径变化（外部导航——搜索执行/点击结果/面包屑/侧边栏等）驱动模式
+   * 复位：新路径是搜索 schema → 搜索态（输入框 = 关键词）；否则回
+   * 面包屑。用户主动切入编辑/搜索态不改变 currentPath，不受此影响。
+   * 渲染期复位（官方 adjusting-state-during-render 模式，与
+   * prevPathForReset 同款——effect 内同步 setState 会触发级联渲染）。
+   */
+  const [prevPathForMode, setPrevPathForMode] = useState(currentPath);
+  if (prevPathForMode !== currentPath) {
+    setPrevPathForMode(currentPath);
+    if (isSearchPath(currentPath) || isObjectSearchPath(currentPath)) {
+      setMode('search');
+      setInputValue(searchQueryOf(currentPath));
+    } else {
+      setMode('breadcrumbs');
+      setInputValue(currentPath);
+    }
+  }
+
+  /** 切入编辑/搜索态时聚焦并全选输入框 */
+  useEffect(() => {
+    if (mode !== 'breadcrumbs' && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [mode]);
+
+  /** 编辑态提交：仅路径/schema（严格校验存在性，失败 toast 不导航） */
+  const handleEditSubmit = async () => {
+    const trimmed = inputValue.trim();
+    if (!trimmed) return;
+
+    // 虚拟地址（schema）直通：search:// 等交给 loadPath 解析
+    if (isVirtualAddressInput(trimmed)) {
+      setMode('breadcrumbs');
+      onNavigate(trimmed);
+      return;
+    }
+
+    if (looksLikePathInput(trimmed)) {
+      // `~`/`./`/`../` 语法展开：相对地址栏当前显示路径（回收站浏览时
+      // 为 trash://… 虚拟形态），`~` 展开为家目录
+      const home = await window.electron.getHomePath();
+      const target = expandAddressPath(trimmed, currentPath, home);
+      const exists = await window.electron.exists(target).catch(() => false);
+      if (!exists) {
+        showToast(t('error.address_not_exist'), 'error');
+        return;
+      }
+      setMode('breadcrumbs');
+      onNavigate(target);
+      return;
+    }
+
+    // 编辑态不接收搜索词（搜索走「进入搜索」按钮的搜索态入口）
+    showToast(t('error.address_not_exist'), 'error');
+  };
+
+  /** 搜索态提交：任何输入都当关键词（与下方筛选选项一起拼进 search url） */
+  const handleSearchSubmit = () => {
+    const q = inputValue.trim();
+    if (!q) return;
+    onSearch(q);
+  };
+
+  /** 进入编辑态：输入框显示当前路径（搜索态下即完整 search url，可复制改写） */
+  const enterEdit = useCallback(() => {
+    setInputValue(currentPath);
+    setMode('edit');
+  }, [currentPath]);
+
+  /** 显式退出搜索：清 url、导航回进入搜索前的 url（不靠焦点判断） */
+  const closeSearch = useCallback(() => {
+    setMode('breadcrumbs');
+    onCloseSearch?.();
+  }, [onCloseSearch]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      if (mode === 'edit') {
+        void handleEditSubmit();
+      } else {
+        handleSearchSubmit();
+      }
+      return;
+    }
+    if (e.key === "Escape") {
+      if (mode === 'search') {
+        closeSearch();
+      } else {
+        setMode('breadcrumbs');
+      }
+    }
+  };
+
+  return (
+    <div className={`omnibar mode-${mode}${mode !== 'breadcrumbs' ? ' editing' : ''}`}>
+      {mode === 'breadcrumbs' ? (
+        common.breadcrumbsEl(enterEdit)
+      ) : (
+        <div className="omnibar-input-wrapper">
+          <Icon
+            name={mode === 'search' ? 'search' : 'folder_open'}
+            className="omnibar-icon"
+          />
+          <input
+            ref={inputRef}
+            type="text"
+            className={`omnibar-input${mode === 'search' ? ' omnibar-input-search' : ''}`}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={() => {
+              // 编辑态点外部 = 取消回面包屑；搜索态不靠焦点取消（B4 定案）
+              if (mode === 'edit') setMode('breadcrumbs');
+            }}
+            placeholder={mode === 'search'
+              ? t("omnibar.placeholder_query")
+              : t("omnibar.placeholder_address")}
+          />
+          {mode === 'edit' && (
+            <IconButton
+              variant="standard"
+              className="omnibar-enter-search"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                // 切入搜索态：全新关键词（编辑态输入的是路径/schema，不带走）
+                setInputValue('');
+                setMode('search');
+              }}
+              title={t("omnibar.enter_search")}
+            >
+              <Icon name="search" className="edit-icon" />
+            </IconButton>
+          )}
+          {mode === 'search' && (
+            <>
+              <IconButton
+                variant="standard"
+                className="omnibar-back-address"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={enterEdit}
+                title={t("omnibar.back_to_address")}
+              >
+                <Icon name="close" className="edit-icon" />
+              </IconButton>
+              <IconButton
+                variant="standard"
+                className="omnibar-start-search"
+                onClick={handleSearchSubmit}
+                title={t("omnibar.start_search")}
+              >
+                <Icon name="keyboard_return" className="edit-icon" />
+              </IconButton>
+            </>
+          )}
+        </div>
+      )}
+
+      {common.ctxMenuEl}
+    </div>
+  );
+};
+
+/**
+ * 旧入口（隐式二合一，选择器/保存器用）：编辑框输入路径 → 导航、
+ * 非路径文本 → 搜索（C5 定案：选择器先别动，保持现状）。
+ */
+const LegacyOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = ({
+  currentPath,
+  onNavigate,
+  onSearch,
+  common,
+}) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [inputValue, setInputValue] = useState(currentPath);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setInputValue(currentPath); // eslint-disable-line react-hooks/set-state-in-effect
+    }
+  }, [currentPath, isEditing]);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
 
   const handleSubmit = async () => {
     setIsEditing(false);
@@ -209,37 +514,18 @@ export const Omnibar: React.FC<OmnibarProps> = ({
           />
         </div>
       ) : (
-        <div
-          className="omnibar-breadcrumbs"
-          onDragOver={handleAddressBarDragOver}
-          onDrop={handleAddressBarDrop}
-        >
-          <Breadcrumbs
-            currentPath={currentPath}
-            onNavigate={onNavigate}
-            onDropFiles={onDropFiles}
-            onDropExternalFiles={onDropExternalFiles}
-          />
-          <IconButton
-            variant="standard"
-            className="omnibar-trigger"
-            onClick={() => setIsEditing(true)}
-            onContextMenu={handleEditContextMenu}
-            title={t("omnibar.button_tip")}
-          >
-            <Icon name="edit" className="edit-icon" />
-          </IconButton>
-        </div>
+        common.breadcrumbsEl(() => setIsEditing(true))
       )}
 
-      {omnibarCtxMenu && omnibarCtxMenuItems.length > 0 && (
-        <ContextMenu
-          x={omnibarCtxMenu.x}
-          y={omnibarCtxMenu.y}
-          items={omnibarCtxMenuItems}
-          onClose={() => setOmnibarCtxMenu(null)}
-        />
-      )}
+      {common.ctxMenuEl}
     </div>
   );
+};
+
+export const Omnibar: React.FC<OmnibarProps> = (props) => {
+  const common = useOmnibarCommon(props);
+  if (props.searchStateEnabled) {
+    return <StateMachineOmnibar {...props} common={common} />;
+  }
+  return <LegacyOmnibar {...props} common={common} />;
 };

@@ -18,15 +18,12 @@ const h = require('./harness.cjs');
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`, { timeout: 15000 });
 
     // 在 / 搜索几乎不存在的字符串：find 需遍历全树，搜索必然长时间进行
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', 'zzqqxx_nonexistent_75');
-    await h.key(win, 'Enter');
+    await h.searchViaOmnibar(win, 'zzqqxx_nonexistent_75');
 
-    // 立即出现：搜索中覆盖层 + 地址栏已切换为 search:// 虚拟路径
+    // 立即出现：搜索中覆盖层 + 地址栏已是搜索态（输入框 = 关键词）
     await h.waitFor(win, `!!document.querySelector('.search-pending-overlay')`, { timeout: 8000 });
-    const chipEarly = await h.js(win, `!!document.querySelector('.breadcrumb-search-chip')`);
-    h.assert.ok(chipEarly.value, '搜索中地址栏应已切换为 search:// 虚拟路径');
+    const chipEarly = await h.js(win, `!!document.querySelector('.omnibar.mode-search')`);
+    h.assert.ok(chipEarly.value, '搜索中地址栏应已处于搜索态（关键词输入框）');
     const oldItems = await h.js(win, `document.querySelectorAll('.file-list-item').length`);
     h.assert.strictEqual(oldItems.value, 0, '搜索中文件区应清空（不显示发起目录内容）');
 
@@ -44,10 +41,7 @@ const h = require('./harness.cjs');
       const win = await h.createTestWindow({ argv: ['electron', '/'] });
       await h.waitFor(win, `!!document.querySelector('.file-list-item')`, { timeout: 15000 });
 
-      await h.clickEl(win, '.omnibar-trigger');
-      await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-      await h.setReactInput(win, '.omnibar-input', 'zzqqxx_nonexistent_75');
-      await h.key(win, 'Enter');
+      await h.searchViaOmnibar(win, 'zzqqxx_nonexistent_75');
 
       await h.waitFor(win, `!!document.querySelector('.search-pending-overlay')`, { timeout: 8000 });
       // 超时通知

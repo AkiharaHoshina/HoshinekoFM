@@ -18,6 +18,11 @@ interface IconButtonProps {
   /** 无障碍标签（转发到宿主元素的 aria-label） */
   ariaLabel?: string;
   onClick?: React.MouseEventHandler<HTMLElement>;
+  /**
+   * 按下阶段（先于 click/focus 转移）：需要「点击不抢输入框焦点」的
+   * 场景（如 Omnibar 编辑态内的「进入搜索」按钮）做 preventDefault。
+   */
+  onMouseDown?: React.MouseEventHandler<HTMLElement>;
   onDragOver?: React.DragEventHandler<HTMLElement>;
   onDragEnter?: React.DragEventHandler<HTMLElement>;
   onDragLeave?: React.DragEventHandler<HTMLElement>;
@@ -47,6 +52,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
   title,
   ariaLabel,
   onClick,
+  onMouseDown,
   onDragOver,
   onDragEnter,
   onDragLeave,
@@ -67,6 +73,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
       title={title}
       aria-label={ariaLabel}
       onClick={onClick}
+      onMouseDown={onMouseDown}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}

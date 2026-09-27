@@ -341,6 +341,7 @@ const ukUA = {
   'toast.permissions_changed': 'Права змінено',
   'error.chmod_failed': (msg: string) => `Не вдалося змінити права: ${msg}`,
   'error.chmod_invalid_mode': 'Невірний формат прав (потрібні 3 вісімкові цифри)',
+  'error.address_not_exist': 'Адреса не існує',
   'error.cannot_open_dir': (msg: string) => `Не вдалося відкрити каталог: ${msg}`,
   'error.search_failed': (msg: string) => `Пошук не вдався: ${msg}`,
   'error.name_exists': (name: string) => `Не вдалося перейменувати: «${name}» існує`,
@@ -690,6 +691,11 @@ const ukUA = {
   'omnibar.placeholder': 'Введіть шлях або пошук...',
   'omnibar.button_tip': 'Клацніть, щоб змінити шлях або шукати',
   'omnibar.flatten_symlinks': 'Розгорнути символічні посилання',
+  'omnibar.placeholder_address': 'Введіть шлях або адресу...',
+  'omnibar.placeholder_query': 'Введіть ключові слова...',
+  'omnibar.enter_search': 'Увійти в пошук',
+  'omnibar.back_to_address': 'Повернутися до адресного рядка',
+  'omnibar.start_search': 'Почати пошук',
 
   // ── 面包屑 ──
   'breadcrumbs.root': 'Корінь',

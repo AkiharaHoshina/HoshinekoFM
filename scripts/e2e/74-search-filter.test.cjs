@@ -38,10 +38,7 @@ const os = require('os');
     await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 3`);
 
     // ── 基础搜索 + 两选框 ──
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', 's');
-    await h.key(win, 'Enter');
+    await h.searchViaOmnibar(win, 's');
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/as.txt"]')`);
 
     // 搜索条出现：文件类型 + 筛选模式两个选框；筛选模式默认占位「筛选模式」（非空）
@@ -52,8 +49,9 @@ const os = require('os');
     h.assert.strictEqual(modeValue.value, '', '未选择时筛选模式选框值应为空（占位「筛选模式」）');
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.search-filter-level2')`)).value, '默认不应显示二级 UI');
 
-    // search:// 虚拟路径：地址栏渲染搜索胶囊
-    await h.waitFor(win, `!!document.querySelector('.breadcrumb-search-chip')`);
+    // search:// 虚拟路径：地址栏处于搜索态（关键词输入框，面包屑胶囊
+    // 只在退出搜索态后可见——见下方「搜索胶囊单击」步骤）
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-search')`);
 
     // ── 文件类型：选择即重搜（d → 只剩目录；空 → 全部回来）──
     // 注意：乐观清空使「旧条目消失」不再是重搜完成信号——须等新结果出现
@@ -213,14 +211,16 @@ const os = require('os');
     await h.waitFor(win, `!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub"]')`, { timeout: 8000 });
 
-    // ── 地址栏直接输入 search:// query 参数语法发起详细搜索（D1/D2 定案；
-    //    目录原样可读、仅最小转义）──
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', `search://${dir}?q=s&type=d`);
+    // ── 地址栏输入 search:// query 参数语法发起详细搜索（D1/D2 定案；
+    //    目录原样可读、仅最小转义）——清除搜索后处于面包屑态：点编辑
+    //    触发钮进编辑态；搜索态编辑框不把 search:// 当 url（可搜该词），
+    //    完整 url 只能经编辑态输入 ──
+    const inSearchBefore = await h.js(win, `!!document.querySelector('.omnibar.mode-search')`);
+    await h.clickEl(win, inSearchBefore.value ? '.omnibar-back-address' : '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.setReactInput(win, '.omnibar.mode-edit .omnibar-input', `search://${dir}?q=s&type=d`);
     await h.key(win, 'Enter');
     // 重搜完成信号 = 目录结果出现（乐观清空后旧条目已消失）
-    await h.waitFor(win, `!!document.querySelector('.breadcrumb-search-chip')`);
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub"]')`, { timeout: 8000 });
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.file-list-item[data-path="${dir}/as.txt"]')`)).value, 'search://?type=d 应只显示目录');
 
@@ -243,6 +243,11 @@ const os = require('os');
     h.assert.ok(/搜|Search/.test(titleCheck.value), `搜索标签页标题应含搜索语义：${titleCheck.value}`);
 
     // ── 搜索胶囊单击 = 返回发起搜索的目录（退出搜索） ──
+    // 胶囊在面包屑态渲染：搜索态先经「返回地址栏」进编辑态、blur 取消回面包屑
+    await h.clickEl(win, '.omnibar-back-address');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').blur()`, true);
+    await h.waitFor(win, `!!document.querySelector('.breadcrumb-search-chip')`, { timeout: 8000 });
     await h.clickEl(win, '.breadcrumb-search-chip');
     await h.waitFor(win, `!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub"]')`, { timeout: 8000 });
@@ -256,21 +261,15 @@ const os = require('os');
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     // 唯一词条防跨用例历史污染
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', 'recent-uniq');
-    await h.key(win, 'Enter');
+    await h.searchViaOmnibar(win, 'recent-uniq');
     await h.waitFor(win, `!!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
     // 词条行出现（含本次查询）
     await h.waitFor(win, `(() => {
       const chips = [...document.querySelectorAll('.search-recent-chip')];
       return chips.some((x) => /recent-uniq/.test(x.textContent ?? ''));
     })()`, { timeout: 8000 });
-    // 同词再搜 → 去重仍一条
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', 'recent-uniq');
-    await h.key(win, 'Enter');
+    // 同词再搜 → 去重仍一条（已在搜索态：直接改词回车）
+    await h.searchViaOmnibar(win, 'recent-uniq');
     await h.waitFor(win, `!!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
     await h.sleep(300);
     const dupCount = await h.js(win, `[...document.querySelectorAll('.search-recent-chip')].filter((x) => /recent-uniq/.test(x.textContent ?? '')).length`);
@@ -333,10 +332,7 @@ const os = require('os');
     await h.waitDialogAnim();
 
     // 搜索 'f'（4 个文件全匹配）：默认上限 2 → 2 条结果 + capped 提示
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(win, '.omnibar-input', 'f');
-    await h.key(win, 'Enter');
+    await h.searchViaOmnibar(win, 'f');
     await h.waitFor(win, `!!document.querySelector('.search-filter-bar')`);
     await h.waitFor(win, `!!document.querySelector('.search-filter-capped')`, { timeout: 8000 });
     await h.waitFor(win, `document.querySelectorAll('.file-list-item').length === 2`, { timeout: 8000 });
@@ -344,9 +340,6 @@ const os = require('os');
     h.assert.ok(/2/.test(capText.value), `上限提示应含 2：${capText.value}`);
 
     // ── 设置 → 搜索超时时长：二级对话框输入 120 → 确定生效 ──
-    await h.clickEl(win, '.omnibar-trigger');
-    await h.waitFor(win, `!!document.querySelector('.omnibar-input')`);
-    await h.key(win, 'Escape');
     const btnCount2 = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
     await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount2.value - 1 });
     await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
