@@ -440,6 +440,7 @@ const enUS = {
   'search.results': (n: number, q: string) => `Found ${n} result(s) for "${q}"`,
   'search.recent': "Recent searches",
   'search.clear_history': "Clear history",
+  'search.enter_query_hint': 'Type keywords to start searching',
   'search.clear': 'Clear Search',
   'search.type_all': 'All types',
   'search.type_file': 'Files',

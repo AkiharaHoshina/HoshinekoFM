@@ -471,6 +471,7 @@ const ruUA = {
   'search.results': (n: number, q: string) => plural(n, 'Найден {n} результат', 'Найдено {n} результата', 'Найдено {n} результатов') + ` по запросу «${q}»`,
   'search.recent': "Недавние поиски",
   'search.clear_history': "Очистить историю",
+  'search.enter_query_hint': 'Введите ключевые слова для поиска',
   'search.clear': 'Очистить поиск',
   'search.type_all': 'Все типы',
   'search.type_file': 'Файлы',

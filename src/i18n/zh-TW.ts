@@ -429,6 +429,7 @@ const zhTW = {
   'search.results': (n: number, q: string) => `為您找到 ${n} 個關於 "${q}" 的結果`,
   'search.recent': "最近搜尋",
   'search.clear_history': "清除記錄",
+  'search.enter_query_hint': '輸入關鍵字開始搜尋',
   'search.clear': '清除搜尋',
   'search.type_all': '所有類型',
   'search.type_file': '檔案',

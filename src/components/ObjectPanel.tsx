@@ -59,6 +59,12 @@ interface ObjectPanelProps {
   /** 地址栏发起的对象搜索关键词（'' = 无搜索；根页跨类搜、类页类内搜；
    *  实例页由 ExplorerTab 拦截 toast，不会带词进入） */
   searchQuery: string;
+  /**
+   * 是否处于对象搜索态（当前路径为 objectsearch://——review 3 定案：
+   * 进入搜索态立即成为搜索视图，空词也渲染搜索视图 + 「输入关键词开始
+   * 检索」提示，状态不卡在浏览/搜索之间）
+   */
+  inSearchState?: boolean;
   /** 清除对象搜索（面板内搜索头 × 按钮/命中点击） */
   onSearchClear: () => void;
   /** 右键菜单固定对象投影（host = 侧边栏 Places / 仪表盘；App 侧
@@ -524,6 +530,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   onUnlockNice,
   onNetworkToggle,
   searchQuery,
+  inSearchState = false,
   onSearchClear,
   onPinObject,
   onLocateObject,
@@ -1810,17 +1817,22 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   const filteredProcessInstances = useMemo(() => {
     if (!sortedClassInstances) return null;
     const oq = searchQuery.trim().toLowerCase();
-    if (!oq) return sortedClassInstances;
+    if (!oq) return inSearchState ? [] : sortedClassInstances;
     return sortedClassInstances.filter((i) => (
       processFilterMode === 'pid' ? i.id === oq : matchObjectInstance(i, oq)
     ));
-  }, [sortedClassInstances, searchQuery, processFilterMode]);
+  }, [sortedClassInstances, searchQuery, processFilterMode, inSearchState]);
 
   /** 类页搜索激活态（搜索中树状显示无效——树按钮禁用 + 强制平铺渲染） */
   const searchActiveClass = searchQuery.trim() !== '';
-  /** 树模式生效态：仅在无搜索时生效（设计定案：搜索中树状无效——
-   *  根页跨类搜命中行与进程类页筛选态均平铺） */
-  const treeActive = processTreeMode && !searchActiveClass;
+  /**
+   * 类页搜索视图（review 3 定案：进入搜索态即搜索视图——空词也进，显示
+   * 「输入关键词开始检索」而非全量列表；与根页 rootSearchMode 同源）
+   */
+  const classSearchMode = searchActiveClass || (inSearchState && parsed?.className != null);
+  /** 树模式生效态：仅在非搜索视图时生效（设计定案：搜索中树状无效——
+   *  根页跨类搜命中行与进程类页筛选态均平铺；含空词搜索视图） */
+  const treeActive = processTreeMode && !classSearchMode;
 
   /** 树模式源列表：无搜索 = 全量；有搜索 = 命中 + 祖先链（保证命中
    *  节点在树中可见）——搜索时树模式禁用（treeActive false），本分支
@@ -2018,18 +2030,19 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   }, []);
 
   /** 通用类页实例（地址栏搜索过滤；进程类在 filteredProcessInstances 组合；
-   *  存储类在搜索态再按 挂载/未挂载/其他 chips 过滤） */
+   *  存储类在搜索态再按 挂载/未挂载/其他 chips 过滤；空词搜索视图 = 空
+   *  列表——review 3 定案） */
   const genericFilteredInstances = useMemo(() => {
     if (!currentClass || currentClass.id === 'process') return null;
     const oq = searchQuery.trim().toLowerCase();
     let list = oq
       ? currentClass.instances.filter((i) => matchObjectInstance(i, oq))
-      : currentClass.instances;
+      : (inSearchState ? [] : currentClass.instances);
     if (currentClass.id === 'storage' && storageKindFilter) {
       list = list.filter((i) => storageKindFilter.has(storageKindOf(i)));
     }
     return list;
-  }, [currentClass, searchQuery, storageKindFilter, storageKindOf]);
+  }, [currentClass, searchQuery, storageKindFilter, storageKindOf, inSearchState]);
 
   /** 排序方式下拉选项（设计定案：名称/CPU/内存——pid 只做筛选键不做排序键） */
   const PROCESS_SORT_OPTIONS: ProcessSortKey[] = ['name', 'cpu', 'memory'];
@@ -2068,7 +2081,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         </Button>
         <Button
           variant={processTreeMode ? 'tonal' : 'text'}
-          disabled={searchActiveClass}
+          disabled={classSearchMode}
           title={t('objects.tree_mode')}
           className="object-sortbar-tree"
           onClick={() => setProcessTreeMode((v) => !v)}
@@ -2158,6 +2171,9 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       return ia - ib;
     });
     const q = searchQuery.trim();
+    /** 搜索视图（rootSearchMode）：有词命中 或 处于对象搜索态（空词也
+     *  进搜索视图——review 3 定案，与文件区同语义） */
+    const rootSearchMode = q !== '' || inSearchState;
     /** 跨类命中（name/subtitle/id；超限截断——进程类实例多） */
     const hits: { cls: ObjectClassInfo; inst: ObjectInstance }[] = [];
     if (q !== '' && classes !== null && !loadError) {
@@ -2197,10 +2213,14 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
           <Icon name="widgets" className="object-panel-header-icon" />
           <div className="object-panel-title">{t('objects.title')}</div>
         </div>
-        {q !== '' ? (
+        {rootSearchMode ? (
           <>
             <div className="object-search-header">
-              <span className="object-search-header-text">{t('objects.search_header', q, visibleHitCount)}</span>
+              <span className="object-search-header-text">
+                {q === ''
+                  ? t('search.enter_query_hint')
+                  : t('objects.search_header', q, visibleHitCount)}
+              </span>
               <Button variant="text" onClick={onSearchClear}>{t('search.clear')}</Button>
             </div>
             {/* 全类 Filter Chips（默认全勾选；取消勾选即排除该类结果）。
@@ -2223,7 +2243,11 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
               ))}
             </div>
             {visibleHitCount === 0 ? (
-              <div className="object-load-failed">{t('objects.search_no_match')}</div>
+              // 空词（进入搜索态）由头部提示「输入关键词开始检索」承担；
+              // 有词无命中才显示空态文案
+              q === '' ? null : (
+                <div className="object-load-failed">{t('objects.search_no_match')}</div>
+              )
             ) : (
               <div className="object-search-results">
                 {visibleGroupedHits.map(({ cls, insts }) => (
@@ -2478,15 +2502,19 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         <div className="object-load-failed">{t('objects.class_empty')}</div>
       ) : (
         <>
-          {searchActiveClass && (
+          {classSearchMode && (
             <div className="object-search-header">
-              <span className="object-search-header-text">{t('objects.search_header', searchQuery.trim(), shownCount)}</span>
+              <span className="object-search-header-text">
+                {searchActiveClass
+                  ? t('objects.search_header', searchQuery.trim(), shownCount)
+                  : t('search.enter_query_hint')}
+              </span>
               <Button variant="text" onClick={onSearchClear}>{t('search.clear')}</Button>
             </div>
           )}
           {/* 存储类搜索态：挂载/未挂载/其他 chips（按后端显式 storageKind
               分组，D8 定案——前端不猜）；其余类无筛选器 */}
-          {searchActiveClass && parsed?.className === 'storage' && (
+          {classSearchMode && parsed?.className === 'storage' && (
             <div className="object-search-chips">
               {(['mounted', 'device', 'other'] as const).map((k) => (
                 <FilterChip
@@ -2507,9 +2535,13 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
             <>
               {renderSortBar()}
               {shownCount === 0 ? (
-                <div className="object-load-failed">
-                  {searchActiveClass ? t('objects.search_no_match') : t('objects.process_no_match')}
-                </div>
+                // 空词搜索视图由头部提示承担（review 3）；有词无命中/
+                // 普通空态才显示文案
+                classSearchMode && !searchActiveClass ? null : (
+                  <div className="object-load-failed">
+                    {searchActiveClass ? t('objects.search_no_match') : t('objects.process_no_match')}
+                  </div>
+                )
               ) : (
                 <div
                   ref={processListContainerRef}
@@ -2548,8 +2580,11 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
             </>
           ) : (
             <>
-              {searchActiveClass && shownCount === 0 ? (
-                <div className="object-load-failed">{t('objects.search_no_match')}</div>
+              {classSearchMode && shownCount === 0 ? (
+                // 空词搜索视图由头部提示承担；有词无命中才显示空态文案
+                searchActiveClass ? (
+                  <div className="object-load-failed">{t('objects.search_no_match')}</div>
+                ) : null
               ) : (
                 <div className="object-list">{(genericFilteredInstances ?? []).map(renderInstanceRow)}</div>
               )}

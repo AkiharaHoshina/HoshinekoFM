@@ -468,6 +468,7 @@ const ukUA = {
   'search.results': (n: number, q: string) => plural(n, 'Знайдено {n} результат для', 'Знайдено {n} результати для', 'Знайдено {n} результатів для') + ` «${q}»`,
   'search.recent': "Нещодавні пошуки",
   'search.clear_history': "Очистити історію",
+  'search.enter_query_hint': 'Введіть ключові слова для пошуку',
   'search.clear': 'Очистити пошук',
   'search.type_all': 'Усі типи',
   'search.type_file': 'Файли',

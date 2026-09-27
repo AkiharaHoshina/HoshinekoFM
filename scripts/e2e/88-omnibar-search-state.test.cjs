@@ -248,5 +248,74 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path]')`, { timeout: 8000 });
   });
 
+  await h.run('88h 进入搜索态立即搜索视图（空词不跑 find + 提示）', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+
+    // 点「进入搜索」→ 立即成为搜索视图（review 3 定案：状态不卡中间）
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.clickEl(win, '.omnibar-enter-search');
+    // 搜索态 + 筛选条 + 空结果提示立即出现（空词不跑后端 find "find *"）
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-search .omnibar-input')`);
+    await h.waitFor(win, `!!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.search-enter-hint')`, { timeout: 8000 });
+    const hintText = await h.js(win, `document.querySelector('.search-enter-hint')?.textContent ?? ''`);
+    h.assert.ok(/输入关键词开始检索|Type keywords to start searching|キーワードを入力して検索を開始|검색어를 입력하여 검색 시작|Введите ключевые слова для поиска|Введіть ключові слова для пошуку/.test(hintText.value), `空词搜索视图应显示提示（实际：${hintText.value}）`);
+    // 文件区清空、搜索路径行出现（基准目录）
+    h.assert.ok((await h.js(win, `document.querySelectorAll('.file-list-item').length`)).value === 0, '空词搜索态文件区应清空');
+    await h.waitFor(win, `!!document.querySelector('.search-filter-path')`);
+
+    // 输入关键词 → 立即检索出结果
+    await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 'a');
+    await h.js(win, `(() => {
+      const el = document.querySelector('.omnibar.mode-search .omnibar-input');
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return true;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`, { timeout: 8000 });
+    h.assert.ok(!(await h.js(win, `!!document.querySelector('.search-enter-hint')`)).value, '有词命中后提示应消失');
+
+    // 退出搜索回浏览视图
+    await h.escCloseSearch(win);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub"]')`, { timeout: 8000 });
+  });
+
+  await h.run('88i 对象视图进入搜索态立即搜索视图（chips + 提示）', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await h.js(win, `(() => {
+      const b = [...document.querySelectorAll('.sidebar-item')].find((x) => /对象|Objects/.test(x.textContent ?? ''));
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
+
+    // 进入搜索态 → 立即 objectsearch:// 搜索视图（空词：chips + 提示、无全量网格）
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.clickEl(win, '.omnibar-enter-search');
+    await h.waitFor(win, `!!document.querySelector('.object-search-header')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.object-search-chips')`, { timeout: 8000 });
+    const hintText = await h.js(win, `document.querySelector('.object-search-header-text')?.textContent ?? ''`);
+    h.assert.ok(/输入关键词开始检索|Type keywords to start searching|キーワードを入力して検索を開始|검색어를 입력하여 검색 시작|Введите ключевые слова для поиска|Введіть ключові слова для пошуку/.test(hintText.value), `对象空词搜索视图应显示提示（实际：${hintText.value}）`);
+    h.assert.ok(!(await h.js(win, `!!document.querySelector('.object-class-grid')`)).value, '空词搜索态不应显示全量类网格');
+    h.assert.ok((await h.js(win, `document.querySelectorAll('.object-search-hit').length`)).value === 0, '空词搜索态应无命中行');
+
+    // 输入关键词 → 命中（对象搜索走同一输入框）
+    await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 'myproc');
+    await h.js(win, `(() => {
+      const el = document.querySelector('.omnibar.mode-search .omnibar-input');
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return true;
+    })()`, true);
+    await h.waitFor(win, `document.querySelectorAll('.object-search-hit').length === 1`, { timeout: 8000 });
+
+    // Esc 退出回 objects:// 根
+    await h.escCloseSearch(win);
+    await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
+  });
+
   h.finish();
 })();

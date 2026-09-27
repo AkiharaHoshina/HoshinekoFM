@@ -406,15 +406,16 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     // 搜索中状态由文件区覆盖层呈现（无弹出通知——用户要求）
     try {
       if (dir === 'trash://') {
-        // 回收站是虚拟目录，无法走 system:search；直接按名称过滤当前列表
+        // 回收站是虚拟目录，无法走 system:search；直接按名称过滤当前列表。
+        // 空关键词（进入搜索态即触发）：与文件区同语义——空结果 + 提示
         const q = query.trim().toLowerCase();
+        if (q === '') {
+          setFiles([]);
+          return;
+        }
         const trashList = await FileSystemService.listTrash();
         if (searchSeqRef.current !== seq) return; // 过期请求：丢弃
-        setFiles(
-          q === ''
-            ? trashList
-            : trashList.filter((f) => f.name.toLowerCase().includes(q)),
-        );
+        setFiles(trashList.filter((f) => f.name.toLowerCase().includes(q)));
         return;
       }
       if (window.electron && window.electron.search) {
@@ -431,6 +432,14 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         onPathChange(tabId, searchPath);
         setFiles([]);
         setSearchPending(true);
+        // 空关键词（进入搜索态即触发，review 3 定案）：不跑后端 find
+        // （"find *" 无意义），直接空结果——搜索视图照常呈现（筛选条 +
+        // 「输入关键词开始检索」提示），状态不卡在浏览/搜索之间
+        if (query.trim() === '') {
+          setSearchPending(false);
+          setSearchObjectHits([]);
+          return;
+        }
         // 临时上限未指定时透传设置默认上限（null = 无限制）；
         // 超时 null = 本次搜索不限时（设置默认或临时移除均可为 null）
         const sendOptions: SearchOptions = options.limit === undefined
@@ -536,15 +545,15 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       // 导航到 objectsearch:// 虚拟路径（地址栏/标签标题/面包屑获得
       // 搜索形态；loadPath 内解析并置搜索态——经 loadPathRef 防前向引用）
       loadPathRef.current?.(buildObjectSearchPath(op?.className ?? null, query));
-      // 记录搜索历史（根页/类页搜索词共用一条历史）
-      onObjectSearchRecord?.(query);
+      // 记录搜索历史（根页/类页搜索词共用一条历史；空词进入搜索态不记录）
+      if (query.trim() !== '') onObjectSearchRecord?.(query);
       return;
     }
     const parsed = isSearchPath(currentPath) ? parseSearchPath(currentPath) : null;
     const dir = parsed ? parsed.dir : currentPath;
     // 记录文件搜索历史（按目录+关键词去重；仅记录用户发起的搜索——
-    // 筛选变化/路径恢复不记录）
-    onFileSearchRecord?.(dir, query);
+    // 筛选变化/路径恢复不记录；空词进入搜索态不记录）
+    if (query.trim() !== '') onFileSearchRecord?.(dir, query);
     await runSearch(dir, query, options);
   }, [currentPath, runSearch, onObjectSearchRecord, onFileSearchRecord]);
 
@@ -2383,6 +2392,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         // （根/类页）+ searchQuery 渲染
         <ObjectPanel
           path={isObjectSearchPath(currentPath) ? objectSearchBasePath(parseObjectSearchPath(currentPath)!) : currentPath}
+          inSearchState={isObjectSearchPath(currentPath)}
           marqueeEnabled={marqueeEnabled}
           isActive={isActive}
           sparklineWindowSeconds={sparklineWindowSeconds}
@@ -2701,7 +2711,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                   }
                 }}
               >
-                {currentPath === 'trash://' && files.length === 0 && (
+                {currentPath === 'trash://' && files.length === 0 && !searchActive && (
                   <div
                     style={{
                       position: 'absolute',
@@ -2716,6 +2726,27 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                     <div style={{ textAlign: 'center' }}>
                       <Icon name="delete" size={48} />
                       <p style={{ marginTop: '12px', fontSize: '14px' }}>{t('trash.empty')}</p>
+                    </div>
+                  </div>
+                )}
+                {/* 搜索态空关键词提示（review 3 定案：进入搜索态即搜索视图，
+                    空词不跑后端 find——显示「输入关键词开始检索」） */}
+                {searchActive && searchQuery.trim() === '' && !searchPending && (
+                  <div
+                    className="search-enter-hint"
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--md-sys-color-on-surface-variant)',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <div style={{ textAlign: 'center' }}>
+                      <Icon name="search" size={48} />
+                      <p style={{ marginTop: '12px', fontSize: '14px' }}>{t('search.enter_query_hint')}</p>
                     </div>
                   </div>
                 )}

@@ -409,9 +409,13 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
               className="omnibar-enter-search"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
-                // 切入搜索态：全新关键词（编辑态输入的是路径/schema，不带走）
+                // 切入搜索态：全新关键词（编辑态输入的是路径/schema，不带走）。
+                // review 3 定案：立即以空词进入搜索视图（search://?q= 身份
+                // 立即落定，文件区不跑 "find *"、显示「输入关键词开始检索」
+                // 提示）——状态不卡在浏览/搜索之间
                 setInputValue('');
                 setMode('search');
+                onSearch('');
               }}
               title={t("omnibar.enter_search")}
             >

@@ -431,6 +431,7 @@ const zhAC = {
   'search.results': (n: number, q: string) => `为您找到 ${n} 个关于 "${q}" 的结果`,
   'search.recent': "最近搜索",
   'search.clear_history': "清除历史",
+  'search.enter_query_hint': '输入关键词开始检索',
   'search.clear': '清除搜索',
   'search.type_all': '全部类型',
   'search.type_file': '文件',

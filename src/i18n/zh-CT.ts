@@ -429,6 +429,7 @@ const zhCT = {
   'search.results': (n: number, q: string) => `幫你搵到 ${n} 個關於 "${q}" 嘅結果`,
   'search.recent': "最近搜尋",
   'search.clear_history': "清除記錄",
+  'search.enter_query_hint': '輸入關鍵詞開始搜尋',
   'search.clear': '清除搜尋',
   'search.type_all': '全部類型',
   'search.type_file': '檔案',

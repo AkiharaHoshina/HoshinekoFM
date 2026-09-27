@@ -439,6 +439,7 @@ const koKP = {
   'search.results': (n: number, q: string) => `"${q}"에 대한 ${n}개의 결과를 찾았습니다`,
   'search.recent': "최근 검색",
   'search.clear_history': "기록 지우기",
+  'search.enter_query_hint': '검색어를 입력하여 검색 시작',
   'search.clear': '검색 지우기',
   'search.type_all': '모든 유형',
   'search.type_file': '파일',

@@ -429,6 +429,7 @@ const jaJP = {
   'search.results': (n: number, q: string) => `"${q}" に関する結果が ${n} 件見つかりました`,
   'search.recent': "最近の検索",
   'search.clear_history': "履歴を消去",
+  'search.enter_query_hint': 'キーワードを入力して検索を開始',
   'search.clear': '検索をクリア',
   'search.type_all': 'すべての種類',
   'search.type_file': 'ファイル',
