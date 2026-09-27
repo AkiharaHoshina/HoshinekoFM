@@ -345,5 +345,78 @@ const { ipcMain } = require('electron');
     h.assert.ok(probe.value.files.length === 0, `类型=文件夹后不应有 .txt 结果（实际：${JSON.stringify(probe.value.files)}）`);
   });
 
+  await h.run('88k 空词态按大小筛选确认后输词（条件保持，review 5）', async () => {
+    const wdir = h.tempDir();
+    h.makeFileTree(wdir, { 'a.txt': 'x' });
+    fs.writeFileSync(path.join(wdir, 'bigs.txt'), Buffer.alloc(200000, 'A'));
+    const win = await h.createTestWindow({ argv: ['electron', wdir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+
+    // 进入搜索态（空词）→ 筛选模式 = 按大小 → min 1k → 确认（不发起检索）
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.clickEl(win, '.omnibar-enter-search');
+    await h.waitFor(win, `!!document.querySelector('.search-filter-bar')`);
+    await h.selectOption(win, '.search-filter-mode', 'size');
+    await h.waitFor(win, `!!document.querySelector('.search-size-level2')`);
+    await h.setReactInput(win, '.search-size-min', '1k');
+    await h.clickEl(win, '.search-confirm-size');
+    await h.sleep(400);
+
+    // 输词 's' → 搜索：大小条件保持（bigs.txt 命中、a.txt 被过滤、模式仍为按大小）
+    await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 's');
+    await h.js(win, `(() => {
+      const el = document.querySelector('.omnibar.mode-search .omnibar-input');
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return true;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${wdir}/bigs.txt"]')`, { timeout: 8000 });
+    const probe = await h.js(win, `(() => ({
+      mode: document.querySelector('.search-filter-mode')?.value ?? null,
+      min: document.querySelector('.search-size-min')?.value ?? null,
+      hasSmall: !!document.querySelector('.file-list-item[data-path="${wdir}/a.txt"]'),
+    }))()`);
+    h.assert.strictEqual(probe.value.mode, 'size', `输词后筛选模式应保持按大小（实际：${probe.value.mode}）`);
+    h.assert.strictEqual(probe.value.min, '1k', `输词后大小值应保持（实际：${probe.value.min}）`);
+    h.assert.ok(!probe.value.hasSmall, '最小 1k 后 a.txt 应被过滤');
+  });
+
+  await h.run('88l 空词态按格式筛选确认后输词（条件保持，review 5）', async () => {
+    const wdir = h.tempDir();
+    h.makeFileTree(wdir, { 'a.txt': 'x', 'b.txt': 'y', 'b.md': 'z' });
+    const win = await h.createTestWindow({ argv: ['electron', wdir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+
+    // 进入搜索态（空词）→ 筛选模式 = 按格式 → 添加 txt → 确认
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.clickEl(win, '.omnibar-enter-search');
+    await h.waitFor(win, `!!document.querySelector('.search-filter-bar')`);
+    await h.selectOption(win, '.search-filter-mode', 'format');
+    await h.waitFor(win, `!!document.querySelector('.search-format-level2')`);
+    await h.setReactInput(win, '.search-ext-input', 'txt');
+    await h.clickEl(win, '.search-format-add');
+    await h.waitFor(win, `document.querySelectorAll('.search-format-row').length === 1`);
+    await h.clickEl(win, '.search-confirm-format');
+    await h.sleep(400);
+
+    // 输词 'b' → 搜索：格式条件保持（b.txt 命中、b.md 被过滤、模式仍为按格式）
+    await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 'b');
+    await h.js(win, `(() => {
+      const el = document.querySelector('.omnibar.mode-search .omnibar-input');
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return true;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${wdir}/b.txt"]')`, { timeout: 8000 });
+    const probe = await h.js(win, `(() => ({
+      mode: document.querySelector('.search-filter-mode')?.value ?? null,
+      rows: document.querySelectorAll('.search-format-row').length,
+      hasMd: !!document.querySelector('.file-list-item[data-path="${wdir}/b.md"]'),
+    }))()`);
+    h.assert.strictEqual(probe.value.mode, 'format', `输词后筛选模式应保持按格式（实际：${probe.value.mode}）`);
+    h.assert.strictEqual(probe.value.rows, 1, `输词后格式预览应保持（实际 ${probe.value.rows} 行）`);
+    h.assert.ok(!probe.value.hasMd, '按格式 txt 后 b.md 应被过滤');
+  });
+
   h.finish();
 })();

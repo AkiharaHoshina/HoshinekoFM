@@ -2043,9 +2043,18 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         action: () => {
           const existingNames = files.map(f => f.name);
           void (async () => {
-            const name = await onCreateDialog('folder', t('dialog.create.default_folder'), existingNames);
-            if (name) {
-              await createDirectory(currentPath + '/' + name, () => loadPath(currentPath));
+            const rawName = await onCreateDialog('folder', t('dialog.create.default_folder'), existingNames);
+            if (rawName) {
+              // NameInputDialog 对目录名补尾斜杠（isDir）——剥离后作为
+              // 条目名（定位/选中按无斜杠名字匹配）
+              const name = rawName.replace(/\/$/, '');
+              const newPath = currentPath + '/' + name;
+              await createDirectory(newPath, () => {
+                void loadPath(currentPath);
+                // 新建项选中并滚动到可见（review 5）——复用定位管线
+                //（pendingSelectFile → FileList scrollToRow + 选中）
+                onRevealFile(newPath, name);
+              });
             }
           })();
         },
@@ -2058,7 +2067,12 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           void (async () => {
             const name = await onCreateDialog('file', t('dialog.create.default_file'), existingNames);
             if (name) {
-              await createFile(currentPath + '/' + name, () => loadPath(currentPath));
+              const newPath = currentPath + '/' + name;
+              await createFile(newPath, () => {
+                void loadPath(currentPath);
+                // 新建项选中并滚动到可见（review 5）
+                onRevealFile(newPath, name);
+              });
             }
           })();
         },
@@ -2094,7 +2108,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
     onContextMenu(e, null);
     onBgMenuItems(customItems);
-  }, [currentPath, files, clipboard, onCreateDialog, loadPath, executePasteAction, onOpenTerminalAt, onPropertiesFile, onContextMenu, onBgMenuItems, onConfirmDialog]);
+  }, [currentPath, files, clipboard, onCreateDialog, loadPath, executePasteAction, onOpenTerminalAt, onPropertiesFile, onContextMenu, onBgMenuItems, onConfirmDialog, onRevealFile]);
 
   // ── Stable callback wrappers for FileList (ref pattern to prevent unnecessary re-renders) ──
   const handleSelectRef = useRef(handleSelect);
