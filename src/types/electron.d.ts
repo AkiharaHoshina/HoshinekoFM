@@ -101,15 +101,6 @@ export type SmartInfo =
     | { ok: true; model: string | null; tempC: number | null; powerOnHours: number | null; attributes: { name: string; raw: string; value: number | null; worst: number | null; threshold: number | null }[] }
     | { ok: false; reason: 'NO_TOOL' | 'NEED_ROOT' | 'NOT_SUPPORTED' | 'NO_DEVICE' };
 
-/** 对象搜索命中（搜索「包含对象」开启时混入搜索结果） */
-export interface ObjectSearchHit {
-    className: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power' | 'gpu';
-    instanceId: string;
-    name: string;
-    icon: string;
-    objectPath: string;
-}
-
 /**
  * 后端总线名冲突诊断（portal / FileManager1 注册失败时的探测结果，
  * 主进程 backendInfo.ts 生成）：
@@ -550,13 +541,12 @@ export interface IElectronAPI {
     getVersion: () => Promise<string>;
     /** 用系统默认浏览器打开外部 http/https 链接 */
     openExternal: (url: string) => Promise<boolean>;
-    search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string, extensions?: string[], limit?: number | null, timeoutMs?: number | null, includeObjects?: boolean }) => Promise<{
+    search: (directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string, extensions?: string[], limit?: number | null, timeoutMs?: number | null }) => Promise<{
       results: IFile[];
       partial: boolean;
       cancelled: boolean;
       reason?: 'timeout' | 'cancelled';
       error?: string;
-      objects?: ObjectSearchHit[];
     }>;
     /** 取消当前窗口正在进行的搜索（搜索页「取消搜索」按钮） */
     cancelSearch: () => Promise<boolean>;

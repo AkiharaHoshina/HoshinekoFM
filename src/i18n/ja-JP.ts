@@ -195,8 +195,6 @@ const jaJP = {
 
   'settings.search_timeout': '検索タイムアウト',
   'settings.search_timeout_desc': (n: number) => `デフォルト: ${n} 秒`,
-  'settings.search_objects': '検索にオブジェクトを含める',
-  'settings.search_objects_desc': '検索結果にオブジェクトパネルのオブジェクトを含めます',
 
   'settings.search_group_by_dir_desc': '同じディレクトリの項目をグループ化',
   'settings.show_home_storage': 'ホームのストレージ使用量を表示',
@@ -638,7 +636,6 @@ const jaJP = {
   'objects.power_cycles': 'サイクル数',
   'objects.power_type': 'タイプ',
   'objects.power_no_info': 'このデバイスにはこれ以上の情報はありません',
-  'search.objects_hits': 'オブジェクト',
   'search.timeout_invalid': '1 から 180 までの整数を入力してください',
   'search.limit_invalid': '有効な正の整数を入力してください',
 

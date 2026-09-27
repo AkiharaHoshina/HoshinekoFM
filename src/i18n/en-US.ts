@@ -206,8 +206,6 @@ const enUS = {
 
   'settings.search_timeout': 'Search timeout',
   'settings.search_timeout_desc': (n: number) => `Default: ${n} seconds`,
-  'settings.search_objects': 'Include objects in search',
-  'settings.search_objects_desc': 'Include Object Panel objects in search results',
 
   'settings.search_group_by_dir_desc': 'Group items from the same directory',
   'settings.show_home_storage': 'Show home storage usage',
@@ -649,7 +647,6 @@ const enUS = {
   'objects.power_cycles': 'Cycles',
   'objects.power_type': 'Type',
   'objects.power_no_info': 'No additional information available for this device',
-  'search.objects_hits': 'Objects',
   'search.timeout_invalid': 'Enter an integer between 1 and 180',
   'search.limit_invalid': 'Enter a valid positive integer',
 

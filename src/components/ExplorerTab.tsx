@@ -8,7 +8,6 @@ import { Icon } from './Icon';
 import { Button } from './Button';
 import { FileSystemService } from '../services/FileSystemService';
 import type { IFile } from '../types/files';
-import type { ObjectSearchHit } from '../types/electron.d';
 import type { DragClaimResult } from '../types/electron.d';
 import type { ObjectDragPayload } from '../utils/objectDrag';
 import {
@@ -69,7 +68,6 @@ import {
   isObjectsPath,
   parseObjectsPath,
   objectsParentPath,
-  OBJECTS_CLASS_LABEL,
 } from '../utils/objectsPath';
 import {
   isObjectSearchPath,
@@ -134,9 +132,6 @@ interface ExplorerTabProps {
     /** 搜索超时时长（秒，受控：settings.searchTimeout 持久化，上限 180；
      *  null = 不限时；搜索页上限对话框「移除超时时长」为会话级临时覆盖） */
     searchTimeout: number | null;
-    /** 搜索包含对象（受控：settings.searchObjects，默认关；开启时
-     *  搜索结果混入 Object Panel 对象命中） */
-    searchObjects: boolean;
     /** 修改排序字段（App 写入持久化键，跨窗口同步） */
     onSortByChange: (by: SortBy) => void;
     /** 修改排序方向（App 写入持久化键，跨窗口同步） */
@@ -251,7 +246,7 @@ interface ExplorerTabProps {
     terminalOpen?: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, searchLimit, searchTimeout, searchObjects, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, sortControlsAutoCollapse, onSortControlsCollapsedChange, sparklineWindowSeconds, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, onUnmountDevice, onEjectDevice, onTerminateProcess, onNiceProcess, onUnlockNice, onPinObject, onBatchTerminate, onBatchNice, objectClassOrder, onObjectClassOrderChange, alertTempC, alertDiskPct, objectSearchHistory, onObjectSearchRecord, onObjectSearchHistoryClear, fileSearchHistory, onFileSearchRecord, onFileSearchHistoryClear, searchRecentCount, onNetworkToggle, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, onDashboardPinObject, onMovePinAcross, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, searchLimit, searchTimeout, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, sortControlsAutoCollapse, onSortControlsCollapsedChange, sparklineWindowSeconds, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, onUnmountDevice, onEjectDevice, onTerminateProcess, onNiceProcess, onUnlockNice, onPinObject, onBatchTerminate, onBatchNice, objectClassOrder, onObjectClassOrderChange, alertTempC, alertDiskPct, objectSearchHistory, onObjectSearchRecord, onObjectSearchHistoryClear, fileSearchHistory, onFileSearchRecord, onFileSearchHistoryClear, searchRecentCount, onNetworkToggle, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, onDashboardPinObject, onMovePinAcross, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -381,8 +376,6 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   /** 搜索进行中（大搜索：文件区显示「搜索中 + 取消」覆盖层） */
   const [searchPending, setSearchPending] = useState(false);
-  /** 对象搜索命中（设置「搜索包含对象」开启时，结果条展示） */
-  const [searchObjectHits, setSearchObjectHits] = useState<ObjectSearchHit[]>([]);
 
   /**
    * 搜索执行体（handleSearch 与 search:// loadPath 分支共用）：
@@ -408,7 +401,6 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     setSearchActive(true);
     setSearchQuery(query);
     setSearchOptions(options);
-    setSearchObjectHits([]);
     // 搜索中状态由文件区覆盖层呈现（无弹出通知——用户要求）
     try {
       if (dir === 'trash://') {
@@ -443,7 +435,6 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         // 「输入关键词开始检索」提示），状态不卡在浏览/搜索之间
         if (query.trim() === '') {
           setSearchPending(false);
-          setSearchObjectHits([]);
           return;
         }
         // 临时上限未指定时透传设置默认上限（null = 无限制）；
@@ -456,7 +447,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           : (options.timeout !== undefined
             ? options.timeout
             : (baseSearchTimeoutSec === null ? null : baseSearchTimeoutSec * 1000));
-        const { results, partial, cancelled, reason, error, objects } = await window.electron.search(dir, query, { ...sendOptions, timeoutMs, includeObjects: searchObjects });
+        const { results, partial, cancelled, reason, error } = await window.electron.search(dir, query, { ...sendOptions, timeoutMs });
         if (searchSeqRef.current !== seq) return; // 过期请求：丢弃
         if (cancelled) {
           setSearchPending(false);
@@ -476,7 +467,6 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         }
         setSearchPending(false);
         setFiles(results);
-        setSearchObjectHits(objects ?? []);
         // 部分内容缺失（权限不足等）：通知提示（find 继续返回可访问部分）
         if (partial) {
           showToast(t('search.partial_notice'), 'warning');
@@ -493,7 +483,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       // 浏览视图——否则文件区仍是旧内容，右上角分类开关却被搜索态锁定
       await loadPathRef.current?.(dir);
     }
-  }, [onPathChange, tabId, baseSearchLimit, baseSearchTimeoutSec, searchObjects]);
+  }, [onPathChange, tabId, baseSearchLimit, baseSearchTimeoutSec]);
 
   /** 取消进行中的搜索（覆盖层按钮）：后端 kill + 丢弃结果 + 复原发起目录 */
   const handleCancelSearch = useCallback(() => {
@@ -2666,24 +2656,6 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               </Button>
             </div>
           )}
-          {/* 对象搜索命中（设置「搜索包含对象」开启）：点击进 objects:// 实例页 */}
-          {searchActive && searchObjectHits.length > 0 && (
-            <div className="search-object-results">
-              <div className="search-object-results-title">{t('search.objects_hits')}</div>
-              {searchObjectHits.map((hit) => (
-                <button
-                  key={hit.objectPath}
-                  className="search-object-hit"
-                  onClick={() => loadPath(hit.objectPath, true)}
-                >
-                  <Icon name={hit.icon} className="search-object-hit-icon" />
-                  <span className="search-object-hit-name">
-                    {t(OBJECTS_CLASS_LABEL[hit.className] ?? 'objects.title')} · {hit.name}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
           {/* 文件列表 + 预览面板行容器：预览区在文件区右侧「挤压」出现，
               两者一起随内置终端挤压（终端在 content-area 下方，flex 列自动生效）。
               键盘分区（files）：Tab 分区循环的焦点落点 */}
@@ -2706,12 +2678,19 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                   if (isPinReorderDragActive()) return;
                   // 对象投影拖拽：文件区无对象落点语义，不给可放置光标
                   if (getDragState()?.object) return;
+                  // 搜索态背景不接收文件拖放（C7 定案：url 是 search://，
+                  // 拖给背景无落点语义——目录结果行的条目级落点不受影响）
+                  if (isSearchPath(currentPath)) return;
                   e.preventDefault();
                   e.dataTransfer.dropEffect = 'copy';
                 }}
                 onDrop={async (e) => {
                   e.preventDefault();
                   if (!currentPath) return;
+                  // 搜索态背景不接收文件拖放（C7 定案：url 是 search://，
+                  // 无落点语义——目录结果行的条目级落点由 FileList 行
+                  // 处理器承担，stopPropagation 后不会到达本容器）
+                  if (isSearchPath(currentPath)) return;
                   // 幻影 drop-back（本窗口发起拖拽的会话期间，真实 drop 落在其他窗口）：
                   // 直接忽略，防止同一次拖放被重复处理
                   if (shouldSuppressDrop()) {
@@ -2734,10 +2713,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                       await trashFiles(dragState.files.map((f) => f.path), () => loadPath(currentPath));
                       return;
                     }
-                    // 搜索态背景落点 = 发起搜索的目录（决策 D6）；条目落点照常
-                    const searchBase = isSearchPath(currentPath)
-                      ? (parseSearchPath(currentPath)?.dir ?? currentPath)
-                      : currentPath;
+                    // 同窗口内部拖拽落点 = 当前目录（搜索态已在入口早退，C7）
+                    const searchBase = currentPath;
                     const targetEl = document.elementFromPoint(e.clientX, e.clientY);
                     const itemEl = targetEl
                       ? (targetEl as HTMLElement).closest('.file-list-item')
@@ -2789,10 +2766,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                   if (claim.status === 'granted') {
                     const metas = claim.files;
                     const paths = metas.map((m) => m.path);
-                    // 搜索态背景落点 = 发起搜索的目录（决策 D6）
-                    const searchBase = isSearchPath(currentPath)
-                      ? (parseSearchPath(currentPath)?.dir ?? currentPath)
-                      : currentPath;
+                    // 本应用窗口间拖放落点 = 当前目录（搜索态已在入口早退，C7）
+                    const searchBase = currentPath;
                     if (dtPaths.length > 0 && !samePathSet(dtPaths, paths)) {
                       // 外部应用拖入（登记是陈旧的）：按外部复制处理
                       await importFiles(dtPaths.map((p) => ({ path: p })), searchBase, () => loadPath(currentPath));

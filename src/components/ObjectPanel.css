@@ -18,7 +18,6 @@
 }
 
 .object-panel-header-icon {
-  font-size: 28px;
   color: var(--md-sys-color-primary);
 }
 
@@ -82,7 +81,6 @@
 }
 
 .object-class-icon {
-  font-size: 32px;
   color: var(--md-sys-color-primary);
 }
 
@@ -142,6 +140,15 @@
 .object-row-sub {
   font-size: 12px;
   color: var(--md-sys-color-on-surface-variant);
+}
+
+/* 进程行 PID（review 8：列表行加 pid）——次要色调小字，不抢指标列 */
+.object-row-pid {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
 }
 
 .object-row-details {
@@ -426,7 +433,10 @@
   flex-shrink: 0;
 }
 
-/* 第一行：排序键 + 升降序 + 树模式，平均平铺满一行 */
+/* 第一行：排序键 segmented + 升降序/树两个 icon 按钮。
+ * review 8：按钮只需自身宽度（flex 0 0 auto），空间尽量让给 segmented；
+ * segmented label 不换行（white-space 经宿主继承进 shadow，超宽截断）——
+ * 两个按钮保持舒适点击宽度不被压窄 */
 .object-sortbar-keys {
   display: flex;
   align-items: center;
@@ -434,9 +444,10 @@
   width: 100%;
 }
 
-.object-sortbar-keys > * {
-  flex: 1 1 0;
-  min-width: 0;
+.object-sortbar-keys .object-sortbar-dir,
+.object-sortbar-keys .object-sortbar-tree {
+  flex: 0 0 auto;
+  min-width: 40px;
 }
 
 /* 第二行：多选提示（恒常占位，未选中时留空不跳动） */
@@ -487,10 +498,17 @@
   text-align: right;
 }
 
-/* 排序键 segmented：占第一行更宽份额（四个键），升降序/树按钮压缩 */
+/* 排序键 segmented：占满剩余空间（review 8：把空间尽量让给 segmented，
+ * label 不换行——white-space 经宿主继承进 shadow 内部 label） */
 .object-sortbar-keys .object-sortbar-sort-segmented {
-  flex: 4 1 0;
+  flex: 1 1 0;
   min-width: 0;
+}
+
+.object-sortbar-keys .object-sortbar-sort-segmented md-outlined-segmented-button {
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* ── 进程类页虚拟化列表 ── */

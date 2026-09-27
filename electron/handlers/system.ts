@@ -2021,8 +2021,7 @@ export function registerSystemHandlers(
    * - reason：'timeout'（超时自动取消）/ 'cancelled'（用户取消或
    *   单飞行顶替）；正常完成与 error 均为 undefined；
    * - error：spawn 失败等硬错误信息（渲染层弹搜索失败通知）；
-   * - partial：部分内容缺失（find 权限错误以非零退出码/写 stderr 报告）；
-   * - objects：includeObjects 开启时的 OP 对象命中（最多 10 条）。
+   * - partial：部分内容缺失（find 权限错误以非零退出码/写 stderr 报告）。
    */
   interface SearchResult {
     results: { name: string; path: string; isDirectory: boolean; size: number; mtime: Date; mime: string | null }[];
@@ -2030,42 +2029,6 @@ export function registerSystemHandlers(
     cancelled: boolean;
     reason?: 'timeout' | 'cancelled';
     error?: string;
-    objects?: ObjectSearchHit[];
-  }
-
-  /** 对象搜索命中（名称/副标题匹配关键词） */
-  interface ObjectSearchHit {
-    className: 'storage' | 'processor' | 'tty' | 'process' | 'thermal' | 'backlight' | 'network' | 'power' | 'gpu';
-    instanceId: string;
-    name: string;
-    icon: string;
-    /** objects:// 实例页路径 */
-    objectPath: string;
-  }
-
-  /** 按关键词搜索 OP 对象（名称/副标题，不区分大小写，最多 10 条）。
-   *  进程类最后遍历——实例多、短关键词极易吃满命中上限，存储/处理器等
-   *  小类优先。 */
-  async function searchObjects(query: string): Promise<ObjectSearchHit[]> {
-    const q = query.toLowerCase();
-    const classes = (await listObjectsCached()).slice().sort((a, b) =>
-      (a.id === 'process' ? 1 : 0) - (b.id === 'process' ? 1 : 0));
-    const hits: ObjectSearchHit[] = [];
-    for (const cls of classes) {
-      for (const inst of cls.instances) {
-        const hay = `${inst.name}\n${inst.subtitle ?? ''}`.toLowerCase();
-        if (!hay.includes(q)) continue;
-        hits.push({
-          className: cls.id,
-          instanceId: inst.id,
-          name: inst.name,
-          icon: inst.icon,
-          objectPath: `objects://${cls.id}/${encodeURIComponent(inst.id)}`,
-        });
-        if (hits.length >= 10) return hits;
-      }
-    }
-    return hits;
   }
 
   /** 活跃搜索（按发送者 id 单飞行：每窗口至多一个 find 子进程） */
@@ -2186,12 +2149,8 @@ export function registerSystemHandlers(
    * @returns SearchResult——cancelled.reason='timeout' 时渲染层弹超时
    * 通知并复原视图；'cancelled' 为显式取消（渲染层已复原，静默丢弃）。
    */
-  ipcMain.handle('system:search', async (event, directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string, extensions?: string[], limit?: number | null, timeoutMs?: number | null, includeObjects?: boolean }): Promise<SearchResult> => {
+  ipcMain.handle('system:search', async (event, directory: string, query: string, options?: { type?: 'f' | 'd', minSize?: string, maxSize?: string, extensions?: string[], limit?: number | null, timeoutMs?: number | null }): Promise<SearchResult> => {
     const senderId = event.sender.id;
-
-    // 对象搜索（设置「搜索包含对象」开启时）：与 find 并行、结果缓存快
-    const objectsPromise: Promise<ObjectSearchHit[] | undefined> =
-      options?.includeObjects && query ? searchObjects(query) : Promise.resolve(undefined);
 
     // 单飞行：同窗口新搜索先取消旧搜索（kill 旧 find，防并发堆积）
     const prev = activeSearches.get(senderId);
@@ -2299,8 +2258,8 @@ export function registerSystemHandlers(
             entry.earlyStop = true;
             if (entry.timer !== null) { clearTimeout(entry.timer); entry.timer = null; }
             try { child.kill('SIGTERM'); } catch { /* 已退出 */ }
-            void buildSearchResults(entry, null, true).then(async (result) => {
-              entry.settle({ ...result, objects: result.cancelled ? undefined : await objectsPromise });
+            void buildSearchResults(entry, null, true).then((result) => {
+              entry.settle(result);
             });
           }
         });
@@ -2314,8 +2273,8 @@ export function registerSystemHandlers(
         child.on('close', (code) => {
           if (entry.settled) return;
           if (entry.timer !== null) { clearTimeout(entry.timer); entry.timer = null; }
-          void buildSearchResults(entry, code, entry.earlyStop).then(async (result) => {
-            entry.settle({ ...result, objects: result.cancelled ? undefined : await objectsPromise });
+          void buildSearchResults(entry, code, entry.earlyStop).then((result) => {
+            entry.settle(result);
           });
         });
 
@@ -3016,8 +2975,8 @@ export function registerSystemHandlers(
     }
   }
 
-  /** 类枚举器注册表：新增类只需加一行（类序 = 根卡片序；进程类靠后，
-   *  见 searchObjects 的命中上限说明） */
+  /** 类枚举器注册表：新增类只需加一行（类序 = 根卡片序；进程类靠后——
+   *  根页跨类搜索命中上限 200 条在渲染层截断） */
   const OBJECT_CLASS_ENUMERATORS: Array<{ id: ObjectClassInfo['id']; icon: string; enumerate: () => Promise<ObjectInstance[]> }> = [
     { id: 'storage', icon: 'hard_drive', enumerate: listStorageObjects },
     { id: 'processor', icon: 'memory', enumerate: listProcessorObjects },

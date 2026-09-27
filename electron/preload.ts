@@ -222,7 +222,7 @@ contextBridge.exposeInMainWorld('electron', {
   setIcon: (iconPath: string) => ipcRenderer.invoke('window:set-icon', iconPath),
   /** 界面缩放：设置本窗口 zoom factor（0.5–2.0），跨窗口同步由 storage 事件驱动各窗口自行调用 */
   setUiZoom: (factor: number) => ipcRenderer.invoke('window:set-zoom', factor),
-  search: (dir: string, query: string, options?: { type?: 'f' | 'd'; minSize?: string; maxSize?: string; extensions?: string[]; limit?: number | null; timeoutMs?: number | null; includeObjects?: boolean }) => ipcRenderer.invoke('system:search', dir, query, options),
+  search: (dir: string, query: string, options?: { type?: 'f' | 'd'; minSize?: string; maxSize?: string; extensions?: string[]; limit?: number | null; timeoutMs?: number | null }) => ipcRenderer.invoke('system:search', dir, query, options),
   /** 取消当前窗口正在进行的搜索（搜索页「取消搜索」按钮） */
   cancelSearch: () => ipcRenderer.invoke('system:cancel-search'),
   /** Object Panel：枚举全部对象（按类分组，主进程短 TTL 缓存） */

@@ -195,8 +195,6 @@ const zhTW = {
 
   'settings.search_timeout': '搜尋逾時時長',
   'settings.search_timeout_desc': (n: number) => `預設 ${n} 秒`,
-  'settings.search_objects': '搜尋包含物件',
-  'settings.search_objects_desc': '搜尋結果中包含物件面板的物件',
 
   'settings.search_group_by_dir_desc': '將同目錄的項目分為一類',
   'settings.show_home_storage': '顯示首頁儲存佔用',
@@ -638,7 +636,6 @@ const zhTW = {
   'objects.power_cycles': '循環次數',
   'objects.power_type': '類型',
   'objects.power_no_info': '該裝置無更多可用資訊',
-  'search.objects_hits': '物件',
   'search.timeout_invalid': '請輸入 1 到 180 之間的整數',
   'search.limit_invalid': '請輸入有效的正整數',
 

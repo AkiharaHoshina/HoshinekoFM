@@ -148,9 +148,12 @@ export const ObjectSearchFilterBar: React.FC<ObjectSearchFilterBarProps> = ({
       )}
 
       {/* 进程类页两组互斥筛选（review 6/7）：组 1 单选 / 组 2 多选；
-          组 2 非空时组 1 无选中——始终有一个筛选条件生效 */}
+          组 2 非空时组 1 无选中——始终有一个筛选条件生效。
+          review 8：两组包在 .object-filter-groups 内——筛选条宽度
+          >1000px（且两行文字一行放得下）时同一行，否则两行
+          （container query，见 ObjectSearchFilterBar.css） */}
       {page === 'process' && (
-        <>
+        <div className="object-filter-groups">
           <SegmentedButtonSet
             className="object-filter-mode-set"
             onSegmentedButtonSetSelection={handleModeSelection}
@@ -168,7 +171,7 @@ export const ObjectSearchFilterBar: React.FC<ObjectSearchFilterBarProps> = ({
             <SegmentedButton label={t('objects.filter_pid_lt')} selected={pidConds.includes('lt')} />
             <SegmentedButton label={t('objects.filter_pid_eq')} selected={pidConds.includes('eq')} />
           </SegmentedButtonSet>
-        </>
+        </div>
       )}
     </div>
   );

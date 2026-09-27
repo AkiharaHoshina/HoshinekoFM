@@ -42,6 +42,15 @@ interface TabBarProps {
  */
 const isDroppableTab = (tab: Tab): boolean => !tab.path.startsWith('app://');
 
+/**
+ * 文件拖放可放置标签（C7 定案）：搜索态标签（search:// / objectsearch://）
+ * 不接收文件拖放——url 是搜索虚拟路径，拖给它们没有落点语义。
+ * 对象投影拖拽（纯导航，打开对象页）仍允许落在搜索态标签上。
+ */
+const isFileDroppableTab = (tab: Tab): boolean => isDroppableTab(tab)
+  && !tab.path.startsWith('search://')
+  && !tab.path.startsWith('objectsearch://');
+
 const getTabTitle = (title: string): string => {
   const normalizeTitle = title.toLowerCase();
 
@@ -211,13 +220,14 @@ export const TabBar: React.FC<TabBarProps> = ({
    * 可直接接受并路由（纯导航，无文件操作语义）。
    */
   useEffect(() => {
-    /** 从光标坐标解析命中的标签页（仅可放置的标签） */
+    /** 从光标坐标解析命中的标签页（仅文件拖放可放置的标签——
+     *  搜索态标签排除，C7） */
     const resolveTabAt = (x: number, y: number): Tab | null => {
       const el = document.elementFromPoint(x, y);
       const tabItem = el?.closest('.tab-item') as HTMLElement | null;
       if (!tabItem?.dataset.tabId) return null;
       const tab = tabsRef.current.find((t) => t.id === tabItem.dataset.tabId);
-      if (!tab || !isDroppableTab(tab)) return null;
+      if (!tab || !isFileDroppableTab(tab)) return null;
       return tab;
     };
 

@@ -14,13 +14,38 @@
   --md-filter-chip-label-text-size: 12.5px;
 }
 
-/* 进程类两组互斥 segmented：组 1（单选）+ 组 2（多选）各占一行 */
-.object-filter-mode-set,
-.object-filter-pid-set {
-  width: 100%;
+/* 容器查询：review 8——筛选条宽度 >1000px（且两组文本一行放得下）时
+ * 进程类两组 segmented 合一行，否则两行（column 默认） */
+.object-search-filter-bar {
+  container-type: inline-size;
 }
 
-.object-filter-mode-set md-outlined-segmented-button,
-.object-filter-pid-set md-outlined-segmented-button {
-  flex: 1 1 0;
+/* 进程类两组互斥 segmented：默认两行（column）；每组 label 不换行
+ * （white-space 经宿主继承进 shadow，超宽截断） */
+.object-filter-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.object-filter-groups md-outlined-segmented-button {
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+
+@container (min-width: 1000px) {
+  /* 宽条：一组一行尝试合一行；两组 min-width: max-content——
+   * 文本放不下（语言相关）时经 flex-wrap 自然折回两行 */
+  .object-filter-groups {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .object-filter-groups .object-filter-mode-set,
+  .object-filter-groups .object-filter-pid-set {
+    flex: 1 1 auto;
+    min-width: max-content;
+  }
 }

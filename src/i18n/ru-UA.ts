@@ -237,8 +237,6 @@ const ruUA = {
 
   'settings.search_timeout': 'Тайм-аут поиска',
   'settings.search_timeout_desc': (n: number) => `По умолчанию: ${n} с`,
-  'settings.search_objects': 'Включать объекты в поиск',
-  'settings.search_objects_desc': 'Включать объекты панели объектов в результаты поиска',
 
   'settings.search_group_by_dir_desc': 'Группировать элементы из одного каталога',
   'settings.show_home_storage': 'Показывать занятость домашнего хранилища',
@@ -680,7 +678,6 @@ const ruUA = {
   'objects.power_cycles': 'Циклов',
   'objects.power_type': 'Тип',
   'objects.power_no_info': 'Дополнительная информация об этом устройстве недоступна',
-  'search.objects_hits': 'Объекты',
   'search.timeout_invalid': 'Введите целое число от 1 до 180',
   'search.limit_invalid': 'Введите допустимое положительное целое число',
 

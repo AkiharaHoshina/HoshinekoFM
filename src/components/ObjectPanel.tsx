@@ -379,6 +379,8 @@ const ProcessListRow = ({
             </div>
           )}
         </div>
+        {/* PID（review 8：进程列表行加 pid——id 即 pid，恒有） */}
+        <span className="object-row-pid" title={`PID ${inst.id}`}>{inst.id}</span>
         {inst.restricted && (
           <span className="object-row-restricted" title={t('objects.tty_denied')}>
             {t('objects.need_permission')}

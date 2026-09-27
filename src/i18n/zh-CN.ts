@@ -195,8 +195,6 @@ const zhCN = {
 
   'settings.search_timeout': '搜索超时时长',
   'settings.search_timeout_desc': (n: number) => `默认 ${n} 秒`,
-  'settings.search_objects': '搜索包含对象',
-  'settings.search_objects_desc': '搜索结果中包含对象面板的对象',
 
   'settings.search_group_by_dir_desc': '将同目录的项目分为一类',
   'settings.show_home_storage': '显示主页存储占用',
@@ -638,7 +636,6 @@ const zhCN = {
   'objects.power_cycles': '循环次数',
   'objects.power_type': '类型',
   'objects.power_no_info': '该设备无更多可用信息',
-  'search.objects_hits': '对象',
   'search.timeout_invalid': '请输入 1 到 180 之间的整数',
   'search.limit_invalid': '请输入有效的正整数',
 

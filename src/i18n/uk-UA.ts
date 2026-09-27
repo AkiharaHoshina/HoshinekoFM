@@ -234,8 +234,6 @@ const ukUA = {
 
   'settings.search_timeout': 'Тайм-аут пошуку',
   'settings.search_timeout_desc': (n: number) => `Типово: ${n} с`,
-  'settings.search_objects': "Включати об'єкти в пошук",
-  'settings.search_objects_desc': "Включати об'єкти панелі об'єктів у результати пошуку",
 
   'settings.search_group_by_dir_desc': 'Групувати елементи з однієї директорії',
   'settings.show_home_storage': 'Показувати заповнення домашнього сховища',
@@ -677,7 +675,6 @@ const ukUA = {
   'objects.power_cycles': 'Циклів',
   'objects.power_type': 'Тип',
   'objects.power_no_info': 'Додаткова інформація про цей пристрій недоступна',
-  'search.objects_hits': "Об'єкти",
   'search.timeout_invalid': 'Введіть ціле число від 1 до 180',
   'search.limit_invalid': 'Введіть дійсне додатне ціле число',
 

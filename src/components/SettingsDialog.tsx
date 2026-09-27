@@ -112,9 +112,6 @@ interface SettingsDialogProps {
    *  搜索页上限对话框「移除超时时长」为会话级临时覆盖，不写此键） */
   searchTimeout: number | null;
   onSearchTimeoutChange: (seconds: number | null) => void;
-  /** 搜索包含对象（默认关；确定时生效——搜索结果混入 Object Panel 对象） */
-  searchObjects: boolean;
-  onSearchObjectsChange: (value: boolean) => void;
   /** 标题栏模式（null = 跟随系统，true/false = 手动开/关） */
   titleBarMode: boolean | null;
   onTitleBarChange: (mode: boolean | null) => void;
@@ -199,8 +196,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   onSearchLimitChange,
   searchTimeout,
   onSearchTimeoutChange,
-  searchObjects,
-  onSearchObjectsChange,
   titleBarMode,
   onTitleBarChange,
   showFullPathTitle,
@@ -391,8 +386,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
   const [pendingSearchLimit, setPendingSearchLimit] = useState<number | null>(searchLimit);
   /** 搜索超时时长草稿：二级对话框确认只写入草稿，外层确定才应用 */
   const [pendingSearchTimeout, setPendingSearchTimeout] = useState<number | null>(searchTimeout);
-  /** 搜索包含对象草稿：确定才应用 */
-  const [pendingSearchObjects, setPendingSearchObjects] = useState<boolean>(searchObjects);
   /** 恢复默认设置确认对话框（带背景遮罩的 ConfirmDialog） */
   const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
   /** 自定义新标签页目录二级对话框开关 */
@@ -461,7 +454,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
       setPendingSearchGroupByDir(searchGroupByDir);
       setPendingSearchLimit(searchLimit);
       setPendingSearchTimeout(searchTimeout);
-      setPendingSearchObjects(searchObjects);
       setPendingMarquee(marqueeEnabled);
       setPendingFilePreview(filePreviewEnabled);
       setPendingAutoCreateDesktopEntry(autoCreateDesktopEntry);
@@ -491,7 +483,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setPendingSearchGroupByDir(searchGroupByDir);
     setPendingSearchLimit(searchLimit);
     setPendingSearchTimeout(searchTimeout);
-    setPendingSearchObjects(searchObjects);
     setPendingMarquee(marqueeEnabled);
     setPendingFilePreview(filePreviewEnabled);
     setPendingAutoCreateDesktopEntry(autoCreateDesktopEntry);
@@ -508,7 +499,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     setPendingAlertTempC(alertTempC);
     setPendingAlertDiskPct(alertDiskPct);
     setPendingSearchRecentCount(searchRecentCount);
-  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, searchLimit, searchTimeout, searchObjects, marqueeEnabled, filePreviewEnabled, autoCreateDesktopEntry, autoCreateAppMenuEntry, showHiddenFiles, viewMode, iconSize, filledIcons, sortControlsAutoCollapse, showHomeStorageUsage, calculateDirSize, newTabPath, sparklineWindowSeconds, alertTempC, alertDiskPct, searchRecentCount]);
+  }, [open, locale, uiScale, titleBarMode, showFullPathTitle, searchGroupByDir, searchLimit, searchTimeout, marqueeEnabled, filePreviewEnabled, autoCreateDesktopEntry, autoCreateAppMenuEntry, showHiddenFiles, viewMode, iconSize, filledIcons, sortControlsAutoCollapse, showHomeStorageUsage, calculateDirSize, newTabPath, sparklineWindowSeconds, alertTempC, alertDiskPct, searchRecentCount]);
 
   /**
    * 应用全部 pending 设置（不关闭对话框）：「应用」与「确定」共用
@@ -524,7 +515,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
     if (pendingSearchGroupByDir !== searchGroupByDir) onSearchGroupByDirChange(pendingSearchGroupByDir);
     if (pendingSearchLimit !== searchLimit) onSearchLimitChange(pendingSearchLimit);
     if (pendingSearchTimeout !== searchTimeout) onSearchTimeoutChange(pendingSearchTimeout);
-    if (pendingSearchObjects !== searchObjects) onSearchObjectsChange(pendingSearchObjects);
     if (pendingMarquee !== marqueeEnabled) onMarqueeChange(pendingMarquee);
     if (pendingFilePreview !== filePreviewEnabled) onFilePreviewChange(pendingFilePreview);
     if (pendingAutoCreateDesktopEntry !== autoCreateDesktopEntry) onAutoCreateDesktopEntryChange(pendingAutoCreateDesktopEntry);
@@ -977,23 +967,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               <Button variant="outlined" onClick={() => setSearchTimeoutDialogOpen(true)}>
                 {t("settings.search_limit_edit")}
               </Button>
-            </div>
-
-            {/* 搜索包含对象（默认关；确定时生效——搜索结果混入 Object Panel
-               对象命中；关闭时搜索零开销） */}
-            <div className="settings-row" onClick={() => setPendingSearchObjects(!pendingSearchObjects)}>
-              <div className="settings-row__start">
-                <Icon name="widgets" />
-                <div className="settings-row__label-col">
-                  <div className="settings-row__label">
-                    {t("settings.search_objects")}
-                  </div>
-                  <div className="settings-row__sub settings-row__sub--wrap">
-                    {t("settings.search_objects_desc")}
-                  </div>
-                </div>
-              </div>
-              <Switch selected={pendingSearchObjects} onClick={() => setPendingSearchObjects(!pendingSearchObjects)} />
             </div>
 
             <div className="settings-row" onClick={() => setPendingShowHomeStorageUsage(!pendingShowHomeStorageUsage)}>

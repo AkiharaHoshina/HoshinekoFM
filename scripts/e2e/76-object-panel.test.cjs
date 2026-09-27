@@ -6,8 +6,8 @@
  * - 类页实例列表 → 实例页（独占内容区）：CPU 实时读数（条形/百分比，
  *   1s 轮询）、面包屑「对象胶囊 + 类段 + 实例段」、返回上级逐级回退；
  * - tty 类：实例页显示只读流（有输出/无权限提示二选一）；
- * - 设置「搜索包含对象」开关（默认关 → 开 → 确定生效）→ 搜索命中
- *   对象条 → 点击进 objects:// 实例页。
+ * - C6 回归：「搜索包含对象」设置已移除（设置页无该行）+ 文件搜索
+ *   不再混入对象命中条（`.search-object-results` 不存在）。
  */
 const h = require('./harness.cjs');
 
@@ -90,13 +90,14 @@ const h = require('./harness.cjs');
     );
   });
 
-  await h.run('76b 设置「搜索包含对象」+ 对象命中条', async () => {
+  await h.run('76b C6 回归：「搜索包含对象」设置已移除 + 文件搜索无对象命中条', async () => {
     const dir = h.tempDir();
     h.makeFileTree(dir, { 'a.txt': 'x' });
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
 
-    // 设置 → 搜索包含对象 → 开 → 确定
+    // 设置页不再有「搜索包含对象」行（C6 定案移除：文件区只搜文件，
+    // search/objectsearch 两套搜索逻辑不重叠）
     const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
     await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
     await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
@@ -105,33 +106,18 @@ const h = require('./harness.cjs');
       win,
       `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /搜索包含对象|Include objects/.test(row.textContent ?? ''))`,
     );
-    h.assert.ok(rowIdx.value >= 0, '设置中应存在「搜索包含对象」行');
-    await h.scrollIntoView(win, '.settings-row', rowIdx.value);
-    await h.js(
-      win,
-      `(() => {
-        const row = document.querySelectorAll('.settings-row')[${rowIdx.value}];
-        const sw = row ? row.querySelector('md-switch') : null;
-        if (!sw) return false;
-        sw.click();
-        return true;
-      })()`,
-      true,
-    );
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
-    await h.waitFor(win, `localStorage.getItem('settings.searchObjects') === 'true'`, 8000);
+    h.assert.ok(rowIdx.value === -1, '设置页不应再有「搜索包含对象」行（C6 移除）');
+    // 关闭设置对话框（Escape = 取消，草稿不保存）
+    await h.key(win, 'Escape');
+    await h.waitFor(win, `!Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`, { timeout: 8000 });
 
-    // 搜索 'cpu' → 对象命中条出现 → 点击进 objects:// 实例页
-    await h.searchViaOmnibar(win, 'cpu');
-    await h.waitFor(win, `!!document.querySelector('.search-object-results')`, { timeout: 8000 });
-    await h.waitFor(win, `document.querySelectorAll('.search-object-hit').length >= 1`, { timeout: 8000 });
-    await h.clickEl(win, '.search-object-hit');
-    await h.waitFor(win, `!!document.querySelector('.object-panel')`, { timeout: 8000 });
-    await h.waitFor(win, `!!document.querySelector('.breadcrumb-objects-chip')`);
-    // 标签页标题含「对象」
-    const tabTitle = await h.js(win, `[...document.querySelectorAll('.tab-item')][0].querySelector('.tab-title')?.textContent ?? ''`);
-    h.assert.ok(/对象|Objects/.test(tabTitle.value), `标签页标题应含对象语义：${tabTitle.value}`);
+    // 文件搜索 'a'（会命中大量真实文件；对象侧也有 processor/cpu 等）：
+    // 不再出现对象命中条（旧「搜索包含对象」混入逻辑已删）
+    await h.searchViaOmnibar(win, 'a');
+    await h.waitFor(win, `!!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
+    await h.sleep(400);
+    h.assert.ok(!(await h.js(win, `!!document.querySelector('.search-object-results')`)).value, '文件搜索不应再混入对象命中条');
+    await h.escCloseSearch(win);
   });
 
   h.finish();

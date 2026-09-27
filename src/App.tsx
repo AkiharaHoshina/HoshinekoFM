@@ -788,12 +788,6 @@ function AppContent() {
     "settings.searchTimeout",
     SEARCH_DEFAULT_TIMEOUT,
   );
-  /** 搜索包含对象（设置 → 行为「搜索包含对象」开关，默认关，确定时生效；
-   *  开启时搜索结果混入 Object Panel 对象命中） */
-  const [searchObjects, setSearchObjects] = useLocalStorage<boolean>(
-    "settings.searchObjects",
-    false,
-  );
   const [locale, setLocaleState] = useLocalStorage<Locale>(
     "settings.locale",
     getLocale(),
@@ -1590,7 +1584,6 @@ function AppContent() {
     setSearchGroupByDir(true);
     setSearchLimit(SEARCH_DEFAULT_LIMIT);
     setSearchTimeout(SEARCH_DEFAULT_TIMEOUT);
-    setSearchObjects(false);
     setShowHomeStorageUsage(false);
     setFilePreviewEnabled(false);
     setCalculateDirSize(true);
@@ -1628,7 +1621,6 @@ function AppContent() {
     setSearchGroupByDir,
     setSearchLimit,
     setSearchTimeout,
-    setSearchObjects,
     setShowHomeStorageUsage,
     setFilePreviewEnabled,
     setCalculateDirSize,
@@ -2628,7 +2620,6 @@ function AppContent() {
                   searchGroupByDir={searchGroupByDir}
                   searchLimit={searchLimit}
                   searchTimeout={searchTimeout}
-                  searchObjects={searchObjects}
                   onUnmountDevice={handleDeviceUnmount}
                   onEjectDevice={handleDeviceEject}
                   onTerminateProcess={confirmTerminate}
@@ -3114,8 +3105,6 @@ function AppContent() {
             onSearchLimitChange={setSearchLimit}
             searchTimeout={searchTimeout}
             onSearchTimeoutChange={setSearchTimeout}
-            searchObjects={searchObjects}
-            onSearchObjectsChange={setSearchObjects}
             titleBarMode={titleBarMode}
             onTitleBarChange={setTitleBarMode}
             showFullPathTitle={showFullPathTitle}

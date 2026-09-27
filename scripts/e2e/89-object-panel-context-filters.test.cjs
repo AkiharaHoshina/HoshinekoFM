@@ -91,6 +91,7 @@ const { ipcMain } = require('electron');
     // 改词重搜：**条件保持**（review 4）——storage 仍弃选
     await h.searchViaOmnibar(win, 'b');
     await h.waitFor(win, `document.querySelectorAll('.object-search-hit').length === 1`, { timeout: 8000 });
+    await h.waitFor(win, `document.querySelectorAll('.object-class-filter-chip').length === 3`, { timeout: 8000 });
     prefixes = await hitClassPrefixes(win);
     h.assert.deepStrictEqual(prefixes, ['process'], `重搜后条件应保持（storage 仍弃选）：${JSON.stringify(prefixes)}`);
     const keptSelected = await h.js(win, `[...document.querySelectorAll('.object-class-filter-chip')].map((c) => c.selected)`);
@@ -104,6 +105,7 @@ const { ipcMain } = require('electron');
     await h.setReactInput(win, '.omnibar.mode-edit .omnibar-input', 'objectsearch://?q=b&nc=storage');
     await h.key(win, 'Enter');
     await h.waitFor(win, `document.querySelectorAll('.object-search-hit').length === 1`, { timeout: 8000 });
+    await h.waitFor(win, `document.querySelectorAll('.object-class-filter-chip').length === 3`, { timeout: 8000 });
     const selFromUrl = await h.js(win, `[...document.querySelectorAll('.object-class-filter-chip')].map((c) => c.selected)`);
     h.assert.deepStrictEqual(selFromUrl.value, [false, true, true], `nc 段应解析为 storage 弃选：${JSON.stringify(selFromUrl.value)}`);
 
@@ -251,7 +253,9 @@ const { ipcMain } = require('electron');
     await h.clickEl(win, '.omnibar-trigger');
     await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     await h.clickEl(win, '.omnibar-enter-search');
-    await h.waitFor(win, `!!document.querySelector('.object-search-chips')`, { timeout: 8000 });
+    // chips 容器随筛选条首帧渲染即存在、chips 本体经 onSearchViewInfoChange
+    // 上报后才填充——等 chips 数到位再点击（否则点击落在空容器）
+    await h.waitFor(win, `document.querySelectorAll('.object-class-filter-chip').length === 3`, { timeout: 8000 });
     await h.clickEl(win, '.object-class-filter-chip', { index: 0 });
     await h.sleep(300);
     await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 'b');
@@ -261,6 +265,7 @@ const { ipcMain } = require('electron');
       return true;
     })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.object-search-hit').length === 1`, { timeout: 8000 });
+    await h.waitFor(win, `document.querySelectorAll('.object-class-filter-chip').length === 3`, { timeout: 8000 });
     const prefixes = await hitClassPrefixes(win);
     h.assert.deepStrictEqual(prefixes, ['process'], `弃选存储后搜索应只留 process 命中：${JSON.stringify(prefixes)}`);
     const keptSelected = await h.js(win, `[...document.querySelectorAll('.object-class-filter-chip')].map((c) => c.selected)`);

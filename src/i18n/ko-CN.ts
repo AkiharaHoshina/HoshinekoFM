@@ -196,8 +196,6 @@ const koCN = {
 
   'settings.search_timeout': '검색 시간 초과',
   'settings.search_timeout_desc': (n: number) => `기본값: ${n}초`,
-  'settings.search_objects': '검색에 객체 포함',
-  'settings.search_objects_desc': '검색 결과에 객체 패널의 객체를 포함합니다',
 
   'settings.search_group_by_dir_desc': '같은 디렉터리의 항목을 그룹화',
   'settings.show_home_storage': '홈 스토리지 사용량 표시',
@@ -648,7 +646,6 @@ const koCN = {
   'objects.power_cycles': '사이클 수',
   'objects.power_type': '유형',
   'objects.power_no_info': '이 장치에는 더 이상 사용 가능한 정보가 없습니다',
-  'search.objects_hits': '객체',
   'search.timeout_invalid': '1에서 180 사이의 정수를 입력하세요',
   'search.limit_invalid': '유효한 양의 정수를 입력하세요',
 
