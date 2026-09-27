@@ -9,6 +9,7 @@ import { showToast } from '../utils/toast';
 import { t } from '../i18n';
 import type { RegisteredMimeEntry } from '../types/electron.d';
 import { type SearchPathFilter } from '../utils/searchPath';
+import './SearchBand.css';
 import './SearchFilterBar.css';
 
 /** 已添加进预览区的格式条目（描述经系统注册表查表，无注册描述为 null） */

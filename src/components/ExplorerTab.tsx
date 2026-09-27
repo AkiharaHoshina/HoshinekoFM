@@ -76,10 +76,13 @@ import {
   parseObjectSearchPath,
   buildObjectSearchPath,
   objectSearchBasePath,
+  type ProcessFilterMode,
+  type PidCond,
 } from '../utils/objectSearchPath';
 import { SearchFilterBar } from './SearchFilterBar';
 import { SearchPendingOverlay } from './SearchPendingOverlay';
-import { ObjectPanel } from './ObjectPanel';
+import { ObjectPanel, type ObjectSearchViewInfo } from './ObjectPanel';
+import { ObjectSearchFilterBar } from './ObjectSearchFilterBar';
 
 /** 搜索选项（后端 system:search 参数；limit/timeout 为临时值，不入
  *  search:// 虚拟路径——新关键词搜索时随 options 整体重置回默认） */
@@ -321,6 +324,9 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   /** 对象面板内搜索关键词（'' = 无搜索；地址栏在 objects:// 根/类页
    *  发起，ObjectPanel 过滤渲染；实例页入口 toast 拦截不进词） */
   const [objectSearchQuery, setObjectSearchQuery] = useState('');
+  /** 对象搜索视图信息（ObjectPanel 上报：计数 + 根页类表——review 7 #5
+   *  布局抽离，ObjectSearchFilterBar 在面板外渲染需要这些数据） */
+  const [objectSearchInfo, setObjectSearchInfo] = useState<ObjectSearchViewInfo | null>(null);
   /**
    * 搜索高级过滤（type/minSize/maxSize/extensions 与后端 system:search
    * 参数一一对应；limit 为临时上限——search:// 虚拟路径不携带 limit，
@@ -538,6 +544,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     void loadPathRef.current?.(buildObjectSearchPath(s.className, s.query, {
       excludedClasses: next,
       excludedKinds: s.excludedKinds,
+      filterMode: s.filterMode,
+      pidConds: s.pidConds,
     }));
   }, []);
 
@@ -551,6 +559,44 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     void loadPathRef.current?.(buildObjectSearchPath(s.className, s.query, {
       excludedClasses: s.excludedClasses,
       excludedKinds: next,
+      filterMode: s.filterMode,
+      pidConds: s.pidConds,
+    }));
+  }, []);
+
+  /**
+   * 进程类筛选组 1 模式切换（review 6/7 定案：fm 段，url 驱动）——
+   * **互斥**：选组 1 清空组 2（pc 段）；单选组始终有一个模式（点击已
+   * 选中项不派发事件——segmented 内部语义，见 md/index.ts 文档）。
+   */
+  const handleFilterModeChange = useCallback((mode: ProcessFilterMode) => {
+    const s = isObjectSearchPath(currentPathRef.current) ? parseObjectSearchPath(currentPathRef.current) : null;
+    if (!s) return;
+    void loadPathRef.current?.(buildObjectSearchPath(s.className, s.query, {
+      excludedClasses: s.excludedClasses,
+      excludedKinds: s.excludedKinds,
+      filterMode: mode,
+      pidConds: [],
+    }));
+  }, []);
+
+  /**
+   * 进程类筛选组 2 PID 条件切换（review 6/7 定案：pc 段，多选 OR 组合，
+   * url 驱动）——**互斥**：选组 2 清空组 1（fm 段）；组 2 全取消回落
+   * 组 1 默认「cmdline 包含」（**始终有一个筛选条件**，review 7 #2——
+   * url 不带 fm/pc 段即默认语义）。
+   */
+  const handlePidCondChange = useCallback((cond: PidCond, active: boolean) => {
+    const s = isObjectSearchPath(currentPathRef.current) ? parseObjectSearchPath(currentPathRef.current) : null;
+    if (!s) return;
+    const next = active
+      ? (s.pidConds.includes(cond) ? s.pidConds : [...s.pidConds, cond])
+      : s.pidConds.filter((x) => x !== cond);
+    void loadPathRef.current?.(buildObjectSearchPath(s.className, s.query, {
+      excludedClasses: s.excludedClasses,
+      excludedKinds: s.excludedKinds,
+      filterMode: null,
+      pidConds: next,
     }));
   }, []);
 
@@ -575,12 +621,14 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       }
       // 导航到 objectsearch:// 虚拟路径（地址栏/标签标题/面包屑获得
       // 搜索形态；loadPath 内解析并置搜索态——经 loadPathRef 防前向引用）。
-      // 筛选条件由 url 承载（review 4）：沿用当前 objectsearch 的 nc/nk
-      // （先改条件再输词、条件保持）
+      // 筛选条件由 url 承载（review 4/7）：沿用当前 objectsearch 的
+      // nc/nk/fm/pc（先改条件再输词、条件保持）
       const cur = isObjectSearchPath(currentPath) ? parseObjectSearchPath(currentPath) : null;
       loadPathRef.current?.(buildObjectSearchPath(op?.className ?? null, query, {
         excludedClasses: cur?.excludedClasses ?? [],
         excludedKinds: cur?.excludedKinds ?? [],
+        filterMode: cur?.filterMode ?? null,
+        pidConds: cur?.pidConds ?? [],
       }));
       // 记录搜索历史（根页/类页搜索词共用一条历史；空词进入搜索态不记录）
       if (query.trim() !== '') onObjectSearchRecord?.(query);
@@ -2440,47 +2488,100 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       ) : isObjectsPath(currentPath) || isObjectSearchPath(currentPath) ? (
         // Object Panel（objects:// 虚拟页集 + objectsearch:// 搜索形态）：
         // 独占内容区（与仪表盘同构）；对象搜索虚拟路径以基准对象页
-        // （根/类页）+ searchQuery 渲染
-        <ObjectPanel
-          path={isObjectSearchPath(currentPath) ? objectSearchBasePath(parseObjectSearchPath(currentPath)!) : currentPath}
-          inSearchState={isObjectSearchPath(currentPath)}
-          excludedClasses={parseObjectSearchPath(currentPath)?.excludedClasses ?? []}
-          excludedKinds={parseObjectSearchPath(currentPath)?.excludedKinds ?? []}
-          onToggleClassFilter={handleToggleClassFilter}
-          onToggleStorageKind={handleToggleStorageKind}
-          marqueeEnabled={marqueeEnabled}
-          isActive={isActive}
-          sparklineWindowSeconds={sparklineWindowSeconds}
-          onNavigate={(p: string) => loadPath(p, true)}
-          onOpenLocation={(p: string) => loadPath(p, true)}
-          onLocateObject={onRevealFile}
-          onMountDevice={onMountDevice}
-          onUnmountDevice={onUnmountDevice}
-          onEjectDevice={onEjectDevice}
-          onTerminateProcess={onTerminateProcess}
-          onNiceProcess={onNiceProcess}
-          onUnlockNice={onUnlockNice}
-          onPinObject={onPinObject}
-          onBatchTerminate={onBatchTerminate}
-          onBatchNice={onBatchNice}
-          objectClassOrder={objectClassOrder}
-          onObjectClassOrderChange={onObjectClassOrderChange}
-          alertTempC={alertTempC}
-          alertDiskPct={alertDiskPct}
-          searchHistory={objectSearchHistory}
-          onSearchHistoryClear={onObjectSearchHistoryClear}
-          searchRecentCount={searchRecentCount}
-          onNetworkToggle={onNetworkToggle}
-          searchQuery={objectSearchQuery}
-          onSearchClear={() => {
-            if (isObjectSearchPath(currentPath)) {
-              const parsed = parseObjectSearchPath(currentPath);
-              if (parsed) loadPath(objectSearchBasePath(parsed), true);
-            } else {
-              setObjectSearchQuery('');
-            }
-          }}
-        />
+        // （根/类页）+ searchQuery 渲染。review 7 #5 布局抽离：搜索态
+        // 条件在 ObjectSearchFilterBar（面板上方 band，与文件搜索同构）、
+        // 历史在 search-recent——ObjectPanel 只留内容
+        <div
+          className="object-view-wrapper"
+          style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}
+        >
+          {(() => {
+            const searchParsed = isObjectSearchPath(currentPath) ? parseObjectSearchPath(currentPath) : null;
+            return (
+              <>
+                {searchParsed && (
+                  <ObjectSearchFilterBar
+                    page={searchParsed.className === null
+                      ? 'root'
+                      : (searchParsed.className === 'process'
+                        ? 'process'
+                        : (searchParsed.className === 'storage' ? 'storage' : 'other'))}
+                    query={objectSearchQuery}
+                    resultCount={objectSearchInfo?.count ?? 0}
+                    classIds={objectSearchInfo?.classIds ?? []}
+                    excludedClasses={searchParsed.excludedClasses}
+                    excludedKinds={searchParsed.excludedKinds}
+                    filterMode={searchParsed.filterMode}
+                    pidConds={searchParsed.pidConds}
+                    onToggleClassFilter={handleToggleClassFilter}
+                    onToggleStorageKind={handleToggleStorageKind}
+                    onFilterModeChange={handleFilterModeChange}
+                    onPidCondChange={handlePidCondChange}
+                    onClear={() => loadPath(objectSearchBasePath(searchParsed), true)}
+                  />
+                )}
+                {/* 最近搜索词条（根页浏览态；点击词条恢复搜索——上移到
+                    search-recent 区域，与文件搜索布局一致，review 7 #5） */}
+                {!isObjectSearchPath(currentPath)
+                  && parseObjectsPath(currentPath)?.className == null
+                  && objectSearchHistory.length > 0
+                  && searchRecentCount > 0 && (
+                  <div className="search-recent">
+                    <span className="search-recent-label">{t('objects.search_recent')}</span>
+                    {objectSearchHistory.slice(0, searchRecentCount).map((q) => (
+                      <Button
+                        key={q}
+                        variant="text"
+                        className="search-recent-chip"
+                        onClick={() => loadPath(buildObjectSearchPath(null, q), true)}
+                      >
+                        {q}
+                      </Button>
+                    ))}
+                    <Button
+                      variant="text"
+                      className="search-recent-clear"
+                      title={t('objects.search_clear_history')}
+                      onClick={onObjectSearchHistoryClear}
+                    >
+                      <Icon name="delete" />
+                    </Button>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+          <ObjectPanel
+            path={isObjectSearchPath(currentPath) ? objectSearchBasePath(parseObjectSearchPath(currentPath)!) : currentPath}
+            inSearchState={isObjectSearchPath(currentPath)}
+            excludedClasses={parseObjectSearchPath(currentPath)?.excludedClasses ?? []}
+            excludedKinds={parseObjectSearchPath(currentPath)?.excludedKinds ?? []}
+            filterMode={parseObjectSearchPath(currentPath)?.filterMode ?? null}
+            pidConds={parseObjectSearchPath(currentPath)?.pidConds ?? []}
+            onSearchViewInfoChange={setObjectSearchInfo}
+            marqueeEnabled={marqueeEnabled}
+            isActive={isActive}
+            sparklineWindowSeconds={sparklineWindowSeconds}
+            onNavigate={(p: string) => loadPath(p, true)}
+            onOpenLocation={(p: string) => loadPath(p, true)}
+            onLocateObject={onRevealFile}
+            onMountDevice={onMountDevice}
+            onUnmountDevice={onUnmountDevice}
+            onEjectDevice={onEjectDevice}
+            onTerminateProcess={onTerminateProcess}
+            onNiceProcess={onNiceProcess}
+            onUnlockNice={onUnlockNice}
+            onPinObject={onPinObject}
+            onBatchTerminate={onBatchTerminate}
+            onBatchNice={onBatchNice}
+            objectClassOrder={objectClassOrder}
+            onObjectClassOrderChange={onObjectClassOrderChange}
+            alertTempC={alertTempC}
+            alertDiskPct={alertDiskPct}
+            onNetworkToggle={onNetworkToggle}
+            searchQuery={objectSearchQuery}
+          />
+        </div>
       ) : (
         // 内置终端打开且预览可见时：内容行向下负外边距 24px（状态栏高度），
         // 预览/文件区延伸贴紧终端标题栏。层级：文件区 < 统计区（z 101）

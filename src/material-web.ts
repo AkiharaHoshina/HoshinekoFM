@@ -32,6 +32,8 @@ import '@material/web/focus/md-focus-ring.js';
 import '@material/web/chips/suggestion-chip.js';
 import '@material/web/chips/input-chip.js';
 import '@material/web/chips/filter-chip.js';
+import '@material/web/labs/segmentedbutton/outlined-segmented-button.js';
+import '@material/web/labs/segmentedbuttonset/outlined-segmented-button-set.js';
 import '@material/web/elevation/elevation.js';
 import '@material/web/select/filled-select.js';
 import '@material/web/select/outlined-select.js';

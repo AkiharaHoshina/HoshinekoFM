@@ -46,28 +46,31 @@ const { ipcMain } = require('electron');
       return true;
     })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.object-row').length >= 1`, { timeout: 8000 });
-    // 排序条存在（筛选方式 + 排序方式两个下拉 + 升降序 + 树模式按钮）
-    await h.waitFor(win, `!!document.querySelector('.object-sortbar-filter-method')`);
-    await h.waitFor(win, `!!document.querySelector('.object-sortbar-sort-method')`);
+    // 排序条存在（segmented 排序键 + 升降序 + 树模式按钮——review 6/7 定案）
+    await h.waitFor(win, `!!document.querySelector('.object-sortbar-sort-segmented')`);
+    await h.waitFor(win, `!!document.querySelector('.object-sortbar-dir')`);
+    await h.waitFor(win, `!!document.querySelector('.object-sortbar-tree')`);
     // 指标列存在（每个进程行有 CPU 列）
     await h.waitFor(win, `document.querySelectorAll('.object-row-cpu').length >= 1`);
 
     // 自身进程（测试主进程 pid）必在列表中——虚拟化后视口只渲染可见
-    // 行，直接查询可能不可见：经地址栏搜索定位（本地筛选输入已移除，
-    // 筛选规则并入类页地址栏搜索——同时覆盖该链路）
+    // 行，直接查询可能不可见：经地址栏搜索定位。默认筛选 = cmdline
+    // 包含（review 6/7）——pid 数字需显式用组 2「PID 等于」条件
     const selfPid = String(process.pid);
     await h.searchViaOmnibar(win, selfPid);
+    await h.waitFor(win, `!!document.querySelector('.object-filter-pid-set')`, { timeout: 8000 });
+    await h.segmentClick(win, '.object-filter-pid-set', 2); // PID 等于
     await h.waitFor(win, `!!document.querySelector('.object-row[data-id="${selfPid}"]')`, { timeout: 8000 });
-    // 搜索只留自身进程一行
+    // PID 完全匹配：只留自身进程一行
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
     const allMatch = await h.js(win, `(() => {
       const q = ${JSON.stringify(selfPid)};
       return [...document.querySelectorAll('.object-row')].every((r) => {
         const id = r.getAttribute('data-id') ?? '';
-        const txt = (r.textContent ?? '').toLowerCase();
-        return id.includes(q) || txt.includes(q.toLowerCase());
+        return id.includes(q);
       });
     })()`);
-    h.assert.ok(allMatch.value === true, '筛选后所有可见行都应匹配关键词');
+    h.assert.ok(allMatch.value === true, 'PID 等于筛选后所有可见行都应匹配 pid');
 
     // 进自身实例页（筛选保持——虚拟化后清空筛选该行会滚出视口）：
     // 无终止/强制结束按钮、nice 滑条默认锁定 + 解锁按钮、「本应用」标识
@@ -148,24 +151,49 @@ const { ipcMain } = require('electron');
     })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 3`, { timeout: 8000 });
 
-    // 默认按名称排序：aaa, bbb, ccc
+    // 默认 CPU 降序（review 7 #1）：bbb(90), ccc(50), aaa(10)
     const names = async () => (await h.js(win, `[...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim())`)).value;
-    h.assert.ok(JSON.stringify(await names()) === JSON.stringify(['aaa', 'bbb', 'ccc']), `默认名称序：${JSON.stringify(await names())}`);
+    h.assert.ok(JSON.stringify(await names()) === JSON.stringify(['bbb', 'ccc', 'aaa']), `默认 CPU 降序：${JSON.stringify(await names())}`);
 
-    // 按 CPU + 降序（排序方式下拉 + 升降序键）：bbb(90), ccc(50), aaa(10)
-    await h.selectOption(win, '.object-sortbar-sort-method', 'cpu');
+    // 排序键 segmented：切「进程名」（升降序保持——默认降序：ccc,bbb,aaa）
+    // → 升降序键切升序（aaa,bbb,ccc）→ 切「内存」（升序保持：
+    // rssBytes 1000/2000/3000 = aaa,bbb,ccc）——segmented 经 segmentClick
+    // （labs 组件 host.click() 不触发选择）
+    await h.segmentClick(win, '.object-sortbar-sort-segmented', 2); // 进程名
+    await h.waitFor(win, `(() => {
+      const names = [...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim());
+      return names[0] === 'ccc' && names[2] === 'aaa';
+    })()`, { timeout: 8000 });
     await h.clickEl(win, '.object-sortbar-dir');
     await h.waitFor(win, `(() => {
       const names = [...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim());
-      return names[0] === 'bbb' && names[2] === 'aaa';
+      return names[0] === 'aaa' && names[2] === 'ccc';
+    })()`, { timeout: 8000 });
+    await h.segmentClick(win, '.object-sortbar-sort-segmented', 1); // 内存（升序保持）
+    await h.waitFor(win, `(() => {
+      const names = [...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim());
+      return names[0] === 'aaa' && names[2] === 'ccc';
     })()`, { timeout: 8000 });
 
-    // 筛选：pid 匹配（"200" → 只留 bbb）——本地筛选输入已移除，
-    // 规则并入类页地址栏搜索
+    // 筛选：默认 cmdline 包含——'200' 不匹配 subtitle（cmd a/b/c）→ 无命中；
+    // 组 2「PID 等于」→ 只留 bbb（完全匹配）
     await h.searchViaOmnibar(win, '200');
+    await h.waitFor(win, `!!document.querySelector('.object-filter-mode-set')`, { timeout: 8000 });
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 0`, { timeout: 8000 });
+    await h.segmentClick(win, '.object-filter-pid-set', 2); // PID 等于
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
     const filteredNames = await h.js(win, `[...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim())`);
-    h.assert.ok(JSON.stringify(filteredNames.value) === JSON.stringify(['bbb']), `按 pid 筛选应只留 bbb：${JSON.stringify(filteredNames.value)}`);
+    h.assert.ok(JSON.stringify(filteredNames.value) === JSON.stringify(['bbb']), `PID 等于应只留 bbb：${JSON.stringify(filteredNames.value)}`);
+
+    // 互斥（review 7 #2）：点组 1「cmdline 包含」→ 组 2 清空（'200' 回
+    // 无命中——subtitle 不含 200）；组 2 全取消回落组 1 默认（始终有
+    // 一个筛选条件）
+    await h.segmentClick(win, '.object-filter-mode-set', 0); // cmdline 包含
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 0`, { timeout: 8000 });
+    await h.waitFor(win, `(() => {
+      const set = document.querySelector('.object-filter-pid-set');
+      return !!set && [...set.children].every((b) => b.selected === false);
+    })()`, { timeout: 8000 });
 
     // 无匹配：空态文案（12 语言双匹配）
     await h.searchViaOmnibar(win, 'zzz-no-match');
@@ -174,12 +202,12 @@ const { ipcMain } = require('electron');
       return !!el && /无匹配|No matching|一致|일치|подходящих|відповідних/.test(el.textContent ?? '');
     })()`, { timeout: 8000 });
 
-    // 清除搜索恢复全量（搜索头清除按钮）
+    // 清除搜索恢复全量（筛选条清除按钮——搜索 UI 已上移到
+    // ObjectSearchFilterBar，review 7 #5）
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-search-header > *')];
-      const b = btns.find((x) => /清除搜索|Clear Search|検索をクリア|검색 지우기|Очистить поиск|Очистити пошук/.test(x.textContent ?? ''));
-      if (!b) return false;
-      b.click();
+      const btn = document.querySelector('.object-search-filter-bar .search-filter-summary md-icon-button');
+      if (!btn) return false;
+      btn.click();
       return true;
     })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 3`, { timeout: 8000 });

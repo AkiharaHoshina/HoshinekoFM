@@ -810,6 +810,30 @@ async function selectOption(win, selector, value, index = 0) {
   if (!r.ok || !r.value) throw new Error(`selectOption failed: ${selector}[${index}] → ${value}`);
 }
 
+/**
+ * 点击 segmented button set（@material/web labs 组件）的第 index 个按钮。
+ * labs 组件 `host.click()` 不触发选择（选择逻辑在按钮 shadow 内的
+ * `<button>` 上——@click 处理器）——直接向 set 子按钮派发组件内部真实
+ * 点击路径所派发的 `segmented-button-interaction`（bubbles + composed），
+ * set 的 handleSegmentedButtonInteraction 经它 toggleSelection（与真实
+ * 点击完全同一条代码路径；niri 软件渲染下真实坐标点击偶发失手，
+ * 合成派发确定性更高）。
+ */
+async function segmentClick(win, selector, index = 0) {
+  const r = await js(
+    win,
+    `(() => {
+      const set = document.querySelectorAll(${JSON.stringify(selector)})[0];
+      if (!set) return false;
+      const btn = set.children[${index}];
+      if (!btn) return false;
+      btn.dispatchEvent(new Event('segmented-button-interaction', { bubbles: true, composed: true }));
+      return true;
+    })()`,
+  );
+  if (!r.ok || !r.value) throw new Error(`segmentClick failed: ${selector}[${index}]`);
+}
+
 /** 点击指定元素（selector 可命中 md-* 宿主，自动换算 zoom） */
 async function clickEl(win, selector, opts = {}) {
   const c = await elementCenter(win, selector, opts.index ?? 0);
@@ -1083,6 +1107,7 @@ module.exports = {
   escCloseSearch,
   scrollIntoView,
   selectOption,
+  segmentClick,
   waitDialogAnim,
   clickSettingsConfirm,
   run,

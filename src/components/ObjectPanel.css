@@ -148,21 +148,8 @@
   flex-shrink: 0;
 }
 
-/* ── 地址栏对象搜索（面板内搜索态；根页跨类命中 / 类页过滤） ── */
-.object-search-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0 8px;
-}
-
-.object-search-header-text {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  color: var(--md-sys-color-on-surface-variant);
-}
-
+/* ── 地址栏对象搜索（面板内搜索态：根页跨类命中结果 / 类页过滤——
+ *  搜索头/chips/筛选组已上移到 ObjectSearchFilterBar，review 7 #5） ── */
 .object-search-results {
   display: flex;
   flex-direction: column;
@@ -225,28 +212,8 @@
   margin-bottom: 8px;
 }
 
-/* 最近搜索词条行（根页无搜索时） */
-.object-search-recent {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-  padding: 2px 0 8px;
-}
-
-.object-search-recent-label {
-  font-size: 12px;
-  color: var(--md-sys-color-on-surface-variant);
-  margin-right: 4px;
-}
-
-.object-search-recent-chip {
-  font-size: 12.5px;
-}
-
-.object-search-recent-clear {
-  margin-left: 4px;
-}
+/* 最近搜索词条行已上移到 ExplorerTab 的 search-recent 区域
+ * （review 7 #5 布局抽离；类名/样式走共享 SearchBand.css） */
 
 .object-search-group-title {
   font-size: 12px;
@@ -520,24 +487,10 @@
   text-align: right;
 }
 
-/* 排序条第一行的下拉（筛选方式/排序方式）：占更宽份额，按钮压缩 */
-.object-sortbar-select {
-  flex: 1.6 1 0;
+/* 排序键 segmented：占第一行更宽份额（四个键），升降序/树按钮压缩 */
+.object-sortbar-keys .object-sortbar-sort-segmented {
+  flex: 4 1 0;
   min-width: 0;
-  --md-outlined-field-top-space: 4px;
-  --md-outlined-field-bottom-space: 4px;
-}
-
-/* ── 搜索态筛选 chips（根页全类 Filter Chips / 存储类状态分类 chips）── */
-.object-search-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.object-search-chips md-filter-chip {
-  --md-filter-chip-container-height: 30px;
-  --md-filter-chip-label-text-size: 12.5px;
 }
 
 /* ── 进程类页虚拟化列表 ── */

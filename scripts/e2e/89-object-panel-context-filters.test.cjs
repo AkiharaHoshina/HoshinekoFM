@@ -5,9 +5,11 @@
  *   排除该类命中；改词重搜重置全勾选；
  * - 89b 存储类状态分类 chips：挂载/未挂载/其他按后端显式 storageKind
  *   分组（D8 定案——假数据带字段）；取消「已挂载」只剩 device/other；
- * - 89c 进程类筛选方式（名称/PID 完全匹配）+ 排序方式下拉 + 正反序 +
+ * - 89c 进程类两组互斥筛选 segmented（组 1 单选 cmdline 包含/进程名等于/
+ *   进程名包含默认 cmd；组 2 多选 PID 大于/小于/等于 OR 组合；组 2 全取消
+ *   回落组 1 默认——始终有一个筛选条件，review 6/7）+ 排序 segmented +
  *   搜索中树模式禁用；
- * - 89d tty/传感器等类搜索不显示筛选器（无 chips、无筛选/排序下拉）。
+ * - 89d tty/传感器等类搜索不显示筛选器（无 chips、无进程筛选 segmented）。
  *
  * 全部假 list-objects（storageKind 显式字段；本文件独立进程不污染其他
  * 用例）；搜索入口手法同 harness.searchViaOmnibar。
@@ -135,9 +137,10 @@ const { ipcMain } = require('electron');
     const oneName = await h.js(win, `[...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim())`);
     h.assert.deepStrictEqual(oneName.value, ['sdc1'], `取消已挂载+其他后应只剩 sdc1：${JSON.stringify(oneName.value)}`);
 
-    // 清除搜索 → 全量恢复、chips 消失
+    // 清除搜索 → 全量恢复、chips 消失（筛选条清除按钮——搜索 UI 已上移
+    // 到 ObjectSearchFilterBar，review 7 #5）
     await h.js(win, `(() => {
-      const btn = [...document.querySelectorAll('.object-search-header md-text-button')].find((b) => /清除|Clear/.test(b.textContent ?? ''));
+      const btn = document.querySelector('.object-search-filter-bar .search-filter-summary md-icon-button');
       if (!btn) return false;
       btn.click();
       return true;
@@ -146,41 +149,72 @@ const { ipcMain } = require('electron');
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.object-storage-kind-chip')`)).value, '清除搜索后 chips 应消失');
   });
 
-  await h.run('89c 进程类筛选方式（名称/PID）+ 排序方式下拉 + 搜索中树禁用', async () => {
+  await h.run('89c 进程类两组互斥筛选（cmdline/名称/PID）+ 排序 segmented + 搜索中树禁用', async () => {
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     await goObjects(win);
     await clickClass(win, `/进程|Processes/`);
 
-    // 名称模式搜索 'bbb' → 命中 bbb
+    // 默认筛选 = cmdline 包含：'bbb' 命中 subtitle '/srv/bbb' → 1 行
     await h.searchViaOmnibar(win, 'bbb');
+    await h.waitFor(win, `!!document.querySelector('.object-filter-mode-set')`, { timeout: 8000 });
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
     const n0 = await h.js(win, `document.querySelector('.object-row .object-row-name')?.textContent ?? ''`);
-    h.assert.ok(/bbb/.test(n0.value), `名称模式应命中 bbb（实际：${n0.value}）`);
+    h.assert.ok(/bbb/.test(n0.value), `cmdline 包含应命中 bbb（实际：${n0.value}）`);
+    const defaultSelected = await h.js(win, `[...document.querySelector('.object-filter-mode-set').children].map((b) => b.selected)`);
+    h.assert.deepStrictEqual(defaultSelected.value, [true, false, false], '默认应选中「cmdline 包含」');
 
-    // 筛选方式下拉切 PID：'bbb' 不是合法 pid → 立即无命中（空态）
-    await h.selectOption(win, '.object-sortbar-filter-method', 'pid');
+    // 组 2「PID 等于」（互斥：组 1 清空）→ 'bbb' 非合法 pid → 无命中（空态）
+    await h.segmentClick(win, '.object-filter-pid-set', 2);
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 0`, { timeout: 8000 });
     const empty = await h.js(win, `(() => {
       const el = document.querySelector('.object-load-failed');
       return !!el && /无匹配|No matching|一致|일치|подходящих|відповідних/.test(el.textContent ?? '');
     })()`);
-    h.assert.ok(empty.value, 'PID 模式下非法 pid 应空态');
+    h.assert.ok(empty.value, 'PID 条件下非法 pid 应空态');
+    const modeCleared = await h.js(win, `[...document.querySelector('.object-filter-mode-set').children].every((b) => b.selected === false)`);
+    h.assert.ok(modeCleared.value, '组 2 生效时组 1 应无选中（互斥）');
 
-    // PID 模式搜 '200' → 完全匹配 bbb（300/100 不误命中）
+    // 条件保持（review 4/7）：改词 '200' → pc=eq 沿用 → 完全匹配 bbb
     await h.searchViaOmnibar(win, '200');
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
     const n1 = await h.js(win, `document.querySelector('.object-row .object-row-name')?.textContent ?? ''`);
-    h.assert.ok(/bbb/.test(n1.value), `PID 完全匹配应命中 bbb（实际：${n1.value}）`);
+    h.assert.ok(/bbb/.test(n1.value), `PID 等于应命中 bbb（实际：${n1.value}）`);
 
-    // 切回名称模式：'200' 匹配 bbb（id 含 200）
-    await h.selectOption(win, '.object-sortbar-filter-method', 'name');
+    // 组 2 多选 OR：再点「PID 大于」（eq+gt = pid>=200）→ bbb+ccc 两行
+    await h.segmentClick(win, '.object-filter-pid-set', 0);
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 2`, { timeout: 8000 });
+    const multi = await h.js(win, `[...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim()).sort()`);
+    h.assert.deepStrictEqual(multi.value, ['bbb', 'ccc'], `eq+gt 应命中 bbb/ccc：${JSON.stringify(multi.value)}`);
+
+    // 取消「PID 等于」→ 只剩 gt（pid>200）→ ccc
+    await h.segmentClick(win, '.object-filter-pid-set', 2);
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
+    const n2 = await h.js(win, `document.querySelector('.object-row .object-row-name')?.textContent ?? ''`);
+    h.assert.ok(/ccc/.test(n2.value), `gt 应命中 ccc（实际：${n2.value}）`);
 
-    // 排序方式下拉：cpu + 降序键 → bbb(90) 排第一（此处仅一行命中，
-    // 改用清除搜索后全量断言排序——见 78 主链路；这里断言下拉切换
-    // 不崩且保持一行命中）
-    await h.selectOption(win, '.object-sortbar-sort-method', 'cpu');
+    // 组 2 全取消 → 回落组 1 默认「cmdline 包含」（始终有一个筛选条件，
+    // review 7 #2）：'200' 不匹配任何 subtitle → 无命中；组 1 显示 cmd 选中
+    await h.segmentClick(win, '.object-filter-pid-set', 0);
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 0`, { timeout: 8000 });
+    const fallback = await h.js(win, `[...document.querySelector('.object-filter-mode-set').children].map((b) => b.selected)`);
+    h.assert.deepStrictEqual(fallback.value, [true, false, false], '组 2 全取消应回落组 1 默认 cmdline 包含');
+
+    // 组 1 切换：'bbb' → 「进程名等于」命中 bbb（name === bbb）
+    await h.searchViaOmnibar(win, 'bbb');
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
+    await h.segmentClick(win, '.object-filter-mode-set', 1); // 进程名等于
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
+    // 「进程名包含」：'bbb' 仍命中；改词 'bb'（条件保持）→ name 包含 bb → bbb
+    await h.segmentClick(win, '.object-filter-mode-set', 2); // 进程名包含
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
+    await h.searchViaOmnibar(win, 'bb');
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
+    const n3 = await h.js(win, `document.querySelector('.object-row .object-row-name')?.textContent ?? ''`);
+    h.assert.ok(/bbb/.test(n3.value), `进程名包含应命中 bbb（实际：${n3.value}）`);
+
+    // 排序 segmented：切「内存」不崩且保持一行命中（排序断言见 78 主链路）
+    await h.segmentClick(win, '.object-sortbar-sort-segmented', 1);
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
 
     // 搜索中树模式禁用（设计定案：搜索中树状无效）
@@ -188,7 +222,7 @@ const { ipcMain } = require('electron');
     h.assert.ok(treeDisabled.value, '搜索中树模式按钮应禁用');
     // 清除搜索 → 树按钮恢复可用
     await h.js(win, `(() => {
-      const btn = [...document.querySelectorAll('.object-search-header md-text-button')].find((b) => /清除|Clear/.test(b.textContent ?? ''));
+      const btn = document.querySelector('.object-search-filter-bar .search-filter-summary md-icon-button');
       if (!btn) return false;
       btn.click();
       return true;
@@ -202,10 +236,10 @@ const { ipcMain } = require('electron');
     await goObjects(win);
     await clickClass(win, `/传感器|Sensors|Thermal/`);
     await h.searchViaOmnibar(win, 'sensor');
-    await h.waitFor(win, `!!document.querySelector('.object-search-header')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.object-search-filter-bar')`, { timeout: 8000 });
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.object-search-chips')`)).value, '传感器类搜索不应有筛选 chips');
-    h.assert.ok(!(await h.js(win, `!!document.querySelector('.object-sortbar-filter-method')`)).value, '传感器类不应有筛选方式下拉');
+    h.assert.ok(!(await h.js(win, `!!document.querySelector('.object-filter-mode-set')`)).value, '传感器类不应有进程筛选 segmented');
   });
 
   await h.run('89e 空词搜索态先改条件再输词（review 4 复现）', async () => {

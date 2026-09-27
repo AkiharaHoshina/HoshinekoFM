@@ -67,6 +67,10 @@ import { MdSuggestionChip } from '@material/web/chips/suggestion-chip.js';
 import { MdInputChip } from '@material/web/chips/input-chip.js';
 import { MdFilterChip } from '@material/web/chips/filter-chip.js';
 
+// Segmented buttons (labs)
+import { MdOutlinedSegmentedButton } from '@material/web/labs/segmentedbutton/outlined-segmented-button.js';
+import { MdOutlinedSegmentedButtonSet } from '@material/web/labs/segmentedbuttonset/outlined-segmented-button-set.js';
+
 // Elevation
 import { MdElevation } from '@material/web/elevation/elevation.js';
 
@@ -379,6 +383,41 @@ export const FilterChip = createComponent({
     onInput: 'input' as EventName<InputEvent>,
     onChange: 'change' as EventName<Event>,
   },
+});
+
+// ─── Segmented buttons（labs 实验区）────────────────────────────────────────────
+
+/**
+ * segmented-button-set-selection 事件 detail（@material/web labs
+ * segmentedbuttonset——用户交互与 setButtonSelected/toggleSelection 均派发；
+ * **不可取消**：内部 toggle 先发生、事件随后派发，React 受控使用时经
+ * detail 读取新状态回写 props（内部翻转与 React 回写结果一致，无竞争））。
+ * 坑：`host.click()` 不触发选择（选择逻辑在按钮 shadow 内的 button 上）——
+ * e2e 合成输入必须派发 `segmented-button-interaction`（bubbles+composed）
+ * 到 set 子按钮或真实坐标点击。
+ */
+export interface SegmentedButtonSetSelectionDetail {
+  /** 被切换的按钮元素 */
+  button: unknown;
+  /** 切换后的选中态 */
+  selected: boolean;
+  /** 按钮在 set 内的下标 */
+  index: number;
+}
+
+export const SegmentedButtonSet = createComponent({
+  react: React,
+  tagName: 'md-outlined-segmented-button-set',
+  elementClass: MdOutlinedSegmentedButtonSet,
+  events: {
+    onSegmentedButtonSetSelection: 'segmented-button-set-selection' as EventName<CustomEvent<SegmentedButtonSetSelectionDetail>>,
+  },
+});
+
+export const SegmentedButton = createComponent({
+  react: React,
+  tagName: 'md-outlined-segmented-button',
+  elementClass: MdOutlinedSegmentedButton,
 });
 
 // ─── Elevation ──────────────────────────────────────────────────────────────────

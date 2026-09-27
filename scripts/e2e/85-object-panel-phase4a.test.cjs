@@ -213,7 +213,9 @@ exit 0
     })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 4`, { timeout: 8000 });
     const treeOrder = await h.js(win, `[...document.querySelectorAll('.object-row')].map((r) => r.getAttribute('data-id'))`);
-    h.assert.ok(JSON.stringify(treeOrder.value) === JSON.stringify(['1', '10', '100', '11']), `树模式应为 DFS 行序（实际：${JSON.stringify(treeOrder.value)}`);
+    // 子树内按当前排序键（review 7 #1 默认 CPU 降序）：1 的子 11(cpu3)
+    // 在 10(cpu2) 前 → 1, 11, 10, 100（DFS 行序）
+    h.assert.ok(JSON.stringify(treeOrder.value) === JSON.stringify(['1', '11', '10', '100']), `树模式应为 DFS 行序（实际：${JSON.stringify(treeOrder.value)}`);
     const indent = await h.js(win, `(() => {
       const rows = [...document.querySelectorAll('.object-row')];
       const p = (id) => rows.find((r) => r.getAttribute('data-id') === id)?.style.paddingLeft ?? '';

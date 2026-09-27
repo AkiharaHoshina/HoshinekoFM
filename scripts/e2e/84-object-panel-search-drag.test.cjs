@@ -81,7 +81,7 @@ const { ipcMain } = require('electron');
     await goObjects(win);
 
     await omnibarSearch(win, 'myproc');
-    await h.waitFor(win, `!!document.querySelector('.object-search-header')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.object-search-filter-bar')`, { timeout: 8000 });
     // 搜索态：地址栏 = 关键词输入框（不显示完整 url），标签标题含关键词
     const pathProbe = await h.js(win, `(() => ({
       input: document.querySelector('.omnibar.mode-search .omnibar-input')?.value ?? '',
@@ -100,7 +100,7 @@ const { ipcMain } = require('electron');
       const t = document.querySelector('.object-panel-title');
       return !!t && /myproc/.test(t.textContent ?? '');
     })()`, { timeout: 8000 });
-    const cleared = await h.js(win, `!document.querySelector('.object-search-header')`);
+    const cleared = await h.js(win, `!document.querySelector('.object-search-filter-bar')`);
     h.assert.ok(cleared.value === true, '点击命中后搜索态应清除');
 
     // 回根 → 无命中空态
@@ -147,7 +147,7 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 2`, { timeout: 8000 });
 
     await omnibarSearch(win, 'sda');
-    await h.waitFor(win, `!!document.querySelector('.object-search-header')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.object-search-filter-bar')`, { timeout: 8000 });
     const filtered = await h.js(win, `(() => ({
       sda1: !!document.querySelector('.object-row[data-id="sda1"]'),
       sdb1: !!document.querySelector('.object-row[data-id="sdb1"]'),
@@ -161,10 +161,9 @@ const { ipcMain } = require('electron');
       return !!el && /无匹配的对象|No matching objects/.test(el.textContent ?? '');
     })()`, { timeout: 8000 });
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-search-header > *')];
-      const b = btns.find((x) => /清除搜索|Clear Search|検索をクリア|검색 지우기|Очистить поиск|Очистити пошук/.test(x.textContent ?? ''));
-      if (!b) return false;
-      b.click();
+      const btn = document.querySelector('.object-search-filter-bar .search-filter-summary md-icon-button');
+      if (!btn) return false;
+      btn.click();
       return true;
     })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 2`, { timeout: 8000 });
@@ -501,18 +500,18 @@ const { ipcMain } = require('electron');
     // 回根 → 词条出现
     await backToRoot();
     await h.waitFor(win, `(() => {
-      const chips = [...document.querySelectorAll('.object-search-recent-chip')];
+      const chips = [...document.querySelectorAll('.search-recent-chip')];
       return chips.some((x) => /sdb1/.test(x.textContent ?? ''));
     })()`, { timeout: 8000 });
     // 再次搜索同词（去重：词条仍只一条）
     await omnibarSearch(win, 'sdb1');
     await h.waitFor(win, `!!document.querySelector('.object-search-results')`, { timeout: 8000 });
     await backToRoot();
-    const dupCount = await h.js(win, `[...document.querySelectorAll('.object-search-recent-chip')].filter((x) => /sdb1/.test(x.textContent ?? '')).length`);
+    const dupCount = await h.js(win, `[...document.querySelectorAll('.search-recent-chip')].filter((x) => /sdb1/.test(x.textContent ?? '')).length`);
     h.assert.ok(dupCount.value === 1, `同词搜索应去重（实际 ${dupCount.value} 条）`);
     // 点击词条 → 恢复搜索
     await h.js(win, `(() => {
-      const chips = [...document.querySelectorAll('.object-search-recent-chip')];
+      const chips = [...document.querySelectorAll('.search-recent-chip')];
       const c = chips.find((x) => /sdb1/.test(x.textContent ?? ''));
       if (!c) return false;
       c.click();
@@ -521,8 +520,8 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.object-search-results')`, { timeout: 8000 });
     // 回根 → 清除历史
     await backToRoot();
-    await h.js(win, `document.querySelector('.object-search-recent-clear')?.click()`, true);
-    await h.waitFor(win, `!document.querySelector('.object-search-recent-chip')`, { timeout: 8000 });
+    await h.js(win, `document.querySelector('.search-recent-clear')?.click()`, true);
+    await h.waitFor(win, `!document.querySelector('.search-recent-chip')`, { timeout: 8000 });
   });
 
   const code = h.finish();

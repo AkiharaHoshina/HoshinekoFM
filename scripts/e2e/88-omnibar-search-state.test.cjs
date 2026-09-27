@@ -188,14 +188,14 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
 
     await h.searchViaOmnibar(win, 'myproc');
-    await h.waitFor(win, `!!document.querySelector('.object-search-header')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.object-search-filter-bar')`, { timeout: 8000 });
     const inputVal = await h.js(win, `document.querySelector('.omnibar.mode-search .omnibar-input')?.value ?? ''`);
     h.assert.strictEqual(inputVal.value, 'myproc', 'objectsearch 搜索态输入框应显示关键词');
 
     // Esc 退出：回 objects:// 根（对象类网格出现）
     await h.escCloseSearch(win);
     await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
-    h.assert.ok(!(await h.js(win, `!!document.querySelector('.object-search-header')`)).value, '退出后对象搜索态应清除');
+    h.assert.ok(!(await h.js(win, `!!document.querySelector('.object-search-filter-bar')`)).value, '退出后对象搜索态应清除');
   });
 
   await h.run('88f 搜索态折叠控件组：「更多」按钮恒 standard（不 filled）', async () => {
@@ -296,9 +296,9 @@ const { ipcMain } = require('electron');
     await h.clickEl(win, '.omnibar-trigger');
     await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     await h.clickEl(win, '.omnibar-enter-search');
-    await h.waitFor(win, `!!document.querySelector('.object-search-header')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.object-search-filter-bar')`, { timeout: 8000 });
     await h.waitFor(win, `!!document.querySelector('.object-search-chips')`, { timeout: 8000 });
-    const hintText = await h.js(win, `document.querySelector('.object-search-header-text')?.textContent ?? ''`);
+    const hintText = await h.js(win, `document.querySelector('.object-search-filter-bar .search-filter-results')?.textContent ?? ''`);
     h.assert.ok(/输入关键词开始检索|Type keywords to start searching|キーワードを入力して検索を開始|검색어를 입력하여 검색 시작|Введите ключевые слова для поиска|Введіть ключові слова для пошуку/.test(hintText.value), `对象空词搜索视图应显示提示（实际：${hintText.value}）`);
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.object-class-grid')`)).value, '空词搜索态不应显示全量类网格');
     h.assert.ok((await h.js(win, `document.querySelectorAll('.object-search-hit').length`)).value === 0, '空词搜索态应无命中行');

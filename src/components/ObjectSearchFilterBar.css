@@ -1,0 +1,26 @@
+/* 对象搜索筛选条（ObjectSearchFilterBar）：band/结果行框架样式来自共享
+ * SearchBand.css（review 7 #5 布局抽离），本文件仅对象特有样式——chips
+ * 行与进程类两组互斥 segmented。 */
+
+/* 筛选 chips 行（根页全类 Filter Chips / 存储类状态分类 chips） */
+.object-search-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.object-search-chips md-filter-chip {
+  --md-filter-chip-container-height: 30px;
+  --md-filter-chip-label-text-size: 12.5px;
+}
+
+/* 进程类两组互斥 segmented：组 1（单选）+ 组 2（多选）各占一行 */
+.object-filter-mode-set,
+.object-filter-pid-set {
+  width: 100%;
+}
+
+.object-filter-mode-set md-outlined-segmented-button,
+.object-filter-pid-set md-outlined-segmented-button {
+  flex: 1 1 0;
+}

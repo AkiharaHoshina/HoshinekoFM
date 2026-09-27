@@ -1,0 +1,65 @@
+/* 搜索带共享框架（review 7 #5 布局框架抽离）：
+ * 文件搜索（SearchFilterBar）与对象搜索（ObjectSearchFilterBar）共用——
+ * 同一 band（表面容器底色 + 内边距）+ 结果行 + 最近搜索词条行，位于各自
+ * 内容区（文件列表 / ObjectPanel）上方，两处搜索 UI 布局保持一致。
+ * 类名沿用文件搜索既有命名（e2e 选择器不破坏）；band 内容由各组件自渲染。 */
+
+.search-filter-bar {
+  padding: 8px 24px;
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── 结果行：搜索图标 + 结果文案 + 右侧动作 ── */
+.search-filter-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-filter-results {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-filter-capped {
+  flex-shrink: 0;
+  color: var(--md-sys-color-on-surface-variant);
+  opacity: 0.85;
+  font-size: 12px;
+}
+
+.search-filter-summary .icon-button {
+  flex-shrink: 0;
+}
+
+/* ── 最近搜索词条行（搜索带下方） ── */
+.search-recent {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 4px 24px;
+  background: var(--md-sys-color-surface-container);
+}
+
+.search-recent-label {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-right: 4px;
+}
+
+.search-recent-chip {
+  font-size: 12.5px;
+}
+
+.search-recent-clear {
+  margin-left: 4px;
+}
