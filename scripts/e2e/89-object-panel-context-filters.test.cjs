@@ -65,7 +65,7 @@ const { ipcMain } = require('electron');
   const dir = h.tempDir();
   h.makeFileTree(dir, { 'a.txt': 'x' });
 
-  await h.run('89a 根页全类 Filter Chips（勾选过滤 + 重搜重置）', async () => {
+  await h.run('89a 根页全类 Filter Chips（勾选过滤 + 条件保持 + url 承载）', async () => {
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     await goObjects(win);
@@ -86,15 +86,28 @@ const { ipcMain } = require('electron');
     prefixes = await hitClassPrefixes(win);
     h.assert.deepStrictEqual(prefixes, ['process'], `取消 storage 后应只剩 process 命中：${JSON.stringify(prefixes)}`);
 
-    // 重新勾选 → 恢复两组
+    // 改词重搜：**条件保持**（review 4）——storage 仍弃选
+    await h.searchViaOmnibar(win, 'b');
+    await h.waitFor(win, `document.querySelectorAll('.object-search-hit').length === 1`, { timeout: 8000 });
+    prefixes = await hitClassPrefixes(win);
+    h.assert.deepStrictEqual(prefixes, ['process'], `重搜后条件应保持（storage 仍弃选）：${JSON.stringify(prefixes)}`);
+    const keptSelected = await h.js(win, `[...document.querySelectorAll('.object-class-filter-chip')].map((c) => c.selected)`);
+    h.assert.deepStrictEqual(keptSelected.value, [false, true, true], `重搜后 chips 勾选应保持：${JSON.stringify(keptSelected.value)}`);
+
+    // 条件编码在 url（nc 段）——解析往返验证：编辑态手输
+    // objectsearch://?q=b&nc=storage → storage 弃选（返回地址栏已退出
+    // 搜索并回编辑态，完整 url 无可视入口——经手输恢复验证 parse）
+    await h.clickEl(win, '.omnibar-back-address');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.setReactInput(win, '.omnibar.mode-edit .omnibar-input', 'objectsearch://?q=b&nc=storage');
+    await h.key(win, 'Enter');
+    await h.waitFor(win, `document.querySelectorAll('.object-search-hit').length === 1`, { timeout: 8000 });
+    const selFromUrl = await h.js(win, `[...document.querySelectorAll('.object-class-filter-chip')].map((c) => c.selected)`);
+    h.assert.deepStrictEqual(selFromUrl.value, [false, true, true], `nc 段应解析为 storage 弃选：${JSON.stringify(selFromUrl.value)}`);
+
+    // 重新勾选 storage → 恢复两组
     await h.clickEl(win, '.object-class-filter-chip', { index: 0 });
     await h.waitFor(win, `document.querySelectorAll('.object-search-hit').length === 2`, { timeout: 8000 });
-
-    // 改词重搜 → chips 重置全勾选
-    await h.searchViaOmnibar(win, 'sensor');
-    await h.waitFor(win, `document.querySelectorAll('.object-search-hit').length === 1`, { timeout: 8000 });
-    const selectedAfter = await h.js(win, `[...document.querySelectorAll('.object-class-filter-chip')].filter((c) => c.selected).length`);
-    h.assert.strictEqual(selectedAfter.value, 3, '改词重搜后 chips 应重置全勾选');
   });
 
   await h.run('89b 存储类 挂载/未挂载/其他 chips（storageKind 显式字段）', async () => {
@@ -193,6 +206,31 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.object-search-chips')`)).value, '传感器类搜索不应有筛选 chips');
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.object-sortbar-filter-method')`)).value, '传感器类不应有筛选方式下拉');
+  });
+
+  await h.run('89e 空词搜索态先改条件再输词（review 4 复现）', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await goObjects(win);
+
+    // 进入搜索态（空词）→ 弃选「存储」→ 输词 'b' → 搜索：存储保持弃选
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.clickEl(win, '.omnibar-enter-search');
+    await h.waitFor(win, `!!document.querySelector('.object-search-chips')`, { timeout: 8000 });
+    await h.clickEl(win, '.object-class-filter-chip', { index: 0 });
+    await h.sleep(300);
+    await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 'b');
+    await h.js(win, `(() => {
+      const el = document.querySelector('.omnibar.mode-search .omnibar-input');
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return true;
+    })()`, true);
+    await h.waitFor(win, `document.querySelectorAll('.object-search-hit').length === 1`, { timeout: 8000 });
+    const prefixes = await hitClassPrefixes(win);
+    h.assert.deepStrictEqual(prefixes, ['process'], `弃选存储后搜索应只留 process 命中：${JSON.stringify(prefixes)}`);
+    const keptSelected = await h.js(win, `[...document.querySelectorAll('.object-class-filter-chip')].map((c) => c.selected)`);
+    h.assert.deepStrictEqual(keptSelected.value, [false, true, true], `存储应保持弃选：${JSON.stringify(keptSelected.value)}`);
   });
 
   h.finish();

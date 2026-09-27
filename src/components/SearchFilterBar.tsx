@@ -133,15 +133,21 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
     return map;
   }, [registered]);
 
-  /** 关键词变化（新搜索）时复位筛选模式与草稿——渲染期复位（官方
-   *  adjusting-state-during-render 模式，与 Omnibar 同款） */
+  /** 关键词变化（新搜索）时按已生效选项重建筛选模式与草稿——渲染期复位
+   *  （官方 adjusting-state-during-render 模式，与 Omnibar 同款）。
+   *  review 4 定案：**条件保持**——用户可先在空词搜索态改条件再输词，
+   *  输词后已生效条件（类型/大小/格式）原样沿用（重建而非清空）；
+   *  新搜索会话 options 为空 → 重建结果同为清空（行为不变） */
   const [prevQuery, setPrevQuery] = useState(query);
   if (prevQuery !== query) {
     setPrevQuery(query);
-    setFilterMode('none');
-    setSizeMin('');
-    setSizeMax('');
-    setFormatDrafts([]);
+    setFilterMode(options.minSize || options.maxSize ? 'size' : (options.extensions && options.extensions.length > 0 ? 'format' : 'none'));
+    setSizeMin(options.minSize ?? '');
+    setSizeMax(options.maxSize ?? '');
+    setFormatDrafts((options.extensions ?? []).map((e) => {
+      const ext = normalizeExt(e) ?? e.toLowerCase();
+      return { ext, description: null, mime: null };
+    }));
     setExtInput('');
   }
 

@@ -501,7 +501,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   /**
    * 搜索状态显式退出（Omnibar 搜索态 Esc/关闭按钮，B3 定案）：
-   * 取消在途搜索、导航回**进入搜索会话前的 url**（lastBrowsePathRef，
+   * 取消在途搜索、导航回**进入搜索会话前的 url**（lastBrowsePath，
    * search url 一并清除，tab 标题/地址栏/文件区随 loadPath 同步还原）。
    * 回退记录仍是搜索 url（异常锁死）或从未有浏览路径 → 回落家目录
    * （C7）。未执行的搜索模式/回收站名称过滤：currentPath 本就不是
@@ -524,6 +524,37 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   }, [currentPath, lastBrowsePath]);
 
   /**
+   * 对象搜索筛选 chips 的 url 驱动切换（review 4 定案：筛选条件是
+   * objectsearch:// url 的一部分——先改条件再输词、条件保持，chips
+   * 勾选态由 nc/nk 段承载而非本地状态）。切换 = 重写当前 objectsearch
+   * 路径（纯客户端过滤，不发起搜索）。
+   */
+  const handleToggleClassFilter = useCallback((id: string) => {
+    const s = isObjectSearchPath(currentPathRef.current) ? parseObjectSearchPath(currentPathRef.current) : null;
+    if (!s) return;
+    const next = s.excludedClasses.includes(id)
+      ? s.excludedClasses.filter((x) => x !== id)
+      : [...s.excludedClasses, id];
+    void loadPathRef.current?.(buildObjectSearchPath(s.className, s.query, {
+      excludedClasses: next,
+      excludedKinds: s.excludedKinds,
+    }));
+  }, []);
+
+  /** 存储类状态分类 chip 切换（同 url 驱动语义，nk 段） */
+  const handleToggleStorageKind = useCallback((kind: 'mounted' | 'device' | 'other') => {
+    const s = isObjectSearchPath(currentPathRef.current) ? parseObjectSearchPath(currentPathRef.current) : null;
+    if (!s) return;
+    const next = s.excludedKinds.includes(kind)
+      ? s.excludedKinds.filter((x) => x !== kind)
+      : [...s.excludedKinds, kind];
+    void loadPathRef.current?.(buildObjectSearchPath(s.className, s.query, {
+      excludedClasses: s.excludedClasses,
+      excludedKinds: next,
+    }));
+  }, []);
+
+  /**
    * 发起搜索（地址栏搜索 / 右键菜单重搜）。对象面板内走 B 方案语义：
    * 根页跨类搜、类页类内搜（经 objectSearchQuery 交给 ObjectPanel 过滤，
    * 纯客户端即时完成）；实例页提示不可搜索、不发起任何搜索。文件搜索
@@ -543,8 +574,14 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         return;
       }
       // 导航到 objectsearch:// 虚拟路径（地址栏/标签标题/面包屑获得
-      // 搜索形态；loadPath 内解析并置搜索态——经 loadPathRef 防前向引用）
-      loadPathRef.current?.(buildObjectSearchPath(op?.className ?? null, query));
+      // 搜索形态；loadPath 内解析并置搜索态——经 loadPathRef 防前向引用）。
+      // 筛选条件由 url 承载（review 4）：沿用当前 objectsearch 的 nc/nk
+      // （先改条件再输词、条件保持）
+      const cur = isObjectSearchPath(currentPath) ? parseObjectSearchPath(currentPath) : null;
+      loadPathRef.current?.(buildObjectSearchPath(op?.className ?? null, query, {
+        excludedClasses: cur?.excludedClasses ?? [],
+        excludedKinds: cur?.excludedKinds ?? [],
+      }));
       // 记录搜索历史（根页/类页搜索词共用一条历史；空词进入搜索态不记录）
       if (query.trim() !== '') onObjectSearchRecord?.(query);
       return;
@@ -2393,6 +2430,10 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         <ObjectPanel
           path={isObjectSearchPath(currentPath) ? objectSearchBasePath(parseObjectSearchPath(currentPath)!) : currentPath}
           inSearchState={isObjectSearchPath(currentPath)}
+          excludedClasses={parseObjectSearchPath(currentPath)?.excludedClasses ?? []}
+          excludedKinds={parseObjectSearchPath(currentPath)?.excludedKinds ?? []}
+          onToggleClassFilter={handleToggleClassFilter}
+          onToggleStorageKind={handleToggleStorageKind}
           marqueeEnabled={marqueeEnabled}
           isActive={isActive}
           sparklineWindowSeconds={sparklineWindowSeconds}

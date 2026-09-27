@@ -65,6 +65,20 @@ interface ObjectPanelProps {
    * 检索」提示，状态不卡在浏览/搜索之间）
    */
   inSearchState?: boolean;
+  /**
+   * 根页全类 Filter Chips 取消勾选的类 id（objectsearch:// nc 段；空 =
+   * 全勾选）——条件由 url 承载（review 4：先改条件再输词、条件保持）
+   */
+  excludedClasses?: string[];
+  /**
+   * 存储类页状态分类 chips 取消勾选的分类（objectsearch:// nk 段；空 =
+   * 全勾选）
+   */
+  excludedKinds?: ('mounted' | 'device' | 'other')[];
+  /** 勾选/取消勾选根页类 chip（url 驱动——由上层重写 objectsearch:// 路径） */
+  onToggleClassFilter?: (id: string) => void;
+  /** 勾选/取消勾选存储类状态分类 chip */
+  onToggleStorageKind?: (kind: 'mounted' | 'device' | 'other') => void;
   /** 清除对象搜索（面板内搜索头 × 按钮/命中点击） */
   onSearchClear: () => void;
   /** 右键菜单固定对象投影（host = 侧边栏 Places / 仪表盘；App 侧
@@ -531,6 +545,10 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   onNetworkToggle,
   searchQuery,
   inSearchState = false,
+  excludedClasses = [],
+  excludedKinds = [],
+  onToggleClassFilter,
+  onToggleStorageKind,
   onSearchClear,
   onPinObject,
   onLocateObject,
@@ -589,24 +607,6 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
    * 自然无命中）。与排序方式下拉同处排序条第一行。
    */
   const [processFilterMode, setProcessFilterMode] = useState<'name' | 'pid'>('name');
-  /**
-   * 根页跨类搜索的类勾选集（全类 Filter Chips；null = 全勾选）——
-   * 取消勾选即排除该类命中（纯前端后过滤）。关键词变化复位全勾选。
-   */
-  const [rootClassFilter, setRootClassFilter] = useState<Set<string> | null>(null);
-  /**
-   * 存储类搜索的状态分类勾选集（挂载/未挂载/其他 chips；null = 全勾选）——
-   * 按后端显式 storageKind 分组（D8），关键词变化复位全勾选。
-   */
-  const [storageKindFilter, setStorageKindFilter] = useState<Set<'mounted' | 'device' | 'other'> | null>(null);
-  /** 关键词变化复位根页/存储类筛选 chips（渲染期复位，官方
-   *  adjusting-state-during-render 模式，与 SearchFilterBar 同款） */
-  const [prevQueryForChips, setPrevQueryForChips] = useState(searchQuery);
-  if (prevQueryForChips !== searchQuery) {
-    setPrevQueryForChips(searchQuery);
-    setRootClassFilter(null);
-    setStorageKindFilter(null);
-  }
   /** 批量 nice 滑条值（多选操作栏；路径切换复位 0） */
   const [batchNiceValue, setBatchNiceValue] = useState(0);
   /** 存储实例页 SMART 健康（进入实例页一次性拉取，不进轮询） */
@@ -2018,31 +2018,20 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     inst.storageKind ?? (inst.nativeIsDir ? 'mounted' : 'device')
   ), []);
 
-  /** 勾选/取消勾选存储类状态分类 chip（全勾选归一回 null） */
-  const toggleStorageKindFilter = useCallback((k: 'mounted' | 'device' | 'other') => {
-    setStorageKindFilter((prev) => {
-      const all: ('mounted' | 'device' | 'other')[] = ['mounted', 'device', 'other'];
-      const next = new Set(prev ?? all);
-      if (next.has(k)) next.delete(k);
-      else next.add(k);
-      return next.size === all.length ? null : next;
-    });
-  }, []);
-
   /** 通用类页实例（地址栏搜索过滤；进程类在 filteredProcessInstances 组合；
-   *  存储类在搜索态再按 挂载/未挂载/其他 chips 过滤；空词搜索视图 = 空
-   *  列表——review 3 定案） */
+   *  存储类在搜索态再按 挂载/未挂载/其他 chips 过滤——条件由 url nk 段
+   *  承载（excludedKinds）；空词搜索视图 = 空列表——review 3 定案） */
   const genericFilteredInstances = useMemo(() => {
     if (!currentClass || currentClass.id === 'process') return null;
     const oq = searchQuery.trim().toLowerCase();
     let list = oq
       ? currentClass.instances.filter((i) => matchObjectInstance(i, oq))
       : (inSearchState ? [] : currentClass.instances);
-    if (currentClass.id === 'storage' && storageKindFilter) {
-      list = list.filter((i) => storageKindFilter.has(storageKindOf(i)));
+    if (currentClass.id === 'storage' && excludedKinds.length > 0) {
+      list = list.filter((i) => !excludedKinds.includes(storageKindOf(i)));
     }
     return list;
-  }, [currentClass, searchQuery, storageKindFilter, storageKindOf, inSearchState]);
+  }, [currentClass, searchQuery, excludedKinds, storageKindOf, inSearchState]);
 
   /** 排序方式下拉选项（设计定案：名称/CPU/内存——pid 只做筛选键不做排序键） */
   const PROCESS_SORT_OPTIONS: ProcessSortKey[] = ['name', 'cpu', 'memory'];
@@ -2192,21 +2181,12 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       if (last && last.cls.id === h.cls.id) last.insts.push(h.inst);
       else groupedHits.push({ cls: h.cls, insts: [h.inst] });
     }
-    /** 全类 Filter Chips 后过滤（null = 全勾选；取消勾选排除该类命中） */
-    const visibleGroupedHits = rootClassFilter
-      ? groupedHits.filter((g) => rootClassFilter.has(g.cls.id))
+    /** 全类 Filter Chips 后过滤（取消勾选的类由 url nc 段承载——excludedClasses；
+     *  空 = 全勾选） */
+    const visibleGroupedHits = excludedClasses.length > 0
+      ? groupedHits.filter((g) => !excludedClasses.includes(g.cls.id))
       : groupedHits;
     const visibleHitCount = visibleGroupedHits.reduce((n, g) => n + g.insts.length, 0);
-    /** 勾选/取消勾选类 chip（全勾选归一回 null） */
-    const toggleRootClassFilter = (id: string) => {
-      setRootClassFilter((prev) => {
-        const all = orderedVisibleClasses.map((c) => c.id);
-        const next = new Set(prev ?? all);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next.size === all.length ? null : next;
-      });
-    };
     return (
       <div className="object-panel">
         <div className="object-panel-header">
@@ -2232,10 +2212,10 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
                 <FilterChip
                   key={cls.id}
                   className="object-class-filter-chip"
-                  selected={rootClassFilter === null || rootClassFilter.has(cls.id)}
+                  selected={!excludedClasses.includes(cls.id)}
                   onClick={(e) => {
                     e.preventDefault();
-                    toggleRootClassFilter(cls.id);
+                    onToggleClassFilter?.(cls.id);
                   }}
                 >
                   {t(OBJECTS_CLASS_LABEL[cls.id] ?? 'objects.title')}
@@ -2520,10 +2500,10 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
                 <FilterChip
                   key={k}
                   className="object-storage-kind-chip"
-                  selected={storageKindFilter === null || storageKindFilter.has(k)}
+                  selected={!excludedKinds.includes(k)}
                   onClick={(e) => {
                     e.preventDefault();
-                    toggleStorageKindFilter(k);
+                    onToggleStorageKind?.(k);
                   }}
                 >
                   {t(`objects.storage_${k}`)}

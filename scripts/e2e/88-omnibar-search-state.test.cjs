@@ -317,5 +317,33 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
   });
 
+  await h.run('88j 空词搜索态先改筛选再输词（条件保持，review 4）', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+
+    // 进入搜索态（空词）→ 先改类型 = 文件夹（不发起检索）
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.clickEl(win, '.omnibar-enter-search');
+    await h.waitFor(win, `!!document.querySelector('.search-filter-bar')`);
+    await h.selectOption(win, '.search-filter-type', 'd');
+    await h.sleep(400);
+
+    // 输词 's' → 搜索：类型条件保持（只出目录、类型下拉仍为文件夹）
+    await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 's');
+    await h.js(win, `(() => {
+      const el = document.querySelector('.omnibar.mode-search .omnibar-input');
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return true;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub"]')`, { timeout: 8000 });
+    const probe = await h.js(win, `(() => ({
+      type: document.querySelector('.search-filter-type')?.value ?? null,
+      files: [...document.querySelectorAll('.file-list-item')].map((x) => x.dataset.path).filter((p) => p.endsWith('.txt')),
+    }))()`);
+    h.assert.strictEqual(probe.value.type, 'd', `输词后类型条件应保持（实际：${probe.value.type}）`);
+    h.assert.ok(probe.value.files.length === 0, `类型=文件夹后不应有 .txt 结果（实际：${JSON.stringify(probe.value.files)}）`);
+  });
+
   h.finish();
 })();

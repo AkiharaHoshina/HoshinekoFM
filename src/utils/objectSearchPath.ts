@@ -7,6 +7,10 @@
  * - 根页（全局搜索）：`objectsearch://?q=<关键词>`；
  * - 类页（类内搜索）：`objectsearch://<类名>?q=<关键词>`；
  * - 实例页不可搜索（入口 toast 拒绝，不产生该路径）。
+ * - **筛选条件编码（review 4 定案）**：`nc=<类id|类id>`（根页取消勾选的
+ *   类）、`nk=<mounted|device|other>`（存储类页取消勾选的分类）——条件
+ *   是 url 的唯一真相源（先改条件再输词、条件保持——经 url 承载而非
+ *   本地状态）；空/缺省 = 全勾选。
  * 类名走路径段（固定 id 集合，无需转义）；关键词走 q 参数（最小转义）；
  * 解析容错：未知键/解码失败忽略，无 q 段时关键词为空串。
  */
@@ -36,6 +40,17 @@ export interface ParsedObjectSearchPath {
   className: string | null;
   /** 搜索关键词（已解码；无 q 段时为空串） */
   query: string;
+  /**
+   * 取消勾选的类 id（根页全类 Filter Chips；空 = 全勾选）——筛选条件
+   * 编码在 url 里（唯一真相源，review 4 定案：先改条件再输词，条件
+   * 保持——url 承载而非本地状态）
+   */
+  excludedClasses: string[];
+  /**
+   * 取消勾选的存储状态分类（存储类页 chips：mounted/device/other；
+   * 空 = 全勾选）
+   */
+  excludedKinds: ('mounted' | 'device' | 'other')[];
 }
 
 function safeDecode(s: string): string {
@@ -54,23 +69,53 @@ export function parseObjectSearchPath(p: string | null | undefined): ParsedObjec
   const classRaw = qIdx >= 0 ? rest.slice(0, qIdx) : rest;
   const className = classRaw ? safeDecode(classRaw) : null;
   let query = '';
+  const excludedClasses: string[] = [];
+  const excludedKinds: ('mounted' | 'device' | 'other')[] = [];
+  const KINDS = new Set(['mounted', 'device', 'other']);
   if (qIdx >= 0) {
     for (const part of rest.slice(qIdx + 1).split('&')) {
       if (!part) continue;
       const eq = part.indexOf('=');
-      if (eq > 0 && part.slice(0, eq) === 'q') {
-        query = safeDecode(part.slice(eq + 1));
+      if (eq <= 0) continue;
+      const key = part.slice(0, eq);
+      const val = safeDecode(part.slice(eq + 1));
+      if (key === 'q') {
+        query = val;
+      } else if (key === 'nc') {
+        // 取消勾选的类 id（| 分隔；未知/非法 id 忽略——渲染层按实际类表
+        // 再过滤，容错）
+        for (const seg of val.split('|')) {
+          const s = seg.trim();
+          if (s) excludedClasses.push(s);
+        }
+      } else if (key === 'nk') {
+        // 取消勾选的存储状态分类（| 分隔；白名单）
+        for (const seg of val.split('|')) {
+          const s = seg.trim();
+          if (KINDS.has(s)) excludedKinds.push(s as 'mounted' | 'device' | 'other');
+        }
       }
       // 未知键忽略（容错）
     }
   }
-  return { className, query };
+  return { className, query, excludedClasses, excludedKinds };
 }
 
-/** 构造对象搜索虚拟路径（className 为空 = 根页全局搜索） */
-export function buildObjectSearchPath(className: string | null | undefined, query: string): string {
+/** 构造对象搜索虚拟路径（className 为空 = 根页全局搜索）。
+ *  excludedClasses/excludedKinds = 取消勾选的筛选条件（空数组/缺省
+ *  = 全勾选，不带 nc/nk 段——url 即筛选条件的唯一真相源，review 4） */
+export function buildObjectSearchPath(
+  className: string | null | undefined,
+  query: string,
+  opts?: { excludedClasses?: string[]; excludedKinds?: ('mounted' | 'device' | 'other')[] },
+): string {
   const cls = className ? className : '';
-  return `${OBJECTSEARCH_PREFIX}${cls}?q=${escapePart(query)}`;
+  const params: string[] = [`q=${escapePart(query)}`];
+  const nc = (opts?.excludedClasses ?? []).filter(Boolean);
+  if (nc.length > 0) params.push(`nc=${escapePart(nc.join('|'))}`);
+  const nk = (opts?.excludedKinds ?? []).filter(Boolean);
+  if (nk.length > 0) params.push(`nk=${escapePart(nk.join('|'))}`);
+  return `${OBJECTSEARCH_PREFIX}${cls}?${params.join('&')}`;
 }
 
 /** 对象搜索的基准对象页路径（退出搜索回落点：根页或类页） */
