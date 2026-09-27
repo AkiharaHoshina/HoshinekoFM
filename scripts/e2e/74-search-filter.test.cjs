@@ -242,17 +242,15 @@ const os = require('os');
     );
     h.assert.ok(/搜|Search/.test(titleCheck.value), `搜索标签页标题应含搜索语义：${titleCheck.value}`);
 
-    // ── 搜索胶囊单击 = 返回发起搜索的目录（退出搜索） ──
-    // 胶囊在面包屑态渲染：搜索态先经「返回地址栏」进编辑态、blur 取消回面包屑
+    // ── 返回地址栏 = 关闭搜索 + 恢复原路径 + 保持编辑态（评审定案；
+    //    搜索胶囊只在面包屑态渲染、搜索态下不可达） ──
     await h.clickEl(win, '.omnibar-back-address');
     await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
-    await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').blur()`, true);
-    await h.waitFor(win, `!!document.querySelector('.breadcrumb-search-chip')`, { timeout: 8000 });
-    await h.clickEl(win, '.breadcrumb-search-chip');
     await h.waitFor(win, `!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub"]')`, { timeout: 8000 });
-    const chipGone = await h.js(win, `!document.querySelector('.breadcrumb-search-chip')`);
-    h.assert.ok(chipGone.value === true, '搜索胶囊单击后应退出搜索回到发起目录');
+    const addrVal = await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').value`);
+    h.assert.strictEqual(addrVal.value, dir, `返回地址栏应恢复原路径并保持编辑态（实际：${addrVal.value}）`);
+    await h.key(win, 'Escape');
   });
 
   await h.run('74c 文件搜索最近词条（显示/点击重搜/去重/清除）', async () => {

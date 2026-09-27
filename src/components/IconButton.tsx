@@ -23,6 +23,12 @@ interface IconButtonProps {
    * 场景（如 Omnibar 编辑态内的「进入搜索」按钮）做 preventDefault。
    */
   onMouseDown?: React.MouseEventHandler<HTMLElement>;
+  /**
+   * soft-disabled（禁用但保持可聚焦——tooltip 仍可 hover 呈现，
+   * material-web icon-button 推荐姿势，见 material-web docs/icon-button）：
+   * 需要「禁用且保留可发现性」的 icon-button 一律用它而不是 disabled。
+   */
+  softDisabled?: boolean;
   onDragOver?: React.DragEventHandler<HTMLElement>;
   onDragEnter?: React.DragEventHandler<HTMLElement>;
   onDragLeave?: React.DragEventHandler<HTMLElement>;
@@ -53,6 +59,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
   ariaLabel,
   onClick,
   onMouseDown,
+  softDisabled,
   onDragOver,
   onDragEnter,
   onDragLeave,
@@ -74,6 +81,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
       aria-label={ariaLabel}
       onClick={onClick}
       onMouseDown={onMouseDown}
+      softDisabled={softDisabled}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}

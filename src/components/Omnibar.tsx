@@ -252,13 +252,20 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
       ? searchQueryOf(currentPath)
       : currentPath);
   const inputRef = useRef<HTMLInputElement>(null);
+  /**
+   * 「返回地址栏」按钮置位：退出搜索的导航落定后保持**编辑态**（而非
+   * 回面包屑）——渲染期复位块消费后复位。非搜索 schema 的搜索态（回收站
+   * 名称过滤/未执行搜索）currentPath 不变、复位块不触发，无需本标志。
+   */
+  const [stayEditingAfterClose, setStayEditingAfterClose] = useState(false);
 
   /**
    * 路径变化（外部导航——搜索执行/点击结果/面包屑/侧边栏等）驱动模式
    * 复位：新路径是搜索 schema → 搜索态（输入框 = 关键词）；否则回
-   * 面包屑。用户主动切入编辑/搜索态不改变 currentPath，不受此影响。
-   * 渲染期复位（官方 adjusting-state-during-render 模式，与
-   * prevPathForReset 同款——effect 内同步 setState 会触发级联渲染）。
+   * 面包屑（「返回地址栏」触发的退出搜索除外——导航落定后保持编辑态，
+   * 见 backToAddress）。用户主动切入编辑/搜索态不改变 currentPath，
+   * 不受此影响。渲染期复位（官方 adjusting-state-during-render 模式，
+   * 与 prevPathForReset 同款——effect 内同步 setState 会触发级联渲染）。
    */
   const [prevPathForMode, setPrevPathForMode] = useState(currentPath);
   if (prevPathForMode !== currentPath) {
@@ -266,6 +273,11 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
     if (isSearchPath(currentPath) || isObjectSearchPath(currentPath)) {
       setMode('search');
       setInputValue(searchQueryOf(currentPath));
+    } else if (stayEditingAfterClose) {
+      // 「返回地址栏」：搜索退出后停在编辑态（输入框 = 恢复后的原路径）
+      setStayEditingAfterClose(false);
+      setMode('edit');
+      setInputValue(currentPath);
     } else {
       setMode('breadcrumbs');
       setInputValue(currentPath);
@@ -318,11 +330,29 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
     onSearch(q);
   };
 
-  /** 进入编辑态：输入框显示当前路径（搜索态下即完整 search url，可复制改写） */
+  /** 进入编辑态：输入框显示当前路径（可编辑改写） */
   const enterEdit = useCallback(() => {
     setInputValue(currentPath);
     setMode('edit');
   }, [currentPath]);
+
+  /**
+   * 「返回地址栏」按钮（评审定案）：**关闭搜索的同时恢复原来的路径**，
+   * 并停在编辑态（输入框 = 恢复后的原路径，可继续输入地址）——类似搜索
+   * 状态退出（Esc）但保持编辑态而非面包屑。搜索 schema 态：置 stayEditing
+   * 标志后走显式退出（导航落定由渲染期复位块切编辑态）；非搜索 schema
+   * 的搜索态（回收站名称过滤/未执行搜索）：无导航，直接回编辑态并复位
+   * 搜索态。
+   */
+  const backToAddress = useCallback(() => {
+    if (isSearchPath(currentPath) || isObjectSearchPath(currentPath)) {
+      setStayEditingAfterClose(true);
+    } else {
+      setMode('edit');
+      setInputValue(currentPath);
+    }
+    onCloseSearch?.();
+  }, [currentPath, onCloseSearch]);
 
   /** 显式退出搜索：清 url、导航回进入搜索前的 url（不靠焦点判断） */
   const closeSearch = useCallback(() => {
@@ -394,7 +424,7 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
                 variant="standard"
                 className="omnibar-back-address"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={enterEdit}
+                onClick={backToAddress}
                 title={t("omnibar.back_to_address")}
               >
                 <Icon name="close" className="edit-icon" />

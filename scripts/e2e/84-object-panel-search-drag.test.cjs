@@ -117,8 +117,8 @@ const { ipcMain } = require('electron');
       return !!el && /无匹配的对象|No matching objects|一致するオブジェクトがありません|일치하는 객체가 없습니다|Совпадений|Збігів/.test(el.textContent ?? '');
     })()`, { timeout: 8000 });
 
-    // 地址栏（返回地址栏按钮 → 编辑态，输入框显示完整虚拟路径）手输
-    // objectsearch:// 恢复搜索（root：无类段，query 参数形态）
+    // 地址栏手输 objectsearch:// 恢复搜索（root：无类段，query 参数形态）
+    // ——「返回地址栏」退出当前搜索并停在编辑态，再输入虚拟路径
     await h.clickEl(win, '.omnibar-back-address');
     await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     await h.setReactInput(win, '.omnibar.mode-edit .omnibar-input', 'objectsearch://?q=myproc');
@@ -128,14 +128,11 @@ const { ipcMain } = require('electron');
       return els.length === 1 && /myproc/.test(els[0]?.textContent ?? '');
     })()`, { timeout: 8000 });
 
-    // 对象搜索胶囊单击 = 返回基准对象页（退出搜索）——胶囊在面包屑态
-    // 渲染：搜索态先经「返回地址栏」进编辑态、blur 取消回面包屑
+    // 返回地址栏 = 退出对象搜索回基准对象页 + 保持编辑态（评审定案；
+    // 对象搜索胶囊只在面包屑态渲染、搜索态下不可达）
     await h.clickEl(win, '.omnibar-back-address');
-    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
-    await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').blur()`, true);
-    await h.waitFor(win, `!!document.querySelector('.breadcrumb-objectsearch-chip')`, { timeout: 8000 });
-    await h.clickEl(win, '.breadcrumb-objectsearch-chip');
     await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`, { timeout: 8000 });
     const searchGone = await h.js(win, `!document.querySelector('.object-search-results')`);
     h.assert.ok(searchGone.value === true, '对象搜索胶囊单击后应退出搜索回到对象主页');
   });
@@ -489,16 +486,14 @@ const { ipcMain } = require('electron');
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     await goObjects(win);
-    /** 搜索态回根：面包屑只在面包屑态渲染——先「返回地址栏」进编辑态、
-     *  blur 取消回面包屑，再点基准对象段（objectsearch 面包屑 = 对象搜索
-     *  胶囊 + .breadcrumb-item 基准段，无 .breadcrumb-objects-chip） */
+    /** 搜索态回根：点「返回地址栏」= 退出搜索导航回 objects:// 根 +
+     *  保持编辑态（评审定案）；blur 取消编辑态回面包屑（后续搜索入口
+     *  需要编辑触发钮） */
     const backToRoot = async () => {
       await h.clickEl(win, '.omnibar-back-address');
-      await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
-      await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').blur()`, true);
-      await h.waitFor(win, `!!document.querySelector('.breadcrumb-objectsearch-chip')`, { timeout: 8000 });
-      await h.js(win, `document.querySelector('.breadcrumb-item').click()`, true);
+      await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`, { timeout: 8000 });
       await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
+      await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').blur()`, true);
     };
     // 用唯一词条避免与先前用例的 localStorage 历史混淆
     await omnibarSearch(win, 'sdb1');

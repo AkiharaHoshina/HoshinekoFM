@@ -151,14 +151,15 @@ const { app } = require('electron');
     await h.searchViaOmnibar(win, 'a.txt');
     await h.waitFor(win, `!!document.querySelector('.search-filter-row')`);
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`);
-    // 搜索态地址栏 = 关键词输入框（不显示完整 url——编辑态才能看到）
+    // 搜索态地址栏 = 关键词输入框（不显示完整 url）
     const inSearchVal = await h.js(win, `document.querySelector('.omnibar.mode-search .omnibar-input')?.value ?? null`);
     h.assert.strictEqual(inSearchVal.value, 'a.txt', '搜索态输入框应显示关键词');
-    // 「返回地址栏」→ 编辑态显示完整 search:// query 参数形态（D1/D2 定案）
+    // 「返回地址栏」= 关闭搜索 + 恢复原路径 + 保持编辑态（评审定案）
     await h.clickEl(win, '.omnibar-back-address');
     await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.waitFor(win, `!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
     const addr = await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').value`);
-    h.assert.ok(addr.value === `search://${dir}?q=a.txt`, `编辑态应显示完整 search:// 形态：${addr.value}`);
+    h.assert.strictEqual(addr.value, dir, `返回地址栏应恢复原路径并保持编辑态（实际：${addr.value}）`);
     await h.key(win, 'Escape');
 
     // 波浪号开头的文件名（~file.txt）：编辑态不是 ~ 家目录语法 → 同样
@@ -174,19 +175,20 @@ const { app } = require('electron');
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`);
 
-    // 中文关键词（Unicode 原样显示，不转义——用户期望的可读形态）
+    // 中文关键词（Unicode 原样显示，不转义——用户期望的可读形态）：
+    // 搜索态输入框 = 解码后的关键词（显示层往返），命中验证 build→parse
     await h.searchViaOmnibar(win, '喵');
-    await h.waitFor(win, `!!document.querySelector('.search-filter-row')`);
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/喵.txt"]')`);
-    let addr = await readAddressBar(win);
-    h.assert.ok(addr === `search://${dir}?q=喵`, `中文关键词应原样可读（期望 search://${dir}?q=喵，实际 ${addr}）`);
+    let shown = await h.js(win, `document.querySelector('.omnibar.mode-search .omnibar-input')?.value ?? null`);
+    h.assert.strictEqual(shown.value, '喵', `中文关键词应原样可读（实际 ${shown.value}）`);
 
-    // 关键词含中文 + 空格 + & + %：最小转义——中文/空格原样、& → %26、% → %25
+    // 关键词含中文 + 空格 + & + %：搜索态输入框原样往返（& → %26、% → %25
+    // 只发生在内部 url 层，显示层解码还原）
     const kw = '中文 测试&%';
     await h.searchViaOmnibar(win, kw);
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/中文 测试&%.txt"]')`);
-    addr = await readAddressBar(win);
-    h.assert.ok(addr === `search://${dir}?q=中文 测试%26%25`, `特殊字符应最小转义且其余可读（实际 ${addr}）`);
+    shown = await h.js(win, `document.querySelector('.omnibar.mode-search .omnibar-input')?.value ?? null`);
+    h.assert.strictEqual(shown.value, kw, `特殊字符关键词应显示层往返（实际 ${shown.value}）`);
 
     // 含 % 的关键词两种写法都工作：手输未转义 %25 与转义 %25 均命中
     await enterPath(win, `search://${dir}?q=100%25`);

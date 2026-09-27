@@ -122,11 +122,12 @@ const { ipcMain } = require('electron');
     const inputVal = await h.js(win, `document.querySelector('.omnibar.mode-search .omnibar-input')?.value ?? ''`);
     h.assert.strictEqual(inputVal.value, 'a', '搜索态输入框应显示关键词');
 
-    // 「返回地址栏」→ 编辑态显示完整 search:// 形态
+    // 「返回地址栏」= 关闭搜索 + 恢复原路径 + 保持编辑态（评审定案）
     await h.clickEl(win, '.omnibar-back-address');
     await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.waitFor(win, `!document.querySelector('.search-filter-bar')`, { timeout: 8000 });
     const addr = await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').value`);
-    h.assert.ok(addr.value === `search://${dir}?q=a`, `编辑态应显示完整 url（实际：${addr.value}）`);
+    h.assert.strictEqual(addr.value, dir, `返回地址栏应恢复原路径并保持编辑态（实际：${addr.value}）`);
     await h.key(win, 'Escape');
 
     // 搜索态改词重搜（不退出搜索态）
