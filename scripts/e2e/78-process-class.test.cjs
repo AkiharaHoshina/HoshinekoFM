@@ -46,8 +46,9 @@ const { ipcMain } = require('electron');
       return true;
     })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.object-row').length >= 1`, { timeout: 8000 });
-    // 排序条存在（四个排序键 + 方向按钮）
-    await h.waitFor(win, `document.querySelectorAll('.object-sortbar-key').length === 4`);
+    // 排序条存在（筛选方式 + 排序方式两个下拉 + 升降序 + 树模式按钮）
+    await h.waitFor(win, `!!document.querySelector('.object-sortbar-filter-method')`);
+    await h.waitFor(win, `!!document.querySelector('.object-sortbar-sort-method')`);
     // 指标列存在（每个进程行有 CPU 列）
     await h.waitFor(win, `document.querySelectorAll('.object-row-cpu').length >= 1`);
 
@@ -151,14 +152,9 @@ const { ipcMain } = require('electron');
     const names = async () => (await h.js(win, `[...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim())`)).value;
     h.assert.ok(JSON.stringify(await names()) === JSON.stringify(['aaa', 'bbb', 'ccc']), `默认名称序：${JSON.stringify(await names())}`);
 
-    // 按 CPU（默认降序）：bbb(90), ccc(50), aaa(10)
-    await h.js(win, `(() => {
-      const keys = [...document.querySelectorAll('.object-sortbar-key')];
-      const k = keys.find((x) => /CPU/.test(x.textContent ?? ''));
-      if (!k) return false;
-      k.click();
-      return true;
-    })()`, true);
+    // 按 CPU + 降序（排序方式下拉 + 升降序键）：bbb(90), ccc(50), aaa(10)
+    await h.selectOption(win, '.object-sortbar-sort-method', 'cpu');
+    await h.clickEl(win, '.object-sortbar-dir');
     await h.waitFor(win, `(() => {
       const names = [...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim());
       return names[0] === 'bbb' && names[2] === 'aaa';

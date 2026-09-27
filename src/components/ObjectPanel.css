@@ -520,21 +520,24 @@
   text-align: right;
 }
 
-.object-sortbar-key {
-  font-size: 12.5px;
-  opacity: 0.75;
-}
-
-.object-sortbar-key--active {
-  opacity: 1;
-  color: var(--md-sys-color-primary);
-}
-
-.object-process-filter {
-  margin-left: auto;
-  width: 220px;
+/* 排序条第一行的下拉（筛选方式/排序方式）：占更宽份额，按钮压缩 */
+.object-sortbar-select {
+  flex: 1.6 1 0;
+  min-width: 0;
   --md-outlined-field-top-space: 4px;
   --md-outlined-field-bottom-space: 4px;
+}
+
+/* ── 搜索态筛选 chips（根页全类 Filter Chips / 存储类状态分类 chips）── */
+.object-search-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.object-search-chips md-filter-chip {
+  --md-filter-chip-container-height: 30px;
+  --md-filter-chip-label-text-size: 12.5px;
 }
 
 /* ── 进程类页虚拟化列表 ── */

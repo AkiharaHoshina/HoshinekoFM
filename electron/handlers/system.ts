@@ -2396,6 +2396,15 @@ export function registerSystemHandlers(
     /** 原生拖出路径是否为目录（挂载点/sysfs/proc 目录 = true；
      *  设备节点/统计文件 = false；无 nativePath 时不传） */
     nativeIsDir?: boolean;
+    /**
+     * 存储类实例的显式分类（D8 定案：后端明确传类型、前端不猜——
+     *  仅 disk/partition/mount 三种 kind 传）：'mounted' = 已挂载
+     *  （分区带挂载点/mount 实例）；'device' = 未挂载块设备（磁盘/带
+     *  文件系统的未挂载分区）；'other' = swaplike/无文件系统（fstype
+     *  为 swap 或缺失的未挂载分区）。前端存储类筛选 chips 直接按该
+     *  字段分组，不推 nativeIsDir/fstype。
+     */
+    storageKind?: 'mounted' | 'device' | 'other';
     /** 充电阈值支持标记（power 类电池：charge_control_end_threshold
      *  文件存在——检测到才显示；写入是否生效靠写后读回校验兜底） */
     chargeControl?: boolean;
@@ -2472,9 +2481,15 @@ export function registerSystemHandlers(
             // 未挂载磁盘的原生拖出路径 = 块设备节点（挂载点在分区实例上）
             nativePath: d.devicePath ?? `/dev/${d.name}`,
             nativeIsDir: false,
+            storageKind: 'device',
           });
         } else if (d.type === 'part') {
           const name = d.label ?? d.name;
+          // 显式分类（D8）：已挂载 = mounted；未挂载 swap/无文件系统 = other；
+          // 其余未挂载块设备 = device
+          const storageKind: 'mounted' | 'device' | 'other' = d.mountpoint
+            ? 'mounted'
+            : (!d.fstype || d.fstype === 'swap' ? 'other' : 'device');
           instances.push({
             id: d.devicePath ?? `/dev/${d.name}`,
             name,
@@ -2483,6 +2498,7 @@ export function registerSystemHandlers(
             icon: 'storage',
             nativePath: d.mountpoint ?? d.devicePath ?? `/dev/${d.name}`,
             nativeIsDir: !!d.mountpoint,
+            storageKind,
           });
           if (d.mountpoint) seenMountpoints.add(d.mountpoint);
         }
@@ -2505,6 +2521,7 @@ export function registerSystemHandlers(
           icon: 'folder_open',
           nativePath: mp,
           nativeIsDir: true,
+          storageKind: 'mounted',
         });
       }
     } catch { /* 挂载表不可用：仅 lsblk 结果 */ }

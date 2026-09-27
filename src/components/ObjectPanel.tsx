@@ -6,7 +6,7 @@ import { Button } from './Button';
 import { IconButton } from './IconButton';
 import { MarqueeText } from './MarqueeText';
 import { Sparkline } from './Sparkline';
-import { Slider } from './md';
+import { Slider, OutlinedSelect, SelectOption, FilterChip } from './md';
 import { showToast } from '../utils/toast';
 import { t } from '../i18n';
 import { parseObjectsPath, buildObjectsPath, OBJECTS_CLASS_LABEL } from '../utils/objectsPath';
@@ -495,7 +495,6 @@ function smartReasonKey(reason: string): string {
 
 /** 进程类页排序键 */
 type ProcessSortKey = 'name' | 'pid' | 'cpu' | 'memory';
-const PROCESS_SORT_KEYS: ProcessSortKey[] = ['name', 'pid', 'cpu', 'memory'];
 
 /**
  * Object Panel（objects:// 虚拟页集）：
@@ -577,6 +576,30 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   const [history, setHistory] = useState<Record<string, number[]>>({});
   /** 进程类页排序 */
   const [processSort, setProcessSort] = useState<{ key: ProcessSortKey; desc: boolean }>({ key: 'name', desc: false });
+  /**
+   * 进程类搜索筛选方式（FM 搜索重构阶段 2）：'name' = 名称/副标题/id
+   * 匹配（现状）；'pid' = PID **完全匹配**（inst.id === query，非法 pid
+   * 自然无命中）。与排序方式下拉同处排序条第一行。
+   */
+  const [processFilterMode, setProcessFilterMode] = useState<'name' | 'pid'>('name');
+  /**
+   * 根页跨类搜索的类勾选集（全类 Filter Chips；null = 全勾选）——
+   * 取消勾选即排除该类命中（纯前端后过滤）。关键词变化复位全勾选。
+   */
+  const [rootClassFilter, setRootClassFilter] = useState<Set<string> | null>(null);
+  /**
+   * 存储类搜索的状态分类勾选集（挂载/未挂载/其他 chips；null = 全勾选）——
+   * 按后端显式 storageKind 分组（D8），关键词变化复位全勾选。
+   */
+  const [storageKindFilter, setStorageKindFilter] = useState<Set<'mounted' | 'device' | 'other'> | null>(null);
+  /** 关键词变化复位根页/存储类筛选 chips（渲染期复位，官方
+   *  adjusting-state-during-render 模式，与 SearchFilterBar 同款） */
+  const [prevQueryForChips, setPrevQueryForChips] = useState(searchQuery);
+  if (prevQueryForChips !== searchQuery) {
+    setPrevQueryForChips(searchQuery);
+    setRootClassFilter(null);
+    setStorageKindFilter(null);
+  }
   /** 批量 nice 滑条值（多选操作栏；路径切换复位 0） */
   const [batchNiceValue, setBatchNiceValue] = useState(0);
   /** 存储实例页 SMART 健康（进入实例页一次性拉取，不进轮询） */
@@ -1782,16 +1805,26 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
 
   /** 进程类页筛选（地址栏搜索：本地匹配 comm/cmdline/pid，不区分大小写；
    *  先排序后过滤——本地筛选输入已移除，规则并入 objects:// 类页的
-   *  地址栏对象搜索） */
+   *  地址栏对象搜索；筛选方式 = 名称匹配 / PID 完全匹配，见
+   *  processFilterMode） */
   const filteredProcessInstances = useMemo(() => {
     if (!sortedClassInstances) return null;
     const oq = searchQuery.trim().toLowerCase();
     if (!oq) return sortedClassInstances;
-    return sortedClassInstances.filter((i) => matchObjectInstance(i, oq));
-  }, [sortedClassInstances, searchQuery]);
+    return sortedClassInstances.filter((i) => (
+      processFilterMode === 'pid' ? i.id === oq : matchObjectInstance(i, oq)
+    ));
+  }, [sortedClassInstances, searchQuery, processFilterMode]);
+
+  /** 类页搜索激活态（搜索中树状显示无效——树按钮禁用 + 强制平铺渲染） */
+  const searchActiveClass = searchQuery.trim() !== '';
+  /** 树模式生效态：仅在无搜索时生效（设计定案：搜索中树状无效——
+   *  根页跨类搜命中行与进程类页筛选态均平铺） */
+  const treeActive = processTreeMode && !searchActiveClass;
 
   /** 树模式源列表：无搜索 = 全量；有搜索 = 命中 + 祖先链（保证命中
-   *  节点在树中可见） */
+   *  节点在树中可见）——搜索时树模式禁用（treeActive false），本分支
+   *  仅防御保留 */
   const treeSourceInstances = useMemo(() => {
     if (!sortedClassInstances || !processTreeMode) return null;
     const oq = searchQuery.trim().toLowerCase();
@@ -1842,11 +1875,11 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     return rows;
   }, [treeSourceInstances, processTreeMode, processSort, treeCollapsed]);
 
-  /** 进程类页可见行列表（树模式 = 展开后的 DFS 行序；平铺 = 筛选结果） */
+  /** 进程类页可见行列表（树模式生效态 = 展开后的 DFS 行序；其余/搜索态 = 平铺筛选结果） */
   const processVisibleList = useMemo(() => {
-    if (processTreeMode) return treeRows?.map((r) => r.inst) ?? [];
+    if (treeActive) return treeRows?.map((r) => r.inst) ?? [];
     return filteredProcessInstances ?? [];
-  }, [processTreeMode, treeRows, filteredProcessInstances]);
+  }, [treeActive, treeRows, filteredProcessInstances]);
 
   // ── 进程多选（文件区同款模型：鼠标框选 + Ctrl/Shift 点击 + 快捷键）──
 
@@ -1967,31 +2000,67 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- processListImperativeRef 为稳定 ref 对象
   }, [processVisibleList, processCursor, processAnchor]);
 
-  /** 通用类页实例（地址栏搜索过滤；进程类在 filteredProcessInstances 组合） */
+  /** 存储类实例的显式分类（后端 storageKind 优先；旧快照/假数据缺字段
+   *  时按 nativeIsDir 回落——挂载点语义恒为目录） */
+  const storageKindOf = useCallback((inst: ObjectInstance): 'mounted' | 'device' | 'other' => (
+    inst.storageKind ?? (inst.nativeIsDir ? 'mounted' : 'device')
+  ), []);
+
+  /** 勾选/取消勾选存储类状态分类 chip（全勾选归一回 null） */
+  const toggleStorageKindFilter = useCallback((k: 'mounted' | 'device' | 'other') => {
+    setStorageKindFilter((prev) => {
+      const all: ('mounted' | 'device' | 'other')[] = ['mounted', 'device', 'other'];
+      const next = new Set(prev ?? all);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next.size === all.length ? null : next;
+    });
+  }, []);
+
+  /** 通用类页实例（地址栏搜索过滤；进程类在 filteredProcessInstances 组合；
+   *  存储类在搜索态再按 挂载/未挂载/其他 chips 过滤） */
   const genericFilteredInstances = useMemo(() => {
     if (!currentClass || currentClass.id === 'process') return null;
     const oq = searchQuery.trim().toLowerCase();
-    if (!oq) return currentClass.instances;
-    return currentClass.instances.filter((i) => matchObjectInstance(i, oq));
-  }, [currentClass, searchQuery]);
+    let list = oq
+      ? currentClass.instances.filter((i) => matchObjectInstance(i, oq))
+      : currentClass.instances;
+    if (currentClass.id === 'storage' && storageKindFilter) {
+      list = list.filter((i) => storageKindFilter.has(storageKindOf(i)));
+    }
+    return list;
+  }, [currentClass, searchQuery, storageKindFilter, storageKindOf]);
+
+  /** 排序方式下拉选项（设计定案：名称/CPU/内存——pid 只做筛选键不做排序键） */
+  const PROCESS_SORT_OPTIONS: ProcessSortKey[] = ['name', 'cpu', 'memory'];
 
   const renderSortBar = () => (
     <div className="object-sortbar">
-      {/* 第一行：排序键 + 升降序 + 树模式，平均平铺满一行 */}
+      {/* 第一行：筛选方式 + 排序方式 + 升降序 + 树模式，平均平铺满一行 */}
       <div className="object-sortbar-keys">
-        {PROCESS_SORT_KEYS.map((k) => (
-          <Button
-            key={k}
-            variant="text"
-            className={`object-sortbar-key${processSort.key === k ? ' object-sortbar-key--active' : ''}`}
-            onClick={() => setProcessSort((prev) =>
-              prev.key === k ? { key: k, desc: !prev.desc } : { key: k, desc: k === 'cpu' || k === 'memory' })}
-          >
-            {t(`objects.sort_${k}`)}
-          </Button>
-        ))}
+        <OutlinedSelect
+          className="object-sortbar-select object-sortbar-filter-method"
+          value={processFilterMode}
+          onInput={(e) => setProcessFilterMode((e.target as HTMLSelectElement).value as 'name' | 'pid')}
+        >
+          <SelectOption value="name"><div slot="headline">{t('objects.filter_by_name')}</div></SelectOption>
+          <SelectOption value="pid"><div slot="headline">{t('objects.filter_by_pid')}</div></SelectOption>
+        </OutlinedSelect>
+        <OutlinedSelect
+          className="object-sortbar-select object-sortbar-sort-method"
+          value={processSort.key}
+          onInput={(e) => setProcessSort((prev) => ({
+            ...prev,
+            key: (e.target as HTMLSelectElement).value as ProcessSortKey,
+          }))}
+        >
+          {PROCESS_SORT_OPTIONS.map((k) => (
+            <SelectOption key={k} value={k}><div slot="headline">{t(`objects.sort_${k}`)}</div></SelectOption>
+          ))}
+        </OutlinedSelect>
         <Button
           variant="text"
+          className="object-sortbar-dir"
           title={processSort.desc ? '↓' : '↑'}
           onClick={() => setProcessSort((prev) => ({ ...prev, desc: !prev.desc }))}
         >
@@ -1999,6 +2068,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         </Button>
         <Button
           variant={processTreeMode ? 'tonal' : 'text'}
+          disabled={searchActiveClass}
           title={t('objects.tree_mode')}
           className="object-sortbar-tree"
           onClick={() => setProcessTreeMode((v) => !v)}
@@ -2106,6 +2176,21 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       if (last && last.cls.id === h.cls.id) last.insts.push(h.inst);
       else groupedHits.push({ cls: h.cls, insts: [h.inst] });
     }
+    /** 全类 Filter Chips 后过滤（null = 全勾选；取消勾选排除该类命中） */
+    const visibleGroupedHits = rootClassFilter
+      ? groupedHits.filter((g) => rootClassFilter.has(g.cls.id))
+      : groupedHits;
+    const visibleHitCount = visibleGroupedHits.reduce((n, g) => n + g.insts.length, 0);
+    /** 勾选/取消勾选类 chip（全勾选归一回 null） */
+    const toggleRootClassFilter = (id: string) => {
+      setRootClassFilter((prev) => {
+        const all = orderedVisibleClasses.map((c) => c.id);
+        const next = new Set(prev ?? all);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next.size === all.length ? null : next;
+      });
+    };
     return (
       <div className="object-panel">
         <div className="object-panel-header">
@@ -2115,14 +2200,33 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         {q !== '' ? (
           <>
             <div className="object-search-header">
-              <span className="object-search-header-text">{t('objects.search_header', q, hits.length)}</span>
+              <span className="object-search-header-text">{t('objects.search_header', q, visibleHitCount)}</span>
               <Button variant="text" onClick={onSearchClear}>{t('search.clear')}</Button>
             </div>
-            {hits.length === 0 ? (
+            {/* 全类 Filter Chips（默认全勾选；取消勾选即排除该类结果）。
+                md-filter-chip 点击自带内部 toggle——受控使用必须
+                preventDefault 阻止内部翻转（否则与 React selected 竞争，
+                三态开关同款坑），由 React 全权管理勾选 */}
+            <div className="object-search-chips">
+              {orderedVisibleClasses.map((cls) => (
+                <FilterChip
+                  key={cls.id}
+                  className="object-class-filter-chip"
+                  selected={rootClassFilter === null || rootClassFilter.has(cls.id)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggleRootClassFilter(cls.id);
+                  }}
+                >
+                  {t(OBJECTS_CLASS_LABEL[cls.id] ?? 'objects.title')}
+                </FilterChip>
+              ))}
+            </div>
+            {visibleHitCount === 0 ? (
               <div className="object-load-failed">{t('objects.search_no_match')}</div>
             ) : (
               <div className="object-search-results">
-                {groupedHits.map(({ cls, insts }) => (
+                {visibleGroupedHits.map(({ cls, insts }) => (
                   <div className="object-search-group" key={cls.id}>
                     <div className="object-search-group-title">
                       {t(OBJECTS_CLASS_LABEL[cls.id] ?? 'objects.title')} · {insts.length}
@@ -2300,8 +2404,6 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
 
   // 类页
   const isProcessClass = parsed?.className === 'process';
-  /** 类页空态文案：搜索激活且无命中 → 无匹配对象；否则类空态 */
-  const searchActiveClass = searchQuery.trim() !== '';
   const shownCount = isProcessClass
     ? processVisibleList.length
     : (genericFilteredInstances?.length ?? 0);
@@ -2323,7 +2425,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       buildObjectsPath(parsed?.className ?? undefined, inst.id),
       inst,
     ),
-    tree: processTreeMode ? treeRows?.map((r) => ({ depth: r.depth, hasChildren: r.hasChildren, collapsed: r.collapsed })) ?? [] : null,
+    tree: treeActive ? treeRows?.map((r) => ({ depth: r.depth, hasChildren: r.hasChildren, collapsed: r.collapsed })) ?? [] : null,
     onToggleTree: (id) => setTreeCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -2380,6 +2482,25 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
             <div className="object-search-header">
               <span className="object-search-header-text">{t('objects.search_header', searchQuery.trim(), shownCount)}</span>
               <Button variant="text" onClick={onSearchClear}>{t('search.clear')}</Button>
+            </div>
+          )}
+          {/* 存储类搜索态：挂载/未挂载/其他 chips（按后端显式 storageKind
+              分组，D8 定案——前端不猜）；其余类无筛选器 */}
+          {searchActiveClass && parsed?.className === 'storage' && (
+            <div className="object-search-chips">
+              {(['mounted', 'device', 'other'] as const).map((k) => (
+                <FilterChip
+                  key={k}
+                  className="object-storage-kind-chip"
+                  selected={storageKindFilter === null || storageKindFilter.has(k)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    toggleStorageKindFilter(k);
+                  }}
+                >
+                  {t(`objects.storage_${k}`)}
+                </FilterChip>
+              ))}
             </div>
           )}
           {isProcessClass ? (

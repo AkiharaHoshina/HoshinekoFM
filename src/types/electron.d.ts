@@ -54,6 +54,11 @@ export interface ObjectInstance {
     /** 原生拖出路径是否为目录（挂载点/sysfs/proc 目录 = true；设备节点/
      *  统计文件 = false；无 nativePath 时不传） */
     nativeIsDir?: boolean;
+    /** 存储类显式分类（D8 定案：后端明确传、前端不猜；仅 disk/partition/
+     *  mount 传）：'mounted' = 已挂载；'device' = 未挂载块设备；'other' =
+     *  swaplike/无文件系统（fstype 为 swap 或缺失的未挂载分区）。可选
+     *  字段——旧快照/假数据可不带（前端按 nativeIsDir 回落） */
+    storageKind?: 'mounted' | 'device' | 'other';
     /** 充电阈值支持标记（power 类电池；检测到才显示） */
     chargeControl?: boolean;
 }
