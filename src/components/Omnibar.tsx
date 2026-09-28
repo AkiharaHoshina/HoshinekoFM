@@ -37,6 +37,14 @@ interface OmnibarProps {
    * 「导航回进入搜索会话前的 url」（search url 一并清除）。
    */
   onCloseSearch?: () => void;
+  /**
+   * 禁用搜索入口（D4 + review 10 #2 定案：保存器禁用搜索，X8-B）：
+   * **单一 flag** 同时门控两处——① 编辑态不渲染「进入搜索」按钮；
+   * ② 编辑态提交 search:// / objectsearch:// 虚拟地址时 toast 拒绝
+   * （不能经链接进入搜索）。语义将来可能改变（如仅禁按钮不禁 url、
+   * 或放开搜索）——届时只需调整本 flag 的门控分支，勿另立开关。
+   */
+  searchDisabled?: boolean;
 }
 
 /** 地址栏三种状态：面包屑（只读）→ 编辑（仅路径/schema）→ 搜索（全输入 = query） */
@@ -243,6 +251,7 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
   onNavigate,
   onSearch,
   onCloseSearch,
+  searchDisabled,
   common,
 }) => {
   const [mode, setMode] = useState<OmnibarMode>(() =>
@@ -296,6 +305,14 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
   const handleEditSubmit = async () => {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
+
+    // 禁用搜索入口（D4/review 10 #2，X8-B）：经 url 进入搜索同样拒绝
+    // ——单 flag 门控（见 OmnibarProps.searchDisabled jsdoc，将来语义
+    // 变化只改此分支）
+    if (searchDisabled && (isSearchPath(trimmed) || isObjectSearchPath(trimmed))) {
+      showToast(t('search.disabled'), 'error');
+      return;
+    }
 
     // 虚拟地址（schema）直通：search:// 等交给 loadPath 解析
     if (isVirtualAddressInput(trimmed)) {
@@ -406,7 +423,7 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
               ? t("omnibar.placeholder_query")
               : t("omnibar.placeholder_address")}
           />
-          {mode === 'edit' && (
+          {mode === 'edit' && !searchDisabled && (
             <IconButton
               variant="standard"
               className="omnibar-enter-search"

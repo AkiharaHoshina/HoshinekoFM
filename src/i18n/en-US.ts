@@ -440,6 +440,7 @@ const enUS = {
   'search.clear_history': "Clear history",
   'search.enter_query_hint': 'Type keywords to start searching',
   'search.clear': 'Clear Search',
+  'search.disabled': "Search is not available in this mode",
   'search.type_all': 'All types',
   'search.type_file': 'Files',
   'search.type_folder': 'Folders',

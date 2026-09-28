@@ -471,6 +471,7 @@ const ruUA = {
   'search.clear_history': "Очистить историю",
   'search.enter_query_hint': 'Введите ключевые слова для поиска',
   'search.clear': 'Очистить поиск',
+  'search.disabled': "В этом режиме поиск недоступен",
   'search.type_all': 'Все типы',
   'search.type_file': 'Файлы',
   'search.type_folder': 'Папки',

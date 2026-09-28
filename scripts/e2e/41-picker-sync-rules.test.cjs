@@ -102,9 +102,14 @@ const h = require('./harness.cjs');
       filledIcons: false, marqueeEnabled: true,
       sortBy: 'size', sortOrder: 'desc', groupingEnabled: false,
     })`);
+    // X8-A 选择器三态状态机（review 16 #2 定案）：面包屑 → 编辑 →
+    // 进入搜索 → 搜索态输词（88 号手法；搜索态无 .omnibar-trigger）
     await h.clickEl(picker2, '.omnibar-trigger');
-    await h.waitFor(picker2, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(picker2, '.omnibar-input', 'a');
+    await h.waitFor(picker2, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    // js click（真实坐标点击在软件渲染下偶发失手——enter-search 实测挂过）
+    await h.js(picker2, `(() => { const b = document.querySelector('.omnibar-enter-search'); if (!b) return false; b.click(); return true; })()`, true);
+    await h.waitFor(picker2, `!!document.querySelector('.omnibar.mode-search .omnibar-input')`);
+    await h.setReactInput(picker2, '.omnibar.mode-search .omnibar-input', 'a');
     await h.key(picker2, 'Enter');
     // 搜索筛选器与主窗口同款：结果行 + 类型/大小过滤
     await h.waitFor(picker2, `!!document.querySelector('.search-filter-type')`, 8000);

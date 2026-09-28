@@ -429,6 +429,7 @@ const zhCN = {
   'search.clear_history': "清除历史",
   'search.enter_query_hint': '输入关键词开始检索',
   'search.clear': '清除搜索',
+  'search.disabled': "当前模式不支持搜索",
   'search.type_all': '全部类型',
   'search.type_file': '文件',
   'search.type_folder': '文件夹',

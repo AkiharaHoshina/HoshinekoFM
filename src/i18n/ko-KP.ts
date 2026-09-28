@@ -439,6 +439,7 @@ const koKP = {
   'search.clear_history': "기록 지우기",
   'search.enter_query_hint': '검색어를 입력하여 검색 시작',
   'search.clear': '검색 지우기',
+  'search.disabled': "이 모드에서는 검색을 사용할 수 없습니다",
   'search.type_all': '모든 유형',
   'search.type_file': '파일',
   'search.type_folder': '폴더',

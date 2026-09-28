@@ -429,6 +429,7 @@ const zhTW = {
   'search.clear_history': "清除記錄",
   'search.enter_query_hint': '輸入關鍵字開始搜尋',
   'search.clear': '清除搜尋',
+  'search.disabled': "目前模式不支援搜尋",
   'search.type_all': '所有類型',
   'search.type_file': '檔案',
   'search.type_folder': '資料夾',

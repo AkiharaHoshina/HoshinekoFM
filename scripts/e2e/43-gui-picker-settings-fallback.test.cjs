@@ -57,9 +57,13 @@ const h = require('./harness.cjs');
     }
 
     // 搜索分类回落：localStorage 无该键 → 默认 true，搜索结果按目录分组
+    // （X8-A 三态状态机入口：编辑 → 进入搜索 → 输词）
     await h.clickEl(picker, '.omnibar-trigger');
-    await h.waitFor(picker, `!!document.querySelector('.omnibar-input')`);
-    await h.setReactInput(picker, '.omnibar-input', 'a');
+    await h.waitFor(picker, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    // js click（真实坐标点击在软件渲染下偶发失手——enter-search 实测挂过）
+    await h.js(picker, `(() => { const b = document.querySelector('.omnibar-enter-search'); if (!b) return false; b.click(); return true; })()`, true);
+    await h.waitFor(picker, `!!document.querySelector('.omnibar.mode-search .omnibar-input')`);
+    await h.setReactInput(picker, '.omnibar.mode-search .omnibar-input', 'a');
     await h.key(picker, 'Enter');
     await h.waitFor(picker, `!!document.querySelector('.search-filter-type')`, 8000);
     await h.waitFor(picker, `[...document.querySelectorAll('.file-group-header')].some(h => (h.textContent ?? '').trim().startsWith('/'))`, 8000);

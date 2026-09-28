@@ -429,6 +429,7 @@ const jaJP = {
   'search.clear_history': "履歴を消去",
   'search.enter_query_hint': 'キーワードを入力して検索を開始',
   'search.clear': '検索をクリア',
+  'search.disabled': "このモードでは検索は利用できません",
   'search.type_all': 'すべての種類',
   'search.type_file': 'ファイル',
   'search.type_folder': 'フォルダー',

@@ -10,6 +10,7 @@ import { Button } from './Button';
 import { OutlinedSelect, SelectOption, OutlinedTextField } from './md';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
+import { Icon } from './Icon';
 import { FileSystemService } from '../services/FileSystemService';
 import { ThemeService } from '../services/ThemeService';
 import { createDirectory } from '../utils/fileOperations';
@@ -86,6 +87,14 @@ const FilePicker: React.FC = () => {
   const [config, setConfig] = useState<PickerConfig | null>(null);
   const [currentPath, setCurrentPath] = useState('');
   const [files, setFiles] = useState<IFile[]>([]);
+  /**
+   * 保存器禁用搜索（D4 + review 10 #2 定案，X8-B）：**单一 flag**——
+   * 同一条件门控 Omnibar 搜索入口（`searchDisabled` prop：不渲染
+   * 「进入搜索」按钮 + 编辑态拒绝 search://objectsearch:// url 输入）
+   * 与 handleSearch 防御守卫。语义将来可能改变（如仅禁按钮不禁 url
+   * 或放开搜索）——届时只需调整这几处分支的取值/条件，勿另立第二开关。
+   */
+  const searchDisabled = config?.mode === 'save';
   /** 搜索态：搜索结果显示时按目录分组（settings.searchGroupByDir） */
   const [searchActive, setSearchActive] = useState(false);
   /** 搜索词与高级过滤（类型/最小/最大大小/扩展名/临时上限，与主窗口
@@ -637,9 +646,18 @@ const FilePicker: React.FC = () => {
     query: string,
     options: PickerSearchOptions = {},
   ) => {
+    // 保存器禁用搜索（D4/review 10 #2，X8-B）：防御守卫——入口已在
+    // Omnibar 禁用（searchDisabled prop），此处兜底任何路径的搜索发起
+    if (searchDisabled) return;
     if (!query.trim()) {
-      setSearchActive(false);
-      void loadPath(currentPath);
+      // X8-A 选择器升级（review 3 同款语义）：空词 = 进入空搜索视图——
+      // 不跑后端 find、文件区清空 + 「输入关键词开始检索」提示；Esc/取消
+      // 退出回浏览视图。选择器无 search:// 虚拟路径，currentPath 保持
+      // 发起目录（此前空词 = 退出搜索，与状态机「进入搜索即空词」冲突）
+      setSearchActive(true);
+      setSearchQuery('');
+      setFiles([]);
+      setSelected(new Set());
       return;
     }
     const seq = ++pickerSearchSeqRef.current;
@@ -705,7 +723,7 @@ const FilePicker: React.FC = () => {
       setSearchQuery('');
       void loadPath(currentPath);
     }
-  }, [currentPath, loadPath, pickerBaseSearchLimit, pickerBaseSearchTimeoutSec]);
+  }, [currentPath, loadPath, pickerBaseSearchLimit, pickerBaseSearchTimeoutSec, searchDisabled]);
 
   /** 取消进行中的搜索（覆盖层按钮）：后端 kill + 丢弃结果 + 复原目录 */
   const handleCancelSearch = useCallback(() => {
@@ -954,6 +972,13 @@ const FilePicker: React.FC = () => {
         return;
       }
       if (e.key === 'Escape') {
+        // X8-A Esc 合并语义（用户定案）：有搜索退搜索、没搜索取消——
+        // 搜索态（含进行中）Esc 先退出搜索回浏览视图（不关窗）；其余
+        // Esc 才执行既有「取消选择器」（resolvePicker(null) 关窗）
+        if (searchActive || searchPending) {
+          void handleCancelSearch();
+          return;
+        }
         cancel();
         return;
       }
@@ -1058,7 +1083,7 @@ const FilePicker: React.FC = () => {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [confirm, cancel, selected, config, fileName, displayFiles, cursorPath, lastSelectedPath, viewMode, isSelectable, handleSelect]);
+  }, [confirm, cancel, selected, config, fileName, displayFiles, cursorPath, lastSelectedPath, viewMode, isSelectable, handleSelect, searchActive, searchPending, handleCancelSearch]);
 
   /** focusin 跟踪当前分区（Tab 循环从最近聚焦的分区继续） */
   useEffect(() => {
@@ -1220,8 +1245,9 @@ const FilePicker: React.FC = () => {
     })()
     : [];
 
-  /** 保存模式（portal SaveFile）：底部过滤器控件换成文件名输入框 */
-  const isSave = config?.mode === 'save';
+  /** 保存模式（portal SaveFile）：底部过滤器控件换成文件名输入框。
+   *  与 searchDisabled 同源单 flag（见其 jsdoc） */
+  const isSave = searchDisabled;
 
   /**
    * 保存模式背景右键菜单：只提供「新建文件夹」——保存器无新建文件
@@ -1326,6 +1352,9 @@ const FilePicker: React.FC = () => {
                 currentPath={currentPath}
                 onNavigate={(p) => { void loadPath(p); }}
                 onSearch={(q) => { void handleSearch(q); }}
+                searchStateEnabled
+                searchDisabled={searchDisabled}
+                onCloseSearch={() => { void handleCancelSearch(); }}
               />
             </div>
             <div
@@ -1392,6 +1421,27 @@ const FilePicker: React.FC = () => {
             tabIndex={-1}
             style={{ outline: 'none' }}
           >
+            {/* 搜索态空关键词提示（X8-A 选择器升级：review 3 同款语义——
+                进入搜索态即搜索视图，空词不跑后端 find） */}
+            {searchActive && searchQuery.trim() === '' && !searchPending && (
+              <div
+                className="search-enter-hint"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--md-sys-color-on-surface-variant)',
+                  pointerEvents: 'none',
+                }}
+              >
+                <div style={{ textAlign: 'center' }}>
+                  <Icon name="search" size={48} />
+                  <p style={{ marginTop: '12px', fontSize: '14px' }}>{t('search.enter_query_hint')}</p>
+                </div>
+              </div>
+            )}
             {/* 搜索中覆盖层：大搜索期间文件区清空、中央显示取消入口 */}
             {searchPending && (
               <SearchPendingOverlay onCancel={handleCancelSearch} />

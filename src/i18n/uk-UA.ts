@@ -468,6 +468,7 @@ const ukUA = {
   'search.clear_history': "Очистити історію",
   'search.enter_query_hint': 'Введіть ключові слова для пошуку',
   'search.clear': 'Очистити пошук',
+  'search.disabled': "У цьому режимі пошук недоступний",
   'search.type_all': 'Усі типи',
   'search.type_file': 'Файли',
   'search.type_folder': 'Папки',
