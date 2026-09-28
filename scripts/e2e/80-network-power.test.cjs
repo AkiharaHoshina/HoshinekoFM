@@ -14,8 +14,8 @@ const { ipcMain } = require('electron');
 
   await h.run('80a 网络：读数 + 断开/连接开关', async () => {
     const NET = [
-      { id: 'eth0', name: 'eth0', subtitle: 'up', kind: 'network', icon: 'ethernet' },
-      { id: 'lo', name: 'lo', subtitle: 'up', kind: 'network', icon: 'ethernet' },
+      { id: 'eth0', name: 'eth0', subtitle: 'up', kind: 'network', icon: 'settings_ethernet' },
+      { id: 'lo', name: 'lo', subtitle: 'up', kind: 'network', icon: 'settings_ethernet' },
       { id: 'wlan0', name: 'wlan0', subtitle: 'down', kind: 'network', icon: 'wifi' },
     ];
     const READINGS = {
@@ -70,6 +70,14 @@ const { ipcMain } = require('electron');
       await h.clickEl(win, upBtn);
       await h.waitFor(win, `document.querySelectorAll('.object-row').length === 3`, { timeout: 8000 });
     };
+
+    // 有线网卡图标 ligature（review 16 #1：`ethernet` 是不存在的 ligature，须为 `settings_ethernet`）
+    const ethIcon = await h.js(win, `(() => {
+      const row = document.querySelector('.object-row[data-id="eth0"]');
+      const icon = row ? row.querySelector('.object-row-icon') : null;
+      return icon ? icon.textContent : null;
+    })()`);
+    h.assert.ok(ethIcon.value === 'settings_ethernet', `有线网卡图标应为 settings_ethernet：${ethIcon.value}`);
 
     // eth0：读数 + 断开按钮
     await enter('eth0');

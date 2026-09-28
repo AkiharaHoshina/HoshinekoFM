@@ -2762,7 +2762,7 @@ export function registerSystemHandlers(
           name,
           subtitle: operstate ?? null,
           kind: 'network',
-          icon: wireless ? 'wifi' : 'ethernet',
+          icon: wireless ? 'wifi' : 'settings_ethernet',
           nativePath: path.join(root, name),
           nativeIsDir: true,
         });
