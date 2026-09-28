@@ -140,6 +140,7 @@ No unit-test framework — e2e tests live in `scripts/e2e/` (Electron main-proce
 - **Integration change re-registration**: `registerSystemHandlers` takes a second optional callback `onIntegrationChanged` — main.ts passes `reRegisterBackends` (same as session-bus-restart path: reset conflict cache + re-register) so after install/uninstall/reinstall success the running window immediately takes over the D-Bus names (no restart needed). The re-register path relies on `setupPortalFileChooser`/`setupFileManager1` treating "name owned by this process's other connection" (EXISTS reply + GetConnectionUnixProcessID == process.pid) as success, avoiding spurious conflict reports. e2e harness calls `registerSystemHandlers()` without callbacks — unaffected.
 - **CSS only**: no CSS-in-JS or CSS modules — plain `.css` files in same directory as component, imported in component file.
 - **Monorepo workspace**: `pnpm-workspace.yaml` exists but only for `allowBuilds` hints (no actual packages). Both `package-lock.json` and `pnpm-lock.yaml` are checked in.
+- **高 OS 缩放下 1px 边框宽度（上游 Chromium，已知问题不修复）**：Chromium 自己处理 hidpi/分数缩放，但边框宽度按缩放 float **取整**——scale 1.75/1.98（<2）时 1px 边框仍按 1.0 渲染同宽，不随缩放变粗（用户已实测证实；Electron 42/43 均复现，非本项目代码问题）。勿再为「高缩放下边框偏细」降级 Electron 或尝试修复，维持最新版，见 `docs/进度.md` §二。
 
 ## Style conventions
 

@@ -870,7 +870,7 @@ ipcMain.handle('app:set-pinned-dirs', async (_event, input: unknown) => {
     await fs.writeFile(tmp, JSON.stringify(dirs), 'utf-8');
     await fs.rename(tmp, PINNED_SNAPSHOT_FILE);
   } catch {
-    await fs.rm(tmp, { force: true }).catch(() => {});
+    await fs.rm(tmp, { force: true }).catch(() => { });
   }
 });
 
@@ -885,7 +885,7 @@ ipcMain.handle('app:set-picker-view-prefs', async (_event, input: unknown) => {
     await fs.writeFile(tmp, JSON.stringify(prefs ?? {}), 'utf-8');
     await fs.rename(tmp, PICKER_PREFS_SNAPSHOT_FILE);
   } catch {
-    await fs.rm(tmp, { force: true }).catch(() => {});
+    await fs.rm(tmp, { force: true }).catch(() => { });
   }
 });
 
@@ -901,7 +901,7 @@ ipcMain.handle('app:set-theme-snapshot', async (_event, input: unknown) => {
     await fs.writeFile(tmp, JSON.stringify(theme ?? {}), 'utf-8');
     await fs.rename(tmp, THEME_SNAPSHOT_FILE);
   } catch {
-    await fs.rm(tmp, { force: true }).catch(() => {});
+    await fs.rm(tmp, { force: true }).catch(() => { });
   }
 });
 
@@ -917,7 +917,7 @@ ipcMain.handle('app:set-picker-settings', async (_event, input: unknown) => {
     await fs.writeFile(tmp, JSON.stringify(settings ?? {}), 'utf-8');
     await fs.rename(tmp, PICKER_SETTINGS_SNAPSHOT_FILE);
   } catch {
-    await fs.rm(tmp, { force: true }).catch(() => {});
+    await fs.rm(tmp, { force: true }).catch(() => { });
   }
 });
 
