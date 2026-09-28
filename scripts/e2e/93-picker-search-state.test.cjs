@@ -8,7 +8,10 @@
  *   文件区焦点 Esc = 退搜索不关窗；浏览态文件区焦点 Esc = 取消关窗
  *   （resolvePicker(null)）；
  * - 93d 保存器禁用搜索（单一 flag）：编辑态无「进入搜索」按钮、输
- *   search:// → 拒绝 toast 且不进入搜索态（search.disabled）、Esc 恒取消。
+ *   search:// → 拒绝 toast 且不进入搜索态（search.disabled）、Esc 恒取消；
+ * - review 17：编辑/搜索态按钮**几何断言**（DOM 存在但可能被 omnibar
+ *   overflow:hidden 裁切——修复前选择器窄 omnibar 里「进入搜索」按钮
+ *   被推出盒外不可点，rect 断言防回归）。
  */
 const h = require('./harness.cjs');
 
@@ -43,11 +46,29 @@ const ADDR_TOAST_RE = /地址不存在|Address does not exist|アドレスが存
     return picker;
   };
 
-  /** js click（真实坐标点击在软件渲染下偶发失手——enter-search 实测挂过，
-   *  React onClick 经 host.click() 同链，见 89 号手法） */
+  /**
+   * js click（review 17 修复前「进入搜索」按钮被 omnibar overflow:hidden
+   * 裁切——真实坐标点击落在被裁位置命中排序区，93 实测挂过；修复后已
+   * 几何可见，js click 仍保留为确定性手法——React onClick 经 host.click()
+   * 同链，见 89 号手法）
+   */
   const jsClick = async (win, selector) => {
     const r = await h.js(win, `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`, true);
     h.assert.ok(r.value, `jsClick 未命中：${selector}`);
+  };
+
+  /** 元素是否在 omnibar 盒内（review 17：DOM 存在但可能被 overflow:hidden
+   *  裁切——rect 几何断言；elementFromPoint 在软件渲染下不可靠，勿用） */
+  const clippedInfo = async (win, selector) => {
+    const r = await h.js(win, `(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      const om = document.querySelector('.omnibar');
+      if (!el || !om) return null;
+      const b = el.getBoundingClientRect();
+      const o = om.getBoundingClientRect();
+      return { left: b.left, right: b.right, omLeft: o.left, omRight: o.right, clipped: b.right > o.right + 0.5 || b.left < o.left - 0.5 };
+    })()`);
+    return r.value;
   };
 
   await h.run('93a 选择器三态往返（进入搜索空词视图 → 输词 → Esc 退搜索）', async () => {
@@ -55,13 +76,21 @@ const ADDR_TOAST_RE = /地址不存在|Address does not exist|アドレスが存
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     const picker = await openPickerWin(win, 'items', '选择器');
 
-    // 面包屑 → 编辑（触发钮）→ 进入搜索（按钮存在）
+    // 面包屑 → 编辑（触发钮）→ 进入搜索（按钮存在 + review 17 几何断言
+    // ——修复前选择器窄 omnibar 里按钮被 overflow:hidden 裁出盒外）
     await jsClick(picker, '.omnibar-trigger');
     await h.waitFor(picker, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     await h.waitFor(picker, `!!document.querySelector('.omnibar-enter-search')`);
+    const esGeom = await clippedInfo(picker, '.omnibar-enter-search');
+    h.assert.ok(esGeom && !esGeom.clipped, `「进入搜索」按钮应在 omnibar 盒内（right ${esGeom?.right} vs box right ${esGeom?.omRight}）`);
     await jsClick(picker, '.omnibar-enter-search');
     // 空词搜索视图（X8-A：review 3 同款语义——不跑后端、清空文件区 + 提示）
     await h.waitFor(picker, `!!document.querySelector('.omnibar.mode-search .omnibar-input')`);
+    // 搜索态双按钮几何断言（返回地址栏/开始搜索不被裁）
+    const baGeom = await clippedInfo(picker, '.omnibar-back-address');
+    const ssGeom = await clippedInfo(picker, '.omnibar-start-search');
+    h.assert.ok(baGeom && !baGeom.clipped, '返回地址栏按钮应在 omnibar 盒内');
+    h.assert.ok(ssGeom && !ssGeom.clipped, '开始搜索按钮应在 omnibar 盒内');
     await h.waitFor(picker, `!!document.querySelector('.search-enter-hint')`, { timeout: 8000 });
     await h.waitFor(picker, `!!document.querySelector('.search-filter-type')`, { timeout: 8000 });
     h.assert.ok((await h.js(picker, `document.querySelectorAll('.file-list-item').length`)).value === 0, '空词搜索视图文件区应清空');
@@ -142,6 +171,9 @@ const ADDR_TOAST_RE = /地址不存在|Address does not exist|アドレスが存
     await jsClick(saver, '.omnibar-trigger');
     await h.waitFor(saver, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     h.assert.ok(!(await h.js(saver, `!!document.querySelector('.omnibar-enter-search')`)).value, '保存器编辑态不应有「进入搜索」按钮');
+    // review 17：输入框自身也不被裁（修复前保存器窄 omnibar 输入框右缘被裁 ~58px）
+    const inpGeom = await clippedInfo(saver, '.omnibar.mode-edit .omnibar-input');
+    h.assert.ok(inpGeom && !inpGeom.clipped, `保存器编辑态输入框应在 omnibar 盒内（right ${inpGeom?.right} vs box right ${inpGeom?.omRight}）`);
 
     // 输 search:// → 拒绝 toast、停留编辑态、不进入搜索态
     await h.setReactInput(saver, '.omnibar.mode-edit .omnibar-input', `search://${dir}?q=a`);

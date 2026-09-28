@@ -60,7 +60,8 @@ const h = require('./harness.cjs');
     // （X8-A 三态状态机入口：编辑 → 进入搜索 → 输词）
     await h.clickEl(picker, '.omnibar-trigger');
     await h.waitFor(picker, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
-    // js click（真实坐标点击在软件渲染下偶发失手——enter-search 实测挂过）
+    // js click（review 17 修复前按钮被 omnibar overflow:hidden 裁切、真实坐标点击
+    // 落在被裁位置命中排序区——js click 确定性手法）
     await h.js(picker, `(() => { const b = document.querySelector('.omnibar-enter-search'); if (!b) return false; b.click(); return true; })()`, true);
     await h.waitFor(picker, `!!document.querySelector('.omnibar.mode-search .omnibar-input')`);
     await h.setReactInput(picker, '.omnibar.mode-search .omnibar-input', 'a');

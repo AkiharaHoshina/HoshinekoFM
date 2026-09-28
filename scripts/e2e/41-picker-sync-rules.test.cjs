@@ -106,7 +106,8 @@ const h = require('./harness.cjs');
     // 进入搜索 → 搜索态输词（88 号手法；搜索态无 .omnibar-trigger）
     await h.clickEl(picker2, '.omnibar-trigger');
     await h.waitFor(picker2, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
-    // js click（真实坐标点击在软件渲染下偶发失手——enter-search 实测挂过）
+    // js click（review 17 修复前按钮被 omnibar overflow:hidden 裁切、真实坐标点击
+    // 落在被裁位置命中排序区——js click 确定性手法）
     await h.js(picker2, `(() => { const b = document.querySelector('.omnibar-enter-search'); if (!b) return false; b.click(); return true; })()`, true);
     await h.waitFor(picker2, `!!document.querySelector('.omnibar.mode-search .omnibar-input')`);
     await h.setReactInput(picker2, '.omnibar.mode-search .omnibar-input', 'a');

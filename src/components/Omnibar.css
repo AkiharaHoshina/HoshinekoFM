@@ -57,6 +57,12 @@
 
 .omnibar-input {
     flex: 1;
+    /* review 17 修复：flex 默认 min-width:auto 会按 input 固有最小宽
+     * （约 size=20 字符）钳住不收缩——窄容器（选择器 omnibar ~259px /
+     * 主窗口窄窗）里输入框把图标+按钮推出盒外，被 overflow:hidden 裁掉
+     * （「进入搜索」按钮 DOM 存在但不可见/不可点）。min-width:0 允许
+     * 收缩到 0，按钮保住自然宽；basis 0% 语义保证宽容器行为不变 */
+    min-width: 0;
     background: transparent;
     border: none;
     color: var(--md-sys-color-on-surface);
