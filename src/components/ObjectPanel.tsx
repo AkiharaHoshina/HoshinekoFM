@@ -2249,10 +2249,16 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
      *  进搜索视图——review 3 定案；review 11 #2：空词 = 显示全部实例，
      *  受 chips 与 200 上限约束） */
     const rootSearchMode = q !== '' || inSearchState;
-    /** 跨类命中（name/subtitle/id；超限截断——进程类实例多；空词全量） */
+    /** 跨类命中（name/subtitle/id；超限截断——进程类实例多；空词全量）。
+     *  review 15 bug 修复：**chips 排除（excludedClasses）必须先于 200 截断**——
+     *  枚举序中高基数类（process 数百实例）排在低基数类（thermal/backlight/
+     *  network/power）之前，先截断会让低基数类永远进不了收集循环：用户弃选
+     *  process 等类后计数（rootHitCount 先排除）显示 21 个、内容却「无匹配」。
+     *  与 rootHitCount 同序：先跳过弃选类、再累计、再截断。 */
     const hits: { cls: ObjectClassInfo; inst: ObjectInstance }[] = [];
     if (rootSearchMode && classes !== null && !loadError) {
       for (const cls of classes) {
+        if (excludedClasses.includes(cls.id)) continue;
         for (const inst of cls.instances) {
           if (q === '' || matchObjectInstance(inst, q.toLowerCase())) hits.push({ cls, inst });
           if (hits.length >= OBJECT_SEARCH_LIMIT) break;
@@ -2268,7 +2274,8 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       else groupedHits.push({ cls: h.cls, insts: [h.inst] });
     }
     /** 全类 Filter Chips 后过滤（取消勾选的类由 url nc 段承载——excludedClasses；
-     *  空 = 全勾选） */
+     *  空 = 全勾选）。review 15 起收集侧已先排除弃选类（先排除后截断），
+     *  此过滤为冗余防御保留（语义不变）。 */
     const visibleGroupedHits = excludedClasses.length > 0
       ? groupedHits.filter((g) => !excludedClasses.includes(g.cls.id))
       : groupedHits;

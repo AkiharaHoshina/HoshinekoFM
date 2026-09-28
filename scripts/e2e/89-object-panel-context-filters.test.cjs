@@ -9,7 +9,11 @@
  *   进程名包含默认 cmd；组 2 多选 PID 大于/小于/等于 OR 组合；组 2 全取消
  *   回落组 1 默认——始终有一个筛选条件，review 6/7）+ 排序 segmented +
  *   搜索中树模式禁用；
- * - 89d tty/传感器等类搜索不显示筛选器（无 chips、无进程筛选 segmented）。
+ * - 89d tty/传感器等类搜索不显示筛选器（无 chips、无进程筛选 segmented）；
+ * - 89e 空词搜索态先改条件再输词（review 4 复现）；
+ * - 89f review 15：chips 排除先于 200 截断（假数据 210 条 process 高基数
+ *   类——弃选后低基数类 storage/thermal/backlight 命中仍可达，计数与
+ *   内容一致）。
  *
  * 全部假 list-objects（storageKind 显式字段；本文件独立进程不污染其他
  * 用例）；搜索入口手法同 harness.searchViaOmnibar。
@@ -270,6 +274,57 @@ const { ipcMain } = require('electron');
     h.assert.deepStrictEqual(prefixes, ['process'], `弃选存储后搜索应只留 process 命中：${JSON.stringify(prefixes)}`);
     const keptSelected = await h.js(win, `[...document.querySelectorAll('.object-class-filter-chip')].map((c) => c.selected)`);
     h.assert.deepStrictEqual(keptSelected.value, [false, true, true], `存储应保持弃选：${JSON.stringify(keptSelected.value)}`);
+  });
+
+  await h.run('89f review 15：chips 排除先于 200 截断（弃选高基数类后低基数类仍可达）', async () => {
+    // 换假 list-objects：process 210 条（高基数、枚举序靠前）+ 低基数类
+    // storage 1 / thermal 1 / backlight 1——复现「计数 21、内容无匹配」
+    // 的截断顺序 bug（先截断后排除时 process 吃光 200 配额，低基数类
+    // 永远进不了收集循环）
+    ipcMain.removeHandler('system:list-objects');
+    ipcMain.handle('system:list-objects', async () => [
+      { id: 'storage', icon: 'hard_drive', instances: [
+        { id: 'sda1', name: 'sda1', subtitle: '/mnt/a', kind: 'partition', icon: 'storage', storageKind: 'mounted', nativeIsDir: true },
+      ] },
+      { id: 'process', icon: 'app_shortcut', instances: Array.from({ length: 210 }, (_, i) => ({
+        id: String(i + 1), name: `proc${i + 1}`, subtitle: `/srv/proc${i + 1}`, kind: 'process', icon: 'app_shortcut',
+        metrics: { cpuPct: 0, rssBytes: 100, state: 'S' },
+      })) },
+      { id: 'thermal', icon: 'device_thermostat', instances: [
+        { id: 'hw0', name: 'sensor0', subtitle: null, kind: 'thermal', icon: 'device_thermostat' },
+      ] },
+      { id: 'backlight', icon: 'light_mode', instances: [
+        { id: 'bl0', name: 'screen', subtitle: null, kind: 'backlight', icon: 'light_mode' },
+      ] },
+    ]);
+
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await goObjects(win);
+
+    // 进入搜索态（空词）→ 全部对象计数（210 process + 3 = 213 → 截断 200）
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.clickEl(win, '.omnibar-enter-search');
+    await h.waitFor(win, `document.querySelectorAll('.object-class-filter-chip').length === 4`, { timeout: 8000 });
+    await h.waitFor(win, `/全部对象 · 200|All objects · 200|全オブジェクト：200|전체 객체: 200|Все объекты: 200|Усі об’єкти: 200/.test(document.querySelector('.object-search-filter-bar .search-filter-results')?.textContent ?? '')`, { timeout: 8000 });
+    h.assert.ok((await h.js(win, `document.querySelectorAll('.object-search-hit').length`)).value === 200, '空词全量应截断在 200 条');
+
+    // 弃选 process（高基数类）→ 剩余 storage/thermal/backlight 共 3 条——
+    // 修复前：200 条 process 命中被后过滤删光 → 计数 3 但内容「无匹配」；
+    // 修复后：先排除后截断，低基数类可达（review 15）
+    await h.js(win, `(() => {
+      const chip = [...document.querySelectorAll('.object-class-filter-chip')].find((x) => /进程|Processes/.test(x.textContent ?? ''));
+      if (!chip) return false;
+      chip.click();
+      return true;
+    })()`, true);
+    await h.waitFor(win, `document.querySelectorAll('.object-search-hit').length === 3`, { timeout: 8000 });
+    await h.waitFor(win, `/全部对象 · 3|All objects · 3|全オブジェクト：3|전체 객체: 3|Все объекты: 3|Усі об’єкти: 3/.test(document.querySelector('.object-search-filter-bar .search-filter-results')?.textContent ?? '')`, { timeout: 8000 });
+    const prefixes = await hitClassPrefixes(win);
+    h.assert.deepStrictEqual(prefixes, ['storage', 'thermal', 'backlight'], `弃选 process 后低基数类命中应可达（实际：${JSON.stringify(prefixes)}）`);
+    const keptSelected = await h.js(win, `[...document.querySelectorAll('.object-class-filter-chip')].map((c) => c.selected)`);
+    h.assert.strictEqual(keptSelected.value.filter((s) => !s).length, 1, 'process chip 应保持弃选');
   });
 
   h.finish();
