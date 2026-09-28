@@ -323,11 +323,14 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
     showToast(t('error.address_not_exist'), 'error');
   };
 
-  /** 搜索态提交：任何输入都当关键词（与下方筛选选项一起拼进 search url） */
+  /**
+   * 搜索态提交：任何输入都当关键词（与下方筛选选项一起拼进 search url）。
+   * review 12 #1：空词提交也照常执行（清空关键词重搜 = 空词搜索视图——
+   * 对象侧显示全部实例、文件侧显示输入提示；此前空输入静默 no-op，
+   * 用户反馈「删掉关键词重搜无任何反应」）
+   */
   const handleSearchSubmit = () => {
-    const q = inputValue.trim();
-    if (!q) return;
-    onSearch(q);
+    onSearch(inputValue.trim());
   };
 
   /** 进入编辑态：输入框显示当前路径（可编辑改写） */

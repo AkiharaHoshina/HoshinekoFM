@@ -297,25 +297,29 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
           <span>{searchPath}</span>
         </div>
       )}
-      {/* 结果行：计数 + 上限提示/调整 + 清除 */}
-      <div className="search-filter-summary">
-        <Icon name="search" />
-        <span className="search-filter-results">{t('search.results', resultCount, query)}</span>
-        {resultsCapped && (
-          <span className="search-filter-capped">{t('search.limit_hint', limit)}</span>
-        )}
-        <IconButton
-          className="search-limit-btn"
-          onClick={openLimitDialog}
-          variant="standard"
-          title={t('search.limit_btn')}
-        >
-          <Icon name="tune" />
-        </IconButton>
-        <IconButton onClick={onClear} variant="standard" title={t('search.clear')}>
-          <Icon name="close" />
-        </IconButton>
-      </div>
+      {/* 结果行：计数 + 上限提示/调整 + 清除。review 12 #2：空词不显示
+          结果行（「0 个关于 "" 的结果」无意义——居中大提示已承担 hint 职责，
+          用户定案 b 方案：隐藏整条结果行） */}
+      {query.trim() !== '' && (
+        <div className="search-filter-summary">
+          <Icon name="search" />
+          <span className="search-filter-results">{t('search.results', resultCount, query)}</span>
+          {resultsCapped && (
+            <span className="search-filter-capped">{t('search.limit_hint', limit)}</span>
+          )}
+          <IconButton
+            className="search-limit-btn"
+            onClick={openLimitDialog}
+            variant="standard"
+            title={t('search.limit_btn')}
+          >
+            <Icon name="tune" />
+          </IconButton>
+          <IconButton onClick={onClear} variant="standard" title={t('search.clear')}>
+            <Icon name="close" />
+          </IconButton>
+        </div>
+      )}
 
       {!nameFilterOnly && (
         <>

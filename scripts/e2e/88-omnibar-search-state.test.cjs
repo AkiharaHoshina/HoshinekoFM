@@ -12,7 +12,10 @@
  * - 88e objectsearch 也算 search：对象根页搜索 → objectsearch:// 态
  *   （输入框 = 关键词），Esc 退出回 objects:// 根；
  * - 88f 搜索态折叠控件组：「更多」按钮恒 standard（用户评审：不 filled）；
- * - 88g 回收站名称过滤：搜索路径行显示「回收站」，Esc 退出回回收站浏览。
+ * - 88g 回收站名称过滤：搜索路径行显示「回收站」，Esc 退出回回收站浏览；
+ * - 88h/88i（review 12）：空词态结果行隐藏（#2 b 方案——文件侧无
+ *   「0 个关于 "" 的结果」行）；清空关键词重搜 = 空词搜索视图（#1——
+ *   文件侧回提示、对象侧回「全部对象 · N」全量，此前静默 no-op）。
  *
  * 搜索入口手法同 harness.searchViaOmnibar / escCloseSearch；对象部分
  * 假 list/read-object（本文件独立进程，不污染其他用例）。
@@ -262,9 +265,11 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.search-enter-hint')`, { timeout: 8000 });
     const hintText = await h.js(win, `document.querySelector('.search-enter-hint')?.textContent ?? ''`);
     h.assert.ok(/输入关键词开始检索|Type keywords to start searching|キーワードを入力して検索を開始|검색어를 입력하여 검색 시작|Введите ключевые слова для поиска|Введіть ключові слова для пошуку/.test(hintText.value), `空词搜索视图应显示提示（实际：${hintText.value}）`);
-    // 文件区清空、搜索路径行出现（基准目录）
+    // 文件区清空、搜索路径行出现（基准目录）；review 12 #2：空词不显示
+    // 结果行（b 方案——隐藏「0 个关于 "" 的结果」，居中提示已承担职责）
     h.assert.ok((await h.js(win, `document.querySelectorAll('.file-list-item').length`)).value === 0, '空词搜索态文件区应清空');
     await h.waitFor(win, `!!document.querySelector('.search-filter-path')`);
+    h.assert.ok(!(await h.js(win, `!!document.querySelector('.search-filter-summary')`)).value, '空词态应隐藏结果行（b 方案）');
 
     // 输入关键词 → 立即检索出结果
     await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 'a');
@@ -275,6 +280,18 @@ const { ipcMain } = require('electron');
     })()`, true);
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`, { timeout: 8000 });
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.search-enter-hint')`)).value, '有词命中后提示应消失');
+    h.assert.ok((await h.js(win, `!!document.querySelector('.search-filter-results')`)).value, '有词后结果行应出现');
+
+    // review 12 #1：清空关键词重搜 → 回空词搜索视图（此前静默 no-op）
+    await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', '');
+    await h.js(win, `(() => {
+      const el = document.querySelector('.omnibar.mode-search .omnibar-input');
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return true;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.search-enter-hint')`, { timeout: 8000 });
+    h.assert.ok((await h.js(win, `document.querySelectorAll('.file-list-item').length`)).value === 0, '清空关键词重搜应回空结果');
+    h.assert.ok(!(await h.js(win, `!!document.querySelector('.search-filter-summary')`)).value, '清空重搜后结果行应再次隐藏');
 
     // 退出搜索回浏览视图
     await h.escCloseSearch(win);
@@ -314,6 +331,16 @@ const { ipcMain } = require('electron');
       return true;
     })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.object-search-hit').length === 1`, { timeout: 8000 });
+
+    // review 12 #1（对象侧）：清空关键词重搜 → 空词显示全部（此前静默 no-op）
+    await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', '');
+    await h.js(win, `(() => {
+      const el = document.querySelector('.omnibar.mode-search .omnibar-input');
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      return true;
+    })()`, true);
+    await h.waitFor(win, `/全部对象 · 1|All objects · 1|全オブジェクト：1|전체 객체: 1|Все объекты: 1|Усі об’єкти: 1/.test(document.querySelector('.object-search-filter-bar .search-filter-results')?.textContent ?? '')`, { timeout: 8000 });
+    h.assert.ok((await h.js(win, `document.querySelectorAll('.object-search-hit').length`)).value === 1, '清空关键词重搜应回空词全量显示');
 
     // Esc 退出回 objects:// 根
     await h.escCloseSearch(win);
