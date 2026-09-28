@@ -749,6 +749,7 @@ const ukUA = {
   'tab.videos': 'Відео',
   'tab.new_tab': 'Нова вкладка',
   'tab.search': (q: string) => `Пошук: ${q}`,
+  'tab.search_plain': "Пошук",
   // ── 空状态 ──
   'empty.no_tabs': 'Немає відкритих вкладок',
   'empty.open_new_tab': 'Відкрити нову вкладку',

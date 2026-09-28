@@ -710,6 +710,7 @@ const zhTW = {
   'tab.videos': '影片',
   'tab.new_tab': '新增分頁',
   'tab.search': (q: string) => `搜尋: ${q}`,
+  'tab.search_plain': "搜尋",
 
   // ── 空狀態 ──
   'empty.no_tabs': '沒有分頁',

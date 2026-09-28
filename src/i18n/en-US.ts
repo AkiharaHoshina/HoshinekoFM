@@ -721,6 +721,7 @@ const enUS = {
   'tab.videos': 'Videos',
   'tab.new_tab': 'New Tab',
   'tab.search': (q: string) => `Search: ${q}`,
+  'tab.search_plain': "Search",
   // ── 空状态 ──
   'empty.no_tabs': 'No tabs open',
   'empty.open_new_tab': 'Open a new tab',

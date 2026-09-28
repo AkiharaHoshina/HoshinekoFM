@@ -37,6 +37,7 @@ import { useUiZoom } from "./hooks/useUiZoom";
 import { zoomIconSize } from "./utils/iconZoom";
 import { parseSearchPath, SEARCH_DEFAULT_LIMIT, SEARCH_DEFAULT_TIMEOUT } from "./utils/searchPath";
 import { parseObjectsPath } from "./utils/objectsPath";
+import { parseObjectSearchPath } from "./utils/objectSearchPath";
 import { isObjectProjectionPath, type ObjectDragPayload } from "./utils/objectDrag";
 import type { ThemeConfig } from "./types/theme";
 import {
@@ -1443,16 +1444,20 @@ function AppContent() {
     activeTabPath === 'dashboard://' ||
     activeTabPath === 'trash://' ||
     activeTabPath.startsWith('search://') ||
-    activeTabPath.startsWith('objects://');
+    activeTabPath.startsWith('objects://') ||
+    activeTabPath.startsWith('objectsearch://');
   const windowTitle = useMemo(() => {
     if (activeTabPath === 'app://dashboard') return 'Hoshineko Nya~';
     if (activeTabPath === 'trash://') return t('nav.trash');
     if (!activeTabPath) return 'Hoshineko Nya~';
     if (showFullPathTitle) return activeTabPath;
-    // 搜索态虚拟路径：窗口标题显示「搜索: 关键词」
+    // 搜索态虚拟路径：窗口标题显示「搜索: 关键词」；空词（进入搜索态）
+    // 无悬空冒号——裸标签「搜索」（review 13 #1.1）
     if (activeTabPath.startsWith('search://')) {
       const parsedSearch = parseSearchPath(activeTabPath);
-      if (parsedSearch) return t('tab.search', parsedSearch.query);
+      if (parsedSearch) {
+        return parsedSearch.query ? t('tab.search', parsedSearch.query) : t('tab.search_plain');
+      }
     }
     // Object Panel 虚拟路径：窗口标题显示对象名/「对象」
     if (activeTabPath.startsWith('objects://')) {
@@ -1461,6 +1466,17 @@ function AppContent() {
         return parsedObjects.instanceId.split('/').pop() || t('objects.title');
       }
       return t('objects.title');
+    }
+    // 对象搜索虚拟路径：与标签页标题同源「对象搜索 · 关键词」（review 13
+    // #1.2——此前无分支落入兜底截断，标题变成 "process?q=喵" 这类垃圾）；
+    // 空词无悬空圆点（review 13 #1.1）
+    if (activeTabPath.startsWith('objectsearch://')) {
+      const parsedObjectSearch = parseObjectSearchPath(activeTabPath);
+      if (parsedObjectSearch) {
+        return parsedObjectSearch.query
+          ? `${t('objects.object_search')} · ${parsedObjectSearch.query}`
+          : t('objects.object_search');
+      }
     }
     return activeTabPath === '/'
       ? '/'

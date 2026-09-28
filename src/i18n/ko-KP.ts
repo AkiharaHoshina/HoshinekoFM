@@ -720,6 +720,7 @@ const koKP = {
   'tab.videos': '동화상',
   'tab.new_tab': '새 탭',
   'tab.search': (q: string) => `검색: ${q}`,
+  'tab.search_plain': "검색",
 
   // ── 빈 상태 ──
   'empty.no_tabs': '탭이 없습니다',

@@ -752,6 +752,7 @@ const ruUA = {
   'tab.videos': 'Видео',
   'tab.new_tab': 'Новая вкладка',
   'tab.search': (q: string) => `Поиск: ${q}`,
+  'tab.search_plain': "Поиск",
   // ── 空状态 ──
   'empty.no_tabs': 'Нет открытых вкладок',
   'empty.open_new_tab': 'Открыть новую вкладку',

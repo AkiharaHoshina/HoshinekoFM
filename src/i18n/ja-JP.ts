@@ -710,6 +710,7 @@ const jaJP = {
   'tab.videos': 'ビデオ',
   'tab.new_tab': '新しいタブ',
   'tab.search': (q: string) => `検索: ${q}`,
+  'tab.search_plain': "検索",
 
   // ── 空状态 ──
   'empty.no_tabs': 'タブがありません',

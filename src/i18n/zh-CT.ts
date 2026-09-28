@@ -710,6 +710,7 @@ const zhCT = {
   'tab.videos': '影片',
   'tab.new_tab': '新分頁',
   'tab.search': (q: string) => `搜尋: ${q}`,
+  'tab.search_plain': "搜尋",
 
   // ── 空狀態 ──
   'empty.no_tabs': '暫時冇分頁',

@@ -712,6 +712,7 @@ const zhAC = {
   'tab.videos': '视频',
   'tab.new_tab': '新标签页',
   'tab.search': (q: string) => `搜索: ${q}`,
+  'tab.search_plain': "搜索",
 
   // ── 空状态 ──
   'empty.no_tabs': '暂无标签页',

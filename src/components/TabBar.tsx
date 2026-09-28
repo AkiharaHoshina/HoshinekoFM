@@ -74,10 +74,11 @@ const getTabTitle = (title: string): string => {
   case 'videos':
     return t('tab.videos');
   default:
-    // 搜索态虚拟路径：解析关键词显示「搜索: …」
+    // 搜索态虚拟路径：解析关键词显示「搜索: …」；空词（进入搜索态）
+    // 无悬空冒号——裸标签「搜索」（review 13 #1.1）
     if (normalizeTitle.startsWith('search://')) {
       const parsed = parseSearchPath(title);
-      if (parsed) return t('tab.search', parsed.query);
+      if (parsed) return parsed.query ? t('tab.search', parsed.query) : t('tab.search_plain');
     }
     // Object Panel 虚拟路径：显示「对象」或「对象 · 实例名」
     if (normalizeTitle.startsWith('objects://')) {
@@ -87,10 +88,13 @@ const getTabTitle = (title: string): string => {
       }
       if (parsed) return t('objects.title');
     }
-    // 对象搜索虚拟路径：显示「对象搜索 · 关键词」
+    // 对象搜索虚拟路径：显示「对象搜索 · 关键词」；空词无悬空圆点
+    // （review 13 #1.1）
     if (normalizeTitle.startsWith('objectsearch://')) {
       const parsed = parseObjectSearchPath(title);
-      if (parsed) return `${t('objects.object_search')} · ${parsed.query}`;
+      if (parsed) {
+        return parsed.query ? `${t('objects.object_search')} · ${parsed.query}` : t('objects.object_search');
+      }
     }
     return title;
   }

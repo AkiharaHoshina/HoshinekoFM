@@ -597,7 +597,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
           className="breadcrumb-chip breadcrumb-objectsearch-chip"
         >
           <Icon name="search" slot="icon" />
-          <span style={{ fontWeight: 600 }}>{t('objects.object_search')} · {parsedObjectSearch.query}</span>
+          <span style={{ fontWeight: 600 }}>{parsedObjectSearch.query ? `${t('objects.object_search')} · ${parsedObjectSearch.query}` : t('objects.object_search')}</span>
         </Chip>
         <span className="breadcrumb-separator">/</span>
         <Button
@@ -683,13 +683,13 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
         }}
       >
         <Chip
-          title={t('tab.search', parsedSearch.query)}
+          title={parsedSearch.query ? t('tab.search', parsedSearch.query) : t('tab.search_plain')}
           onClick={() => onNavigate(parsedSearch.dir)}
           onContextMenu={(e) => handleBreadcrumbContextMenu(e)}
           className="breadcrumb-chip breadcrumb-search-chip"
         >
           <Icon name="search" slot="icon" />
-          <span style={{ fontWeight: 600 }}>{t('tab.search', parsedSearch.query)}</span>
+          <span style={{ fontWeight: 600 }}>{parsedSearch.query ? t('tab.search', parsedSearch.query) : t('tab.search_plain')}</span>
         </Chip>
         {dirParts.map((p, i) => {
           const segmentPath = '/' + dirParts.slice(0, i + 1).join('/');

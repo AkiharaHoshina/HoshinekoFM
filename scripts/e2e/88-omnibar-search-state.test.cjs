@@ -15,7 +15,10 @@
  * - 88g 回收站名称过滤：搜索路径行显示「回收站」，Esc 退出回回收站浏览；
  * - 88h/88i（review 12）：空词态结果行隐藏（#2 b 方案——文件侧无
  *   「0 个关于 "" 的结果」行）；清空关键词重搜 = 空词搜索视图（#1——
- *   文件侧回提示、对象侧回「全部对象 · N」全量，此前静默 no-op）。
+ *   文件侧回提示、对象侧回「全部对象 · N」全量，此前静默 no-op）；
+ * - 88h/88i（review 13）：标题无悬空分隔符（#1.1——空词窗口标题/搜索
+ *   胶囊/对象搜索胶囊无圆点冒号）；对象搜索窗口标题正确转换（#1.2——
+ *   「对象搜索 · 关键词」而非截断成 process?q=…）。
  *
  * 搜索入口手法同 harness.searchViaOmnibar / escCloseSearch；对象部分
  * 假 list/read-object（本文件独立进程，不污染其他用例）。
@@ -270,6 +273,11 @@ const { ipcMain } = require('electron');
     h.assert.ok((await h.js(win, `document.querySelectorAll('.file-list-item').length`)).value === 0, '空词搜索态文件区应清空');
     await h.waitFor(win, `!!document.querySelector('.search-filter-path')`);
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.search-filter-summary')`)).value, '空词态应隐藏结果行（b 方案）');
+    // review 13 #1.1：空词窗口标题/标签页标题无悬空分隔符（裸标签；
+    // 搜索态面包屑被输入框取代不可达——断窗口标题 + 标签标题两处）
+    await h.waitFor(win, `/^(搜索|搜尋|Search|検索|검색|Поиск|Пошук)$/.test(document.title)`, { timeout: 8000 });
+    const tabEmpty = await h.js(win, `document.querySelector('.tab-title')?.textContent ?? ''`);
+    h.assert.ok(/^(搜索|搜尋|Search|検索|검색|Поиск|Пошук)$/.test(tabEmpty.value.trim()), `空词标签页标题应无冒号（实际：${tabEmpty.value}）`);
 
     // 输入关键词 → 立即检索出结果
     await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 'a');
@@ -281,6 +289,7 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`, { timeout: 8000 });
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.search-enter-hint')`)).value, '有词命中后提示应消失');
     h.assert.ok((await h.js(win, `!!document.querySelector('.search-filter-results')`)).value, '有词后结果行应出现');
+    await h.waitFor(win, `/[:：]\\s*a$/.test(document.title)`, { timeout: 8000 });
 
     // review 12 #1：清空关键词重搜 → 回空词搜索视图（此前静默 no-op）
     await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', '');
@@ -292,6 +301,7 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.search-enter-hint')`, { timeout: 8000 });
     h.assert.ok((await h.js(win, `document.querySelectorAll('.file-list-item').length`)).value === 0, '清空关键词重搜应回空结果');
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.search-filter-summary')`)).value, '清空重搜后结果行应再次隐藏');
+    await h.waitFor(win, `/^(搜索|搜尋|Search|検索|검색|Поиск|Пошук)$/.test(document.title)`, { timeout: 8000 });
 
     // 退出搜索回浏览视图
     await h.escCloseSearch(win);
@@ -322,6 +332,10 @@ const { ipcMain } = require('electron');
     h.assert.ok(/全部对象|All objects|全オブジェクト|전체 객체|Все объекты|Усі об’єкти/.test(hintText.value), `对象空词搜索视图应显示全部对象计数（实际：${hintText.value}）`);
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.object-class-grid')`)).value, '空词搜索态不应显示全量类网格');
     h.assert.ok((await h.js(win, `document.querySelectorAll('.object-search-hit').length`)).value === 1, '空词搜索态应显示全部实例命中行（假数据 1 个 myproc）');
+    // review 13 #1.1：空词对象搜索窗口标题/标签页标题无悬空圆点
+    await h.waitFor(win, `/^(对象搜索|Object search|オブジェクト検索|객체 검색|Поиск объектов|Пошук об’єктів|物件搜尋)$/.test(document.title)`, { timeout: 8000 });
+    const otabEmpty = await h.js(win, `document.querySelector('.tab-title')?.textContent ?? ''`);
+    h.assert.ok(/^(对象搜索|Object search|オブジェクト検索|객체 검색|Поиск объектов|Пошук об’єктів|物件搜尋)$/.test(otabEmpty.value.trim()), `空词对象搜索标签页标题应无圆点（实际：${otabEmpty.value}）`);
 
     // 输入关键词 → 命中（对象搜索走同一输入框）
     await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 'myproc');
@@ -331,6 +345,9 @@ const { ipcMain } = require('electron');
       return true;
     })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.object-search-hit').length === 1`, { timeout: 8000 });
+    // review 13 #1.2：对象搜索窗口标题正确转换（此前无分支落入兜底截断
+    // 成 "process?q=myproc" 这类垃圾——应「对象搜索 · 关键词」）
+    await h.waitFor(win, `/^(对象搜索|Object search|オブジェクト検索|객체 검색|Поиск объектов|Пошук об’єктів|物件搜尋) · myproc$/.test(document.title)`, { timeout: 8000 });
 
     // review 12 #1（对象侧）：清空关键词重搜 → 空词显示全部（此前静默 no-op）
     await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', '');
@@ -341,6 +358,8 @@ const { ipcMain } = require('electron');
     })()`, true);
     await h.waitFor(win, `/全部对象 · 1|All objects · 1|全オブジェクト：1|전체 객체: 1|Все объекты: 1|Усі об’єкти: 1/.test(document.querySelector('.object-search-filter-bar .search-filter-results')?.textContent ?? '')`, { timeout: 8000 });
     h.assert.ok((await h.js(win, `document.querySelectorAll('.object-search-hit').length`)).value === 1, '清空关键词重搜应回空词全量显示');
+    // review 13 #1.1：清空重搜后对象搜索标题回裸标签（无圆点）
+    await h.waitFor(win, `/^(对象搜索|Object search|オブジェクト検索|객체 검색|Поиск объектов|Пошук об’єктів|物件搜尋)$/.test(document.title)`, { timeout: 8000 });
 
     // Esc 退出回 objects:// 根
     await h.escCloseSearch(win);
