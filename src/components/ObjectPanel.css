@@ -505,7 +505,7 @@
   min-width: 0;
 }
 
-.object-sortbar-keys .object-sortbar-sort-segmented md-outlined-segmented-button {
+.object-sortbar-keys .object-sortbar-sort-segmented hoshineko-outlined-segmented-button {
   white-space: nowrap;
   min-width: 0;
   overflow: hidden;

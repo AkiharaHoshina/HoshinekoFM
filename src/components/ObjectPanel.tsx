@@ -61,8 +61,8 @@ interface ObjectPanelProps {
   searchQuery: string;
   /**
    * 是否处于对象搜索态（当前路径为 objectsearch://——review 3 定案：
-   * 进入搜索态立即成为搜索视图，空词也渲染搜索视图 + 「输入关键词开始
-   * 检索」提示，状态不卡在浏览/搜索之间）
+   * 进入搜索态立即成为搜索视图，状态不卡在浏览/搜索之间；review 11
+   * #2：空词显示全部实例（受搜索条件与 200 上限约束））
    */
   inSearchState?: boolean;
   /**
@@ -1848,19 +1848,22 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   }, [filterMode, pidConds]);
 
   /** 进程类页筛选（地址栏搜索；先排序后过滤——筛选条件在搜索态由
-   *  ObjectSearchFilterBar 呈现，匹配语义见 processMatchesFilter） */
+   *  ObjectSearchFilterBar 呈现，匹配语义见 processMatchesFilter）。
+   *  review 11 #2：空词搜索态 = 显示全部（受搜索条件约束）——不再空列表；
+   *  processMatchesFilter 空词天然全命中（cmd 默认模式）或按条件筛空
+   *  （ne 全等空串/pc=lt 0 等，语义自洽） */
   const filteredProcessInstances = useMemo(() => {
     if (!sortedClassInstances) return null;
     const oq = searchQuery.trim();
-    if (!oq) return inSearchState ? [] : sortedClassInstances;
+    if (!oq && !inSearchState) return sortedClassInstances;
     return sortedClassInstances.filter((i) => processMatchesFilter(i, oq));
   }, [sortedClassInstances, searchQuery, processMatchesFilter, inSearchState]);
 
   /** 类页搜索激活态（搜索中树状显示无效——树按钮禁用 + 强制平铺渲染） */
   const searchActiveClass = searchQuery.trim() !== '';
   /**
-   * 类页搜索视图（review 3 定案：进入搜索态即搜索视图——空词也进，显示
-   * 「输入关键词开始检索」而非全量列表；与根页 rootSearchMode 同源）
+   * 类页搜索视图（review 3 定案：进入搜索态即搜索视图——空词也进；
+   * review 11 #2：空词显示全部实例受条件约束，与根页 rootSearchMode 同源）
    */
   const classSearchMode = searchActiveClass || (inSearchState && parsed?.className != null);
   /** 树模式生效态：仅在非搜索视图时生效（设计定案：搜索中树状无效——
@@ -2053,18 +2056,19 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
 
   /** 通用类页实例（地址栏搜索过滤；进程类在 filteredProcessInstances 组合；
    *  存储类在搜索态再按 挂载/未挂载/其他 chips 过滤——条件由 url nk 段
-   *  承载（excludedKinds）；空词搜索视图 = 空列表——review 3 定案） */
+   *  承载（excludedKinds）；review 11 #2：空词搜索视图 = 显示全部实例
+   *  （excludedKinds 照常应用，与有词同构）） */
   const genericFilteredInstances = useMemo(() => {
     if (!currentClass || currentClass.id === 'process') return null;
     const oq = searchQuery.trim().toLowerCase();
     let list = oq
       ? currentClass.instances.filter((i) => matchObjectInstance(i, oq))
-      : (inSearchState ? [] : currentClass.instances);
+      : currentClass.instances;
     if (currentClass.id === 'storage' && excludedKinds.length > 0) {
       list = list.filter((i) => !excludedKinds.includes(storageKindOf(i)));
     }
     return list;
-  }, [currentClass, searchQuery, excludedKinds, storageKindOf, inSearchState]);
+  }, [currentClass, searchQuery, excludedKinds, storageKindOf]);
 
   /** 排序键 segmented 按钮序（review 6/7 定案：[CPU | 内存 | 进程名 | PID]，
    *  **默认 CPU 降序**——PID 重新入排序键） */
@@ -2201,20 +2205,22 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   }, [classes, objectClassOrder]);
 
   /** 根页跨类命中数（chips 后过滤后；超限截断同 OBJECT_SEARCH_LIMIT——
-   *  上报给筛选条显示「搜索 "C" · N 个对象」） */
+   *  上报给筛选条显示「搜索 "C" · N 个对象」；review 11 #2：空词搜索态
+   *  = 全部实例计数（仍按 excludedClasses 排除 + 200 截断）） */
   const rootHitCount = useMemo(() => {
+    if (classes === null || loadError) return 0;
     const q = searchQuery.trim().toLowerCase();
-    if (!q || classes === null || loadError) return 0;
+    if (q === '' && !inSearchState) return 0;
     let n = 0;
     for (const cls of classes) {
       if (excludedClasses.includes(cls.id)) continue;
       for (const inst of cls.instances) {
-        if (matchObjectInstance(inst, q)) n += 1;
+        if (q === '' || matchObjectInstance(inst, q)) n += 1;
         if (n >= OBJECT_SEARCH_LIMIT) return n;
       }
     }
     return n;
-  }, [classes, loadError, searchQuery, excludedClasses]);
+  }, [classes, loadError, searchQuery, excludedClasses, inSearchState]);
 
   /** 搜索视图信息（review 7 #5 布局抽离：ObjectSearchFilterBar 渲染在
    *  ObjectPanel 外，但计数/根页类表由面板内枚举数据计算——经此上报；
@@ -2240,14 +2246,15 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   if (!parsed || parsed.className === null) {
     const q = searchQuery.trim();
     /** 搜索视图（rootSearchMode）：有词命中 或 处于对象搜索态（空词也
-     *  进搜索视图——review 3 定案，与文件区同语义） */
+     *  进搜索视图——review 3 定案；review 11 #2：空词 = 显示全部实例，
+     *  受 chips 与 200 上限约束） */
     const rootSearchMode = q !== '' || inSearchState;
-    /** 跨类命中（name/subtitle/id；超限截断——进程类实例多） */
+    /** 跨类命中（name/subtitle/id；超限截断——进程类实例多；空词全量） */
     const hits: { cls: ObjectClassInfo; inst: ObjectInstance }[] = [];
-    if (q !== '' && classes !== null && !loadError) {
+    if (rootSearchMode && classes !== null && !loadError) {
       for (const cls of classes) {
         for (const inst of cls.instances) {
-          if (matchObjectInstance(inst, q.toLowerCase())) hits.push({ cls, inst });
+          if (q === '' || matchObjectInstance(inst, q.toLowerCase())) hits.push({ cls, inst });
           if (hits.length >= OBJECT_SEARCH_LIMIT) break;
         }
         if (hits.length >= OBJECT_SEARCH_LIMIT) break;
@@ -2274,13 +2281,11 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         </div>
         {rootSearchMode ? (
           // 搜索视图：搜索头/全类 chips 已上移到 ObjectSearchFilterBar
-          // （review 7 #5 布局抽离），面板只留命中结果；空词（进入搜索
-          // 态）无命中不显示空态文案——由筛选条提示承担（review 3）
+          // （review 7 #5 布局抽离），面板只留命中结果；review 11 #2：
+          // 空词显示全部实例——全部被 chips 排除/类全空时才显示无匹配
           <>
             {visibleHitCount === 0 ? (
-              q === '' ? null : (
-                <div className="object-load-failed">{t('objects.search_no_match')}</div>
-              )
+              <div className="object-load-failed">{t('objects.search_no_match')}</div>
             ) : (
               <div className="object-search-results">
                 {visibleGroupedHits.map(({ cls, insts }) => (
@@ -2492,12 +2497,13 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
             <>
               {renderSortBar()}
               {shownCount === 0 ? (
-                // 空词搜索视图由头部提示承担（review 3）；有词无命中/
-                // 普通空态才显示文案
-                classSearchMode && !searchActiveClass ? null : (
-                  <div className="object-load-failed">
-                    {searchActiveClass ? t('objects.search_no_match') : t('objects.process_no_match')}
-                  </div>
+                // review 11 #2：空词搜索视图显示全部——此处 0 行 = 条件
+                // 筛空（ne 全等空串/pc 无命中等），显示无匹配；浏览态空
+                // 列表才显示普通空态文案
+                classSearchMode ? (
+                  <div className="object-load-failed">{t('objects.search_no_match')}</div>
+                ) : (
+                  <div className="object-load-failed">{t('objects.process_no_match')}</div>
                 )
               ) : (
                 <div
@@ -2558,10 +2564,9 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
           ) : (
             <>
               {classSearchMode && shownCount === 0 ? (
-                // 空词搜索视图由头部提示承担；有词无命中才显示空态文案
-                searchActiveClass ? (
-                  <div className="object-load-failed">{t('objects.search_no_match')}</div>
-                ) : null
+                // review 11 #2：搜索态 0 行 = 条件筛空（如存储类全部
+                // 分类被取消勾选），显示无匹配
+                <div className="object-load-failed">{t('objects.search_no_match')}</div>
               ) : (
                 <div className="object-list">{(genericFilteredInstances ?? []).map(renderInstanceRow)}</div>
               )}

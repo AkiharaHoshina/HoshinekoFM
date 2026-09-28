@@ -16,7 +16,8 @@ const PID_COND_ORDER: PidCond[] = ['gt', 'lt', 'eq'];
 interface ObjectSearchFilterBarProps {
   /** 当前对象页形态（根页/进程类/存储类/其他类——其他类只显示结果行） */
   page: 'root' | 'process' | 'storage' | 'other';
-  /** 搜索关键词（空 = 进入搜索态未输词，显示提示文案） */
+  /** 搜索关键词（空 = 进入搜索态未输词——review 11 #2：显示全部实例
+   *  的计数「全部对象 · N 个」而非提示文案） */
   query: string;
   /** 结果计数（ObjectPanel 上报：根页 = 跨类命中数、类页 = 可见行数） */
   resultCount: number;
@@ -46,7 +47,9 @@ interface ObjectSearchFilterBarProps {
  * 对象搜索筛选条（review 7 #5 布局抽离）：对象搜索态的条件全部渲染
  * 在此（ExplorerTab 内、`.object-panel` 上方，与文件搜索 SearchFilterBar
  * 同 band 框架——SearchBand.css 共享）：
- * - 结果行：搜索图标 + 「搜索 "C" · N 个对象」/空词提示 + 清除；
+ * - 结果行：搜索图标 + 「搜索 "C" · N 个对象」/空词「全部对象 · N 个」
+ *   （review 11 #2：空词显示全部实例的计数，替代原「输入关键词」提示）+
+ *   清除；
  * - 根页：全类 Filter Chips（url nc 段驱动）；
  * - 存储类页：挂载/未挂载/其他 chips（url nk 段驱动）；
  * - 进程类页：两组互斥 segmented——组 1 单选 [cmdline 包含 | 进程名等于
@@ -100,7 +103,7 @@ export const ObjectSearchFilterBar: React.FC<ObjectSearchFilterBarProps> = ({
       <div className="search-filter-summary">
         <Icon name="search" />
         <span className="search-filter-results">
-          {query.trim() === '' ? t('search.enter_query_hint') : t('objects.search_header', query, resultCount)}
+          {query.trim() === '' ? t('objects.search_all', resultCount) : t('objects.search_header', query, resultCount)}
         </span>
         <IconButton onClick={onClear} variant="standard" title={t('search.clear')}>
           <Icon name="close" />

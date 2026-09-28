@@ -566,6 +566,7 @@ const zhHK = {
   'objects.search_recent': "最近搜尋",
   'objects.search_clear_history': "清除記錄",
   'objects.search_header': (q: string, n: number) => `搜尋 “${q}” · ${n} 個物件`,
+  'objects.search_all': (n: number) => `全部物件 · ${n} 個`,
   'objects.search_no_match': "無相符嘅物件",
   'objects.sort_name': '按名稱',
   'objects.filter_cmd': 'cmdline 包含',

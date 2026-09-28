@@ -292,16 +292,19 @@ const { ipcMain } = require('electron');
     })()`, true);
     await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
 
-    // 进入搜索态 → 立即 objectsearch:// 搜索视图（空词：chips + 提示、无全量网格）
+    // 进入搜索态 → 立即 objectsearch:// 搜索视图（review 11 #2：空词显示
+    // 全部实例计数 + 命中行，替代原「输入关键词」提示与空列表）
     await h.clickEl(win, '.omnibar-trigger');
     await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     await h.clickEl(win, '.omnibar-enter-search');
     await h.waitFor(win, `!!document.querySelector('.object-search-filter-bar')`, { timeout: 8000 });
     await h.waitFor(win, `!!document.querySelector('.object-search-chips')`, { timeout: 8000 });
+    // 计数经 onSearchViewInfoChange 上报（一帧时差）——waitFor 计数到位
+    await h.waitFor(win, `/全部对象 · 1|All objects · 1|全オブジェクト：1|전체 객체: 1|Все объекты: 1|Усі об’єкти: 1/.test(document.querySelector('.object-search-filter-bar .search-filter-results')?.textContent ?? '')`, { timeout: 8000 });
     const hintText = await h.js(win, `document.querySelector('.object-search-filter-bar .search-filter-results')?.textContent ?? ''`);
-    h.assert.ok(/输入关键词开始检索|Type keywords to start searching|キーワードを入力して検索を開始|검색어를 입력하여 검색 시작|Введите ключевые слова для поиска|Введіть ключові слова для пошуку/.test(hintText.value), `对象空词搜索视图应显示提示（实际：${hintText.value}）`);
+    h.assert.ok(/全部对象|All objects|全オブジェクト|전체 객체|Все объекты|Усі об’єкти/.test(hintText.value), `对象空词搜索视图应显示全部对象计数（实际：${hintText.value}）`);
     h.assert.ok(!(await h.js(win, `!!document.querySelector('.object-class-grid')`)).value, '空词搜索态不应显示全量类网格');
-    h.assert.ok((await h.js(win, `document.querySelectorAll('.object-search-hit').length`)).value === 0, '空词搜索态应无命中行');
+    h.assert.ok((await h.js(win, `document.querySelectorAll('.object-search-hit').length`)).value === 1, '空词搜索态应显示全部实例命中行（假数据 1 个 myproc）');
 
     // 输入关键词 → 命中（对象搜索走同一输入框）
     await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 'myproc');

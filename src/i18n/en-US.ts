@@ -577,6 +577,7 @@ const enUS = {
   'objects.search_recent': "Recent searches",
   'objects.search_clear_history': "Clear history",
   'objects.search_header': (q: string, n: number) => `${n} objects matching "${q}"`,
+  'objects.search_all': (n: number) => `All objects · ${n}`,
   'objects.search_no_match': "No matching objects",
   'objects.sort_name': 'By name',
   'objects.filter_cmd': 'Cmdline contains',

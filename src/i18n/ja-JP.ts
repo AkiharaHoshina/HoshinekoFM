@@ -566,6 +566,7 @@ const jaJP = {
   'objects.search_recent': "最近の検索",
   'objects.search_clear_history': "履歴を消去",
   'objects.search_header': (q: string, n: number) => `「${q}」の検索結果：${n} 件のオブジェクト`,
+  'objects.search_all': (n: number) => `全オブジェクト：${n} 件`,
   'objects.search_no_match': "一致するオブジェクトがありません",
   'objects.sort_name': '名前順',
   'objects.filter_cmd': 'cmdline を含む',

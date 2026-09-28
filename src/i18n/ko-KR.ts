@@ -567,6 +567,7 @@ const koKR = {
   'objects.search_recent': "최근 검색",
   'objects.search_clear_history': "기록 지우기",
   'objects.search_header': (q: string, n: number) => `"${q}" 검색 결과: 객체 ${n}개`,
+  'objects.search_all': (n: number) => `전체 객체: ${n}개`,
   'objects.search_no_match': "일치하는 객체가 없습니다",
   'objects.sort_name': '이름순',
   'objects.filter_cmd': 'cmdline 포함',

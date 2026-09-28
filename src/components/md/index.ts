@@ -1,5 +1,6 @@
 import { createComponent } from '@lit/react';
 import React from 'react';
+import { html } from 'lit';
 
 // Button variants
 import { MdFilledButton } from '@material/web/button/filled-button.js';
@@ -414,10 +415,30 @@ export const SegmentedButtonSet = createComponent({
   },
 });
 
+/**
+ * review 11 #1（v0.11.49-dev）：上游 labs outlined-segmented-button 的
+ * outline 元素硬编码 `inset: 0px -0.5px`（internal/outlined-styles.css）——
+ * 相邻按钮重叠让位导致整组左右外缘边框各被吃掉半像素（用户反馈）。
+ * 该样式不暴露 CSS 变量、outline span 无 ::part 可命中，只能子类化在
+ * shadow 内注入覆盖样式。子类与上游渲染结构逐字一致（仅 outline 前
+ * 多一个 style 元素），set 经 queryAssignedElements/flat + 事件定位
+ * 子按钮、不依赖标签名——换标签无副作用。**升级 @material/web 时核对
+ * 内部类名 `.md3-segmented-button__outline` 与 renderOutline 结构。**
+ */
+class HoshinekoOutlinedSegmentedButton extends MdOutlinedSegmentedButton {
+  override renderOutline() {
+    return html`<style>.md3-segmented-button__outline{inset:0 0 !important}</style><span class="md3-segmented-button__outline"></span>`;
+  }
+}
+
+if (!customElements.get('hoshineko-outlined-segmented-button')) {
+  customElements.define('hoshineko-outlined-segmented-button', HoshinekoOutlinedSegmentedButton);
+}
+
 export const SegmentedButton = createComponent({
   react: React,
-  tagName: 'md-outlined-segmented-button',
-  elementClass: MdOutlinedSegmentedButton,
+  tagName: 'hoshineko-outlined-segmented-button',
+  elementClass: HoshinekoOutlinedSegmentedButton,
 });
 
 // ─── Elevation ──────────────────────────────────────────────────────────────────

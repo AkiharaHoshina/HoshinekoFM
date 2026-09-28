@@ -29,7 +29,7 @@
   align-items: stretch;
 }
 
-.object-filter-groups md-outlined-segmented-button {
+.object-filter-groups hoshineko-outlined-segmented-button {
   white-space: nowrap;
   min-width: 0;
   overflow: hidden;

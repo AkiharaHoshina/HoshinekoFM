@@ -566,6 +566,7 @@ const zhCN = {
   'objects.search_recent': "最近搜索",
   'objects.search_clear_history': "清除历史",
   'objects.search_header': (q: string, n: number) => `搜索 “${q}” · ${n} 个对象`,
+  'objects.search_all': (n: number) => `全部对象 · ${n} 个`,
   'objects.search_no_match': "无匹配的对象",
   'objects.sort_name': '按名称',
   'objects.filter_cmd': 'cmdline 包含',

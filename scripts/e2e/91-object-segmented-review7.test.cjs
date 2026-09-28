@@ -10,7 +10,10 @@
  * - 91c 排序是展示偏好不进 url：浏览态默认 CPU 降序；切换排序键/升降序
  *   只在会话内；退出搜索重进类页排序回落默认（不经 url 恢复）；
  * - 91d 空词搜索态先改条件再输词（review 4 语义扩展到进程筛选组）：
- *   pc 条件在空词态写入 url、输词后沿用（条件保持）。
+ *   pc 条件在空词态写入 url、输词后沿用（条件保持）；review 11 #2：
+ *   空词显示全量（计数 + 行），pc=gt 空词时 pid>0 全命中。
+ * - 91e review 11 #1：segmented outline inset 修复（shadow 内 computed
+ *   inset = 0px 0px，不再被相邻按钮吃半像素边框）。
  *
  * 全部假 list-objects；segmented 交互经 h.segmentClick（labs 组件
  * host.click() 不触发选择——合成 segmented-button-interaction 派发，
@@ -187,21 +190,25 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     await goProcessClass(win);
 
-    // 进入搜索态（空词）→ 筛选条出现、提示文案、无行
+    // 进入搜索态（空词）→ 筛选条出现、全部对象计数、全量 3 行
+    // （review 11 #2：空词 = 显示全部，受条件约束——替代原提示+空列表）
     await h.clickEl(win, '.omnibar-trigger');
     await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     await h.clickEl(win, '.omnibar-enter-search');
     await h.waitFor(win, `!!document.querySelector('.object-filter-mode-set')`, { timeout: 8000 });
+    await h.waitFor(win, `/全部对象 · 3|All objects · 3|全オブジェクト：3|전체 객체: 3|Все объекты: 3|Усі об’єкти: 3/.test(document.querySelector('.object-search-filter-bar .search-filter-results')?.textContent ?? '')`, { timeout: 8000 });
     const hint = await h.js(win, `document.querySelector('.object-search-filter-bar .search-filter-results')?.textContent ?? ''`);
-    h.assert.ok(/输入关键词开始检索|Type keywords to start searching|キーワードを入力して検索を開始|검색어를 입력하여 검색 시작|Введите ключевые слова для поиска|Введіть ключові слова для пошуку/.test(hint.value), `空词搜索态筛选条应显示提示（实际：${hint.value}）`);
-    h.assert.ok((await h.js(win, `document.querySelectorAll('.object-row').length`)).value === 0, '空词搜索态应无行');
+    h.assert.ok(/全部对象|All objects|全オブジェクト|전체 객체|Все объекты|Усі об’єкти/.test(hint.value), `空词搜索态筛选条应显示全部对象计数（实际：${hint.value}）`);
+    h.assert.ok((await h.js(win, `document.querySelectorAll('.object-row').length`)).value === 3, '空词搜索态应显示全量行');
 
     // 先改条件：点组 2「PID 大于」（互斥：组 1 清空——条件写入 url，
-    // 不发起搜索）→ 输词 '150' → 搜索：pid>150 命中 bbb/ccc（条件保持）
+    // 不发起搜索；空词 + gt：pid > 0 全命中，行数不变）→ 输词 '150'
+    // → 搜索：pid>150 命中 bbb/ccc（条件保持）
     await h.segmentClick(win, '.object-filter-pid-set', 0);
     await h.sleep(200);
     const modeCleared = await h.js(win, `[...document.querySelector('.object-filter-mode-set').children].every((b) => b.selected === false)`);
     h.assert.ok(modeCleared.value, '空词态点组 2 应清空组 1（互斥）');
+    h.assert.ok((await h.js(win, `document.querySelectorAll('.object-row').length`)).value === 3, '空词 + pid>0 应保持全量行');
     await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', '150');
     await h.js(win, `(() => {
       const el = document.querySelector('.omnibar.mode-search .omnibar-input');
@@ -211,6 +218,22 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 2`, { timeout: 8000 });
     const names = await h.js(win, `[...document.querySelectorAll('.object-row .object-row-name')].map((x) => (x.textContent ?? '').trim()).sort()`);
     h.assert.deepStrictEqual(names.value, ['bbb', 'ccc'], `空词态先设 pc=gt 再输词应保持条件（pid>150）：${JSON.stringify(names.value)}`);
+  });
+
+  await h.run('91e review 11 #1：segmented outline inset 修复（shadow 内 computed 断言）', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await goProcessClass(win);
+
+    const r = await h.js(win, `(() => {
+      const btn = document.querySelector('.object-sortbar-sort-segmented')?.children?.[0];
+      const outline = btn?.shadowRoot?.querySelector('.md3-segmented-button__outline');
+      if (!outline) return { inset: null, tag: btn?.tagName.toLowerCase() ?? null };
+      return { inset: getComputedStyle(outline).inset, tag: btn.tagName.toLowerCase() };
+    })()`);
+    h.assert.strictEqual(r.value.tag, 'hoshineko-outlined-segmented-button', `排序条按钮应为子类化标签（实际：${r.value.tag}）`);
+    // Chromium 全零 shorthand 序列化为单值 '0px'——断言各轴均为 0（不再 -0.5px）
+    h.assert.ok(/^0px( 0px)*$/.test(r.value.inset ?? ''), `outline inset 各轴应为 0px（实际：${r.value.inset}）`);
   });
 
   h.finish();

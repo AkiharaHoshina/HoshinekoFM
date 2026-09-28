@@ -608,6 +608,7 @@ const ruUA = {
   'objects.search_recent': "Недавние поиски",
   'objects.search_clear_history': "Очистить историю",
   'objects.search_header': (q: string, n: number) => `Поиск «${q}»: объектов найдено — ${n}`,
+  'objects.search_all': (n: number) => `Все объекты: ${n}`,
   'objects.search_no_match': "Совпадений среди объектов нет",
   'objects.sort_name': 'По имени',
   'objects.filter_cmd': 'Содержит cmdline',

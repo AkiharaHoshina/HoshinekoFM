@@ -605,6 +605,7 @@ const ukUA = {
   'objects.search_recent': "Нещодавні пошуки",
   'objects.search_clear_history': "Очистити історію",
   'objects.search_header': (q: string, n: number) => `Пошук «${q}»: знайдено об’єктів — ${n}`,
+  'objects.search_all': (n: number) => `Усі об’єкти: ${n}`,
   'objects.search_no_match': "Збігів серед об’єктів немає",
   'objects.sort_name': 'За назвою',
   'objects.filter_cmd': 'Містить cmdline',
