@@ -50,7 +50,7 @@ import {
   type ConflictEntry,
   type ConflictResult,
 } from '../utils/fileConflict';
-import { registerKeyboardZone } from '../utils/focusZones';
+import { registerKeyboardZone, setKeyboardCycleMode } from '../utils/focusZones';
 import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, computeCtrlArrowTarget, computeShiftArrowRange, type ListItem } from './FileList/utils';
 import {
   trashVirtualToReal,
@@ -596,6 +596,12 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     }));
   }, []);
 
+  /** 搜索结果站焦点（review 19 第二循环 search-results / 回车落点）：
+   *  清掉浏览态残留选中后按文件区 Tab 停靠同款语义落焦点（无选中选
+   *  第一个可见、有则保持）。声明提前于 handleSearch（回车落点回调经
+   *  ref 读取，赋值在 filesZoneFocusRef 之后） */
+  const searchResultsFocusRef = useRef<() => void>(() => {});
+
   /**
    * 发起搜索（地址栏搜索 / 右键菜单重搜）。对象面板内走 B 方案语义：
    * 根页跨类搜、类页类内搜（经 objectSearchQuery 交给 ObjectPanel 过滤，
@@ -628,6 +634,15 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       }));
       // 记录搜索历史（根页/类页搜索词共用一条历史；空词进入搜索态不记录）
       if (query.trim() !== '') onObjectSearchRecord?.(query);
+      // review 19 决策 4：回车执行搜索后焦点落结果第一项（根页命中行 /
+      // 类页列表容器——对象面板渲染为异步导航，延时聚焦）
+      if (query.trim() !== '') {
+        setTimeout(() => {
+          const first = document.querySelector<HTMLElement>('.object-panel [data-obj-nav]');
+          if (first) { first.focus(); return; }
+          document.querySelector<HTMLElement>('.object-list-virtual, .object-list')?.focus();
+        }, 150);
+      }
       return;
     }
     const parsed = isSearchPath(currentPath) ? parseSearchPath(currentPath) : null;
@@ -636,6 +651,12 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     // 筛选变化/路径恢复不记录；空词进入搜索态不记录）
     if (query.trim() !== '') onFileSearchRecord?.(dir, query);
     await runSearch(dir, query, options);
+    // review 19 决策 4：回车执行搜索后焦点落结果第一项（文件区）——
+    // setTimeout 0 等 React 提交结果 DOM 后落点（最小延迟，避免与
+    // 后续交互竞态）
+    if (query.trim() !== '') {
+      setTimeout(() => searchResultsFocusRef.current(), 0);
+    }
   }, [currentPath, runSearch, onObjectSearchRecord, onFileSearchRecord]);
 
   /**
@@ -1357,6 +1378,12 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     container.focus();
   };
 
+  // eslint-disable-next-line react-hooks/refs -- 渲染期同步命令式回调（声明提前于 handleSearch）
+  searchResultsFocusRef.current = () => {
+    if (selectedFiles.size > 0) setSelectedFiles(new Set());
+    filesZoneFocusRef.current();
+  };
+
   /**
    * 键盘分区（files）：Tab 分区循环聚焦进来时选中视口内第一个可见文件
    * 并聚焦文件区容器（文件条目 tabIndex=-1 不进 Tab 序，方向键选择由
@@ -1371,6 +1398,27 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       },
     });
   }, [isActive, currentPath]);
+
+  /** 搜索态第二循环模式（review 19 决策 2：完全替换第一循环）——
+   *  search:// / objectsearch:// 或回收站名称过滤态切 search 模式；
+   *  活动标签页独占设置（cleanup 复位 browse——切标签时旧 cleanup 先跑、
+   *  新 effect 再设置，顺序天然正确） */
+  const searchCycleActive = isSearchPath(currentPath)
+    || isObjectSearchPath(currentPath)
+    || (searchActive && currentPath === 'trash://');
+  useEffect(() => {
+    if (!isActive) return;
+    setKeyboardCycleMode(searchCycleActive ? 'search' : 'browse');
+    return () => setKeyboardCycleMode('browse');
+  }, [isActive, searchCycleActive]);
+
+  /** search-results 站（文件侧搜索；对象侧由 ObjectPanel 以同源焦点逻辑
+   *  注册同名站——两处互斥：ObjectPanel 仅在对象视图挂载） */
+  useEffect(() => {
+    if (!isActive || !searchCycleActive) return;
+    if (isObjectsPath(currentPath) || isObjectSearchPath(currentPath)) return;
+    return registerKeyboardZone({ id: 'search-results', focus: () => searchResultsFocusRef.current() });
+  }, [isActive, currentPath, searchCycleActive]);
 
   /** 对象根页浏览态最近搜索词条（object-recent 站，review 19）：
    *  ←/→ 在词条间微调、Enter 原生激活；Tab 停靠聚焦当前（或第一个）词条。
@@ -2528,6 +2576,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               <>
                 {searchParsed && (
                   <ObjectSearchFilterBar
+                    keyboardCycle
                     page={searchParsed.className === null
                       ? 'root'
                       : (searchParsed.className === 'process'
@@ -2636,6 +2685,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         >
           {searchActive && (
             <SearchFilterBar
+              keyboardCycle={currentPath !== 'trash://'}
               query={searchQuery}
               options={{
                 type: searchOptions.type,

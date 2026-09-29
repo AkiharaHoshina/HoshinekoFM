@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { OutlinedSelect, SelectOption, OutlinedTextField, List, ListItem } from './md';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
@@ -7,6 +7,7 @@ import { Dialog } from './Dialog';
 import { MarqueeText } from './MarqueeText';
 import { showToast } from '../utils/toast';
 import { t } from '../i18n';
+import { registerKeyboardZone } from '../utils/focusZones';
 import type { RegisteredMimeEntry } from '../types/electron.d';
 import { type SearchPathFilter } from '../utils/searchPath';
 import './SearchBand.css';
@@ -64,6 +65,12 @@ interface SearchFilterBarProps {
    * 其一，用户评审定案）。
    */
   searchPath?: string;
+  /**
+   * 注册搜索态第二循环的 search-filters 站（review 19）：主窗口启用
+   * （Tab 停靠聚焦第一个控件 + ←/→ 跨控件微调）；未传（选择器/保存器
+   * 保持旧行为）不注册。
+   */
+  keyboardCycle?: boolean;
 }
 
 /**
@@ -91,6 +98,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   onTimeoutRemoved,
   nameFilterOnly = false,
   searchPath,
+  keyboardCycle = false,
 }) => {
   /** 筛选模式：none（占位「筛选模式」）/ size / format——纯 UI 态，
    *  提交的筛选由 options（已生效值）反映；切换模式先提交无筛选 */
@@ -287,8 +295,48 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   // ── 快捷添加对话框 ──
   const [quickAddOpen, setQuickAddOpen] = useState(false);
 
+  // ── 第二循环 search-filters 站（review 19）──
+
+  const barRef = useRef<HTMLDivElement | null>(null);
+
+  /** Tab 停靠：聚焦第一个筛选控件（类型下拉） */
+  const searchFiltersFocusRef = useRef<() => void>(() => {});
+  // eslint-disable-next-line react-hooks/refs -- 渲染期同步命令式回调
+  searchFiltersFocusRef.current = () => {
+    barRef.current?.querySelector<HTMLElement>('md-outlined-select')?.focus();
+  };
+
+  useEffect(() => {
+    if (!keyboardCycle) return;
+    return registerKeyboardZone({ id: 'search-filters', focus: () => searchFiltersFocusRef.current() });
+  }, [keyboardCycle]);
+
+  /** ←/→ 跨控件微调（review 19 决策 6：仅 ←/→ 跨控件——select 内 ↑/↓
+   *  保留 md 语义改选项；文本域内方向键保留光标语义） */
+  const FILTER_NAV_SELECTOR = 'md-outlined-select, md-outlined-text-field, md-text-button, md-outlined-button, md-filled-button, md-icon-button';
+  const handleFilterNavKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const target = e.target as HTMLElement | null;
+    if (!target || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+    // 文本域宿主：内部 input 持焦点——方向键归光标（shadow 事件 target 已
+    // 重定向为宿主，按 tag 判）
+    if (target.tagName === 'MD-OUTLINED-TEXT-FIELD' || target.tagName === 'MD-FILLED-TEXT-FIELD') return;
+    const bar = e.currentTarget;
+    const items = Array.from(bar.querySelectorAll<HTMLElement>(FILTER_NAV_SELECTOR));
+    const idx = items.indexOf(target);
+    if (idx < 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    items[(idx + (e.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length]?.focus();
+  }, []);
+
   return (
-    <div className="search-filter-bar">
+    <div
+      ref={barRef}
+      className="search-filter-bar"
+      data-kb-zone={keyboardCycle ? 'search-filters' : undefined}
+      onKeyDown={keyboardCycle ? handleFilterNavKey : undefined}
+    >
       {/* 搜索基准目录：搜索态地址栏被关键词输入框取代，路径常驻于此
           （用户评审定案）；悬停 title 显示完整路径，超长省略 */}
       {searchPath && (

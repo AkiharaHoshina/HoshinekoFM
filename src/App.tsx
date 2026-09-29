@@ -1840,6 +1840,8 @@ function AppContent() {
       if (!t) return;
       if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
       if (document.querySelector('md-dialog[open], .context-menu, [role="dialog"]')) return;
+      // review 19：编辑态迷你循环等上游处理器已消费（preventDefault）时不再接管
+      if (e.defaultPrevented) return;
       e.preventDefault();
       focusNextKeyboardZone(e.shiftKey ? -1 : 1);
     };

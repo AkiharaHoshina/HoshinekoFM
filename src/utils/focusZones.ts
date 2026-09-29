@@ -21,7 +21,11 @@ export type KeyboardZoneId =
   | 'dashboard-storage'
   | 'dashboard-pinned'
   | 'dashboard-recent'
-  | 'files';
+  | 'files'
+  | 'search-back'
+  | 'search-submit'
+  | 'search-filters'
+  | 'search-results';
 
 export interface KeyboardZone {
   /** 分区标识（须与容器 data-kb-zone 属性一致） */
@@ -55,10 +59,43 @@ const ZONE_ORDER: KeyboardZoneId[] = [
   'files',
 ];
 
+/**
+ * 搜索态第二循环（review 19 定案：完全替换第一循环）：
+ * 回切按钮（返回地址栏）→ 回车按钮（开始搜索）→ 筛选器第一个按钮 →
+ * 搜索结果第一项 → 循环。回收站名称过滤无筛选器（search-filters 不注册
+ * 自动跳过，三站循环）。
+ */
+const SEARCH_ZONE_ORDER: KeyboardZoneId[] = [
+  'search-back',
+  'search-submit',
+  'search-filters',
+  'search-results',
+];
+
 const zones: KeyboardZone[] = [];
 
 /** 当前焦点所在分区（focusin 跟踪；初始为文件区） */
 let currentZoneId: KeyboardZoneId = 'files';
+
+/**
+ * 循环模式（review 19）：browse = 第一循环（ZONE_ORDER）、search =
+ * 第二循环（SEARCH_ZONE_ORDER）。多标签页共享模块级状态——由活动标签页
+ * 的 effect 设置/复位（切标签时旧标签 cleanup 先复位、新标签 effect 再
+ * 设置，顺序天然正确）。
+ */
+let cycleMode: 'browse' | 'search' = 'browse';
+
+/** 切换循环模式（复位当前分区到该模式首站） */
+export function setKeyboardCycleMode(mode: 'browse' | 'search'): void {
+  if (cycleMode === mode) return;
+  cycleMode = mode;
+  currentZoneId = mode === 'search' ? 'search-back' : 'files';
+}
+
+/** 当前循环模式（调试/测试用） */
+export function getKeyboardCycleMode(): 'browse' | 'search' {
+  return cycleMode;
+}
 
 /**
  * 注册一个键盘分区。组件挂载时注册、卸载时注销（返回注销函数）。
@@ -83,8 +120,13 @@ export function registerKeyboardZone(zone: KeyboardZone): () => void {
 export function trackKeyboardZoneFocus(el: Element | null): void {
   if (!el || typeof el.closest !== 'function') return;
   const zoneEl = el.closest('[data-kb-zone]');
-  const id = (zoneEl?.getAttribute('data-kb-zone') ?? '') as KeyboardZoneId;
-  if (ZONE_ORDER.includes(id)) {
+  let id = (zoneEl?.getAttribute('data-kb-zone') ?? '') as KeyboardZoneId;
+  // 搜索态第二循环：文件区/对象面板容器的 DOM 分区标记仍是 files/objects
+  // ——映射为 search-results 站，保证循环推进不脱轨（review 19）
+  if (cycleMode === 'search' && (id === 'files' || id === 'objects')) {
+    id = 'search-results';
+  }
+  if (ZONE_ORDER.includes(id) || SEARCH_ZONE_ORDER.includes(id)) {
     currentZoneId = id;
   }
 }
@@ -99,14 +141,21 @@ export function trackKeyboardZoneFocus(el: Element | null): void {
  */
 export function focusNextKeyboardZone(dir: 1 | -1): boolean {
   if (zones.length === 0) return false;
-  const ordered = ZONE_ORDER.filter((id) => zones.some((z) => z.id === id));
+  const order = cycleMode === 'search' ? SEARCH_ZONE_ORDER : ZONE_ORDER;
+  const ordered = order.filter((id) => zones.some((z) => z.id === id));
   if (ordered.length === 0) return false;
   const cur = zones.find((z) => z.id === currentZoneId);
   const activeEl = document.activeElement as Element | null;
-  const focusedZone = activeEl?.closest?.('[data-kb-zone]')?.getAttribute('data-kb-zone');
+  let focusedZone = activeEl?.closest?.('[data-kb-zone]')?.getAttribute('data-kb-zone');
+  // 与 trackKeyboardZoneFocus 同款映射：搜索态 files/objects 容器按
+  // search-results 站计（否则「先落到当前分区」分支在 files 与
+  // search-results 间死循环）
+  if (cycleMode === 'search' && (focusedZone === 'files' || focusedZone === 'objects')) {
+    focusedZone = 'search-results';
+  }
   // 焦点不在当前分区内（首次 Tab）：先落到当前分区（默认 files）
   if (focusedZone !== currentZoneId) {
-    const target = cur ?? zones[0];
+    const target = cur ?? zones.find((z) => z.id === ordered[0]) ?? zones[0];
     target.focus();
     currentZoneId = target.id;
     return true;

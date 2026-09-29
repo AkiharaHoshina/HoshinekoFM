@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { FilterChip, SegmentedButton, SegmentedButtonSet, type SegmentedButtonSetSelectionDetail } from './md';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 import { t } from '../i18n';
+import { registerKeyboardZone } from '../utils/focusZones';
 import { OBJECTS_CLASS_LABEL } from '../utils/objectsPath';
 import type { ProcessFilterMode, PidCond } from '../utils/objectSearchPath';
 import './SearchBand.css';
@@ -41,6 +42,11 @@ interface ObjectSearchFilterBarProps {
   onPidCondChange: (cond: PidCond, active: boolean) => void;
   /** 清除搜索（回基准对象页） */
   onClear: () => void;
+  /**
+   * 注册搜索态第二循环的 search-filters 站（review 19）：主窗口启用
+   * （Tab 停靠聚焦第一个控件 + ←/→ 跨控件微调）；未传不注册。
+   */
+  keyboardCycle?: boolean;
 }
 
 /**
@@ -76,6 +82,7 @@ export const ObjectSearchFilterBar: React.FC<ObjectSearchFilterBarProps> = ({
   onFilterModeChange,
   onPidCondChange,
   onClear,
+  keyboardCycle = false,
 }) => {
   /** 组 1 生效模式（pc 非空时组 1 无选中——互斥；null = 默认 cmdline 包含） */
   const effectiveMode = pidConds.length > 0 ? null : (filterMode ?? 'cmd');
@@ -96,8 +103,60 @@ export const ObjectSearchFilterBar: React.FC<ObjectSearchFilterBarProps> = ({
     onPidCondChange(cond, e.detail.selected);
   };
 
+  // ── 第二循环 search-filters 站（review 19）──
+
+  const barRef = useRef<HTMLDivElement | null>(null);
+
+  /** Tab 停靠：聚焦第一个筛选控件（chip 优先；进程类回落 segmented 首按钮） */
+  const searchFiltersFocusRef = useRef<() => void>(() => {});
+  // eslint-disable-next-line react-hooks/refs -- 渲染期同步命令式回调
+  searchFiltersFocusRef.current = () => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const chip = bar.querySelector<HTMLElement>('md-filter-chip');
+    if (chip) { chip.focus(); return; }
+    bar.querySelector<HTMLElement>('hoshineko-outlined-segmented-button')?.focus();
+  };
+
+  useEffect(() => {
+    if (!keyboardCycle) return;
+    return registerKeyboardZone({ id: 'search-filters', focus: () => searchFiltersFocusRef.current() });
+  }, [keyboardCycle]);
+
+  /** ←/→ 跨控件微调（review 19 决策 6：仅 ←/→ 跨控件——segmented 内部
+   *  方向键放行（焦点在子按钮上时跳过，内部 roving 语义保留）；chips/
+   *  清除按钮间用 ←/→ 移动） */
+  const handleFilterNavKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    // segmented 内部按钮（shadow 事件 target 重定向为子按钮宿主）：
+    // 方向键归内部 roving，不做跨控件移动
+    if (target.closest('hoshineko-outlined-segmented-button, md-outlined-segmented-button')) return;
+    const bar = e.currentTarget;
+    const items = Array.from(bar.querySelectorAll<HTMLElement>(
+      'md-filter-chip, md-icon-button, hoshineko-outlined-segmented-button-set, md-outlined-segmented-button-set',
+    ));
+    const idx = items.indexOf(target);
+    if (idx < 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const next = items[(idx + (e.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length];
+    // segmented set 宿主不可聚焦——落到其首个子按钮
+    if (next.tagName === 'MD-OUTLINED-SEGMENTED-BUTTON-SET') {
+      next.querySelector<HTMLElement>('hoshineko-outlined-segmented-button')?.focus();
+    } else {
+      next.focus();
+    }
+  }, []);
+
   return (
-    <div className="search-filter-bar object-search-filter-bar">
+    <div
+      ref={barRef}
+      className="search-filter-bar object-search-filter-bar"
+      data-kb-zone={keyboardCycle ? 'search-filters' : undefined}
+      onKeyDown={keyboardCycle ? handleFilterNavKey : undefined}
+    >
       {/* 结果行（与文件搜索同款框架样式；对象搜索无基准目录行——两层
           深的虚拟页 + 类 chips/segmenteds 已自描述，review 5 定案） */}
       <div className="search-filter-summary">

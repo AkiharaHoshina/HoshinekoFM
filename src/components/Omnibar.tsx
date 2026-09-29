@@ -12,6 +12,7 @@ import { expandAddressPath, looksLikePathInput } from "../utils/addressPath";
 import { isSearchPath, parseSearchPath } from "../utils/searchPath";
 import { isObjectSearchPath, parseObjectSearchPath } from "../utils/objectSearchPath";
 import { isObjectsPath } from "../utils/objectsPath";
+import { registerKeyboardZone } from "../utils/focusZones";
 import { showToast } from "../utils/toast";
 import "./Omnibar.css";
 
@@ -384,11 +385,19 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
     onCloseSearch?.();
   }, [currentPath, onCloseSearch]);
 
-  /** 显式退出搜索：清 url、导航回进入搜索前的 url（不靠焦点判断） */
+  /** 显式退出搜索：清 url、导航回进入搜索前的 url（不靠焦点判断）。
+   *  review 19 决策 4：Esc 退出后焦点落「编辑地址栏按钮」（topbar-omnibar
+   *  站的触发钮——导航落定后 DOM 重挂载，延时聚焦） */
   const closeSearch = useCallback(() => {
     setMode('breadcrumbs');
     onCloseSearch?.();
+    setTimeout(() => {
+      document.querySelector<HTMLElement>('.omnibar-trigger')?.focus();
+    }, 80);
   }, [onCloseSearch]);
+
+  /** 迷你循环焦点转移守卫（input blur 复位被吞一次，见 handleKeyDown Tab） */
+  const editingNavRef = useRef(false);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
@@ -405,6 +414,47 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
       } else {
         setMode('breadcrumbs');
       }
+    }
+    if (e.key === "Tab" && mode === 'edit') {
+      // review 19 编辑态迷你循环：输入框 Tab → 「进入搜索」按钮 →
+      // 再 Tab 回输入框（两点往返，不进第一循环；决策 3）。
+      // 置位 editingNavRef 吞掉本次 input blur——否则焦点移到按钮时
+      // input 的 onBlur 会把模式复位回面包屑、按钮随渲染卸载
+      e.preventDefault();
+      if (document.activeElement === inputRef.current) {
+        editingNavRef.current = true;
+        document.querySelector<HTMLElement>('.omnibar-enter-search')?.focus();
+      } else {
+        inputRef.current?.focus();
+      }
+    }
+  };
+
+  /** 搜索态第二循环两站注册（review 19：回切 → 回车 → …；模式由 ExplorerTab
+   *  经 setKeyboardCycleMode 切换，本组件只注册焦点回调。按钮经 DOM 查询
+   *  定位——IconButton 包装不转发 ref） */
+  useEffect(() => {
+    if (mode !== 'search') return;
+    const c1 = registerKeyboardZone({
+      id: 'search-back',
+      focus: () => document.querySelector<HTMLElement>('.omnibar-back-address')?.focus(),
+    });
+    const c2 = registerKeyboardZone({
+      id: 'search-submit',
+      focus: () => document.querySelector<HTMLElement>('.omnibar-start-search')?.focus(),
+    });
+    return () => { c1(); c2(); };
+  }, [mode]);
+
+  /** 回切/回车按钮间 ←/→ 微调（review 19 决策 6：仅 ←/→ 跨控件） */
+  const handleSearchBtnArrow = (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (document.querySelector<HTMLElement>('.omnibar-back-address') === document.activeElement) {
+      document.querySelector<HTMLElement>('.omnibar-start-search')?.focus();
+    } else {
+      document.querySelector<HTMLElement>('.omnibar-back-address')?.focus();
     }
   };
 
@@ -439,51 +489,85 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onBlur={() => {
-              // 编辑态点外部 = 取消回面包屑；搜索态不靠焦点取消（B4 定案）
-              if (mode === 'edit') setMode('breadcrumbs');
+              // 编辑态点外部 = 取消回面包屑；搜索态不靠焦点取消（B4 定案）。
+              // review 19：迷你循环 Tab 转移焦点时吞掉本次复位（见
+              // editingNavRef——否则点「进入搜索」前 blur 就复位了模式）
+              if (mode === 'edit') {
+                if (editingNavRef.current) {
+                  editingNavRef.current = false;
+                  return;
+                }
+                setMode('breadcrumbs');
+              }
             }}
             placeholder={mode === 'search'
               ? t("omnibar.placeholder_query")
               : t("omnibar.placeholder_address")}
           />
           {mode === 'edit' && !searchDisabled && (
-            <IconButton
-              variant="standard"
-              className="omnibar-enter-search"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
+            <span
+              style={{ display: 'inline-flex' }}
+              onKeyDown={(e) => {
+                // 迷你循环：从按钮 Tab 回输入框（输入框侧的 Tab 已在
+                // handleKeyDown 拦截）——preventDefault 阻止 App 全局接管
+                if (e.key === 'Tab') {
+                  e.preventDefault();
+                  inputRef.current?.focus();
+                }
+              }}
+            >
+              <IconButton
+                variant="standard"
+                className="omnibar-enter-search"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
                 // 切入搜索态：全新关键词（编辑态输入的是路径/schema，不带走）。
                 // review 3 定案：立即以空词进入搜索视图（search://?q= 身份
                 // 立即落定，文件区不跑 "find *"、显示「输入关键词开始检索」
                 // 提示）——状态不卡在浏览/搜索之间
-                setInputValue('');
-                setMode('search');
-                onSearch('');
-              }}
-              title={t("omnibar.enter_search")}
-            >
-              <Icon name="search" className="edit-icon" />
-            </IconButton>
+                  setInputValue('');
+                  setMode('search');
+                  onSearch('');
+                }}
+                title={t("omnibar.enter_search")}
+              >
+                <Icon name="search" className="edit-icon" />
+              </IconButton>
+            </span>
           )}
           {mode === 'search' && (
             <>
-              <IconButton
-                variant="standard"
-                className="omnibar-back-address"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={backToAddress}
-                title={t("omnibar.back_to_address")}
+              {/* 第二循环两站（review 19）：span 挂 data-kb-zone 供 focusin
+                  跟踪（IconButton 包装不转发 ref，ref 取内部 md-icon-button） */}
+              <span
+                data-kb-zone="search-back"
+                style={{ display: 'inline-flex' }}
+                onKeyDown={handleSearchBtnArrow}
               >
-                <Icon name="close" className="edit-icon" />
-              </IconButton>
-              <IconButton
-                variant="standard"
-                className="omnibar-start-search"
-                onClick={handleSearchSubmit}
-                title={t("omnibar.start_search")}
+                <IconButton
+                  variant="standard"
+                  className="omnibar-back-address"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={backToAddress}
+                  title={t("omnibar.back_to_address")}
+                >
+                  <Icon name="close" className="edit-icon" />
+                </IconButton>
+              </span>
+              <span
+                data-kb-zone="search-submit"
+                style={{ display: 'inline-flex' }}
+                onKeyDown={handleSearchBtnArrow}
               >
-                <Icon name="keyboard_return" className="edit-icon" />
-              </IconButton>
+                <IconButton
+                  variant="standard"
+                  className="omnibar-start-search"
+                  onClick={handleSearchSubmit}
+                  title={t("omnibar.start_search")}
+                >
+                  <Icon name="keyboard_return" className="edit-icon" />
+                </IconButton>
+              </span>
             </>
           )}
         </div>

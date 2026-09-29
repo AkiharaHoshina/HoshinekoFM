@@ -2310,9 +2310,17 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     genericListRef.current?.focus();
   };
 
-  /** objects 分区注册（ObjectPanel 仅在对象视图挂载——挂载即注册） */
+  /**
+   * objects 分区注册（ObjectPanel 仅在对象视图挂载——挂载即注册）。
+   * review 19：同时注册 search-results（第二循环搜索结果站）——两者焦点
+   * 逻辑同源；browse 模式 search-results 不在序内惰性、search 模式
+   * objects 不在序内惰性，互不干扰。
+   */
   useEffect(() => {
-    return registerKeyboardZone({ id: 'objects', focus: () => objectsZoneFocusRef.current() });
+    const focus = () => objectsZoneFocusRef.current();
+    const c1 = registerKeyboardZone({ id: 'objects', focus });
+    const c2 = registerKeyboardZone({ id: 'search-results', focus });
+    return () => { c1(); c2(); };
   }, []);
 
   /** 可见类（有实例才显示卡片/chips）按 objectClassOrder 重排（未列出的
