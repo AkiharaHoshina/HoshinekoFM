@@ -14,6 +14,7 @@ interface ButtonProps {
   className?: string;
   style?: React.CSSProperties;
   onClick?: React.MouseEventHandler<HTMLElement>;
+  onKeyDown?: React.KeyboardEventHandler<HTMLElement>;
   onDragOver?: React.DragEventHandler<HTMLElement>;
   onDragEnter?: React.DragEventHandler<HTMLElement>;
   onDragLeave?: React.DragEventHandler<HTMLElement>;
@@ -41,6 +42,7 @@ export const Button: React.FC<ButtonProps> = ({
   type,
   style,
   onClick,
+  onKeyDown,
   onDragOver,
   onDragEnter,
   onDragLeave,
@@ -59,6 +61,7 @@ export const Button: React.FC<ButtonProps> = ({
       style={style}
       hasIcon={!!icon}
       onClick={onClick}
+      onKeyDown={onKeyDown}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}
       onDragLeave={onDragLeave}

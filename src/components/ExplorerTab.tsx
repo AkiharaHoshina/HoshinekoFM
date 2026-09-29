@@ -1372,6 +1372,30 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     });
   }, [isActive, currentPath]);
 
+  /** 对象根页浏览态最近搜索词条（object-recent 站，review 19）：
+   *  ←/→ 在词条间微调、Enter 原生激活；Tab 停靠聚焦当前（或第一个）词条。
+   *  chip 元素经 DOM 查询（Button 包装不转发 ref） */
+  const [objectRecentFocus, setObjectRecentFocus] = useState(0);
+  const objectRecentZoneFocusRef = useRef<() => void>(() => {});
+  // eslint-disable-next-line react-hooks/refs -- 渲染期同步命令式回调
+  objectRecentZoneFocusRef.current = () => {
+    const chips = Array.from(document.querySelectorAll<HTMLElement>('.search-recent-chip'));
+    if (chips.length === 0) return;
+    const idx = objectRecentFocus < chips.length ? objectRecentFocus : 0;
+    chips[idx]?.focus();
+  };
+  /** 词条行显示条件（与渲染处同源——**含 isObjectsPath 守卫**：文件视图
+   *  parseObjectsPath 返回 null 也会让 className == null 成立，漏掉会
+   *  把 object-recent 注册进文件视图循环（词条行并不渲染）） */
+  const showObjectRecent = isObjectsPath(currentPath)
+    && parseObjectsPath(currentPath)?.className == null
+    && objectSearchHistory.length > 0
+    && searchRecentCount > 0;
+  useEffect(() => {
+    if (!isActive || !showObjectRecent) return;
+    return registerKeyboardZone({ id: 'object-recent', focus: () => objectRecentZoneFocusRef.current() });
+  }, [isActive, showObjectRecent]);
+
   /**
    * 键盘分区（topbar-up / topbar-omnibar / topbar-sort）：顶栏三站
    * 独立 Tab 停靠——返回上级键（回收站视图无此键，不注册）、地址栏内
@@ -2529,14 +2553,25 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                   && parseObjectsPath(currentPath)?.className == null
                   && objectSearchHistory.length > 0
                   && searchRecentCount > 0 && (
-                  <div className="search-recent">
+                  <div className="search-recent" data-kb-zone="object-recent">
                     <span className="search-recent-label">{t('objects.search_recent')}</span>
-                    {objectSearchHistory.slice(0, searchRecentCount).map((q) => (
+                    {objectSearchHistory.slice(0, searchRecentCount).map((q, idx) => (
                       <Button
                         key={q}
                         variant="text"
                         className="search-recent-chip"
+                        tabIndex={idx === objectRecentFocus ? 0 : -1}
                         onClick={() => loadPath(buildObjectSearchPath(null, q), true)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                            e.preventDefault();
+                            const chips = Array.from(document.querySelectorAll<HTMLElement>('.search-recent-chip'));
+                            const n = chips.length;
+                            const next = (idx + (e.key === 'ArrowRight' ? 1 : n - 1)) % n;
+                            setObjectRecentFocus(next);
+                            chips[next]?.focus();
+                          }
+                        }}
                       >
                         {q}
                       </Button>

@@ -17,6 +17,7 @@ import { useDrag } from '../contexts/DragContext';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import { useRubberBandSelection } from '../hooks/useRubberBandSelection';
+import { registerKeyboardZone } from '../utils/focusZones';
 import type { ObjectClassInfo, ObjectInstance, ObjectReading, SmartInfo } from '../types/electron.d';
 import type { IFile } from '../types/files';
 import './ObjectPanel.css';
@@ -2196,6 +2197,124 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     ? processVisibleList.length
     : (genericFilteredInstances?.length ?? 0);
 
+  /** 通用类页列表容器（Tab 停靠聚焦 + ↑/↓ 移动 selectedId，review 19） */
+  const genericListRef = useRef<HTMLDivElement | null>(null);
+
+  /** 根页对象导航元素（类卡片/搜索命中行）roving（review 19 objects 站）：
+   *  ←/→（及 ↑/↓ 线性）在面板内 `[data-obj-nav]` 元素间移动、Enter/Space
+   *  经 click 激活（div 无原生按键激活） */
+  const handleObjNavKey = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
+    const cur = e.currentTarget;
+    const panel = cur.closest('.object-panel');
+    const items = panel ? Array.from(panel.querySelectorAll<HTMLElement>('[data-obj-nav]')) : [];
+    const idx = items.indexOf(cur);
+    if (idx < 0) return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      items[(idx + 1) % items.length]?.focus();
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[(idx - 1 + items.length) % items.length]?.focus();
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      // 阻止冒泡到窗口级文件区 Enter handler：导航重渲染会把当前元素
+      // 摘出 DOM（e.target 脱离分区）——守卫失效后文件区 Enter 会误判
+      // 「空选择」执行 handleUp 返回上级，吃掉刚发起的导航（review 19 实测）
+      e.stopPropagation();
+      cur.click();
+    }
+  }, []);
+
+  /** 通用类页列表键盘（review 19）：↑/↓ 移动 selectedId（无选中从首行起）、
+   *  Enter 打开实例（与双击同链路） */
+  const handleGenericListKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const list = genericFilteredInstances ?? [];
+    if (list.length === 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const idx = selectedId !== null ? list.findIndex((i) => i.id === selectedId) : -1;
+      const base = idx < 0 ? -1 : idx;
+      const nextIdx = e.key === 'ArrowDown'
+        ? Math.min(list.length - 1, base + 1)
+        : Math.max(0, base - 1);
+      const next = list[nextIdx];
+      setSelectedId(next.id);
+      document.querySelector<HTMLElement>(`.object-list [data-id="${next.id}"]`)?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      // 同 handleObjNavKey：阻止冒泡到文件区窗口级 Enter（导航重渲染后
+      // 元素摘出 DOM，分区守卫失效 → 误判空选择执行 handleUp）
+      e.stopPropagation();
+      const inst = selectedId !== null ? list.find((i) => i.id === selectedId) : list[0];
+      if (inst) void handleInstanceDoubleClick(inst);
+    }
+  }, [genericFilteredInstances, selectedId, handleInstanceDoubleClick]);
+
+  /** 实例详情页导航 roving（review 19 决策 7：Tab 停靠页头；←/→ 在
+   *  页头与操作按钮间微调） */
+  const handleDetailNavKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const panel = e.currentTarget;
+    const header = panel.querySelector<HTMLElement>('.object-panel-header');
+    const buttons = Array.from(panel.querySelectorAll<HTMLElement>(
+      '.object-detail md-text-button, .object-detail md-tonal-button, .object-detail md-outlined-button, .object-detail md-filled-button, .object-refresh-toggle md-text-button',
+    ));
+    const items = [header, ...buttons].filter((x): x is HTMLElement => !!x);
+    if (items.length === 0) return;
+    const t = e.target as HTMLElement;
+    const idx = items.findIndex((el) => el === t || el.contains(t));
+    if (idx < 0) return;
+    e.preventDefault();
+    items[(idx + (e.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length]?.focus();
+  }, []);
+
+  /**
+   * objects 分区 Tab 停靠（review 19）：按当前视图落焦点——
+   * - 根页（浏览态类卡片 / 搜索态命中行）：聚焦当前或第一个 `[data-obj-nav]`；
+   * - 实例详情页：页头（决策 7）；
+   * - 进程类页：容器 + 无选中时先选首行（与文件区「无选中选第一个、
+   *   已有选中保持不变」同规则）；
+   * - 通用类页：无选中先选第一个，聚焦列表容器。
+   */
+  const objectsZoneFocusRef = useRef<() => void>(() => {});
+  // eslint-disable-next-line react-hooks/refs -- 渲染期同步命令式回调（注册 effect 经 ref 读取最新闭包）
+  objectsZoneFocusRef.current = () => {
+    if (!parsed || parsed.className === null) {
+      const panel = document.querySelector<HTMLElement>('.object-panel[data-kb-zone="objects"]');
+      const items = panel ? Array.from(panel.querySelectorAll<HTMLElement>('[data-obj-nav]')) : [];
+      if (items.length === 0) return;
+      const active = document.activeElement as HTMLElement | null;
+      const inList = active && items.includes(active) ? active : null;
+      (inList ?? items[0]).focus();
+      return;
+    }
+    if (parsed.instanceId !== null && currentClass && currentInstance) {
+      const panel = document.querySelector<HTMLElement>('.object-panel[data-kb-zone="objects"]');
+      panel?.querySelector<HTMLElement>('.object-panel-header')?.focus();
+      return;
+    }
+    if (isProcessClass) {
+      const container = processListContainerRef.current;
+      if (!container) return;
+      if (processVisibleList.length > 0 && processSelected.size === 0) {
+        const firstId = processVisibleList[0].id;
+        setProcessCursor(firstId);
+        setProcessAnchor(firstId);
+        setProcessSelected(new Set([firstId]));
+      }
+      container.focus();
+      return;
+    }
+    const list = genericFilteredInstances ?? [];
+    if (list.length > 0 && selectedId === null) setSelectedId(list[0].id);
+    genericListRef.current?.focus();
+  };
+
+  /** objects 分区注册（ObjectPanel 仅在对象视图挂载——挂载即注册） */
+  useEffect(() => {
+    return registerKeyboardZone({ id: 'objects', focus: () => objectsZoneFocusRef.current() });
+  }, []);
+
   /** 可见类（有实例才显示卡片/chips）按 objectClassOrder 重排（未列出的
    *  类按默认序稳定排尾）——根页卡片与筛选条 chips 共用（review 7 #5：
    *  chips 渲染在面板外，类表经 onSearchViewInfoChange 上报） */
@@ -2288,7 +2407,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       : groupedHits;
     const visibleHitCount = visibleGroupedHits.reduce((n, g) => n + g.insts.length, 0);
     return (
-      <div className="object-panel">
+      <div className="object-panel" data-kb-zone="objects">
         <div className="object-panel-header">
           <Icon name="widgets" className="object-panel-header-icon" />
           <div className="object-panel-title">{t('objects.title')}</div>
@@ -2314,6 +2433,8 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
                         className="object-search-hit"
                         role="button"
                         tabIndex={0}
+                        data-obj-nav=""
+                        onKeyDown={handleObjNavKey}
                         onClick={() => onNavigate(buildObjectsPath(cls.id, inst.id))}
                         onContextMenu={(e) => openObjectRowMenu(
                           e,
@@ -2352,6 +2473,8 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
                     onClick={() => onNavigate(buildObjectsPath(cls.id))}
                     role="button"
                     tabIndex={0}
+                    data-obj-nav=""
+                    onKeyDown={handleObjNavKey}
                     draggable
                     onDragStart={(e) => startObjectClassDrag(e, cls, registerObjectDragStart)}
                     onDragOver={(e) => {
@@ -2410,9 +2533,10 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     const inst = currentInstance;
     const isPolled = inst.kind !== 'tty';
     return (
-      <div className="object-panel">
+      <div className="object-panel" data-kb-zone="objects" onKeyDown={handleDetailNavKey}>
         <div
           className="object-panel-header"
+          tabIndex={-1}
           draggable
           onDragStart={(e) => startObjectDrag(e, parsed.className, inst, registerObjectDragStart)}
           onContextMenu={(e) => openObjectRowMenu(
@@ -2492,7 +2616,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     return !!el?.closest?.('.object-row, md-text-button, md-outlined-button, md-tonal-button, md-filled-button, md-icon-button, md-outlined-text-field');
   };
   return (
-    <div className={`object-panel${isProcessClass ? ' object-panel--virtual' : ''}`}>
+    <div className={`object-panel${isProcessClass ? ' object-panel--virtual' : ''}`} data-kb-zone="objects">
       <div className="object-panel-header">
         <Icon name={currentClass?.icon ?? 'widgets'} className="object-panel-header-icon" />
         <div className="object-panel-title">{t(OBJECTS_CLASS_LABEL[parsed?.className ?? ''] ?? 'objects.title')}</div>
@@ -2582,7 +2706,14 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
                 // 分类被取消勾选），显示无匹配
                 <div className="object-load-failed">{t('objects.search_no_match')}</div>
               ) : (
-                <div className="object-list">{(genericFilteredInstances ?? []).map(renderInstanceRow)}</div>
+                <div
+                  ref={genericListRef}
+                  className="object-list"
+                  tabIndex={-1}
+                  onKeyDown={handleGenericListKey}
+                >
+                  {(genericFilteredInstances ?? []).map(renderInstanceRow)}
+                </div>
               )}
             </>
           )}

@@ -15,6 +15,8 @@ export type KeyboardZoneId =
   | 'tabbar'
   | 'topbar-up'
   | 'topbar-omnibar'
+  | 'object-recent'
+  | 'objects'
   | 'topbar-sort'
   | 'dashboard-storage'
   | 'dashboard-pinned'
@@ -32,6 +34,9 @@ export interface KeyboardZone {
  * Tab 循环顺序（用户约定）：
  * - 文件页：功能栏 → places → 标签页 → 返回上级键 → 地址栏内 →
  *   分类开关和排序方式 → 文件区；
+ * - 对象页（review 19）：功能栏 → places → 标签页 → 返回上级键（如果有）
+ *   → 地址栏内 → 最近搜索项 → 对象类或对象（topbar-sort/files 不注册
+ *   自动跳过）；
  * - 仪表盘：功能栏 → places → 标签页 → 存储子区 → 固定项子区 →
  *   最近访问子区（文件页专属分区未注册自动跳过）。
  */
@@ -41,6 +46,8 @@ const ZONE_ORDER: KeyboardZoneId[] = [
   'tabbar',
   'topbar-up',
   'topbar-omnibar',
+  'object-recent',
+  'objects',
   'topbar-sort',
   'dashboard-storage',
   'dashboard-pinned',
