@@ -17,7 +17,7 @@ import { useDrag } from '../contexts/DragContext';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import { useRubberBandSelection } from '../hooks/useRubberBandSelection';
-import { registerKeyboardZone } from '../utils/focusZones';
+import { registerKeyboardZone, focusKeyboardTarget } from '../utils/focusZones';
 import type { ObjectClassInfo, ObjectInstance, ObjectReading, SmartInfo } from '../types/electron.d';
 import type { IFile } from '../types/files';
 import './ObjectPanel.css';
@@ -2007,10 +2007,27 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     setProcessAnchor(inst.id);
   }, [processSelectingRef, processDidSelectRef, processVisibleList, processAnchor]);
 
-  /** 列表快捷键（方向键移动/Shift 扩展/Ctrl+A 全选/Esc 清除） */
+  /** 列表快捷键（方向键移动/Shift 扩展/Ctrl+A 全选/Esc 清除；
+   *  review 19 决策 8：树模式 ←/→ 折叠/展开游标行） */
   const handleProcessListKeyDown = useCallback((e: React.KeyboardEvent) => {
     const ids = processVisibleList.map((i) => i.id);
     if (ids.length === 0) return;
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && treeActive) {
+      const row = treeRows?.find((r) => r.inst.id === processCursor);
+      if (row?.hasChildren) {
+        e.preventDefault();
+        const wantCollapse = e.key === 'ArrowLeft';
+        if (wantCollapse !== (row.collapsed ?? false)) {
+          setTreeCollapsed((prev) => {
+            const next = new Set(prev);
+            if (next.has(row.inst.id)) next.delete(row.inst.id);
+            else next.add(row.inst.id);
+            return next;
+          });
+        }
+      }
+      return;
+    }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       // review 19 跳选修复：游标经树折叠/筛选/轮询重排后可能悬空
@@ -2054,7 +2071,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       return;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- processListImperativeRef 为稳定 ref 对象
-  }, [processVisibleList, processCursor, processAnchor]);
+  }, [processVisibleList, processCursor, processAnchor, treeActive, treeRows]);
 
   /** 存储类实例的显式分类（后端 storageKind 优先；旧快照/假数据缺字段
    *  时按 nativeIsDir 回落——挂载点语义恒为目录） */
@@ -2092,7 +2109,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   };
 
   const renderSortBar = () => (
-    <div className="object-sortbar">
+    <div className="object-sortbar" ref={sortBarRef} data-kb-zone="object-sortbar" onKeyDownCapture={handleSortbarNav}>
       {/* 第一行：排序键 segmented（CPU/内存/进程名/PID，默认 CPU 降序）+
           升降序 + 树模式；搜索态筛选条件已上移到 ObjectSearchFilterBar
           （review 7 #5 布局抽离——排序是展示偏好不进 url，#4） */}
@@ -2131,7 +2148,13 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       </div>
       {/* 第三行：多选操作（恒常占位——未选中时禁用态，排满整行）：
           终止/强制结束 + nice 滑条（批量优先级，先解锁再拖与实例页同款） */}
-      <div className="object-sortbar-actions">
+      <div
+        className="object-sortbar-actions"
+        ref={batchZoneRef}
+        data-kb-zone="object-batch"
+        tabIndex={-1}
+        onKeyDown={handleBatchNav}
+      >
         <Button
           variant="outlined"
           disabled={batchSelectedInstances.length < 1}
@@ -2321,6 +2344,64 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     const c1 = registerKeyboardZone({ id: 'objects', focus });
     const c2 = registerKeyboardZone({ id: 'search-results', focus });
     return () => { c1(); c2(); };
+  }, []);
+
+  /** 排序条/批量操作站（review 19 决策 9：进程类页键盘可达）——
+   *  仅进程类页浏览态注册；搜索态不在 SEARCH_ZONE_ORDER 内惰性 */
+  const sortBarRef = useRef<HTMLDivElement | null>(null);
+  const batchZoneRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!isProcessClass) return;
+    const c1 = registerKeyboardZone({
+      id: 'object-sortbar',
+      focus: () => focusKeyboardTarget(sortBarRef.current?.querySelector<HTMLElement>('hoshineko-outlined-segmented-button') ?? null),
+    });
+    const c2 = registerKeyboardZone({
+      id: 'object-batch',
+      focus: () => {
+        const btn = batchZoneRef.current?.querySelector<HTMLElement>('md-outlined-button:not([disabled])');
+        if (btn) { btn.focus(); return; }
+        // 全禁用（无选中）时聚焦容器自身（可继续 Tab 循环，不卡站）
+        batchZoneRef.current?.focus();
+      },
+    });
+    return () => { c1(); c2(); };
+  }, [isProcessClass]);
+
+  /** 排序条线性 roving（决策 9）：segmented 四按钮 + 升降序 + 树按钮按序
+   *  ←/→ 移动——捕获阶段拦截 segmented 内部 ←/→ roving（跨控件线性语义
+   *  优先，↑/↓ 内部语义保留） */
+  const SORTBAR_NAV = 'hoshineko-outlined-segmented-button, .object-sortbar-dir, .object-sortbar-tree';
+  const handleSortbarNav = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    const order = Array.from(e.currentTarget.querySelectorAll<HTMLElement>(SORTBAR_NAV));
+    const el = (target.closest(SORTBAR_NAV) as HTMLElement | null) ?? null;
+    const idx = el ? order.indexOf(el) : -1;
+    if (idx < 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    focusKeyboardTarget(order[(idx + (e.key === 'ArrowRight' ? 1 : order.length - 1)) % order.length]);
+  }, []);
+
+  /** 批量操作线性 roving：终止/KILL/nice 滑条——禁用控件跳过（未选中/
+   *  未解锁时按钮与滑条全 disabled，不可聚焦）；滑条上 ←/→ 保留内部调值
+   *  （不拦截），从按钮可移动到滑条（「至少可聚焦」，解锁态） */
+  const BATCH_NAV = '.object-sortbar-actions md-outlined-button, .object-batch-nice-slider';
+  const handleBatchNav = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest('.object-batch-nice-slider')) return; // 滑条内部语义
+    const order = Array.from(e.currentTarget.querySelectorAll<HTMLElement>(BATCH_NAV))
+      .filter((el) => !el.hasAttribute('disabled'));
+    const el = (target.closest(BATCH_NAV) as HTMLElement | null) ?? null;
+    const idx = el ? order.indexOf(el) : -1;
+    if (idx < 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    order[(idx + (e.key === 'ArrowRight' ? 1 : order.length - 1)) % order.length]?.focus();
   }, []);
 
   /** 可见类（有实例才显示卡片/chips）按 objectClassOrder 重排（未列出的

@@ -47,6 +47,13 @@ interface OmnibarProps {
    */
   searchDisabled?: boolean;
   /**
+   * 外部搜索活动态（review 19 P4 选择器同步）：选择器无虚拟路径——
+   * 搜索退出（如文件区焦点 Esc）时 currentPath 不变、渲染期复位块不触发，
+   * 模式会残留在搜索态。选择器传 searchActive，false 变迁时复位回
+   * 面包屑。主窗口不传（search:// 路径变化驱动复位，语义不变）。
+   */
+  externalSearchActive?: boolean;
+  /**
    * 搜索态地址栏右键菜单回调（review 18 定案）：仅搜索态（输入框 =
    * query）的地址栏触发——编辑态/面包屑态不触发（编辑路径不是搜索，
    * 面包屑触发钮的「展平软链接」菜单不受影响）。由上层（App）持有菜单
@@ -261,8 +268,9 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
   onNavigate,
   onSearch,
   onCloseSearch,
-  searchDisabled,
   onSearchContextMenu,
+  searchDisabled,
+  externalSearchActive = false,
   common,
 }) => {
   const [mode, setMode] = useState<OmnibarMode>(() =>
@@ -288,8 +296,10 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
    * 与 prevPathForReset 同款——effect 内同步 setState 会触发级联渲染）。
    */
   const [prevPathForMode, setPrevPathForMode] = useState(currentPath);
-  if (prevPathForMode !== currentPath) {
+  const [prevExtSearch, setPrevExtSearch] = useState(externalSearchActive);
+  if (prevPathForMode !== currentPath || prevExtSearch !== externalSearchActive) {
     setPrevPathForMode(currentPath);
+    setPrevExtSearch(externalSearchActive);
     if (isSearchPath(currentPath) || isObjectSearchPath(currentPath)) {
       setMode('search');
       setInputValue(searchQueryOf(currentPath));
@@ -298,6 +308,9 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
       setStayEditingAfterClose(false);
       setMode('edit');
       setInputValue(currentPath);
+    } else if (externalSearchActive) {
+      // review 19 P4 选择器：外部搜索开启（currentPath 不变）→ 搜索态
+      setMode('search');
     } else {
       setMode('breadcrumbs');
       setInputValue(currentPath);

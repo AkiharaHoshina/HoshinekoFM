@@ -198,5 +198,50 @@ const ADDR_TOAST_RE = /地址不存在|Address does not exist|アドレスが存
     }
   });
 
+  await h.run('93e review 19 P4：选择器第二循环 + 文件区 Esc 复位地址栏模式', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    const picker = await openPickerWin(win, 'items', '选择器');
+
+    // 进入搜索态 → 第二循环：回切 → 回车 → 筛选器 → 结果（文件区）→ 回切
+    await jsClick(picker, '.omnibar-trigger');
+    await h.waitFor(picker, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await jsClick(picker, '.omnibar-enter-search');
+    await h.waitFor(picker, `!!document.querySelector('.omnibar.mode-search .omnibar-input')`);
+    await h.waitFor(picker, `!!document.querySelector('.search-filter-type')`, { timeout: 8000 });
+    await h.key(picker, 'Tab');
+    await h.sleep(300);
+    let z = await h.js(picker, `document.activeElement?.classList?.contains('omnibar-back-address') ?? false`);
+    h.assert.ok(z.value, '选择器搜索态 Tab 应落回切按钮');
+    await h.key(picker, 'Tab');
+    await h.sleep(300);
+    z = await h.js(picker, `document.activeElement?.classList?.contains('omnibar-start-search') ?? false`);
+    h.assert.ok(z.value, '第二站应为回车按钮');
+    await h.key(picker, 'Tab');
+    await h.sleep(300);
+    z = await h.js(picker, `document.activeElement === document.querySelector('.search-filter-type')`);
+    h.assert.ok(z.value, '第三站应为筛选器第一个控件');
+    await h.key(picker, 'Tab');
+    await h.sleep(300);
+    z = await h.js(picker, `document.activeElement?.closest?.('[data-kb-zone="files"]') != null`);
+    h.assert.ok(z.value, '第四站应为结果（文件区）');
+    await h.key(picker, 'Tab');
+    await h.sleep(300);
+    z = await h.js(picker, `document.activeElement?.classList?.contains('omnibar-back-address') ?? false`);
+    h.assert.ok(z.value, '循环应回回切按钮');
+
+    // 文件区焦点 Esc：退搜索 + 地址栏模式复位回面包屑（review 19 P4 修复
+    // ——选择器无虚拟路径，此前模式残留搜索态）+ 焦点落编辑地址栏按钮
+    await h.js(picker, `(() => { document.querySelector('.picker-filelist')?.focus(); return true; })()`, true);
+    await h.key(picker, 'Escape');
+    await h.waitFor(picker, `!document.querySelector('.search-filter-type')`, 8000);
+    await h.waitFor(picker, `!!document.querySelector('.omnibar.mode-breadcrumbs')`, { timeout: 8000 });
+    await h.waitFor(picker, `document.activeElement === document.querySelector('.omnibar-trigger')`, { timeout: 8000 });
+    h.assert.ok(h.getWindows().some((w) => w === picker), '退搜索不应关闭选择器窗口');
+
+    // 收尾关窗
+    await h.js(picker, `window.electron.resolvePicker(null); true`);
+  });
+
   h.finish();
 })();

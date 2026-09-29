@@ -17,6 +17,8 @@ export type KeyboardZoneId =
   | 'topbar-omnibar'
   | 'object-recent'
   | 'objects'
+  | 'object-sortbar'
+  | 'object-batch'
   | 'topbar-sort'
   | 'dashboard-storage'
   | 'dashboard-pinned'
@@ -52,6 +54,8 @@ const ZONE_ORDER: KeyboardZoneId[] = [
   'topbar-omnibar',
   'object-recent',
   'objects',
+  'object-sortbar',
+  'object-batch',
   'topbar-sort',
   'dashboard-storage',
   'dashboard-pinned',
@@ -171,4 +175,22 @@ export function focusNextKeyboardZone(dir: 1 | -1): boolean {
 /** 当前分区 id（调试/测试用） */
 export function getCurrentKeyboardZone(): KeyboardZoneId {
   return currentZoneId;
+}
+
+/**
+ * 聚焦键盘目标元素（review 19）：material-web segmented 按钮宿主本身
+ * 不可聚焦（tabindex 在 shadow 内部 button 上）——宿主 focus() 是
+ * no-op。segmented 按钮宿主时透入 shadow 聚焦内部 button，其余直接
+ * focus。Tab 停靠/roving 落到 segmented 一律经此函数。
+ */
+export function focusKeyboardTarget(el: HTMLElement | null | undefined): void {
+  if (!el) return;
+  if (el.tagName === 'HOSHINEKO-OUTLINED-SEGMENTED-BUTTON' || el.tagName === 'MD-OUTLINED-SEGMENTED-BUTTON') {
+    const inner = el.shadowRoot?.querySelector<HTMLElement>('button');
+    if (inner) {
+      inner.focus();
+      return;
+    }
+  }
+  el.focus();
 }

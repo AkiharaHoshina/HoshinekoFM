@@ -83,20 +83,21 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
     await h.waitFor(win, `!!document.querySelector('.search-recent-chip')`, { timeout: 8000 });
 
-    // 确定性起点：点击第一张类卡片（focusin 置当前分区 objects）→ 下一 Tab = nav
-    await h.js(win, `(() => { document.querySelector('.object-class-card')?.focus(); return true; })()`, true);
-    const expected = ['nav', 'sidebar', 'tabbar', 'topbar-omnibar', 'object-recent', 'objects'];
+    // 确定性起点：Esc 退出后焦点落编辑地址栏按钮（决策 4）——等待该落点
+    // （closeSearch 延时聚焦触发钮），从 topbar-omnibar 起步走完整循环：
+    // object-recent → objects → nav → sidebar → tabbar → topbar-omnibar
+    await h.waitFor(win, `document.activeElement === document.querySelector('.omnibar-trigger')`, { timeout: 8000 });
+    const expected = ['object-recent', 'objects', 'nav', 'sidebar', 'tabbar', 'topbar-omnibar'];
     for (const z of expected) {
       await h.key(win, 'Tab');
       await h.sleep(300);
       const got = (await zoneOf(win)).value;
       h.assert.strictEqual(got, z, `Tab 应落 ${z}，实际 ${got}`);
     }
-    // object-recent 站焦点应具体落在词条 chip 上（重走一轮到该站验证）
+    // object-recent 站焦点应具体落在词条 chip 上（循环继续到该站验证）
     await h.key(win, 'Tab');
     await h.sleep(300);
-    h.assert.strictEqual((await zoneOf(win)).value, 'nav', '循环应回 nav');
-    for (let i = 0; i < 4; i++) { await h.key(win, 'Tab'); await h.sleep(250); }
+    h.assert.strictEqual((await zoneOf(win)).value, 'object-recent', '循环应回 object-recent');
     const recentEl = await h.js(win, `(() => {
       const a = document.activeElement;
       return a != null && a.classList.contains('search-recent-chip');
@@ -206,6 +207,87 @@ const { ipcMain } = require('electron');
     }))()`);
     h.assert.strictEqual(psel.value.zone, 'objects', `进程类页 Tab 应落 objects 站（实际 ${psel.value.zone}）`);
     h.assert.strictEqual(psel.value.selected, '200', `进程类页进站应选首行（CPU 降序 bbb pid200，实际 ${psel.value.selected}）`);
+  });
+
+  await h.run('95f 树模式 ←/→ 折叠展开（决策 8）', async () => {
+    ipcMain.removeHandler('system:list-objects');
+    ipcMain.handle('system:list-objects', async () => [
+      { id: 'process', icon: 'app_shortcut', instances: [
+        { id: '1', name: 'init', subtitle: '/sbin/init', kind: 'process', icon: 'app_shortcut', metrics: { cpuPct: 90, rssBytes: 100, state: 'S', ppid: 0 } },
+        { id: '11', name: 'svc-b', subtitle: 'svc b', kind: 'process', icon: 'app_shortcut', metrics: { cpuPct: 30, rssBytes: 200, state: 'S', ppid: 1 } },
+        { id: '111', name: 'worker', subtitle: 'worker', kind: 'process', icon: 'app_shortcut', metrics: { cpuPct: 10, rssBytes: 300, state: 'R', ppid: 11 } },
+      ] },
+    ]);
+
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await goObjects(win);
+    await h.js(win, `(() => {
+      const c = [...document.querySelectorAll('.object-class-card')].find((x) => /进程|Processes/.test(x.textContent ?? ''));
+      if (!c) return false;
+      c.click();
+      return true;
+    })()`, true);
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 3`, { timeout: 8000 });
+    // 树模式按钮（面板内排序条）
+    await h.js(win, `(() => { document.querySelector('.object-sortbar-tree')?.click(); return true; })()`, true);
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 3`, { timeout: 8000 });
+
+    await tabToZone(win, 'objects');
+    // 进站选中首行（init，CPU 降序）→ ← 折叠 → 行数 1 → → 展开 → 行数 3
+    await h.key(win, 'Left');
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
+    await h.key(win, 'Right');
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 3`, { timeout: 8000 });
+  });
+
+  await h.run('95g 进程类排序条/批量操作站（决策 9）', async () => {
+    ipcMain.removeHandler('system:list-objects');
+    ipcMain.handle('system:list-objects', async () => [
+      { id: 'process', icon: 'app_shortcut', instances: [
+        { id: '100', name: 'aaa', subtitle: '/srv/aaa', kind: 'process', icon: 'app_shortcut', metrics: { cpuPct: 10, rssBytes: 100, state: 'S' } },
+      ] },
+    ]);
+
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await goObjects(win);
+    await h.js(win, `(() => {
+      const c = [...document.querySelectorAll('.object-class-card')].find((x) => /进程|Processes/.test(x.textContent ?? ''));
+      if (!c) return false;
+      c.click();
+      return true;
+    })()`, true);
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
+
+    await tabToZone(win, 'objects');
+    // objects → object-sortbar（焦点第一个 segmented 按钮）→ → 移动到升降序
+    await h.key(win, 'Tab');
+    await h.sleep(300);
+    let z = (await zoneOf(win)).value;
+    h.assert.strictEqual(z, 'object-sortbar', `应落排序条站，实际 ${z}`);
+    const onSeg = await h.js(win, `document.activeElement === document.querySelector('.object-sortbar hoshineko-outlined-segmented-button')`);
+    h.assert.ok(onSeg.value, '排序条站应聚焦第一个 segmented 按钮');
+    // → 沿 [seg1 seg2 seg3 seg4 升降序 树] 线性移动到升降序（4 步）
+    for (let i = 0; i < 4; i++) { await h.key(win, 'Right'); await h.sleep(150); }
+    const onDir = await h.js(win, `document.activeElement === document.querySelector('.object-sortbar-dir')`);
+    h.assert.ok(onDir.value, '→ 应从 segmented 末按钮移到升降序按钮');
+    // object-batch：Tab → TERM 按钮 → → KILL → → nice 滑条
+    await h.key(win, 'Tab');
+    await h.sleep(300);
+    z = (await zoneOf(win)).value;
+    h.assert.strictEqual(z, 'object-batch', `应落批量操作站，实际 ${z}`);
+    const onTerm = await h.js(win, `document.activeElement === document.querySelector('.object-sortbar-actions md-outlined-button')`);
+    h.assert.ok(onTerm.value, '批量站应聚焦终止按钮');
+    await h.key(win, 'Right');
+    await h.sleep(300);
+    const onKill = await h.js(win, `document.activeElement === document.querySelector('.object-sortbar-actions .object-action-danger')`);
+    h.assert.ok(onKill.value, '→ 应从终止移到强制结束');
+    // nice 滑条未解锁时 disabled（不可聚焦）——roving 跳过、绕回终止
+    await h.key(win, 'Right');
+    await h.sleep(300);
+    const wrapTerm = await h.js(win, `document.activeElement === document.querySelector('.object-sortbar-actions md-outlined-button')`);
+    h.assert.ok(wrapTerm.value, '滑条禁用时 → 应跳过并绕回终止按钮');
   });
 
   h.finish();

@@ -27,7 +27,7 @@ import { zoomIconSize } from '../utils/iconZoom';
 import { ConflictDialog } from './ConflictDialog';
 import type { ConflictResult } from '../utils/fileConflict';
 import { t, useLocale, getLocale, setLocale, getLanguageOptions, type Locale } from '../i18n';
-import { registerKeyboardZone, focusNextKeyboardZone, trackKeyboardZoneFocus } from '../utils/focusZones';
+import { registerKeyboardZone, focusNextKeyboardZone, trackKeyboardZoneFocus, setKeyboardCycleMode } from '../utils/focusZones';
 import { computeArrowTarget, computeShiftRange, computeAnchorRowSpan, computeShiftArrowRange, type ListItem } from './FileList/utils';
 import type { IFile, AllDevice, GvfsVolume } from '../types/files';
 import type { ThemeConfig } from '../types/theme';
@@ -710,6 +710,10 @@ const FilePicker: React.FC = () => {
       if (partial) {
         showToast(t('search.partial_notice'), 'warning');
       }
+      // review 19 P4 决策 4（选择器同步）：回车执行搜索后焦点落结果第一项
+      if (query.trim() !== '') {
+        setTimeout(() => { fileZoneRef.current?.focus(); }, 0);
+      }
     } catch (e) {
       if (pickerSearchSeqRef.current !== seq) return;
       setSearchPending(false);
@@ -974,9 +978,14 @@ const FilePicker: React.FC = () => {
       if (e.key === 'Escape') {
         // X8-A Esc 合并语义（用户定案）：有搜索退搜索、没搜索取消——
         // 搜索态（含进行中）Esc 先退出搜索回浏览视图（不关窗）；其余
-        // Esc 才执行既有「取消选择器」（resolvePicker(null) 关窗）
+        // Esc 才执行既有「取消选择器」（resolvePicker(null) 关窗）。
+        // review 19 P4：退出后焦点落「编辑地址栏按钮」（决策 4——
+        // 面包屑态触发钮，搜索态无此钮、复位后延时聚焦）
         if (searchActive || searchPending) {
           void handleCancelSearch();
+          setTimeout(() => {
+            document.querySelector<HTMLElement>('.omnibar-trigger')?.focus();
+          }, 80);
           return;
         }
         cancel();
@@ -1103,6 +1112,25 @@ const FilePicker: React.FC = () => {
       },
     });
   }, []);
+
+  /** 搜索态第二循环（review 19 P4 选择器同步，决策 1）：模式切换 +
+   *  search-results 站（回切/回车由 Omnibar 注册、筛选器由
+   *  SearchFilterBar keyboardCycle 注册；选择器无虚拟路径——searchActive
+   *  即搜索态） */
+  useEffect(() => {
+    setKeyboardCycleMode(searchActive ? 'search' : 'browse');
+    return () => setKeyboardCycleMode('browse');
+  }, [searchActive]);
+
+  useEffect(() => {
+    if (!searchActive) return;
+    return registerKeyboardZone({
+      id: 'search-results',
+      focus: () => {
+        fileZoneRef.current?.focus();
+      },
+    });
+  }, [searchActive]);
 
   /** 键盘分区（topbar-omnibar / topbar-sort）：选择器顶栏两站（无返回上级键） */
   useEffect(() => {
@@ -1354,6 +1382,7 @@ const FilePicker: React.FC = () => {
                 onSearch={(q) => { void handleSearch(q); }}
                 searchStateEnabled
                 searchDisabled={searchDisabled}
+                externalSearchActive={searchActive}
                 onCloseSearch={() => { void handleCancelSearch(); }}
               />
             </div>
@@ -1383,6 +1412,7 @@ const FilePicker: React.FC = () => {
               二级 UI）——搜索态显示；类型选择即重搜，大小/格式确认生效 */}
           {searchActive && (
             <SearchFilterBar
+              keyboardCycle={currentPath !== 'trash://'}
               query={searchQuery}
               options={{
                 type: searchOptions.type,
