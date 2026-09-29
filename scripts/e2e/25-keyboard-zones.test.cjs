@@ -1,7 +1,8 @@
 /**
  * e2e 25：键盘分区与 Tab 循环（文件条目不进 Tab 序）。
  * - 文件页 Tab 顺序：功能栏 → places → 标签页 → 返回上级键 → 地址栏内 →
- *   分类开关和排序方式 → 文件区（选中视口内第一个可见文件，循环回功能栏）；
+ *   分类开关和排序方式 → 文件区（review 19：**已有选中保持不变**；无选中
+ *   才选中视口内第一个可见文件；循环回功能栏）；
  * - 仪表盘 Tab 顺序：功能栏 → places → 标签页 → 存储子区 → 固定项子区 →
  *   最近访问子区（文件页专属分区未注册自动跳过）；
  * - 文件区 Enter 打开目录、Space 切换选中、type-ahead 键入定位；
@@ -36,8 +37,8 @@ const h = require('./harness.cjs');
         return a.closest('[data-kb-zone]')?.getAttribute('data-kb-zone') ?? (a.classList.contains('file-list-item') ? 'file-item' : 'other');
       })()`);
 
-    // 1) 点击选中 a.txt → Tab 不落到文件条目（崩溃修复点），焦点进 files 分区，
-    //    同时用文件区选择机制选中视口内第一个可见文件（sub 在 Folders 组最前）
+    // 1) 点击选中 a.txt → Tab 不落到文件条目（崩溃修复点），焦点进 files 分区；
+    //    review 19：已有选中保持不变（不再重选视口第一个可见文件）
     await h.clickEl(win, `.file-list-item[data-path="${dir}/a.txt"]`);
     await h.key(win, 'Tab');
     await h.sleep(300);
@@ -45,10 +46,21 @@ const h = require('./harness.cjs');
     h.assert.strictEqual(z.value, 'files', `Tab 后焦点应在 files 分区，实际 ${z.value}`);
     const onItem = await h.js(win, `document.activeElement?.classList?.contains('file-list-item') ?? false`);
     h.assert.strictEqual(onItem.value, false, 'Tab 不应聚焦文件条目');
+    const keptSel = await h.js(win, `document.querySelector('.file-list-item.selected')?.dataset.path ?? null`);
+    h.assert.strictEqual(keptSel.value, `${dir}/a.txt`, `Tab 落 files 分区应保持既有选中（a.txt），实际 ${keptSel.value}`);
+
+    // 1b) review 19：无选中时 Tab 进 files 才选中视口第一个可见文件（sub 在
+    //     Folders 组最前）——Space 取消选中 → Tab 满循环一周回 files 分区
+    await h.key(win, 'Space');
+    await h.sleep(200);
+    for (let i = 0; i < 7; i++) { await h.key(win, 'Tab'); await h.sleep(50); }
+    await h.sleep(300);
+    z = await zoneOf();
+    h.assert.strictEqual(z.value, 'files', `满循环后焦点应回 files 分区，实际 ${z.value}`);
     const firstVisibleSel = await h.js(win, `document.querySelector('.file-list-item.selected')?.dataset.path ?? null`);
     h.assert.ok(
       firstVisibleSel.value && firstVisibleSel.value.endsWith('/sub'),
-      `Tab 落 files 分区应选中视口内第一个可见文件（sub），实际 ${firstVisibleSel.value}`,
+      `无选中时 Tab 落 files 分区应选中视口内第一个可见文件（sub），实际 ${firstVisibleSel.value}`,
     );
 
     // 2) type-ahead 键入定位：键入 b → 选中 b.txt

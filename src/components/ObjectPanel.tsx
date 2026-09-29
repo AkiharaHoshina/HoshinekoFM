@@ -2012,7 +2012,14 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     if (ids.length === 0) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      const idx = processCursor !== null ? ids.indexOf(processCursor) : -1;
+      // review 19 跳选修复：游标经树折叠/筛选/轮询重排后可能悬空
+      // （indexOf === -1）——此前上下方向都按 idx+1/-1 落到 0 号行（跳选）。
+      // 悬空时回落锚点（批量选择锚点通常有效），再不行从 0 号行起步
+      let idx = processCursor !== null ? ids.indexOf(processCursor) : -1;
+      if (idx < 0) {
+        const aIdx = processAnchor !== null ? ids.indexOf(processAnchor) : -1;
+        idx = aIdx >= 0 ? aIdx : 0;
+      }
       const next = e.key === 'ArrowDown'
         ? Math.min(ids.length - 1, idx + 1)
         : Math.max(0, idx - 1);

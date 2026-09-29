@@ -74,10 +74,16 @@
   transition: background 120ms ease;
 }
 
-.object-class-card:hover,
-.object-class-card:focus-visible {
+.object-class-card:hover {
   background: var(--md-sys-color-surface-container-high);
-  outline: none;
+}
+
+/* review 19：:focus-visible 用焦点环而非深背景（此前与 hover 同款
+ * 深背景 + outline:none——「最初选中的项目背景很深」另一半根因；
+ * 与文件区 .file-list-item:focus-visible 同款） */
+.object-class-card:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
 }
 
 .object-class-icon {
@@ -114,9 +120,21 @@
 }
 
 /* 选中态须与 :hover 同特异性（0,2,0）且排在其后——悬停已选中行时
- * 高亮保持不褪色（单类选择器 0,1,0 会被 :hover 压过） */
+ * 高亮保持不褪色（单类选择器 0,1,0 会被 :hover 压过）。
+ * review 19：补文字/图标前景色（此前只改背景、前景仍用默认色——
+ * 「最初选中的项目背景很深」的一半根因），与文件区选中态同款配色 */
 .object-row.object-row--selected {
   background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.object-row.object-row--selected .object-row-icon,
+.object-row.object-row--selected .object-row-sub,
+.object-row.object-row--selected .object-row-cpu,
+.object-row.object-row--selected .object-row-rss,
+.object-row.object-row--selected .object-row-state,
+.object-row.object-row--selected .object-row-pid {
+  color: var(--md-sys-color-on-secondary-container);
 }
 
 .object-row-icon {
@@ -172,10 +190,14 @@
   cursor: pointer;
 }
 
-.object-search-hit:hover,
-.object-search-hit:focus-visible {
+.object-search-hit:hover {
   background: var(--md-sys-color-surface-container);
-  outline: none;
+}
+
+/* review 19：焦点环替代深背景（与类卡片同款修复） */
+.object-search-hit:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
 }
 
 .object-search-hit-main {

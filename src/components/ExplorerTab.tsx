@@ -1327,12 +1327,18 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
    * 第一个可见文件——锚点/游标同步、方向键/Enter 语义不变，且不直接聚焦
    * 条目元素（避免此前 Tab 聚焦条目引发的键盘崩溃场景）；选中后再把焦点
    * 放到分区容器上，方向键选择与下一 Tab（循环回 nav）继续生效。
+   * review 19 定案：**已有选中保持不变**——仅当无任何选中时才选中视口
+   * 第一个可见文件；已有选中只聚焦容器（方向键从既有游标继续）。
    */
   const filesZoneFocusRef = useRef<() => void>(() => {});
   // eslint-disable-next-line react-hooks/refs -- 渲染期同步命令式回调（稳定 effect 经 ref 读取最新闭包）
   filesZoneFocusRef.current = () => {
     const container = fileZoneRef.current;
     if (!container) return;
+    if (selectedFiles.size > 0) {
+      container.focus();
+      return;
+    }
     // 视口内第一个可见文件：条目与分区容器矩形相交（部分可见也算），
     // DOM 序即显示序（react-window 按序渲染，含 overscan 之外的条目按矩形过滤）
     const v = container.getBoundingClientRect();
