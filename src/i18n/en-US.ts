@@ -677,6 +677,8 @@ const enUS = {
   'omnibar.enter_search': 'Enter search',
   'omnibar.back_to_address': 'Back to address bar',
   'omnibar.start_search': 'Start search',
+  'omnibar.copy_address': 'Copy Address',
+  'omnibar.copy_address_failed': 'Failed to copy address',
 
   // ── 面包屑 ──
   'breadcrumbs.root': 'Root',

@@ -666,6 +666,8 @@ const zhCN = {
   'omnibar.enter_search': '进入搜索',
   'omnibar.back_to_address': '返回地址栏',
   'omnibar.start_search': '开始搜索',
+  'omnibar.copy_address': '复制地址',
+  'omnibar.copy_address_failed': '复制地址失败',
 
   // ── 面包屑 ──
   'breadcrumbs.root': '根目录',

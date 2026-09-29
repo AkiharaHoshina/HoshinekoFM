@@ -666,6 +666,8 @@ const zhHK = {
   'omnibar.enter_search': '進入搜尋',
   'omnibar.back_to_address': '返回地址欄',
   'omnibar.start_search': '開始搜尋',
+  'omnibar.copy_address': '複製地址',
+  'omnibar.copy_address_failed': '複製地址失敗',
 
   // ── 麵包屑 ──
   'breadcrumbs.root': '根目錄',

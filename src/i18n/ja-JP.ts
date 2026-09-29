@@ -666,6 +666,8 @@ const jaJP = {
   'omnibar.enter_search': '検索に入る',
   'omnibar.back_to_address': 'アドレスバーに戻る',
   'omnibar.start_search': '検索を開始',
+  'omnibar.copy_address': 'アドレスをコピー',
+  'omnibar.copy_address_failed': 'アドレスのコピーに失敗しました',
 
   // ── 面包屑 ──
   'breadcrumbs.root': 'ルートディレクトリ',

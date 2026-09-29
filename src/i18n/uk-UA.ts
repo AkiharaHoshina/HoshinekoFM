@@ -705,6 +705,8 @@ const ukUA = {
   'omnibar.enter_search': 'Увійти в пошук',
   'omnibar.back_to_address': 'Повернутися до адресного рядка',
   'omnibar.start_search': 'Почати пошук',
+  'omnibar.copy_address': 'Скопіювати адресу',
+  'omnibar.copy_address_failed': 'Не вдалося скопіювати адресу',
 
   // ── 面包屑 ──
   'breadcrumbs.root': 'Корінь',

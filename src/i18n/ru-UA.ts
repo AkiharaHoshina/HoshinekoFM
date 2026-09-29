@@ -708,6 +708,8 @@ const ruUA = {
   'omnibar.enter_search': 'Войти в поиск',
   'omnibar.back_to_address': 'Вернуться к адресной строке',
   'omnibar.start_search': 'Начать поиск',
+  'omnibar.copy_address': 'Скопировать адрес',
+  'omnibar.copy_address_failed': 'Не удалось скопировать адрес',
 
   // ── 面包屑 ──
   'breadcrumbs.root': 'Корень',

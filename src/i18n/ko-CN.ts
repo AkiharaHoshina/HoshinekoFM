@@ -676,6 +676,8 @@ const koCN = {
   'omnibar.enter_search': '검색 입력',
   'omnibar.back_to_address': '주소란으로 돌아가기',
   'omnibar.start_search': '검색 시작',
+  'omnibar.copy_address': '주소 복사',
+  'omnibar.copy_address_failed': '주소 복사 실패',
 
   // ── 빵가루 내비게이션 ──
   'breadcrumbs.root': '루트',

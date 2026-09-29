@@ -45,6 +45,15 @@ interface OmnibarProps {
    * 或放开搜索）——届时只需调整本 flag 的门控分支，勿另立开关。
    */
   searchDisabled?: boolean;
+  /**
+   * 搜索态地址栏右键菜单回调（review 18 定案）：仅搜索态（输入框 =
+   * query）的地址栏触发——编辑态/面包屑态不触发（编辑路径不是搜索，
+   * 面包屑触发钮的「展平软链接」菜单不受影响）。由上层（App）持有菜单
+   * 状态并决定是否弹菜单（上层按 isSearchSchemaPath 守卫——回收站名称
+   * 过滤等非搜索 schema 的搜索态不弹）。未提供（选择器/保存器）时
+   * 无菜单（选择器/保存器无固定语义）。
+   */
+  onSearchContextMenu?: (e: React.MouseEvent) => void;
 }
 
 /** 地址栏三种状态：面包屑（只读）→ 编辑（仅路径/schema）→ 搜索（全输入 = query） */
@@ -252,6 +261,7 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
   onSearch,
   onCloseSearch,
   searchDisabled,
+  onSearchContextMenu,
   common,
 }) => {
   const [mode, setMode] = useState<OmnibarMode>(() =>
@@ -403,7 +413,20 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
       {mode === 'breadcrumbs' ? (
         common.breadcrumbsEl(enterEdit)
       ) : (
-        <div className="omnibar-input-wrapper">
+        <div
+          className="omnibar-input-wrapper"
+          onContextMenu={
+            mode === 'search' && onSearchContextMenu
+              ? (e) => {
+                // review 18 定案：搜索态右键 = 搜索 url 菜单（复制地址/
+                // 固定到侧边栏）；编辑态不弹（编辑路径不是搜索）
+                e.preventDefault();
+                e.stopPropagation();
+                onSearchContextMenu(e);
+              }
+              : undefined
+          }
+        >
           <Icon
             name={mode === 'search' ? 'search' : 'folder_open'}
             className="omnibar-icon"

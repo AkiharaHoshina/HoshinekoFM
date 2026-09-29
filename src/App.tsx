@@ -39,6 +39,7 @@ import { parseSearchPath, SEARCH_DEFAULT_LIMIT, SEARCH_DEFAULT_TIMEOUT } from ".
 import { parseObjectsPath } from "./utils/objectsPath";
 import { parseObjectSearchPath } from "./utils/objectSearchPath";
 import { isObjectProjectionPath, type ObjectDragPayload } from "./utils/objectDrag";
+import { isSearchSchemaPath, searchSchemaDisplayName } from "./utils/searchSchema";
 import type { ThemeConfig } from "./types/theme";
 import {
   trashFiles,
@@ -433,6 +434,75 @@ function AppContent() {
     },
     [],
   );
+
+  /**
+   * 搜索态地址栏右键菜单位置（null = 关闭）。review 18 定案：搜索态
+   * 右键 = 「复制地址 + 固定到侧边栏」——与面包屑触发钮「展平软链接」
+   * 菜单（Omnibar 内部持有）互不相干。
+   */
+  const [searchCtxMenu, setSearchCtxMenu] = useState<{ x: number; y: number } | null>(null);
+
+  /**
+   * 搜索态地址栏右键（review 18 定案，Omnibar 搜索态 onContextMenu 上报）：
+   * 仅搜索 schema（isSearchSchemaPath 通用谓词——search:// /
+   * objectsearch://，未来新增搜索 schema 自动支持）弹菜单；回收站名称
+   * 过滤等非搜索 schema 的搜索态不弹。编辑态/面包屑态由 Omnibar 侧不
+   * 上报（编辑路径不是搜索）。菜单动作的 url = tab 身份的 currentPath
+   * （输入框草稿未回车时不跟随）。
+   */
+  const handleSearchContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isSearchSchemaPath(currentPath)) return;
+      setSearchCtxMenu({ x: e.clientX, y: e.clientY });
+    },
+    [currentPath],
+  );
+
+  /**
+   * 把搜索 url 固定到侧边栏固定区（review 18 定案；去重幂等，重复时
+   * toast 提示）。条目 path = 完整搜索 url（点击经 handleSidebarNavigate
+   * → loadPath 恢复搜索，与对象投影同款导航别名）；默认显示名与标签页
+   * 标题同源（searchSchemaDisplayName）；isDir = false（虚拟 url 无目录
+   * 语义）；Ctrl+1..9 数字跳转/固定区排序拖拽天然可用。
+   */
+  const pinSearchSidebar = useCallback(
+    (path: string) => {
+      if (pinnedDirs.some((p) => p.path === path)) {
+        showToast(t("sidebar.already_pinned"), "info");
+        return;
+      }
+      setPinnedDirs((prev) => [
+        ...prev,
+        { name: searchSchemaDisplayName(path), path, isDir: false, icon: "search" },
+      ]);
+    },
+    [pinnedDirs, setPinnedDirs],
+  );
+
+  /**
+   * 搜索态地址栏右键菜单项：复制地址（完整搜索 url 含筛选参数，写系统
+   * 剪贴板）+ 固定到侧边栏（isSearchSchemaPath 守卫已在上层完成）。
+   */
+  const searchCtxMenuItems: ContextMenuItem[] = searchCtxMenu
+    ? [
+      {
+        label: t("omnibar.copy_address"),
+        icon: "content_copy",
+        action: () => {
+          void navigator.clipboard.writeText(currentPath).catch(() => {
+            showToast(t("omnibar.copy_address_failed"), "error");
+          });
+        },
+      },
+      {
+        label: t("context_menu.pin_sidebar"),
+        icon: "push_pin",
+        action: () => {
+          pinSearchSidebar(currentPath);
+        },
+      },
+    ]
+    : [];
 
   /** Places 条目右键菜单位置与目标（null = 关闭；含仪表盘与位置区） */
   const [placeMenu, setPlaceMenu] = useState<{
@@ -2353,9 +2423,14 @@ function AppContent() {
     ? (() => {
       const { item } = pinnedDirMenu;
       const index = pinnedDirs.findIndex((p) => p.path === item.path);
-      // 对象投影条目（阴影投影）：目录菜单条目对 objects:// 虚拟路径
-      // 无语义——手写「打开 + 重命名 + 取消固定」三项
-      if (isObjectProjectionPath(item.path)) {
+      // 投影条目（对象投影 objects:// + 搜索 schema search:// /
+      // objectsearch://，review 18 定案）：目录菜单条目对虚拟路径无语义
+      // （删除/永久删除/压缩等会把虚拟 url 当真实路径打到后端）——
+      // 手写「打开 + 重命名 + 取消固定」三项；搜索 schema 判定走通用
+      // 谓词 isSearchSchemaPath（未来新增搜索 schema 自动同款，见
+      // searchSchema.ts 文件头）。重命名经 useRenameDialog 第三参只改
+      // 显示名不动 url。
+      if (isObjectProjectionPath(item.path) || isSearchSchemaPath(item.path)) {
         return [
           {
             label: t("context_menu.open"),
@@ -2642,6 +2717,7 @@ function AppContent() {
                   onNiceProcess={niceProcess}
                   onUnlockNice={unlockNice}
                   onPinObject={(host, obj) => pinObjectProjection(host, obj)}
+                  onSearchContextMenu={handleSearchContextMenu}
                   onBatchTerminate={batchTerminate}
                   onBatchNice={batchNice}
                   objectClassOrder={objectClassOrder}
@@ -2835,6 +2911,15 @@ function AppContent() {
               y={pinnedDirMenu.y}
               items={pinnedDirMenuItems}
               onClose={() => setPinnedDirMenu(null)}
+            />
+          )}
+
+          {searchCtxMenu && (
+            <ContextMenu
+              x={searchCtxMenu.x}
+              y={searchCtxMenu.y}
+              items={searchCtxMenuItems}
+              onClose={() => setSearchCtxMenu(null)}
             />
           )}
 
