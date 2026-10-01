@@ -14,7 +14,7 @@ import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers, startColorSchemeWatcher, stopColorSchemeWatcher } from './handlers/theme';
 import { registerPickerHandlers, type PickerConfig, type PinnedDirEntry, type PickerViewPrefs, type PickerThemeSnapshot, type PickerSettings } from './handlers/picker';
 import { registerServiceBackends } from './backends';
-import { ensureLauncherEntry, removeLauncherEntry, type LauncherEntryEnv, type LauncherEntryKind } from './launcherEntry';
+import { ensureLauncherEntry, removeLauncherEntry, getLauncherEntryExists, type LauncherEntryEnv, type LauncherEntryKind } from './launcherEntry';
 import { initJobHandlers } from './jobs';
 
 /**
@@ -779,6 +779,18 @@ ipcMain.handle('app:remove-launcher-entry', (_event, kind: unknown) => {
     return { success: false, removed: false, code: 'INVALID_KIND' };
   }
   return removeLauncherEntry(kind as LauncherEntryKind, buildLauncherEnv());
+});
+
+/**
+ * 启动器条目存在性查询（review 29：快捷方式设置页「创建/移除」按钮
+ * 显隐驱动——文件真实存在与否）。共享模块同一代码路径。
+ */
+ipcMain.handle('app:get-launcher-entry-status', () => {
+  const env = buildLauncherEnv();
+  return Promise.all([
+    getLauncherEntryExists('desktop', env),
+    getLauncherEntryExists('appmenu', env),
+  ]).then(([desktop, appmenu]) => ({ desktop, appmenu }));
 });
 
 /**

@@ -21,6 +21,7 @@ import {
   I18nSettings,
   DefaultsSettings,
   AboutSettings,
+  BuiltInTerminalSettings,
 } from './SettingsCategoryPages';
 import './SettingsPage.css';
 
@@ -115,6 +116,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
     case 'i18n': return <I18nSettings />;
     case 'defaultrecovery': return <DefaultsSettings />;
     case 'about': return <AboutSettings />;
+    case 'built-in-terminal': return <BuiltInTerminalSettings />;
     default: return null;
     }
   };
@@ -123,6 +125,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
     <div className="settings-page" ref={rootRef} data-kb-zone="settings">
       {parsed.cat === null ? (
         <div className="settings-page-scroll">
+          {/* review 29 #12：主页标题行（[图标] 设置 + 介绍） */}
+          <div className="settings-page-title-row">
+            <Icon name="settings" className="settings-page-title-icon" />
+            <span className="settings-page-title">{t('settings.title')}</span>
+          </div>
+          <div className="settings-page-subtitle">{t('settings.choose_category')}</div>
           <div className="settings-category-grid">
             {SETTINGS_CATEGORIES.map((c) => (
               <div
@@ -135,7 +143,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
                 onKeyDown={(e) => handleCardKeyDown(e, c.id)}
               >
                 <Icon name={c.icon} className="settings-category-icon" />
-                <span className="settings-category-label">{t(c.labelKey)}</span>
+                <div className="settings-category-label">{t(c.labelKey)}</div>
+                <div className="settings-category-count">{t('settings.items_count', c.count)}</div>
               </div>
             ))}
           </div>

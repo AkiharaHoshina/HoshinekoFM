@@ -249,6 +249,29 @@ export function removeLauncherEntry(
   return result;
 }
 
+/**
+ * 条目存在性查询（review 29：快捷方式设置页「创建/移除」按钮的显隐
+ * 驱动——文件真实存在与否，与 marker 无关；开发模式未启用
+ * HOSHINEKO_E2E_LAUNCHER_EXEC 时恒 false（launcherOpsDisabled 同源））。
+ *
+ * @param kind - 条目类型：desktop（桌面）/ appmenu（应用程序菜单）
+ * @param env - 环境路径
+ * @returns 条目文件是否存在
+ */
+export function getLauncherEntryExists(
+  kind: LauncherEntryKind,
+  env: LauncherEntryEnv,
+): Promise<boolean> {
+  if (launcherOpsDisabled()) return Promise.resolve(false);
+  const target = kind === 'desktop'
+    ? path.join(env.desktopDir, ENTRY_FILE_NAME)
+    : path.join(env.applicationsDir, ENTRY_FILE_NAME);
+  return fs.access(target).then(
+    () => true,
+    () => false,
+  );
+}
+
 /** 删除执行体（见 removeLauncherEntry） */
 async function removeLauncherEntryLocked(
   kind: LauncherEntryKind,

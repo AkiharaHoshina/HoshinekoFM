@@ -118,6 +118,16 @@ interface SidebarProps {
    * 默认 true；picker 变体恒不显示（isPicker 守卫优先级更高）。
    */
   showDashboardPlace?: boolean;
+  /** 是否显示 Places 中的对象面板入口（review 29 #11：设置页
+   *  「显示对象面板」开关；默认 true，picker 恒不显示） */
+  showObjectsPlace?: boolean;
+  /** 是否显示 Places 中的内建终端入口（review 29 #15：设置页开关；
+   *  默认 true，picker 恒不显示） */
+  showTerminalPlace?: boolean;
+  /** 内置终端是否打开（入口高亮跟随——与导航栏终端按钮同行为） */
+  terminalOpen?: boolean;
+  /** 切换内置终端（点击 Places 内建终端入口 = toggleTerminal） */
+  onToggleTerminal?: () => void;
 }
 
 /** 侧边栏拖放目标标识前缀与常量 */
@@ -170,6 +180,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   variant = 'default',
   hideTrash = false,
   showDashboardPlace = true,
+  showObjectsPlace = true,
+  showTerminalPlace = true,
+  terminalOpen = false,
+  onToggleTerminal,
 }) => {
   const isPicker = variant === 'picker';
   const [places, setPlaces] = useState<
@@ -980,7 +994,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
           {/* Object Panel（objects:// 虚拟页集）入口：Places 顶部（决策 F）。
               选择器不支持 objects://（无该虚拟页渲染），仅主窗口显示 */}
-          {!isPicker && (
+          {!isPicker && showObjectsPlace && (
             <button
               className={`sidebar-item ${currentPath.startsWith("objects://") ? "active" : ""}`}
               tabIndex={-1}
@@ -1010,6 +1024,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
               />
               <span className="sidebar-label">
                 <MarqueeText enabled={marqueeEnabled}>{t("settings.title")}</MarqueeText>
+              </span>
+            </button>
+          )}
+          {/* 内建终端入口（review 29 #15）：位于设置下方；点击 = toggle
+              终端（与导航栏终端按钮同行为）；开启时高亮且比普通 active
+              更深（color-mix primary 18%——浅色模式自动更浅） */}
+          {!isPicker && showTerminalPlace && (
+            <button
+              className={`sidebar-item${terminalOpen ? ' active sidebar-item--terminal-active' : ''}`}
+              tabIndex={-1}
+              onClick={() => onToggleTerminal?.()}
+            >
+              <Icon
+                name="terminal"
+                className="sidebar-icon"
+                filled={terminalOpen}
+              />
+              <span className="sidebar-label">
+                <MarqueeText enabled={marqueeEnabled}>{t("settings.cat_terminal")}</MarqueeText>
               </span>
             </button>
           )}

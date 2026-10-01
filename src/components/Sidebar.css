@@ -104,6 +104,15 @@
     color: var(--md-sys-color-on-secondary-container);
 }
 
+/* review 29 #15：内建终端入口开启态——比普通 active 更深的高亮
+ * （color-mix primary 18%，深浅模式自动跟随；用户定案）。
+ * 双类选择器保证特异性（0,2,0）与 .sidebar-item.active 同级且排其后，
+ * 覆盖其背景） */
+.sidebar-item.sidebar-item--terminal-active {
+    background-color: color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
+    color: var(--md-sys-color-on-surface);
+}
+
 /* 同窗口拖放悬停高亮（落点提示） */
 .sidebar-item.drag-over {
     outline: 2px dashed var(--md-sys-color-primary);

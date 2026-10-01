@@ -17,6 +17,7 @@ import { createDirectory } from '../utils/fileOperations';
 import { NameInputDialog } from './NameInputDialog';
 import { useDeviceActions } from '../hooks/useDeviceActions';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { parseSearchLimitStr } from '../utils/searchLimit';
 import { useUiZoom } from '../hooks/useUiZoom';
 import { useTitleBar } from '../hooks/useTitleBar';
 import { DragProvider } from '../contexts/DragContext';
@@ -107,31 +108,24 @@ const FilePicker: React.FC = () => {
   searchQueryRef.current = searchQuery;
   // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取
   searchOptionsRef.current = searchOptions;
-  /** 搜索默认上限设置（settings.searchLimit，与主窗口同键共享；null =
-   *  无限制；服务模式 userData 隔离时回落内置默认——与 marqueeEnabled
-   *  同款语义） */
-  const [localSearchLimit] = useLocalStorage<number | null>('settings.searchLimit', SEARCH_DEFAULT_LIMIT);
-  /** 净化后的设置默认上限（null = 无限制；越界回落内置默认）——handleSearch 透传后端 */
+  /** 搜索默认上限设置（settings.searchLimit，与主窗口同键共享——
+   *  review 29 #6 起为原始输入字符串，空/无效 = 无限制，解析同主窗口） */
+  const [localSearchLimit] = useLocalStorage<string>('settings.searchLimit', String(SEARCH_DEFAULT_LIMIT));
+  /** 净化后的设置默认上限（null = 无限制）——handleSearch 透传后端 */
   const pickerBaseSearchLimit = useMemo<number | null>(() => {
-    if (localSearchLimit === null) return null;
-    return Number.isFinite(localSearchLimit) && localSearchLimit > 0 && localSearchLimit <= 100000
-      ? Math.floor(localSearchLimit)
-      : SEARCH_DEFAULT_LIMIT;
+    return parseSearchLimitStr(localSearchLimit);
   }, [localSearchLimit]);
   /** 生效结果上限：搜索页临时上限优先，否则设置项默认值（null = 无限制） */
   const pickerEffectiveSearchLimit = useMemo<number | null>(() => {
     if (searchOptions.limit === null) return null;
     return searchOptions.limit ?? pickerBaseSearchLimit;
   }, [searchOptions.limit, pickerBaseSearchLimit]);
-  /** 搜索超时设置（settings.searchTimeout，与主窗口同键共享；null =
-   *  不限时；服务模式 userData 隔离时回落内置默认——与搜索上限同款语义） */
-  const [localSearchTimeout] = useLocalStorage<number | null>('settings.searchTimeout', SEARCH_DEFAULT_TIMEOUT);
-  /** 净化后的设置超时时长（秒；上限 180；null = 不限时）——handleSearch 透传后端 */
+  /** 搜索超时设置（settings.searchTimeout，与主窗口同键共享——
+   *  review 29 #6 起为原始输入字符串，空/无效 = 不限时） */
+  const [localSearchTimeout] = useLocalStorage<string>('settings.searchTimeout', String(SEARCH_DEFAULT_TIMEOUT));
+  /** 净化后的设置超时时长（秒；null = 不限时）——handleSearch 透传后端 */
   const pickerBaseSearchTimeoutSec = useMemo<number | null>(() => {
-    if (localSearchTimeout === null) return null;
-    return Number.isFinite(localSearchTimeout) && localSearchTimeout >= 1 && localSearchTimeout <= 180
-      ? Math.floor(localSearchTimeout)
-      : SEARCH_DEFAULT_TIMEOUT;
+    return parseSearchLimitStr(localSearchTimeout);
   }, [localSearchTimeout]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null);

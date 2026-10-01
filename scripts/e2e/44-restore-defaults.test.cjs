@@ -40,6 +40,8 @@ const h = require('./harness.cjs');
       set('settings.locale', 'en-US');
       set('settings.newTabPath', ${JSON.stringify(dir)});
       set('settings.showDashboard', false);
+      set('settings.showObjects', false);
+      set('settings.showTerminalPlace', false);
       return true;
     })(); true`);
     win.webContents.reload();
@@ -155,6 +157,8 @@ const h = require('./harness.cjs');
       locale: localStorage.getItem('settings.locale'),
       newTab: localStorage.getItem('settings.newTabPath'),
       showDashboard: localStorage.getItem('settings.showDashboard'),
+      showObjects: localStorage.getItem('settings.showObjects'),
+      showTerminalPlace: localStorage.getItem('settings.showTerminalPlace'),
     })`);
     const expected = {
       hidden: 'true',
@@ -173,6 +177,8 @@ const h = require('./harness.cjs');
       locale: '"auto"',
       newTab: '"/"',
       showDashboard: 'true',
+      showObjects: 'true',
+      showTerminalPlace: 'true',
     };
     h.assert.deepStrictEqual(JSON.parse(ls.value), expected, `恢复后设置应为默认值：${ls.value}`);
 

@@ -60,8 +60,6 @@ import {
   isSearchPath,
   parseSearchPath,
   buildSearchPath,
-  SEARCH_DEFAULT_LIMIT,
-  SEARCH_DEFAULT_TIMEOUT,
   type SearchPathFilter,
 } from '../utils/searchPath';
 import {
@@ -83,6 +81,7 @@ import {
   normalizeSettingsPath,
   settingsParentPath,
 } from '../utils/settingsPath';
+import { parseSearchLimitStr } from '../utils/searchLimit';
 import { SettingsPage } from './settings/SettingsPage';
 import { SearchFilterBar } from './SearchFilterBar';
 import { SearchPendingOverlay } from './SearchPendingOverlay';
@@ -132,13 +131,11 @@ interface ExplorerTabProps {
     /** 搜索分类开关（受控：settings.searchGroupByDir 持久化）——搜索结果
      *  按同目录分组，组头显示完整目录路径（截断/跑马灯） */
     searchGroupByDir: boolean;
-    /** 搜索结果默认上限（受控：settings.searchLimit 持久化，设置页
-     *  「搜索结果上限」行修改；null = 无限制；搜索页内「调整上限」为
-     *  会话级临时覆盖） */
-    searchLimit: number | null;
-    /** 搜索超时时长（秒，受控：settings.searchTimeout 持久化，上限 180；
-     *  null = 不限时；搜索页上限对话框「移除超时时长」为会话级临时覆盖） */
-    searchTimeout: number | null;
+    /** 搜索结果上限（review 29 #6：原始输入字符串，空/无效 = 无限制，
+     *  解析见 utils/searchLimit.ts；搜索页内「调整上限」为会话级临时覆盖） */
+    searchLimit: string;
+    /** 搜索超时时长（秒；同上限，原文字符串） */
+    searchTimeout: string;
     /** 修改排序字段（App 写入持久化键，跨窗口同步） */
     onSortByChange: (by: SortBy) => void;
     /** 修改排序方向（App 写入持久化键，跨窗口同步） */
@@ -379,22 +376,18 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
    * 设置默认值——runSearch 把它透传给后端（否则后端回落 200，设置不生效）。
    */
   const baseSearchLimit = useMemo<number | null>(() => {
-    if (searchLimit === null) return null;
-    return Number.isFinite(searchLimit) && searchLimit > 0 && searchLimit <= 100000
-      ? Math.floor(searchLimit)
-      : SEARCH_DEFAULT_LIMIT;
+    // review 29 #6：原始字符串解析（空/无效 = 无限制；有效钳到 100000）
+    return parseSearchLimitStr(searchLimit);
   }, [searchLimit]);
   const effectiveSearchLimit = useMemo<number | null>(() => {
     if (searchOptions.limit === null) return null;
     return searchOptions.limit ?? baseSearchLimit;
   }, [searchOptions.limit, baseSearchLimit]);
 
-  /** 净化后的搜索超时设置（秒；settings.searchTimeout，上限 180；null = 不限时） */
+  /** 净化后的搜索超时设置（秒；review 29 #6：原始字符串解析——
+   *  空/无效 = 不限时；有效钳到 100000，与上限同语义） */
   const baseSearchTimeoutSec = useMemo<number | null>(() => {
-    if (searchTimeout === null) return null;
-    return Number.isFinite(searchTimeout) && searchTimeout >= 1 && searchTimeout <= 180
-      ? Math.floor(searchTimeout)
-      : SEARCH_DEFAULT_TIMEOUT;
+    return parseSearchLimitStr(searchTimeout);
   }, [searchTimeout]);
 
   /** 搜索进行中（大搜索：文件区显示「搜索中 + 取消」覆盖层） */
@@ -2646,7 +2639,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
             flexWrap: 'wrap',
             alignItems: 'center',
             gap: '8px',
-            marginBottom: '16px',
+            marginBottom: isSettingsPath(currentPath) ? 0 : '16px',
             padding: '8px 8px 0',
             paddingBottom: topBarWrapped ? 8 : 0,
             borderBottom: '1px solid',

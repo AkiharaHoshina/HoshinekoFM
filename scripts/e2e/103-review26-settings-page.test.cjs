@@ -24,7 +24,7 @@ const { ipcMain } = require('electron');
     await h.sleep(600);
 
     await h.openSettingsPage(win);
-    h.assert.strictEqual((await h.js(win, `document.querySelectorAll('.settings-category-card').length`)).value, 10, '根页应有 10 张分类卡片');
+    h.assert.strictEqual((await h.js(win, `document.querySelectorAll('.settings-category-card').length`)).value, 11, '根页应有 11 张分类卡片（含内建终端）');
     // 根页无返回上级键
     h.assert.ok((await h.js(win, `!document.querySelector('[data-kb-zone="topbar-up"]')`)).value, '设置根页不应有返回上级键');
     // 标签页/窗口标题 = 设置
@@ -226,6 +226,91 @@ const { ipcMain } = require('electron');
     // Enter 打开分类
     await h.key(win, 'Enter');
     await h.waitFor(win, `!!document.querySelector('.settings-page-header')`, { timeout: 8000 });
+  });
+
+  await h.run('103g review29：显示对象面板开关 + Places 内建终端入口', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await h.sleep(600);
+
+    // 显示对象面板开关关闭 → Places 对象入口消失
+    await h.openSettingsPage(win, `/对象面板|Object Panel/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
+    await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /显示对象面板|Show object panel/.test(r.textContent ?? ''));
+      row?.querySelector('md-switch')?.click();
+      return true;
+    })()`, true);
+    await h.waitFor(win, `(() => {
+      const items = [...document.querySelectorAll('.sidebar-section:first-of-type .sidebar-item')];
+      return !items.some((x) => (x.querySelector('md-icon')?.textContent ?? '') === 'widgets');
+    })()`, 8000);
+    // 重新打开 → 恢复
+    await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /显示对象面板|Show object panel/.test(r.textContent ?? ''));
+      row?.querySelector('md-switch')?.click();
+      return true;
+    })()`, true);
+    await h.waitFor(win, `(() => {
+      const items = [...document.querySelectorAll('.sidebar-section:first-of-type .sidebar-item')];
+      return items.some((x) => (x.querySelector('md-icon')?.textContent ?? '') === 'widgets');
+    })()`, 8000);
+
+    // 内建终端分类：开关存在；Places 内建终端入口位于设置下方
+    await h.openSettingsPage(win, `/内建终端|Built-in Terminal/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
+    const order = await h.js(win, `(() => {
+      const items = [...document.querySelectorAll('.sidebar-section:first-of-type .sidebar-item')];
+      const idx = (lig) => items.findIndex((x) => (x.querySelector('md-icon')?.textContent ?? '') === lig);
+      return { settings: idx('settings'), term: idx('terminal') };
+    })()`);
+    h.assert.ok(order.value.settings >= 0 && order.value.term === order.value.settings + 1, `内建终端入口应紧邻设置下方（实际 ${JSON.stringify(order.value)}）`);
+
+    // 点击 Places 内建终端入口 → 终端打开 + 深色高亮类
+    await h.js(win, `(() => {
+      const items = [...document.querySelectorAll('.sidebar-section:first-of-type .sidebar-item')];
+      const it = items.find((x) => (x.querySelector('md-icon')?.textContent ?? '') === 'terminal');
+      it?.click();
+      return !!it;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.terminal-panel')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.sidebar-item--terminal-active')`, { timeout: 8000 });
+    const activeBg = await h.js(win, `getComputedStyle(document.querySelector('.sidebar-item--terminal-active')).backgroundColor`);
+    h.assert.ok(!/rgba\(0, 0, 0, 0\)|transparent/.test(activeBg.value), `终端入口开启态应有加深高亮背景（实际 ${activeBg.value}）`);
+    // 再点一次 → 终端关闭 + 高亮消失
+    await h.js(win, `(() => {
+      const items = [...document.querySelectorAll('.sidebar-section:first-of-type .sidebar-item')];
+      const it = items.find((x) => (x.querySelector('md-icon')?.textContent ?? '') === 'terminal');
+      it?.click();
+      return !!it;
+    })()`, true);
+    await h.waitFor(win, `!document.querySelector('.terminal-panel')`, { timeout: 8000 });
+    h.assert.ok((await h.js(win, `!document.querySelector('.sidebar-item--terminal-active')`)).value, '关闭终端后高亮应消失');
+
+    // 在位置中显示内建终端快捷方式开关关闭 → Places 入口消失
+    await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /在位置中显示内建终端|Show built-in terminal in Places/.test(r.textContent ?? ''));
+      row?.querySelector('md-switch')?.click();
+      return true;
+    })()`, true);
+    await h.waitFor(win, `(() => {
+      const items = [...document.querySelectorAll('.sidebar-section:first-of-type .sidebar-item')];
+      return !items.some((x) => (x.querySelector('md-icon')?.textContent ?? '') === 'terminal');
+    })()`, 8000);
+    // 恢复（避免污染后续用例）
+    await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /在位置中显示内建终端|Show built-in terminal in Places/.test(r.textContent ?? ''));
+      row?.querySelector('md-switch')?.click();
+      return true;
+    })()`, true);
+    await h.waitFor(win, `(() => {
+      const items = [...document.querySelectorAll('.sidebar-section:first-of-type .sidebar-item')];
+      return items.some((x) => (x.querySelector('md-icon')?.textContent ?? '') === 'terminal');
+    })()`, 8000);
   });
 
   h.finish();

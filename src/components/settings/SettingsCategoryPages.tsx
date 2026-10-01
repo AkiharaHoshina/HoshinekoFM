@@ -1,11 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '../Button';
 import { Icon } from '../Icon';
-import { Slider, OutlinedSelect, SelectOption } from '../md';
+import { Slider, OutlinedSelect, SelectOption, OutlinedTextField } from '../md';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { NewTabPathDialog } from '../NewTabPathDialog';
-import { SearchLimitDialog } from '../SearchLimitDialog';
-import { SearchTimeoutDialog } from '../SearchTimeoutDialog';
 import { OpenRuleManagerDialog } from '../OpenRuleManagerDialog';
 import { ColorPickerDialog } from '../ColorPickerDialog';
 import { SettingsPreview } from '../SettingsPreview';
@@ -121,20 +119,9 @@ export const FilesSettings: React.FC = () => {
           </div>
         </div>
 
-        <div className="settings-icon-size">
-          <div className="settings-icon-size__header">
-            <span>{t('settings.icon_size')}</span>
-            <span className="settings-icon-size__value">{s.iconSize}px</span>
-          </div>
-          <Slider
-            min={ICON_SIZE_MIN}
-            max={ICON_SIZE_MAX}
-            step={ICON_SIZE_STEP}
-            value={s.iconSize}
-            onInput={(e) => s.setIconSize(Number((e.target as HTMLInputElement).value))}
-            style={{ width: '100%' }}
-          />
-        </div>
+        {/* review 29 #3：图标大小松手生效（onInput 只更新数值标签、
+            onChange 提交时才写 settings.iconSize——与界面缩放同款） */}
+        <IconSizeRow />
 
         <SettingsSwitchRow
           icon="favorite"
@@ -295,6 +282,33 @@ export const DisplaySettings: React.FC<{ onNavigate: (p: string) => void }> = ({
         <UiScaleRow />
       </div>
     </>
+  );
+};
+
+/** 图标大小行（review 29 #3：松手生效——拖动中仅数值标签跟随） */
+const IconSizeRow: React.FC = () => {
+  const s = useSettings();
+  const [dragSize, setDragSize] = useState<number | null>(null);
+  const shown = dragSize ?? s.iconSize;
+  return (
+    <div className="settings-icon-size">
+      <div className="settings-icon-size__header">
+        <span>{t('settings.icon_size')}</span>
+        <span className="settings-icon-size__value">{shown}px</span>
+      </div>
+      <Slider
+        min={ICON_SIZE_MIN}
+        max={ICON_SIZE_MAX}
+        step={ICON_SIZE_STEP}
+        value={s.iconSize}
+        onInput={(e) => setDragSize(Number((e.target as HTMLInputElement).value))}
+        onChange={(e) => {
+          setDragSize(null);
+          s.setIconSize(Number((e.target as HTMLInputElement).value));
+        }}
+        style={{ width: '100%' }}
+      />
+    </div>
   );
 };
 
@@ -493,11 +507,9 @@ export const ThemeSettings: React.FC = () => {
             <span className="theme-color-special-desc">{t('theme.custom_desc')}</span>
           </button>
         </div>
-        {/* 调色盘（二级对话框）+ 独立选图 + 导入 matugen */}
+        {/* review 29 #5：移除「调色盘」按钮（与自定义色卡职能重复）——
+          保留 选择壁纸 + 导入 matugen */}
         <div className="theme-color-palette-row">
-          <Button variant="outlined" icon={<Icon name="colorize" />} onClick={() => setPickerOpen(true)}>
-            {t('theme.palette')}
-          </Button>
           <Button variant="outlined" icon={<Icon name="image" />} onClick={() => { void pickWallpaper(); }}>
             {t('theme.pick_wallpaper')}
           </Button>
@@ -520,8 +532,6 @@ export const ThemeSettings: React.FC = () => {
 
 export const SearchSettings: React.FC = () => {
   const s = useSettings();
-  const [limitDialogOpen, setLimitDialogOpen] = useState(false);
-  const [timeoutDialogOpen, setTimeoutDialogOpen] = useState(false);
   return (
     <>
       <SettingsSwitchRow
@@ -532,24 +542,30 @@ export const SearchSettings: React.FC = () => {
         onChange={s.setSearchGroupByDir}
       />
 
+      {/* review 29 #6/7：上限/超时改页内输入框（原文保存字符串，输入
+          即生效）——空/无效输入视为无限制（解析见 utils/searchLimit.ts） */}
       <SettingsRow
         icon="filter_list"
         label={t('settings.search_limit')}
-        sub={s.searchLimit === null ? t('search.unlimited') : t('settings.search_limit_desc', s.searchLimit)}
+        sub={t('settings.search_invalid_hint')}
       >
-        <Button variant="outlined" onClick={() => setLimitDialogOpen(true)}>
-          {t('settings.search_limit_edit')}
-        </Button>
+        <OutlinedTextField
+          className="settings-input-num"
+          value={s.searchLimit}
+          onInput={(e) => s.setSearchLimit((e.target as HTMLInputElement).value)}
+        />
       </SettingsRow>
 
       <SettingsRow
         icon="timer"
         label={t('settings.search_timeout')}
-        sub={s.searchTimeout === null ? t('search.unlimited') : t('settings.search_timeout_desc', s.searchTimeout)}
+        sub={t('settings.search_invalid_hint')}
       >
-        <Button variant="outlined" onClick={() => setTimeoutDialogOpen(true)}>
-          {t('settings.search_limit_edit')}
-        </Button>
+        <OutlinedTextField
+          className="settings-input-num"
+          value={s.searchTimeout}
+          onInput={(e) => s.setSearchTimeout((e.target as HTMLInputElement).value)}
+        />
       </SettingsRow>
 
       <SettingsRow
@@ -571,27 +587,6 @@ export const SearchSettings: React.FC = () => {
           ))}
         </OutlinedSelect>
       </SettingsRow>
-
-      {limitDialogOpen && (
-        <SearchLimitDialog
-          currentLimit={s.searchLimit}
-          onConfirm={(limit) => {
-            setLimitDialogOpen(false);
-            s.setSearchLimit(limit);
-          }}
-          onCancel={() => setLimitDialogOpen(false)}
-        />
-      )}
-      {timeoutDialogOpen && (
-        <SearchTimeoutDialog
-          currentTimeout={s.searchTimeout}
-          onConfirm={(seconds) => {
-            setTimeoutDialogOpen(false);
-            s.setSearchTimeout(seconds);
-          }}
-          onCancel={() => setTimeoutDialogOpen(false)}
-        />
-      )}
     </>
   );
 };
@@ -602,6 +597,13 @@ export const ObjectsSettings: React.FC = () => {
   const s = useSettings();
   return (
     <>
+      {/* review 29 #11：显示对象面板开关（置于首位，控制 Places 入口） */}
+      <SettingsSwitchRow
+        icon="widgets"
+        label={t('settings.show_objects')}
+        value={s.showObjects}
+        onChange={s.setShowObjects}
+      />
       <SettingsRow icon="show_chart" label={t('settings.sparkline_window')}>
         <OutlinedSelect
           className="settings-select settings-select--compact"
@@ -675,24 +677,25 @@ export const PortalSettings: React.FC = () => {
 
   return (
     <>
-      <SettingsRow
+      {/* review 29 #8：默认文件管理器改为开关（on = 设为默认、off = 恢复
+          系统默认；fmBusy 时禁用） */}
+      <SettingsSwitchRow
         icon="folder_shared"
         label={t('settings.default_file_manager')}
         sub={s.isDefaultFileManager
           ? t('settings.is_default_file_manager')
           : t('settings.default_file_manager_desc')}
-      >
-        {s.isDefaultFileManager ? (
-          <Button variant="outlined" disabled={s.fmBusy} onClick={s.restoreDefaultFm}>
-            {t('settings.restore_default_file_manager')}
-          </Button>
-        ) : (
-          <Button variant="outlined" disabled={s.fmBusy} onClick={s.setDefaultFm}>
-            {t('settings.set_default_file_manager')}
-          </Button>
-        )}
-      </SettingsRow>
+        value={s.isDefaultFileManager}
+        onChange={(v) => {
+          if (s.fmBusy) return;
+          if (v) s.setDefaultFm();
+          else s.restoreDefaultFm();
+        }}
+      />
 
+      {/* review 29 #8：系统集成——未安装单按钮「安装 Portal 集成」；
+          已安装双按钮「卸载 Portal 集成」「重装 Portal 集成」
+          （重装 = 复用版本弹窗 runReinstall 链路，busy 共享） */}
       <SettingsRow
         icon="widgets"
         label={t('settings.system_integration')}
@@ -702,9 +705,14 @@ export const PortalSettings: React.FC = () => {
             : t('settings.system_integration_desc'))}
       >
         {isIntegrationInstalled ? (
-          <Button variant="outlined" disabled={s.integrationBusy} onClick={s.uninstallIntegration}>
-            {t('settings.uninstall_integration')}
-          </Button>
+          <>
+            <Button variant="outlined" disabled={s.integrationBusy || s.reinstallBusy} onClick={s.uninstallIntegration}>
+              {t('settings.uninstall_integration')}
+            </Button>
+            <Button variant="outlined" disabled={s.integrationBusy || s.reinstallBusy} onClick={s.reinstallIntegration}>
+              {t('settings.reinstall_integration')}
+            </Button>
+          </>
         ) : (
           <Button variant="outlined" disabled={s.integrationBusy} onClick={s.installIntegration}>
             {t('settings.install_integration')}
@@ -729,22 +737,27 @@ export const PortalSettings: React.FC = () => {
 
 export const ShortcutSettings: React.FC = () => {
   const s = useSettings();
+  /** 单行条目：存在 → 「移除」；不存在 → 「创建」（review 29 #9） */
+  const renderEntryRow = (kind: 'desktop' | 'appmenu', icon: string, label: string, sub: string) => {
+    const exists = s.launcherStatus?.[kind] ?? false;
+    return (
+      <SettingsRow icon={icon} label={label} sub={sub}>
+        {exists ? (
+          <Button variant="outlined" onClick={() => s.removeEntry(kind)}>
+            {t('settings.remove_entry')}
+          </Button>
+        ) : (
+          <Button variant="outlined" onClick={() => s.createEntry(kind)}>
+            {t('settings.create_entry')}
+          </Button>
+        )}
+      </SettingsRow>
+    );
+  };
   return (
     <>
-      <SettingsSwitchRow
-        icon="desktop_windows"
-        label={t('settings.desktop_entry')}
-        sub={t('settings.desktop_entry_desc')}
-        value={s.autoCreateDesktopEntry}
-        onChange={s.setAutoCreateDesktopEntry}
-      />
-      <SettingsSwitchRow
-        icon="apps"
-        label={t('settings.app_menu_entry')}
-        sub={t('settings.app_menu_entry_desc')}
-        value={s.autoCreateAppMenuEntry}
-        onChange={s.setAutoCreateAppMenuEntry}
-      />
+      {renderEntryRow('desktop', 'desktop_windows', t('settings.desktop_entry'), t('settings.desktop_entry_desc'))}
+      {renderEntryRow('appmenu', 'apps', t('settings.app_menu_entry'), t('settings.app_menu_entry_desc'))}
     </>
   );
 };
@@ -754,10 +767,33 @@ export const ShortcutSettings: React.FC = () => {
 export const I18nSettings: React.FC = () => {
   const s = useSettings();
   const langOptions = getLanguageOptions();
+  const measurerRef = useRef<HTMLSpanElement | null>(null);
+  const selectRef = useRef<HTMLElement | null>(null);
+  /**
+   * review 29 #10：收起态字段宽度 = 展开菜单宽度（最长选项）——
+   * 隐藏 measurer span 渲染全部语言名，layout effect 取最大文本宽 +
+   * 下拉箭头/内边距余量（48px）设到 select 宿主行内宽度（上限 320px）。
+   */
+  useLayoutEffect(() => {
+    const m = measurerRef.current;
+    const sel = selectRef.current;
+    if (!m || !sel) return;
+    const children = Array.from(m.children) as HTMLElement[];
+    let max = 0;
+    for (const c of children) max = Math.max(max, c.offsetWidth);
+    sel.style.width = `${Math.min(320, max + 48)}px`;
+  }, [langOptions]);
   return (
     <SettingsRow icon="translate" label={t('settings.language')}>
+      <span
+        ref={measurerRef}
+        aria-hidden="true"
+        style={{ position: 'absolute', visibility: 'hidden', whiteSpace: 'nowrap' }}
+      >
+        {langOptions.map((opt) => <span key={opt.value}>{opt.name}</span>)}
+      </span>
       <OutlinedSelect
-        className="settings-select"
+        ref={(el: unknown) => { selectRef.current = el as HTMLElement | null; }}
         value={s.locale}
         onInput={(e) => {
           const val = (e.target as HTMLSelectElement).value as Locale;
@@ -801,6 +837,20 @@ export const DefaultsSettings: React.FC = () => {
         onCancel={() => setConfirmOpen(false)}
       />
     </>
+  );
+};
+
+// ── 内建终端（settings://built-in-terminal，review 29 #15） ──
+
+export const BuiltInTerminalSettings: React.FC = () => {
+  const s = useSettings();
+  return (
+    <SettingsSwitchRow
+      icon="terminal"
+      label={t('settings.show_terminal_place')}
+      value={s.showTerminalPlace}
+      onChange={s.setShowTerminalPlace}
+    />
   );
 };
 

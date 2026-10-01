@@ -463,6 +463,15 @@ function registerIpc() {
     }
     return launcherEntry.removeLauncherEntry(kind, launcherEnv());
   });
+  // review 29 #9：启动器条目存在性查询（快捷方式设置页「创建/移除」显隐）
+  ipcMain.handle('app:get-launcher-entry-status', async () => {
+    const env = launcherEnv();
+    const [desktop, appmenu] = await Promise.all([
+      launcherEntry.getLauncherEntryExists('desktop', env),
+      launcherEntry.getLauncherEntryExists('appmenu', env),
+    ]);
+    return { desktop, appmenu };
+  });
 }
 
 /** 注册 media/preview 协议（与 main.ts 的 handler 同步） */

@@ -78,13 +78,19 @@ export interface SettingsContextValue {
   // ── 搜索 ──
   searchGroupByDir: boolean;
   setSearchGroupByDir: (v: boolean) => void;
-  searchLimit: number | null;
-  setSearchLimit: (v: number | null) => void;
-  searchTimeout: number | null;
-  setSearchTimeout: (v: number | null) => void;
+  /** 搜索结果上限（review 29 #6：页内输入框原文保存字符串——空/无效 =
+   *  无限制，解析见 utils/searchLimit.ts 的 parseSearchLimitStr） */
+  searchLimit: string;
+  setSearchLimit: (v: string) => void;
+  /** 搜索超时时长（秒；同上，原文字符串） */
+  searchTimeout: string;
+  setSearchTimeout: (v: string) => void;
   searchRecentCount: number;
   setSearchRecentCount: (v: number) => void;
   // ── 对象面板 ──
+  /** 对象面板入口是否显示在 Places（review 29 #11；默认开） */
+  showObjects: boolean;
+  setShowObjects: (v: boolean) => void;
   sparklineWindowSeconds: number;
   setSparklineWindowSeconds: (v: number) => void;
   alertTempC: number;
@@ -103,15 +109,23 @@ export interface SettingsContextValue {
   backendConflicts: BackendConflictInfo[] | null;
   sessionBusBusy: boolean;
   restartSessionBus: () => void;
+  /** 重装 Portal 集成（review 29 #8：与版本弹窗共享 runReinstall 链路） */
+  reinstallIntegration: () => void;
+  reinstallBusy: boolean;
   // ── 快捷方式 ──
-  autoCreateDesktopEntry: boolean;
-  /** 桌面快捷方式开关：写持久化值 + 立即创建/删除条目（旧「确定时生效」） */
-  setAutoCreateDesktopEntry: (v: boolean) => void;
-  autoCreateAppMenuEntry: boolean;
-  setAutoCreateAppMenuEntry: (v: boolean) => void;
+  /** 启动器条目存在状态（review 29 #9：按钮显隐由文件存在性驱动） */
+  launcherStatus: { desktop: boolean; appmenu: boolean } | null;
+  /** 创建启动器条目（ensureLauncherEntry；成功后刷新状态） */
+  createEntry: (kind: 'desktop' | 'appmenu') => void;
+  /** 移除启动器条目（removeLauncherEntry；成功后刷新状态） */
+  removeEntry: (kind: 'desktop' | 'appmenu') => void;
   // ── 语言 ──
   locale: Locale;
   setLocale: (v: Locale) => void;
+  // ── 内建终端（review 29 #15） ──
+  /** 内建终端快捷方式是否显示在 Places（默认开） */
+  showTerminalPlace: boolean;
+  setShowTerminalPlace: (v: boolean) => void;
   // ── 默认设置 ──
   restoreDefaults: () => void;
   // ── 其他 ──

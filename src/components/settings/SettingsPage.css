@@ -17,7 +17,10 @@
 .settings-page-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 24px 24px;
+  /* review 29 #1：去掉 padding-top——sticky 预览吸顶时与滚动视口上沿
+   * 平齐（padding-top 会在吸顶时留下 8px 裸条透出下层组件；标题行/
+   * 卡片区自带自身间距） */
+  padding: 0 24px 24px;
   min-width: 0;
 }
 
@@ -34,22 +37,24 @@
 
 /* ── 根页分类卡片（对象面板卡片同款视觉、独立类名防 e2e 选择器污染） ── */
 
+/* review 29：对象面板类卡片同款长宽与布局（minmax 180px/16px padding/
+ * gap 8px/左对齐三行）；图标回落 md-icon 默认 24px（此前 32px 撑破
+ * 卡片导致显示不全） */
 .settings-category-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
   padding: 16px 0;
 }
 
 .settings-category-card {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 24px 12px;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px;
   border-radius: 16px;
-  background-color: var(--md-sys-color-surface-container);
+  background: var(--md-sys-color-surface-container);
   border: 1px solid var(--md-sys-color-outline-variant);
   cursor: pointer;
   user-select: none;
@@ -66,14 +71,37 @@
 }
 
 .settings-category-icon {
-  font-size: 32px;
   color: var(--md-sys-color-primary);
 }
 
 .settings-category-label {
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 500;
   color: var(--md-sys-color-on-surface);
-  text-align: center;
+}
+
+.settings-category-count {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* 主页标题行（review 29 #12：[图标] 设置 + 副标题） */
+.settings-page-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0 0;
+}
+
+.settings-page-title-icon {
+  color: var(--md-sys-color-primary);
+  font-size: 32px;
+}
+
+.settings-page-subtitle {
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface-variant);
+  padding: 4px 0 8px;
 }
 
 /* ── 内容区（行/分区，自旧 SettingsDialog.css 平移） ── */
@@ -270,14 +298,18 @@
   font-weight: 500;
 }
 
+/* review 29：固定直径 40px + flex-wrap 动态排列（容器宽度决定每行
+ * 个数——此前 repeat(6, 1fr) + aspect-ratio 等比放大过大） */
 .theme-color-preset-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
 .theme-color-preset {
-  aspect-ratio: 1;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
   border-radius: 50%;
   border: 2px solid var(--md-sys-color-outline-variant);
   cursor: pointer;
@@ -356,4 +388,9 @@
   justify-content: flex-start;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* review 29 #6：页内数字输入框（搜索上限/超时） */
+.settings-input-num {
+  width: 140px;
 }

@@ -170,20 +170,45 @@ const marqueeCountExpr = `document.querySelectorAll('.settings-preview .marquee-
     );
     await h.waitFor(win, `${previewModeExpr} === 'grid'`);
     await h.waitFor(win, `localStorage.getItem('settings.viewMode') === '"grid"'`, 5000);
-    // 图标大小 → 96px
+    // 图标大小 → 96px（review 29 #3：松手生效——change 事件才落盘）
     await h.js(
       win,
       `(() => {
         const sl = document.querySelectorAll('.settings-icon-size md-slider')[0];
         if (!sl) return false;
         sl.value = 96;
-        sl.dispatchEvent(new Event('input', { bubbles: true }));
+        sl.dispatchEvent(new Event('change', { bubbles: true }));
         return true;
       })()`,
       true,
     );
     await h.waitFor(win, `${iconSizeExpr} === 96`);
     await h.waitFor(win, `localStorage.getItem('settings.iconSize') === '96'`, 5000);
+
+    // ── review 29 #1：吸顶后预览顶部贴地址栏（无裸条透出）──
+    // 滚动容器滚过预览自然位置后，预览吸顶（top:0 = 滚动容器上沿），
+    // 设置页顶栏 margin-bottom 已归 0 → 预览 top 与顶栏 bottom 间隙 ≤ 1px
+    const stickInfo = await h.js(win, `(() => {
+      const sc = document.querySelector('.settings-page-scroll');
+      if (!sc) return null;
+      sc.scrollTop = 600;
+      return true;
+    })()`, true);
+    await h.sleep(300);
+    const stickyGap = await h.js(win, `(() => {
+      const sc = document.querySelector('.settings-page-scroll');
+      const p = document.querySelector('.settings-preview-fixed');
+      if (!sc || !p) return null;
+      const scTop = sc.getBoundingClientRect().top;
+      const pTop = p.getBoundingClientRect().top;
+      return { gap: Math.round(pTop - scTop), sticky: pTop >= scTop - 1 && pTop <= scTop + 1 };
+    })()`);
+    h.assert.ok(stickyGap.value?.sticky === true, '滚动后预览应吸顶（贴滚动容器上沿）');
+    await h.js(win, `(() => {
+      const sc = document.querySelector('.settings-page-scroll');
+      if (sc) sc.scrollTop = 0;
+      return true;
+    })()`, true);
 
     // ── 分组关闭 → 预览无分组头 ──
     // 回文件视图关分组（分组开（默认）时按钮为 filled 变体）

@@ -1,13 +1,13 @@
 /**
- * e2e 56：自动创建启动器条目（桌面快捷方式 / 应用程序菜单条目）。
- * - 默认开启：主窗口挂载即经 app:ensure-launcher-entry 创建两份
- *   .desktop（Exec 转义断言：路径含空格与引号）、图标复制到 hicolor
- *   稳定落点、chmod 755（可执行位）；
- * - marker 幂等：marker 命中时重复触发 created=false；删除 .desktop
- *   后重载不重建（「创建一次，删掉不补」）；
- * - 确定时生效（pending）：设置 UI 行切换只改预览——开关关闭并确定 →
- *   删除条目并清 marker（文件实际删除断言）；开关重新打开并确定 →
- *   再次创建（显式往返 = 新的创建意图）；
+ * e2e 56：启动器条目（桌面快捷方式 / 应用程序菜单条目，review 29 #9
+ * 按钮模型——「创建/移除」，废除首启自动创建）。
+ * - 挂载不再自动创建条目；
+ * - 设置页 → 快捷方式分类：条目不存在时只显示「创建」按钮；
+ * - 点「创建」→ 经 app:ensure-launcher-entry 创建 .desktop（Exec 转义
+ *   断言：路径含空格与引号）、图标复制到 hicolor 稳定落点、chmod 755；
+ *   状态刷新后按钮变「移除」；
+ * - 点「移除」→ 文件实际删除、按钮回「创建」；
+ * - marker 幂等：marker 命中时重复 ensure created=false；
  * - APPIMAGE 环境变量优先于进程路径写入 Exec；
  * - 非法 kind 拒绝（ensure 与 remove 两个通道）。
  *
@@ -23,7 +23,7 @@ const path = require('path');
   const { app } = require('electron');
   const userData = app.getPath('userData');
 
-  await h.run('56 自动创建启动器条目（桌面 / 应用程序菜单，确定时生效）', async () => {
+  await h.run('56 启动器条目创建/移除按钮（review 29）', async () => {
     const scratch = h.tempDir();
     const desktopDir = path.join(scratch, 'Desktop');
     const appmenuDir = path.join(scratch, 'applications');
@@ -48,31 +48,57 @@ const path = require('path');
       }
       throw new Error(`waitForFile timeout: ${p}`);
     };
-    const readMarker = () => JSON.parse(fs.readFileSync(markerFile, 'utf-8'));
+    const waitGone = async (p, timeout = 10000) => {
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        if (!fs.existsSync(p)) return;
+        await h.sleep(100);
+      }
+      throw new Error(`waitGone timeout: ${p}`);
+    };
+    const readMarker = () => (fs.existsSync(markerFile) ? JSON.parse(fs.readFileSync(markerFile, 'utf-8')) : {});
 
-    // ── 默认开启：挂载即创建两份条目 ──
+    // ── 挂载不自动创建（废除首启自动创建）──
     const win = await h.createTestWindow({ argv: ['electron'] });
-    await waitForFile(desktopFile);
-    await waitForFile(appmenuFile);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await h.sleep(800);
+    h.assert.ok(!fs.existsSync(desktopFile), '挂载不应自动创建桌面条目（按钮语义）');
+    h.assert.ok(!fs.existsSync(appmenuFile), '挂载不应自动创建菜单条目（按钮语义）');
 
+    // ── 设置页 → 快捷方式分类：不存在 → 只显示「创建」按钮 ──
+    await h.openSettingsPage(win, `/快捷方式|Shortcuts/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
+    const rowBtns = () => h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /桌面图标|Desktop shortcut/.test(r.textContent ?? ''));
+      const btns = row ? [...row.querySelectorAll('md-outlined-button')] : [];
+      return { count: btns.length, text: btns[0]?.textContent ?? '' };
+    })()`);
+    const initial = await rowBtns();
+    h.assert.strictEqual(initial.value.count, 1, '条目不存在时只应显示一个按钮');
+    h.assert.ok(/创建|Create/.test(initial.value.text ?? ''), `不存在时应显示「创建」（实际 ${initial.value.text}）`);
+
+    // ── 点「创建」→ 条目创建 + 状态刷新为「移除」──
+    await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /桌面图标|Desktop shortcut/.test(r.textContent ?? ''));
+      const btn = [...row.querySelectorAll('md-outlined-button')].find((b) => /创建|Create/.test(b.textContent ?? ''));
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`, true);
+    await waitForFile(desktopFile);
     const desktopContent = fs.readFileSync(desktopFile, 'utf-8');
-    const appmenuContent = fs.readFileSync(appmenuFile, 'utf-8');
     const expectedExec = 'Exec="/tmp/hoshi \\"dir\\"/HoshinekoFM" %U';
-    for (const [name, content, file] of [
-      ['桌面', desktopContent, desktopFile],
-      ['菜单', appmenuContent, appmenuFile],
-    ]) {
-      h.assert.ok(content.includes('[Desktop Entry]'), `${name} 条目应含 [Desktop Entry]`);
-      h.assert.ok(content.includes('Type=Application'), `${name} 条目应含 Type=Application`);
-      h.assert.ok(content.includes('Name=HoshinekoFM'), `${name} 条目应含 Name=HoshinekoFM`);
-      h.assert.ok(content.includes(expectedExec), `${name} 条目 Exec 应正确转义：${content.split('\n').find((l) => l.startsWith('Exec='))}`);
-      h.assert.ok(content.includes(`Icon=${iconFile}`), `${name} 条目 Icon 应指向 hicolor 稳定落点`);
-      h.assert.ok(content.includes('Terminal=false'), `${name} 条目应含 Terminal=false`);
-      h.assert.ok(content.includes('StartupWMClass=HoshinekoFM'), `${name} 条目应含 StartupWMClass`);
-      const mode = fs.statSync(file).mode & 0o111;
-      h.assert.ok(mode !== 0, `${name} 条目应带可执行位（chmod 755）`);
-    }
-    // 图标已复制（与仓库 src/icon.svg 一致，SVG 矢量）
+    h.assert.ok(desktopContent.includes('[Desktop Entry]'), '桌面条目应含 [Desktop Entry]');
+    h.assert.ok(desktopContent.includes('Type=Application'), '桌面条目应含 Type=Application');
+    h.assert.ok(desktopContent.includes('Name=HoshinekoFM'), '桌面条目应含 Name=HoshinekoFM');
+    h.assert.ok(desktopContent.includes(expectedExec), `桌面条目 Exec 应正确转义：${desktopContent.split('\n').find((l) => l.startsWith('Exec='))}`);
+    h.assert.ok(desktopContent.includes(`Icon=${iconFile}`), '桌面条目 Icon 应指向 hicolor 稳定落点');
+    h.assert.ok(desktopContent.includes('Terminal=false'), '桌面条目应含 Terminal=false');
+    h.assert.ok(desktopContent.includes('StartupWMClass=HoshinekoFM'), '桌面条目应含 StartupWMClass');
+    const mode = fs.statSync(desktopFile).mode & 0o111;
+    h.assert.ok(mode !== 0, '桌面条目应带可执行位（chmod 755）');
     h.assert.ok(fs.existsSync(iconFile), '图标应复制到 hicolor 目录');
     h.assert.strictEqual(
       fs.statSync(iconFile).size,
@@ -83,10 +109,16 @@ const path = require('path');
       fs.readFileSync(iconFile, 'utf-8').trimStart().startsWith('<svg'),
       '复制后的图标应为 SVG 矢量内容',
     );
-    // marker 已落盘（两 kind 均记录）
-    h.assert.deepStrictEqual(readMarker(), { desktop: true, appmenu: true }, 'marker 应记录两个条目均已创建');
+    h.assert.strictEqual(readMarker().desktop, true, 'marker 应记录桌面条目已创建');
+    // 状态刷新：按钮变「移除」
+    await h.waitFor(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /桌面图标|Desktop shortcut/.test(r.textContent ?? ''));
+      const btn = [...(row?.querySelectorAll('md-outlined-button') ?? [])][0];
+      return !!btn && /移除|Remove/.test(btn.textContent ?? '');
+    })()`, 8000);
 
-    // ── marker 幂等：marker 命中时重复触发 created=false（多窗口场景）──
+    // ── marker 幂等：重复 ensure created=false ──
     const second = await h.js(win, `window.electron.ensureLauncherEntry('desktop')`);
     h.assert.deepStrictEqual(
       { success: second.value?.success, created: second.value?.created },
@@ -94,142 +126,69 @@ const path = require('path');
       'marker 命中时应返回 created=false',
     );
 
-    // ── 删掉不补：手动删除条目后重载不得重建 ──
-    fs.rmSync(desktopFile);
-    fs.rmSync(appmenuFile);
-    win.webContents.reload();
-    await h.waitFor(win, `!!document.querySelector('.m3-navigation-rail')`, 15000);
-    await h.sleep(1500);
-    h.assert.ok(!fs.existsSync(desktopFile), '手动删除桌面条目后重载不得重建');
-    h.assert.ok(!fs.existsSync(appmenuFile), '手动删除菜单条目后重载不得重建');
+    // ── 点「移除」→ 文件实际删除 + 按钮回「创建」──
+    await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /桌面图标|Desktop shortcut/.test(r.textContent ?? ''));
+      const btn = [...row.querySelectorAll('md-outlined-button')].find((b) => /移除|Remove/.test(b.textContent ?? ''));
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`, true);
+    await waitGone(desktopFile);
+    await h.waitFor(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /桌面图标|Desktop shortcut/.test(r.textContent ?? ''));
+      const btn = [...(row?.querySelectorAll('md-outlined-button') ?? [])][0];
+      return !!btn && /创建|Create/.test(btn.textContent ?? '');
+    })()`, 8000);
 
-    // ── review 26 立即生效：切换开关即删除/创建条目并清/记 marker ──
-    const toggleDesktopSwitch = async () => {
-      await h.openSettingsPage(win, `/快捷方式|Shortcuts/`);
-      await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
-      await h.js(
-        win,
-        `(() => {
-          const rows = [...document.querySelectorAll('.settings-row')];
-          const row = rows.find((r) => /桌面图标|Desktop shortcut/.test(r.textContent ?? ''));
-          const sw = row ? row.querySelector('md-switch') : null;
-          if (!sw) return false;
-          sw.click();
-          return true;
-        })()`,
-        true,
-      );
-    };
+    // ── 菜单条目：创建 + 移除（按钮模型同桌面）──
+    await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /应用程序菜单条目|Application menu entry/.test(r.textContent ?? ''));
+      const btn = [...row.querySelectorAll('md-outlined-button')].find((b) => /创建|Create/.test(b.textContent ?? ''));
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`, true);
+    await waitForFile(appmenuFile);
+    await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /应用程序菜单条目|Application menu entry/.test(r.textContent ?? ''));
+      const btn = [...row.querySelectorAll('md-outlined-button')].find((b) => /移除|Remove/.test(b.textContent ?? ''));
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`, true);
+    await waitGone(appmenuFile);
 
-    // 关闭（文件此前已被手动删除 + marker 有 desktop 标志）：
-    // 删除为 no-op 但 marker 被清除——立即生效
-    await toggleDesktopSwitch();
-    await h.waitFor(win, `localStorage.getItem('settings.autoCreateDesktopEntry') === 'false'`, 8000);
-    await (async () => {
-      const start = Date.now();
-      while (Date.now() - start < 5000) {
-        if (JSON.stringify(readMarker()) === JSON.stringify({ appmenu: true })) return;
-        await h.sleep(100);
-      }
-      throw new Error('关闭后应清除桌面条目 marker');
-    })();
-
-    // 重新打开：marker 已清 → 再次创建（显式往返 = 新创建意图）
-    await toggleDesktopSwitch();
-    await h.waitFor(win, `localStorage.getItem('settings.autoCreateDesktopEntry') === 'true'`, 8000);
-    await waitForFile(desktopFile);
-    await (async () => {
-      const start = Date.now();
-      while (Date.now() - start < 10000) {
-        const m = readMarker();
-        if (m.desktop === true && m.appmenu === true) return;
-        await h.sleep(100);
-      }
-      throw new Error(`重开后应再次创建并记录 marker（实际 ${JSON.stringify(readMarker())}）`);
-    })();
-
-    // 再关：这次文件真实存在 → 实际删除断言
-    await toggleDesktopSwitch();
-    await h.waitFor(win, `localStorage.getItem('settings.autoCreateDesktopEntry') === 'false'`, 8000);
-    const removePoll = async () => {
-      const start = Date.now();
-      while (Date.now() - start < 10000) {
-        if (!fs.existsSync(desktopFile)) return;
-        await h.sleep(100);
-      }
-      throw new Error('关闭并确定后桌面条目应被删除');
-    };
-    await removePoll();
-    h.assert.deepStrictEqual(readMarker(), { appmenu: true }, '再次关闭并确定应清 marker');
-
-    // ── APPIMAGE 优先：删 marker + 条目后重载，Exec 用 APPIMAGE ──
+    // ── APPIMAGE 优先：删 marker + 条目后，Exec 用 APPIMAGE ──
     fs.rmSync(markerFile, { force: true });
-    fs.rmSync(desktopFile, { force: true });
-    fs.rmSync(appmenuFile, { force: true });
     process.env.HOSHINEKO_E2E_LAUNCHER_APPIMAGE = '/opt/AppImage "x"/HoshinekoFM.AppImage';
-    await h.js(win, `localStorage.setItem('settings.autoCreateDesktopEntry', 'true'); true`);
-    win.webContents.reload();
-    await h.waitFor(win, `!!document.querySelector('.m3-navigation-rail')`, 15000);
+    await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /桌面图标|Desktop shortcut/.test(r.textContent ?? ''));
+      const btn = [...row.querySelectorAll('md-outlined-button')].find((b) => /创建|Create/.test(b.textContent ?? ''));
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`, true);
     await waitForFile(desktopFile);
     const appImageContent = fs.readFileSync(desktopFile, 'utf-8');
     h.assert.ok(
       appImageContent.includes('Exec="/opt/AppImage \\"x\\"/HoshinekoFM.AppImage" %U'),
-      'APPIMAGE 存在时 Exec 应优先使用 APPIMAGE 路径',
+      'APPIMAGE 优先：Exec 应使用 APPIMAGE 路径',
     );
-
-    // ── 简单路径（无保留字符）裸写 Exec：无条件加引号会被 xdg-utils
-    // 的 desktop_file_to_binary 判定不存在（不剥引号 → command -v 失败）
-    // 而静默回落系统级默认（xdg-open generic 应用忽略用户默认文件管理器）——
-    // 简单路径必须不带引号 ──
+    delete process.env.HOSHINEKO_E2E_LAUNCHER_APPIMAGE;
     fs.rmSync(markerFile, { force: true });
     fs.rmSync(desktopFile, { force: true });
-    fs.rmSync(appmenuFile, { force: true });
-    process.env.HOSHINEKO_E2E_LAUNCHER_EXEC = '/usr/local/bin/HoshinekoFM';
-    delete process.env.HOSHINEKO_E2E_LAUNCHER_APPIMAGE;
-    win.webContents.reload();
-    await h.waitFor(win, `!!document.querySelector('.m3-navigation-rail')`, 15000);
-    await waitForFile(desktopFile);
-    const plainContent = fs.readFileSync(desktopFile, 'utf-8');
-    const plainExecLine = plainContent.split('\n').find((l) => l.startsWith('Exec='));
-    h.assert.ok(
-      plainContent.includes('Exec=/usr/local/bin/HoshinekoFM %U'),
-      `简单路径 Exec 应裸写（不带引号）：${plainExecLine}`,
-    );
-    h.assert.ok(
-      !plainExecLine.startsWith('Exec="'),
-      `简单路径 Exec 不得带引号：${plainExecLine}`,
-    );
 
     // ── 非法 kind 拒绝（ensure 与 remove 两个通道）──
-    const invalidEnsure = await h.js(win, `window.electron.ensureLauncherEntry('bogus')`);
-    h.assert.deepStrictEqual(
-      { success: invalidEnsure.value?.success, code: invalidEnsure.value?.code },
-      { success: false, code: 'INVALID_KIND' },
-      '非法 kind 应被 ensure 拒绝',
-    );
-    const invalidRemove = await h.js(win, `window.electron.removeLauncherEntry('bogus')`);
-    h.assert.deepStrictEqual(
-      { success: invalidRemove.value?.success, code: invalidRemove.value?.code },
-      { success: false, code: 'INVALID_KIND' },
-      '非法 kind 应被 remove 拒绝',
-    );
-
-    // ── 开发模式（无 HOSHINEKO_E2E_LAUNCHER_EXEC）下 .desktop 自动
-    // 操作无效化：删 env 后重载（挂载自动 ensure 触发）不得创建文件 ──
-    fs.rmSync(markerFile, { force: true });
-    fs.rmSync(desktopFile, { force: true });
-    const devDesktopDir = h.tempDir('hoshineko-e2e-dev-desktop-');
-    process.env.HOSHINEKO_E2E_DESKTOP_DIR = devDesktopDir;
-    delete process.env.HOSHINEKO_E2E_LAUNCHER_EXEC;
-    await h.js(win, `localStorage.setItem('settings.autoCreateDesktopEntry', 'true'); true`);
-    win.webContents.reload();
-    await h.waitFor(win, `!!document.querySelector('.m3-navigation-rail')`, 15000);
-    await h.sleep(800);
-    const devEntry = path.join(devDesktopDir, 'HoshinekoFM.desktop');
-    h.assert.strictEqual(fs.existsSync(devEntry), false, '开发模式挂载自动 ensure 不得创建 .desktop');
-    h.assert.strictEqual(fs.existsSync(markerFile), false, '开发模式 ensure 不得写 marker');
-    // 恢复 env（后续用例不受影响）
-    process.env.HOSHINEKO_E2E_LAUNCHER_EXEC = '/tmp/hoshi "dir"/HoshinekoFM';
+    const badEnsure = await h.js(win, `window.electron.ensureLauncherEntry('evil')`);
+    h.assert.strictEqual(badEnsure.value?.code, 'INVALID_KIND', '非法 kind 应被 ensure 拒绝');
+    const badRemove = await h.js(win, `window.electron.removeLauncherEntry('evil')`);
+    h.assert.strictEqual(badRemove.value?.code, 'INVALID_KIND', '非法 kind 应被 remove 拒绝');
   });
 
   h.finish();

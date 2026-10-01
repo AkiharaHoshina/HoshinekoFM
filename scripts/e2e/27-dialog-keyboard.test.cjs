@@ -158,7 +158,7 @@ const h = require('./harness.cjs');
     })()`);
     h.assert.strictEqual(themeBody.value.presets, 12, '预设色盘应有 12 色');
     h.assert.strictEqual(themeBody.value.specials, 3, '特殊颜色应有 3 卡（系统/壁纸/自定义）');
-    h.assert.strictEqual(themeBody.value.paletteBtns, 3, '应有 调色盘/选择壁纸/导入 Matugen 三按钮');
+    h.assert.strictEqual(themeBody.value.paletteBtns, 2, '应有 选择壁纸/导入 Matugen 两按钮（review 29 移除调色盘按钮）');
   });
 
   await h.run('27c 对话框键盘选择滚动量（最小滚动校正）', async () => {

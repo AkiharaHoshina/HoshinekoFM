@@ -850,17 +850,17 @@ function AppContent() {
     "settings.searchGroupByDir",
     true,
   );
-  /** 搜索结果默认上限（设置 → 行为「搜索结果上限」行，确定时生效；
-   *  搜索页内「调整上限」为会话级临时覆盖，不写本键） */
-  const [searchLimit, setSearchLimit] = useLocalStorage<number | null>(
+  /** 搜索结果上限（review 29 #6：页内输入框**原文保存字符串**——空/
+   *  无效输入视为无限制，解析见 utils/searchLimit.ts；搜索页内
+   *  「调整上限」为会话级临时覆盖，不写本键） */
+  const [searchLimit, setSearchLimit] = useLocalStorage<string>(
     "settings.searchLimit",
-    SEARCH_DEFAULT_LIMIT,
+    String(SEARCH_DEFAULT_LIMIT),
   );
-  /** 搜索超时时长（秒，设置 → 行为「搜索超时时长」行，确定时生效；
-   *  默认 30、上限 180；搜索页「移除超时时长」为会话级临时覆盖） */
-  const [searchTimeout, setSearchTimeout] = useLocalStorage<number | null>(
+  /** 搜索超时时长（秒；同上，原文字符串，空/无效 = 不限时） */
+  const [searchTimeout, setSearchTimeout] = useLocalStorage<string>(
     "settings.searchTimeout",
-    SEARCH_DEFAULT_TIMEOUT,
+    String(SEARCH_DEFAULT_TIMEOUT),
   );
   const [locale, setLocaleState] = useLocalStorage<Locale>(
     "settings.locale",
@@ -931,6 +931,18 @@ function AppContent() {
     true,
   );
 
+  /** 对象面板入口是否显示在 Places（review 29 #11；默认开，同仪表盘语义） */
+  const [showObjects, setShowObjects] = useLocalStorage<boolean>(
+    "settings.showObjects",
+    true,
+  );
+
+  /** 内建终端快捷方式是否显示在 Places（review 29 #15；默认开） */
+  const [showTerminalPlace, setShowTerminalPlace] = useLocalStorage<boolean>(
+    "settings.showTerminalPlace",
+    true,
+  );
+
   /** 文件预览面板开关（默认关闭，设置 → 行为；确定时生效） */
   const [filePreviewEnabled, setFilePreviewEnabled] = useLocalStorage<boolean>(
     "settings.filePreview",
@@ -945,26 +957,11 @@ function AppContent() {
   );
 
   /**
-   * 自动创建启动器条目开关（默认开启，设置 → 行为，**确定时生效**）：
-   * - desktop = 桌面快捷方式（~/Desktop 或本地化桌面目录）；
-   * - appmenu = 应用程序菜单条目（~/.local/share/applications）。
-   * 语义（见 launcherEntry.ts）：
-   * - 开关**打开并确定** → 经 app:ensure-launcher-entry 创建（主进程 marker
-   *   保证「创建一次，删掉不补」——用户手动删文件不重建，已存在不覆盖）；
-   * - 开关**关闭并确定** → 经 app:remove-launcher-entry 删除条目并清 marker
-   *   （重新打开并确定时可再次创建）。
-   * 首次挂载按当前开关值创建（默认开启 → 首启即建）；其他窗口的值经
-   * storage 事件同步后，effect 只会触发幂等的 ensure（删除只发生在
-   * 确定操作的窗口，见 handleAutoCreateDesktopEntryChange）。
+   * 启动器条目存在状态（review 29 #9：快捷方式设置页「创建/移除」按钮
+   * 显隐由**文件真实存在性**驱动——废除旧「开关默认开 = 首启自动创建」
+   * 语义；挂载与设置页活动时查询）。
    */
-  const [autoCreateDesktopEntry, setAutoCreateDesktopEntry] = useLocalStorage<boolean>(
-    "settings.autoCreateDesktopEntry",
-    true,
-  );
-  const [autoCreateAppMenuEntry, setAutoCreateAppMenuEntry] = useLocalStorage<boolean>(
-    "settings.autoCreateAppMenuEntry",
-    true,
-  );
+  const [launcherStatus, setLauncherStatus] = useState<{ desktop: boolean; appmenu: boolean } | null>(null);
 
   /**
    * 自定义新标签页目录（默认 `/`，与历史行为一致）：绝对路径、`~/…`
@@ -979,45 +976,33 @@ function AppContent() {
     "/",
   );
 
-  /**
-   * 桌面条目开关确定时的处理：写持久化值 + 按新值创建/删除条目。
-   * 只有确定操作的窗口执行删除（storage 同步到其他窗口时其 effect
-   * 只走 ensure 幂等路径，不会重复删除）。
-   */
-  const handleAutoCreateDesktopEntryChange = useCallback((value: boolean) => {
-    setAutoCreateDesktopEntry(value);
-    void (value
-      ? window.electron.ensureLauncherEntry("desktop")
-      : window.electron.removeLauncherEntry("desktop")
-    ).catch(() => {
+  /** 查询启动器条目存在状态（挂载 + 设置页活动时） */
+  const refreshLauncherStatus = useCallback(() => {
+    void window.electron.getLauncherEntryStatus().then((res) => {
+      setLauncherStatus({ desktop: !!res?.desktop, appmenu: !!res?.appmenu });
+    }).catch(() => {
       /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
     });
-  }, [setAutoCreateDesktopEntry]);
-
-  /** 应用程序菜单条目开关确定时的处理（同桌面条目语义） */
-  const handleAutoCreateAppMenuEntryChange = useCallback((value: boolean) => {
-    setAutoCreateAppMenuEntry(value);
-    void (value
-      ? window.electron.ensureLauncherEntry("appmenu")
-      : window.electron.removeLauncherEntry("appmenu")
-    ).catch(() => {
-      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
-    });
-  }, [setAutoCreateAppMenuEntry]);
+  }, []);
 
   useEffect(() => {
-    if (!autoCreateDesktopEntry) return;
-    void window.electron.ensureLauncherEntry("desktop").catch(() => {
-      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
-    });
-  }, [autoCreateDesktopEntry]);
+    if (!settingsPageActive) return;
+    refreshLauncherStatus();
+  }, [settingsPageActive, refreshLauncherStatus]);
 
-  useEffect(() => {
-    if (!autoCreateAppMenuEntry) return;
-    void window.electron.ensureLauncherEntry("appmenu").catch(() => {
+  /** 创建启动器条目（按钮语义：ensure 幂等；成功后刷新存在状态） */
+  const createEntry = useCallback((kind: 'desktop' | 'appmenu') => {
+    void window.electron.ensureLauncherEntry(kind).then(() => refreshLauncherStatus()).catch(() => {
       /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
     });
-  }, [autoCreateAppMenuEntry]);
+  }, [refreshLauncherStatus]);
+
+  /** 移除启动器条目（remove 幂等；成功后刷新存在状态） */
+  const removeEntry = useCallback((kind: 'desktop' | 'appmenu') => {
+    void window.electron.removeLauncherEntry(kind).then(() => refreshLauncherStatus()).catch(() => {
+      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
+    });
+  }, [refreshLauncherStatus]);
 
   /** 标题栏可见性 + 模式 + 窗口管理器检测（状态由 useTitleBar 独占持有，
    *  同窗口多实例同键不同步——设置变更须经其 setter 立即生效） */
@@ -1207,13 +1192,18 @@ function AppContent() {
    * pkexec 授权。成功后关闭版本弹窗并弹结果弹窗（含重启生效提示）；
    * 失败弹错误详情弹窗（版本弹窗保持打开，可重试）。
    */
-  const handleReinstallIntegration = useCallback(async () => {
+  /**
+   * 重装 Portal 集成（review 29 #8：版本弹窗与设置页「重装 Portal 集成」
+   * 按钮共享链路——执行 reinstall.sh、busy 守卫、结果 AlertDialog）。
+   * onSuccess 仅在成功时回调（版本弹窗借此关闭自身；设置页不传）。
+   */
+  const runReinstall = useCallback(async (onSuccess?: () => void) => {
     if (reinstallBusy) return;
     setReinstallBusy(true);
     try {
       const res = await window.electron?.reinstallSystemIntegration();
       if (res?.success) {
-        setPortalVersionDialog(null);
+        onSuccess?.();
         setPortalNotice({
           title: t("settings.portal_version_reinstalled"),
           message: t("settings.portal_version_reinstalled_hint"),
@@ -1676,8 +1666,8 @@ function AppContent() {
     setShowFullPathTitle(false);
     setMarqueeEnabled(false);
     setSearchGroupByDir(true);
-    setSearchLimit(SEARCH_DEFAULT_LIMIT);
-    setSearchTimeout(SEARCH_DEFAULT_TIMEOUT);
+    setSearchLimit(String(SEARCH_DEFAULT_LIMIT));
+    setSearchTimeout(String(SEARCH_DEFAULT_TIMEOUT));
     setShowHomeStorageUsage(false);
     setFilePreviewEnabled(false);
     setCalculateDirSize(true);
@@ -1689,18 +1679,10 @@ function AppContent() {
     setAlertDiskPct(90);
     setObjectClassOrder([]);
     setSearchRecentCount(5);
-    setAutoCreateDesktopEntry(true);
-    setAutoCreateAppMenuEntry(true);
     setNewTabPath("/");
     setShowDashboard(true);
-    // 恢复默认 = 开关回到开：显式补一次创建意图（marker 幂等；若此前
-    // 开关关闭并确定删除过条目/清过 marker，恢复后立即重建）
-    void window.electron.ensureLauncherEntry("desktop").catch(() => {
-      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
-    });
-    void window.electron.ensureLauncherEntry("appmenu").catch(() => {
-      /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
-    });
+    setShowObjects(true);
+    setShowTerminalPlace(true);
   }, [
     handleLocaleChange,
     setShowHiddenFiles,
@@ -1727,10 +1709,10 @@ function AppContent() {
     setAlertDiskPct,
     setObjectClassOrder,
     setSearchRecentCount,
-    setAutoCreateDesktopEntry,
-    setAutoCreateAppMenuEntry,
     setNewTabPath,
     setShowDashboard,
+    setShowObjects,
+    setShowTerminalPlace,
   ]);
 
   const hasInitialized = useRef(false);
@@ -2639,6 +2621,8 @@ function AppContent() {
         setSearchTimeout,
         searchRecentCount,
         setSearchRecentCount,
+        showObjects,
+        setShowObjects,
         sparklineWindowSeconds,
         setSparklineWindowSeconds,
         alertTempC,
@@ -2656,10 +2640,13 @@ function AppContent() {
         backendConflicts,
         sessionBusBusy,
         restartSessionBus: () => void handleRestartSessionBus(),
-        autoCreateDesktopEntry,
-        setAutoCreateDesktopEntry: handleAutoCreateDesktopEntryChange,
-        autoCreateAppMenuEntry,
-        setAutoCreateAppMenuEntry: handleAutoCreateAppMenuEntryChange,
+        reinstallIntegration: () => void runReinstall(),
+        reinstallBusy,
+        launcherStatus,
+        createEntry,
+        removeEntry,
+        showTerminalPlace,
+        setShowTerminalPlace,
         locale,
         setLocale: handleLocaleChange,
         restoreDefaults: handleRestoreDefaults,
@@ -2748,6 +2735,10 @@ function AppContent() {
             onPinnedContextMenu={handlePinnedDirContextMenu}
             onPlaceContextMenu={handlePlaceContextMenu}
             showDashboardPlace={showDashboard}
+            showObjectsPlace={showObjects}
+            showTerminalPlace={showTerminalPlace}
+            terminalOpen={terminalOpen}
+            onToggleTerminal={toggleTerminal}
           />
 
           <main className="main-content">
@@ -3184,7 +3175,7 @@ function AppContent() {
               mode={portalVersionDialog?.mode ?? "user"}
               info={portalRuntimeInfo}
               busy={reinstallBusy}
-              onReinstall={() => void handleReinstallIntegration()}
+              onReinstall={() => void runReinstall(() => setPortalVersionDialog(null))}
               onClose={() => setPortalVersionDialog(null)}
             />
 

@@ -46,24 +46,26 @@ const OURS = 'HoshinekoFM.desktop';
           await h.sleep(200);
         }
       }
-      // 设置页 → 系统集成分类 → 定位「默认文件管理器」行 → 点击「设为默认」
+      // 设置页 → 系统集成分类 → 默认文件管理器已改为开关（review 29 #8）
+      // 按行文案定位并点击开关（off → on = 设为默认）
       await h.openSettingsPage(win, `/系统集成|System Integration/`);
       await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
-      // 按行文案定位（设置行数量会随新增开关变化，勿用硬编码下标）
-      const btnClicked = await h.js(
-        win,
-        `(() => {
-          const rows = [...document.querySelectorAll('.settings-row')];
-          const row = rows.find((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''));
-          const btn = row?.querySelector('md-outlined-button');
-          if (!btn) return false;
-          btn.click();
-          return true;
-        })()`,
-        true,
-      );
-      h.assert.ok(btnClicked.value, '「设为默认」按钮应可点击');
-      h.assert.ok(btnClicked.value, '应找到「设为默认」按钮');
+      const toggleDefaultFm = async () => {
+        const ok = await h.js(
+          win,
+          `(() => {
+            const rows = [...document.querySelectorAll('.settings-row')];
+            const row = rows.find((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''));
+            const sw = row?.querySelector('md-switch');
+            if (!sw) return false;
+            sw.click();
+            return true;
+          })()`,
+          true,
+        );
+        h.assert.ok(ok.value, '应找到默认文件管理器开关');
+      };
+      await toggleDefaultFm();
 
       // 关联生效：query 变为 HoshinekoFM.desktop
       const becameDefault = await (async () => {
@@ -98,20 +100,8 @@ const OURS = 'HoshinekoFM.desktop';
       const invalid = await h.js(win, `window.electron.setDirMimeHandler('../evil')`);
       h.assert.strictEqual(invalid.value.success, false, '非法 handler 应被拒绝');
 
-      // 恢复：点击「恢复为系统默认」（设置页仍在系统集成分类）
-      const restoredClicked = await h.js(
-        win,
-        `(() => {
-          const rows = [...document.querySelectorAll('.settings-row')];
-          const row = rows.find((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''));
-          const btn = row?.querySelector('md-outlined-button');
-          if (!btn) return false;
-          btn.click();
-          return true;
-        })()`,
-        true,
-      );
-      h.assert.ok(restoredClicked.value, '应找到「恢复为系统默认」按钮');
+      // 恢复：切换开关（on → off = 恢复系统默认；设置页仍在系统集成分类）
+      await toggleDefaultFm();
       const restored = await (async () => {
         const t0 = Date.now();
         while (Date.now() - t0 < 8000) {
@@ -169,26 +159,15 @@ const OURS = 'HoshinekoFM.desktop';
       // 设置页 → 系统集成分类 → 定位「默认文件管理器」行（按文案定位）
       await h.openSettingsPage(win, `/系统集成|System Integration/`);
       await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
-      // 状态回填后按钮必须存在（修复前为 null——按钮直接消失）
+      // 状态回填后开关必须存在且为开（已是默认；修复前为 null——消失）
       await h.waitFor(
         win,
         `(() => {
           const rows = [...document.querySelectorAll('.settings-row')];
           const row = rows.find((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''));
-          return !!row?.querySelector('md-outlined-button');
+          const sw = row?.querySelector('md-switch');
+          return !!sw && sw.selected === true;
         })()`,
-      );
-      const btnLabel = await h.js(
-        win,
-        `(() => {
-          const rows = [...document.querySelectorAll('.settings-row')];
-          const row = rows.find((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''));
-          return row?.querySelector('md-outlined-button')?.textContent ?? '';
-        })()`,
-      );
-      h.assert.ok(
-        /恢复/.test(btnLabel.value),
-        '已是默认且无记录时按钮应显示「恢复为系统默认」',
       );
 
       const clicked = await h.js(
@@ -196,14 +175,14 @@ const OURS = 'HoshinekoFM.desktop';
         `(() => {
           const rows = [...document.querySelectorAll('.settings-row')];
           const row = rows.find((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''));
-          const b = row?.querySelector('md-outlined-button');
-          if (!b) return false;
-          b.click();
+          const sw = row?.querySelector('md-switch');
+          if (!sw) return false;
+          sw.click();
           return true;
         })()`,
         true,
       );
-      h.assert.ok(clicked.value, '应能点击「恢复为系统默认」按钮');
+      h.assert.ok(clicked.value, '应能点击默认文件管理器开关');
 
       // 关联被清除：生效处理程序不再为本应用 + mimeapps.list 关联行移除
       const cleared = await (async () => {

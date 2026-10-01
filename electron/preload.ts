@@ -227,6 +227,8 @@ contextBridge.exposeInMainWorld('electron', {
    * marker，开关重新打开并确定时可再次创建。
    */
   removeLauncherEntry: (kind: 'desktop' | 'appmenu') => ipcRenderer.invoke('app:remove-launcher-entry', kind),
+  /** 启动器条目存在性查询（review 29：快捷方式设置页「创建/移除」按钮显隐） */
+  getLauncherEntryStatus: () => ipcRenderer.invoke('app:get-launcher-entry-status'),
   getVersion: () => ipcRenderer.invoke('app:get-version'),
   openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
   exists: (path: string) => ipcRenderer.invoke('fs:exists', path),

@@ -534,6 +534,8 @@ export interface IElectronAPI {
      * marker（开关重新打开并确定时可再次创建）；removed 指示本次是否
      * 真正删除了文件（不存在视为成功）。
      */
+    /** 启动器条目存在性查询（review 29：快捷方式设置页「创建/移除」按钮显隐） */
+    getLauncherEntryStatus: () => Promise<{ desktop: boolean; appmenu: boolean }>;
     removeLauncherEntry: (kind: 'desktop' | 'appmenu') => Promise<{
       success: boolean;
       removed: boolean;

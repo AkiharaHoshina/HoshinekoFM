@@ -277,55 +277,64 @@ const os = require('os');
     await h.waitFor(win, `!document.querySelector('.search-recent-chip')`, { timeout: 8000 });
   });
 
-  await h.run('74b 设置默认搜索结果上限（设置行 → 二级对话框 → 确定生效）', async () => {
+  await h.run('74b 搜索上限/超时页内输入框（review 29：原文保存，空/无效 = 无限制）', async () => {
     const dir = h.tempDir();
     h.makeFileTree(dir, { 'f1.txt': 'a', 'f2.txt': 'b', 'f3.txt': 'c', 'f4.txt': 'd' });
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 4`);
 
-    // 设置页 → 搜索分类 → 「搜索结果上限」行 → 「自定义」按钮
+    /** 地址栏输入目录路径导航回测试目录（Files 导航图标去的是 /） */
+    const gotoDir = async (w, p) => {
+      await h.clickEl(w, '.omnibar-trigger');
+      await h.waitFor(w, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+      await h.setReactInput(w, '.omnibar.mode-edit .omnibar-input', p);
+      await h.key(w, 'Enter');
+      await h.waitFor(w, `!!document.querySelector('.file-list-item')`, 8000);
+    };
+    /** 按行文案定位页内输入框（settings-input-num）并写入 */
+    const setInput = async (rowRe, value) => {
+      await h.js(
+        win,
+        `(() => {
+          const rows = [...document.querySelectorAll('.settings-row')];
+          const row = rows.find((r) => ${rowRe}.test(r.textContent ?? ''));
+          const input = row?.querySelector('md-outlined-text-field');
+          if (!input || !input.shadowRoot) return false;
+          const i = input.shadowRoot.querySelector('input');
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+          setter.call(i, ${JSON.stringify('')});
+          i.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          setter.call(i, ${JSON.stringify('')});
+          i.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+          return true;
+        })()`,
+        true,
+      );
+    };
+
+    // ── 上限输入 2 → 原文保存 '2' + 搜索 2 条 capped ──
     await h.openSettingsPage(win, `/搜索|Search/`);
-    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.settings-input-num')`, { timeout: 8000 });
+    const inputSel = `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /搜索结果上限|Search result limit/.test(r.textContent ?? ''));
+      const host = row?.querySelector('md-outlined-text-field');
+      return host && host.shadowRoot ? host.shadowRoot.querySelector('input') : null;
+    })()`;
     await h.js(
       win,
       `(() => {
-        const rows = [...document.querySelectorAll('.settings-row')];
-        const row = rows.find((r) => /搜索结果上限|Search result limit/.test(r.textContent ?? ''));
-        const btn = row?.querySelector('md-outlined-button');
-        if (!btn) return false;
-        btn.click();
+        const i = ${inputSel};
+        if (!i) return false;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(i, '2');
+        i.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         return true;
       })()`,
       true,
     );
-
-    // 二级对话框：输入 2 → 确认（review 26 立即生效落盘）
-    await h.waitFor(win, `[...document.querySelectorAll('md-dialog')].some((d) => d.open === true && d.querySelector('.search-limit-dialog-input'))`);
-    await h.waitDialogAnim();
-    await h.setReactInput(win, '.search-limit-dialog-input', '2');
-    await h.js(
-      win,
-      `(() => {
-        const dlg = [...document.querySelectorAll('md-dialog')].find((d) => d.open === true && d.querySelector('.search-limit-dialog-input'));
-        const confirm = dlg.querySelector('[slot="actions"] md-filled-button');
-        if (!confirm) return false;
-        confirm.click();
-        return true;
-      })()`,
-      true,
-    );
-    await h.waitDialogAnim();
-    // 立即生效：上限键落盘 → 回文件页搜索验证
-    await h.waitFor(win, `localStorage.getItem('settings.searchLimit') === '2'`, 5000);
-    await h.js(win, `(() => {
-      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
-      const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'folder');
-      it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
-      return !!it;
-    })()`, true);
-    await h.waitFor(win, `!!document.querySelector('.file-list-item')`, 8000);
-
-    // 搜索 'f'（4 个文件全匹配）：默认上限 2 → 2 条结果 + capped 提示
+    await h.waitFor(win, `localStorage.getItem('settings.searchLimit') === '"2"'`, 5000);
+    await gotoDir(win, dir);
     await h.searchViaOmnibar(win, 'f');
     await h.waitFor(win, `!!document.querySelector('.search-filter-bar')`);
     await h.waitFor(win, `!!document.querySelector('.search-filter-capped')`, { timeout: 8000 });
@@ -333,67 +342,68 @@ const os = require('os');
     const capText = await h.js(win, `document.querySelector('.search-filter-capped')?.textContent ?? ''`);
     h.assert.ok(/2/.test(capText.value), `上限提示应含 2：${capText.value}`);
 
-    // ── 设置 → 搜索超时时长：二级对话框输入 120 → 立即生效 ──
+    // ── 超时输入 120 → 原文保存 '120' ──
     await h.openSettingsPage(win, `/搜索|Search/`);
-    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.settings-input-num')`, { timeout: 8000 });
     await h.js(
       win,
       `(() => {
         const rows = [...document.querySelectorAll('.settings-row')];
         const row = rows.find((r) => /搜索超时时长|Search timeout/.test(r.textContent ?? ''));
-        const btn = row?.querySelector('md-outlined-button');
-        if (!btn) return false;
-        btn.click();
+        const host = row?.querySelector('md-outlined-text-field');
+        const i = host?.shadowRoot?.querySelector('input');
+        if (!i) return false;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(i, '120');
+        i.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         return true;
       })()`,
       true,
     );
-    await h.waitFor(win, `[...document.querySelectorAll('md-dialog')].some((d) => d.open === true && d.querySelector('.search-timeout-dialog-input'))`);
-    await h.waitDialogAnim();
-    await h.setReactInput(win, '.search-timeout-dialog-input', '120');
-    await h.js(
-      win,
-      `(() => {
-        const dlg = [...document.querySelectorAll('md-dialog')].find((d) => d.open === true && d.querySelector('.search-timeout-dialog-input'));
-        const confirm = dlg.querySelector('[slot="actions"] md-filled-button');
-        if (!confirm) return false;
-        confirm.click();
-        return true;
-      })()`,
-      true,
-    );
-    await h.waitDialogAnim();
-    await h.waitFor(win, `localStorage.getItem('settings.searchTimeout') === '120'`, 5000);
+    await h.waitFor(win, `localStorage.getItem('settings.searchTimeout') === '"120"'`, 5000);
 
-    // ── 设置上限无效输入 → 移除上限（无限制）保存为 null ──
+    // ── 无效输入「妈妈我要生了」→ 原样保存 + 视为无限制 ──
     await h.js(
       win,
       `(() => {
         const rows = [...document.querySelectorAll('.settings-row')];
         const row = rows.find((r) => /搜索结果上限|Search result limit/.test(r.textContent ?? ''));
-        const btn = row?.querySelector('md-outlined-button');
-        if (!btn) return false;
-        btn.click();
+        const host = row?.querySelector('md-outlined-text-field');
+        const i = host?.shadowRoot?.querySelector('input');
+        if (!i) return false;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(i, '妈妈我要生了');
+        i.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         return true;
       })()`,
       true,
     );
-    await h.waitFor(win, `[...document.querySelectorAll('md-dialog')].some((d) => d.open === true && d.querySelector('.search-limit-dialog-input'))`);
-    await h.waitDialogAnim();
-    await h.setReactInput(win, '.search-limit-dialog-input', '-1');
+    await h.waitFor(win, `localStorage.getItem('settings.searchLimit') === '"妈妈我要生了"'`, 5000);
+    // 无限制：回文件页搜索 'f' → 4 条结果且无 capped 提示
+    await gotoDir(win, dir);
+    await h.searchViaOmnibar(win, 'f');
+    await h.waitFor(win, `document.querySelectorAll('.file-list-item').length === 4`, { timeout: 8000 });
+    h.assert.ok((await h.js(win, `!document.querySelector('.search-filter-capped')`)).value, '无效输入视为无限制：不应出现 capped 提示');
+
+    // ── 清空 → 空串保存 + 无限制 ──
+    await h.openSettingsPage(win, `/搜索|Search/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-input-num')`, { timeout: 8000 });
     await h.js(
       win,
       `(() => {
-        const dlg = [...document.querySelectorAll('md-dialog')].find((d) => d.open === true && d.querySelector('.search-limit-dialog-input'));
-        const confirm = dlg.querySelector('[slot="actions"] md-filled-button');
-        if (!confirm) return false;
-        confirm.click();
+        const rows = [...document.querySelectorAll('.settings-row')];
+        const row = rows.find((r) => /搜索结果上限|Search result limit/.test(r.textContent ?? ''));
+        const host = row?.querySelector('md-outlined-text-field');
+        const i = host?.shadowRoot?.querySelector('input');
+        if (!i) return false;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(i, '');
+        i.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
         return true;
       })()`,
       true,
     );
-    await h.waitDialogAnim();
-    await h.waitFor(win, `localStorage.getItem('settings.searchLimit') === 'null'`, 8000);
+    await h.waitFor(win, `localStorage.getItem('settings.searchLimit') === '""'`, 5000);
   });
 
   h.finish();
