@@ -1370,8 +1370,16 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   filesZoneFocusRef.current = () => {
     const container = fileZoneRef.current;
     if (!container) return;
+    // review 24：进站焦点落**选中行**（白框只框选中单项——.file-list-item
+    // :focus-visible 既有焦点环）；任何换选手段（方向键/点击他项/框选/
+    // 背景点击）白框消失（各处把焦点移回容器）。行未挂载（虚拟化滚出
+    // 视口）时回落容器（白框无从显示）
     if (selectedFiles.size > 0) {
-      container.focus();
+      const targetPath = cursorPath ?? lastSelectedPath ?? Array.from(selectedFiles)[0] ?? null;
+      const rowEl = targetPath !== null
+        ? container.querySelector<HTMLElement>(`.file-list-item[data-path="${CSS.escape(targetPath)}"]`)
+        : null;
+      (rowEl ?? container).focus();
       return;
     }
     // 视口内第一个可见文件：条目与分区容器矩形相交（部分可见也算），
@@ -1388,6 +1396,10 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     }
     if (first) {
       handleSelect(first, false, false);
+      // 选中行已渲染（类名要等下一轮渲染更新）——按 data-path 直接聚焦
+      const rowEl = container.querySelector<HTMLElement>(`.file-list-item[data-path="${CSS.escape(first.path)}"]`);
+      (rowEl ?? container).focus();
+      return;
     }
     container.focus();
   };
@@ -1781,8 +1793,27 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
         });
       }
     };
-    const onMouseDown = () => {
+    const onMouseDown = (e: MouseEvent) => {
       mouseDownRef.current = true;
+      // review 24：背景按下（发起框选/点击背景取消选择）把焦点移回容器
+      // ——进站白框在选中行上、随失焦消失；条目按下由下方 click 监听
+      // 处理（浏览器默认在监听器之后把焦点落到被点行，且 :focus-visible
+      // 的「前一元素匹配即继承」启发式会让白框跟随到被点行——不能在
+      // mousedown 里抢焦点，click 阶段再抢）
+      const zone = fileZoneRef.current;
+      const target = e.target as HTMLElement | null;
+      if (!zone || !target || !zone.contains(target)) return;
+      if (target.closest('.file-list-item, .file-rename-input, .file-preview-panel, .file-preview-divider')) return;
+      zone.focus();
+    };
+    const onClickCapture = () => {
+      // review 24：条目点击后把焦点抢回容器（白框消失，用户定案：任何
+      // 鼠标点击白框都消失——含点击当前选中项本身）
+      const zone = fileZoneRef.current;
+      if (!zone) return;
+      if (document.activeElement?.classList?.contains('file-list-item')) {
+        zone.focus();
+      }
     };
     const onMouseUp = () => {
       mouseDownRef.current = false;
@@ -1791,11 +1822,13 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("mousedown", onMouseDown);
     window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("click", onClickCapture);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("click", onClickCapture);
     };
   }, []);
 
@@ -1936,6 +1969,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           setLastSelectedPath(sortedFiles[0].path);
           setCursorPath(sortedFiles[sortedFiles.length - 1].path);
         }
+        // review 24：全选 = 换选——白框消失（焦点回容器）
+        fileZoneRef.current?.focus();
         return;
       }
 
@@ -1989,6 +2024,9 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           }
           setKeyboardScrollPath(target.path);
         }
+        // review 24：任何换选手段白框消失——方向键移动后焦点回容器
+        // （进站白框在选中行上、行焦点环随失焦消失）
+        fileZoneRef.current?.focus();
         return;
       }
 
@@ -2013,6 +2051,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           handleSelect(target, false, e.shiftKey);
           setKeyboardScrollPath(target.path);
         }
+        // review 24：换选后白框消失——焦点回容器
+        fileZoneRef.current?.focus();
         return;
       }
 
@@ -2043,6 +2083,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           setSelectedFiles(new Set());
           setLastSelectedPath(null);
           setCursorPath(null);
+          // review 24：换选（清空）后白框消失——焦点回容器
+          fileZoneRef.current?.focus();
         }
         return;
       }
@@ -2056,6 +2098,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
           else next.add(cursorPath);
           setSelectedFiles(next);
           setLastSelectedPath(cursorPath);
+          // review 24：Space 切换选中 = 换选——白框消失（焦点回容器）
+          fileZoneRef.current?.focus();
         }
         return;
       }

@@ -1032,6 +1032,8 @@ const FilePicker: React.FC = () => {
           }
           setKeyboardScrollPath(targetFile.path);
         }
+        // review 24：任何换选手段白框消失——方向键移动后焦点回容器
+        fileZoneRef.current?.focus();
         return;
       }
 
@@ -1044,6 +1046,7 @@ const FilePicker: React.FC = () => {
           handleSelect(targetFile, false, e.shiftKey);
           setKeyboardScrollPath(targetFile.path);
         }
+        fileZoneRef.current?.focus();
         return;
       }
 
@@ -1059,6 +1062,8 @@ const FilePicker: React.FC = () => {
               return next;
             });
             setLastSelectedPath(cursorPath);
+            // review 24：Space 切换选中 = 换选——白框消失（焦点回容器）
+            fileZoneRef.current?.focus();
           }
         }
         return;
@@ -1094,6 +1099,36 @@ const FilePicker: React.FC = () => {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [confirm, cancel, selected, config, fileName, displayFiles, cursorPath, lastSelectedPath, viewMode, isSelectable, handleSelect, searchActive, searchPending, handleCancelSearch]);
 
+  /** review 24：任何换选手段白框消失——文件区 mousedown（背景按下发起
+   *  框选/点击背景取消选择/点击条目）把焦点移回容器（进站白框在选中行
+   *  上、随失焦消失；鼠标点击不触发 :focus-visible，被点行重新聚焦也不
+   *  会重新出现白框）。重命名输入框/预览不抢焦点 */
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      const zone = fileZoneRef.current;
+      const target = e.target as HTMLElement | null;
+      if (!zone || !target || !zone.contains(target)) return;
+      if (target.closest('.file-list-item, .file-rename-input, .file-preview-panel, .file-preview-divider')) return;
+      // review 24：背景按下（框选/点击背景）焦点回容器；条目按下由
+      // click 监听处理（浏览器默认焦点 + :focus-visible 继承启发式会让
+      // 白框跟随到被点行——mousedown 抢焦点会早于默认焦点失效）
+      zone.focus();
+    };
+    const onClickCapture = () => {
+      const zone = fileZoneRef.current;
+      if (!zone) return;
+      if (document.activeElement?.classList?.contains('file-list-item')) {
+        zone.focus();
+      }
+    };
+    window.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('click', onClickCapture);
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('click', onClickCapture);
+    };
+  }, []);
+
   /** focusin 跟踪当前分区（Tab 循环从最近聚焦的分区继续） */
   useEffect(() => {
     const onFocusIn = (e: FocusEvent) => {
@@ -1103,13 +1138,47 @@ const FilePicker: React.FC = () => {
     return () => document.removeEventListener('focusin', onFocusIn);
   }, []);
 
-  /** 键盘分区（files）：Tab 分区循环聚焦落点 */
+  /** 键盘分区（files）：Tab 分区循环聚焦落点。
+   *  review 24：与主窗口同款进站白框语义——无选中选视口第一个可见
+   *  可选项、有选中保持；焦点落选中行（白框只框选中单项），任何换选
+   *  手段（方向键/鼠标点击/框选/背景点击）白框消失（各处焦点回容器） */
+  const filesZoneFocusRef = useRef<() => void>(() => {});
+  // eslint-disable-next-line react-hooks/refs -- 渲染期同步命令式回调
+  filesZoneFocusRef.current = () => {
+    const container = fileZoneRef.current;
+    if (!container) return;
+    if (selected.size > 0) {
+      const targetPath = cursorPath ?? lastSelectedPath ?? Array.from(selected)[0] ?? null;
+      const rowEl = targetPath !== null
+        ? container.querySelector<HTMLElement>(`.file-list-item[data-path="${CSS.escape(targetPath)}"]`)
+        : null;
+      (rowEl ?? container).focus();
+      return;
+    }
+    // 视口内第一个可见可选项（folder 模式跳过文件）
+    const v = container.getBoundingClientRect();
+    let first: IFile | null = null;
+    for (const el of Array.from(container.querySelectorAll<HTMLElement>('.file-list-item'))) {
+      const r = el.getBoundingClientRect();
+      if (r.bottom <= v.top + 1 || r.top >= v.bottom - 1) continue;
+      const path = el.dataset.path;
+      if (!path) continue;
+      const f = displayFiles.find((x) => x.path === path) ?? null;
+      if (f && isSelectable(f)) { first = f; break; }
+    }
+    if (first) {
+      handleSelect(first, false, false);
+      const rowEl = container.querySelector<HTMLElement>(`.file-list-item[data-path="${CSS.escape(first.path)}"]`);
+      (rowEl ?? container).focus();
+      return;
+    }
+    container.focus();
+  };
+
   useEffect(() => {
     return registerKeyboardZone({
       id: 'files',
-      focus: () => {
-        fileZoneRef.current?.focus();
-      },
+      focus: () => filesZoneFocusRef.current(),
     });
   }, []);
 
@@ -1127,7 +1196,7 @@ const FilePicker: React.FC = () => {
     return registerKeyboardZone({
       id: 'search-results',
       focus: () => {
-        fileZoneRef.current?.focus();
+        filesZoneFocusRef.current();
       },
     });
   }, [searchActive]);

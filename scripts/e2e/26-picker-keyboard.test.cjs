@@ -58,25 +58,35 @@ const path = require('path');
     const sel = () =>
       h.js(picker, `Array.from(document.querySelectorAll('.file-list-item.selected')).map((el) => el.dataset.path).sort()`);
 
-    // 1) 初次 Tab → 文件区分区；↓ 选中首项（a.txt）
+    // 1) 初次 Tab → 文件区分区：review 24 进站选中视口首个可选项
+    //    （a.txt）+ 焦点落选中行（白框）——↓ 从既有游标继续到 b.txt
     await h.key(picker, 'Tab');
     await h.sleep(300);
     let z = await zoneOf();
     h.assert.strictEqual(z.value, 'files', `选择器初次 Tab 应落 files 分区，实际 ${z.value}`);
+    let s = await sel();
+    h.assert.deepStrictEqual(s.value, [`${dir}/a.txt`], '进站应选中首项 a.txt');
+    const entryFrame = await h.js(picker, `(() => {
+      const a = document.activeElement;
+      return { row: a?.dataset?.path ?? null, outline: a?.classList?.contains('file-list-item') ? getComputedStyle(a).outlineStyle : null };
+    })()`);
+    h.assert.strictEqual(entryFrame.value.row, `${dir}/a.txt`, '进站焦点应落选中行');
+    h.assert.strictEqual(entryFrame.value.outline, 'solid', '选中行应有白框');
     await h.key(picker, 'Down');
     await h.sleep(300);
-    let s = await sel();
-    h.assert.deepStrictEqual(s.value, [`${dir}/a.txt`], '↓ 应选中首项 a.txt');
+    s = await sel();
+    h.assert.deepStrictEqual(s.value, [`${dir}/b.txt`], '↓ 应从首项移到 b.txt');
 
-    // 2) Shift+Down：范围扩展（锚点固定）→ a+b
+    // 2) Shift+Down：范围扩展（review 24 进站锚点 = a；↓ 后锚点 = b）
+    //    → b+c（到尾部钳制）
     await h.key(picker, 'Down', ['shift']);
     await h.sleep(300);
     s = await sel();
-    h.assert.deepStrictEqual(s.value, [`${dir}/a.txt`, `${dir}/b.txt`], 'Shift+Down 应扩展到 a+b');
+    h.assert.deepStrictEqual(s.value, [`${dir}/b.txt`, `${dir}/c.png`], 'Shift+Down 应扩展到 b+c');
     await h.key(picker, 'Down', ['shift']);
     await h.sleep(300);
     s = await sel();
-    h.assert.deepStrictEqual(s.value, [`${dir}/a.txt`, `${dir}/b.txt`, `${dir}/c.png`], 'Shift+Down 第二次应继续扩展到 c.png');
+    h.assert.deepStrictEqual(s.value, [`${dir}/b.txt`, `${dir}/c.png`], 'Shift+Down 第二次应钳制在尾部');
 
     // 3) Space 切换：↑ 单选 b → Space 取消 → Space 再选回
     await h.key(picker, 'Up');

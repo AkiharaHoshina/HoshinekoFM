@@ -37,17 +37,34 @@ const h = require('./harness.cjs');
         return a.closest('[data-kb-zone]')?.getAttribute('data-kb-zone') ?? (a.classList.contains('file-list-item') ? 'file-item' : 'other');
       })()`);
 
-    // 1) 点击选中 a.txt → Tab 不落到文件条目（崩溃修复点），焦点进 files 分区；
-    //    review 19：已有选中保持不变（不再重选视口第一个可见文件）
+    // 1) 点击选中 a.txt → Tab 进 files 分区：review 24 焦点落**选中行**
+    //    （白框只框选中单项——:focus-visible 焦点环），既有选中保持不变
     await h.clickEl(win, `.file-list-item[data-path="${dir}/a.txt"]`);
     await h.key(win, 'Tab');
     await h.sleep(300);
     let z = await zoneOf();
     h.assert.strictEqual(z.value, 'files', `Tab 后焦点应在 files 分区，实际 ${z.value}`);
-    const onItem = await h.js(win, `document.activeElement?.classList?.contains('file-list-item') ?? false`);
-    h.assert.strictEqual(onItem.value, false, 'Tab 不应聚焦文件条目');
+    const onItem = await h.js(win, `(() => {
+      const a = document.activeElement;
+      return {
+        isRow: a?.classList?.contains('file-list-item') ?? false,
+        rowPath: a?.dataset?.path ?? null,
+        outline: a ? getComputedStyle(a).outlineStyle : null,
+      };
+    })()`);
+    h.assert.ok(onItem.value.isRow, '进站焦点应落在选中行上');
+    h.assert.strictEqual(onItem.value.rowPath, `${dir}/a.txt`, `进站白框应落在游标行 a.txt，实际 ${onItem.value.rowPath}`);
+    h.assert.strictEqual(onItem.value.outline, 'solid', '选中行应有白框（焦点环）');
     const keptSel = await h.js(win, `document.querySelector('.file-list-item.selected')?.dataset.path ?? null`);
     h.assert.strictEqual(keptSel.value, `${dir}/a.txt`, `Tab 落 files 分区应保持既有选中（a.txt），实际 ${keptSel.value}`);
+    // 方向键换选 → 白框消失（焦点回容器）
+    await h.key(win, 'Down');
+    await h.sleep(300);
+    const afterArrow = await h.js(win, `(() => {
+      const a = document.activeElement;
+      return { onContainer: a === document.querySelector('[data-kb-zone="files"]'), onRow: a?.classList?.contains('file-list-item') ?? false };
+    })()`);
+    h.assert.ok(afterArrow.value.onContainer && !afterArrow.value.onRow, '方向键换选后焦点应回容器（白框消失）');
 
     // 1b) review 19：无选中时 Tab 进 files 才选中视口第一个可见文件（sub 在
     //     Folders 组最前）——Space 取消选中 → Tab 满循环一周回 files 分区

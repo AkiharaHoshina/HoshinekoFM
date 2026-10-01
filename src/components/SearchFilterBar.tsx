@@ -639,9 +639,19 @@ function QuickAddDialog({ entries, onAdd, onClose }: QuickAddDialogProps) {
     document.querySelector<HTMLElement>(`md-dialog[open] .search-quickadd-item[data-mime="${mime}"]`)?.focus();
   }, [list, selected, cursor]);
 
-  /** 窗口级捕获 Tab 拦截（先于 md-dialog 焦点陷阱）：按停靠序循环 */
+  /** 窗口级捕获 Tab/Shift+Esc 拦截（先于 md-dialog 焦点陷阱）：Tab 按
+   *  停靠序循环；Shift+Esc 取消所有选择（review 24——普通 Esc 留给
+   *  md-dialog 关闭语义） */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        setSelected(new Set());
+        setCursor(null);
+        setAnchor(null);
+        return;
+      }
       if (e.key !== 'Tab') return;
       const cur = stopOf(e.target as Element | null);
       if (!cur) return;
@@ -673,8 +683,19 @@ function QuickAddDialog({ entries, onAdd, onClose }: QuickAddDialogProps) {
   }, [focusListStop]);
 
   /** 单项列表键盘：↑/↓ 单选移动（radio）、Shift+↑/↓ 从锚点到终点范围
-   *  多选（文件区列表模式同款）；移动后焦点回列表容器（白框消失） */
+   *  多选（文件区列表模式同款）；移动后焦点回列表容器（白框消失）；
+   *  review 24：上下位置（右侧滚动条）跟随键盘焦点——scrollIntoView
+   *  保持聚焦项可见；Shift+Esc 取消所有选择（文件区 Esc 清选同款——
+   *  普通 Esc 留给 md-dialog 关闭语义） */
   const handleListKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape' && e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      setSelected(new Set());
+      setCursor(null);
+      setAnchor(null);
+      return;
+    }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     const mimes = list.map((x) => x.mime);
     if (mimes.length === 0) return;
@@ -694,6 +715,8 @@ function QuickAddDialog({ entries, onAdd, onClose }: QuickAddDialogProps) {
       setSelected(new Set([nextMime]));
       setAnchor(nextMime);
     }
+    // review 24：滚动跟随键盘焦点
+    document.querySelector<HTMLElement>(`md-dialog[open] .search-quickadd-item[data-mime="${nextMime}"]`)?.scrollIntoView({ block: 'nearest' });
     listRef.current?.focus();
   }, [list, cursor, anchor]);
 
