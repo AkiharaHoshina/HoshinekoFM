@@ -204,11 +204,16 @@ const marqueeCountExpr = `document.querySelectorAll('.settings-preview .marquee-
       return { gap: Math.round(pTop - scTop), sticky: pTop >= scTop - 1 && pTop <= scTop + 1 };
     })()`);
     h.assert.ok(stickyGap.value?.sticky === true, '滚动后预览应吸顶（贴滚动容器上沿）');
+    // review 29.3：挂顶时底部分割线着色（--stuck 类）、回顶后消失
+    await h.waitFor(win, `!!document.querySelector('.settings-preview-fixed--stuck')`, 8000);
+    const stuckBorder = await h.js(win, `getComputedStyle(document.querySelector('.settings-preview-fixed--stuck')).borderBottomColor`);
+    h.assert.ok(!/rgba\(0, 0, 0, 0\)/.test(stuckBorder.value), `挂顶分割线应着色（实际 ${stuckBorder.value}）`);
     await h.js(win, `(() => {
       const sc = document.querySelector('.settings-page-scroll');
       if (sc) sc.scrollTop = 0;
       return true;
     })()`, true);
+    await h.waitFor(win, `!document.querySelector('.settings-preview-fixed--stuck')`, 8000);
 
     // ── 分组关闭 → 预览无分组头 ──
     // 回文件视图关分组（分组开（默认）时按钮为 filled 变体）

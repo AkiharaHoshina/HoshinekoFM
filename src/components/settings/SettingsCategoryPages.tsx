@@ -49,6 +49,29 @@ export const FilesSettings: React.FC = () => {
   const s = useSettings();
   const [newTabDialogOpen, setNewTabDialogOpen] = useState(false);
   const [openRuleManagerOpen, setOpenRuleManagerOpen] = useState(false);
+  /**
+   * review 29.3：预览挂顶时底部分割线——监听滚动容器，预览顶边贴到
+   * 容器上沿（吸顶生效）时点亮 `.settings-preview-fixed--stuck`
+   * （分割线着色；回顶/未吸顶时透明）。同值 setState React 自动跳过。
+   */
+  const previewFixedRef = useRef<HTMLDivElement | null>(null);
+  const [previewStuck, setPreviewStuck] = useState(false);
+  useEffect(() => {
+    const el = previewFixedRef.current;
+    const sc = el?.closest('.settings-page-scroll');
+    if (!el || !sc) return;
+    const onScroll = () => {
+      const stuck = el.getBoundingClientRect().top <= sc.getBoundingClientRect().top + 1;
+      setPreviewStuck(stuck);
+    };
+    onScroll();
+    sc.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      sc.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, []);
 
   /** 字节数 → 人类可读大小（缩略图缓存副标题用） */
   const formatBytes = (bytes: number): string => {
@@ -69,7 +92,10 @@ export const FilesSettings: React.FC = () => {
         {/* 外观预览（sticky）：真实文件区样例随**应用值**即时变化——立即
             生效语义下应用值 = 当前值，预览随开关实时刷新（旧对话框的草稿
             语义已废弃，SettingsPreview 直接吃应用值） */}
-        <div className="settings-preview-fixed">
+        <div
+          ref={previewFixedRef}
+          className={`settings-preview-fixed${previewStuck ? ' settings-preview-fixed--stuck' : ''}`}
+        >
           <button
             type="button"
             className="settings-preview-toggle"

@@ -194,8 +194,13 @@
   /* review 29.3：固定区（收起预览字样覆盖的区域）背景指定为
    *  surface-container-low；保持不透明以遮住滚动穿帮内容 */
   background: var(--md-sys-color-surface-container-low);
-  /* review 29.1：边框与背景同色（无可见分界线） */
+  /* review 29.1：边框与背景同色（未吸顶时无分界线）；29.3：挂顶时
+   * 底部分割线着色（--stuck 类由 FilesSettings 的滚动监听点亮） */
   border-bottom: 1px solid transparent;
+}
+
+.settings-preview-fixed--stuck {
+  border-bottom-color: var(--md-sys-color-outline-variant);
 }
 
 .settings-preview-toggle {
