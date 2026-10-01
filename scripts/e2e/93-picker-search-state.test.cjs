@@ -203,7 +203,8 @@ const ADDR_TOAST_RE = /地址不存在|Address does not exist|アドレスが存
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     const picker = await openPickerWin(win, 'items', '选择器');
 
-    // 进入搜索态 → 第二循环：回切 → 回车 → 筛选器 → 结果（文件区）→ 回切
+    // 进入搜索态 → 第二循环（review 23）：输入框（回切/回车两站共用焦点）
+    // → 类型下拉 → 模式下拉 → 结果（文件区）→ 回输入框循环
     await jsClick(picker, '.omnibar-trigger');
     await h.waitFor(picker, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     await jsClick(picker, '.omnibar-enter-search');
@@ -211,24 +212,29 @@ const ADDR_TOAST_RE = /地址不存在|Address does not exist|アドレスが存
     await h.waitFor(picker, `!!document.querySelector('.search-filter-type')`, { timeout: 8000 });
     await h.key(picker, 'Tab');
     await h.sleep(300);
-    let z = await h.js(picker, `document.activeElement?.classList?.contains('omnibar-back-address') ?? false`);
-    h.assert.ok(z.value, '选择器搜索态 Tab 应落回切按钮');
-    await h.key(picker, 'Tab');
-    await h.sleep(300);
-    z = await h.js(picker, `document.activeElement?.classList?.contains('omnibar-start-search') ?? false`);
-    h.assert.ok(z.value, '第二站应为回车按钮');
+    let z = await h.js(picker, `document.activeElement?.closest?.('[data-kb-zone="topbar-sort"]') != null`);
+    h.assert.ok(z.value, '搜索态 Tab 应落右上角按钮群');
     await h.key(picker, 'Tab');
     await h.sleep(300);
     z = await h.js(picker, `document.activeElement === document.querySelector('.search-filter-type')`);
-    h.assert.ok(z.value, '第三站应为筛选器第一个控件');
+    h.assert.ok(z.value, '第二站应为类型下拉');
+    await h.key(picker, 'Tab');
+    await h.sleep(300);
+    z = await h.js(picker, `document.activeElement === document.querySelector('.search-filter-mode')`);
+    h.assert.ok(z.value, '第三站应为筛选模式下拉');
     await h.key(picker, 'Tab');
     await h.sleep(300);
     z = await h.js(picker, `document.activeElement?.closest?.('[data-kb-zone="files"]') != null`);
     h.assert.ok(z.value, '第四站应为结果（文件区）');
-    await h.key(picker, 'Tab');
-    await h.sleep(300);
-    z = await h.js(picker, `document.activeElement?.classList?.contains('omnibar-back-address') ?? false`);
-    h.assert.ok(z.value, '循环应回回切按钮');
+    // 循环回输入框（选择器另有侧边栏等站——逐 Tab 轮询直到回输入框）
+    let looped = false;
+    for (let i = 0; i < 10; i++) {
+      await h.key(picker, 'Tab');
+      await h.sleep(250);
+      const onInput = await h.js(picker, `document.activeElement === document.querySelector('.omnibar.mode-search .omnibar-input')`);
+      if (onInput.value) { looped = true; break; }
+    }
+    h.assert.ok(looped, '循环应回搜索输入框（回切/回车两站共用焦点）');
 
     // 文件区焦点 Esc：退搜索 + 地址栏模式复位回面包屑（review 19 P4 修复
     // ——选择器无虚拟路径，此前模式残留搜索态）+ 焦点落编辑地址栏按钮

@@ -94,7 +94,8 @@ exit 0
     })()`, true);
     await h.waitFor(win, `!!document.querySelector('.object-nice-slider')`, { timeout: 8000 });
     // nice -5：滑条位置值 = 优先级 5；预览气泡 valueLabel = nice -5
-    // （aria-valuetext 驱动）；旁边数值 span 保持优先级 5
+    // （aria-valuetext 驱动）；review 23：数值 span 显示真实值 nice +
+    // 相对默认优先级提示「(更高)」（文案随 locale 变化按正则断言）
     const preview = await h.js(win, `(() => {
       const s = document.querySelector('.object-nice-slider');
       const input = s.shadowRoot.querySelector('input');
@@ -106,7 +107,8 @@ exit 0
     })()`);
     h.assert.strictEqual(preview.value.sliderValue, 5, `滑条位置值应为优先级 5（实际 ${preview.value.sliderValue}）`);
     h.assert.strictEqual(preview.value.ariaValueText, '-5', `预览气泡应显示真实值 nice -5（实际 ${preview.value.ariaValueText}）`);
-    h.assert.strictEqual(preview.value.shownSpan, '5', `旁边数值 span 保持优先级 5（实际 ${preview.value.shownSpan}）`);
+    h.assert.ok(/-5/.test(preview.value.shownSpan ?? ''), `数值 span 应显示真实值 -5（实际 ${preview.value.shownSpan}）`);
+    h.assert.ok(/更高|Higher|高め|더 높음|Выше|Вище/.test(preview.value.shownSpan ?? ''), `nice < 0 应带「更高」提示（实际 ${preview.value.shownSpan}）`);
   });
 
   await h.run('99b 详情页滑条 → Tab → 锁定键', async () => {

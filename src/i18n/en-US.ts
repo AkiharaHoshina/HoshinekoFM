@@ -560,6 +560,8 @@ const enUS = {
   'objects.process_nice_ok': (name: string, nice: number) => `Adjusted ${name} priority to ${nice}`,
   'objects.process_nice_lock_hint': "Changing priority needs admin authorization; after unlocking you can adjust freely until you close the app",
   'objects.process_nice_unlocked': "Unlocked: you can adjust process priority freely until you close the app",
+  'objects.nice_higher': "Higher",
+  'objects.nice_lower': "Lower",
   'objects.process_nice_no_tool': 'renice (util-linux) not found',
   'objects.process_nice_helper_failed': 'the process has exited or is unresponsive',
   'objects.process_filter': 'Filter by name / command / PID',

@@ -29,7 +29,16 @@ export type KeyboardZoneId =
   | 'search-back'
   | 'search-submit'
   | 'search-filters'
-  | 'search-results';
+  | 'search-results'
+  | 'search-type'
+  | 'search-mode'
+  | 'search-size-min'
+  | 'search-size-max'
+  | 'search-ext-input'
+  | 'search-format-add'
+  | 'search-format-quickadd'
+  | 'search-confirm'
+  | 'search-recent';
 
 export interface KeyboardZone {
   /** 分区标识（须与容器 data-kb-zone 属性一致） */
@@ -74,15 +83,34 @@ const ZONE_ORDER: KeyboardZoneId[] = [
 ];
 
 /**
- * 搜索态第二循环（review 19 定案：完全替换第一循环）：
- * 回切按钮（返回地址栏）→ 回车按钮（开始搜索）→ 筛选器第一个按钮 →
- * 搜索结果第一项 → 循环。回收站名称过滤无筛选器（search-filters 不注册
- * 自动跳过，三站循环）。
+ * 搜索态第二循环（review 19 起；review 23 扩展为完整序列，用户定案）：
+ * 左侧栏 → places → 标签页 → 返回上级 → 回切按钮 → 回车按钮 → 右上角
+ * 按钮群 → 文件类型下拉 → 筛选模式下拉 → [按模式条件输入区] → 筛选器
+ * （对象侧 search-filters）→ 最近搜索项 → 搜索结果 → 循环。
+ * - 按大小：最小大小 → 最大大小 → 确认（条件站仅在对应模式注册）；
+ * - 按格式：扩展名 → 添加 → 快捷添加 → 确认；
+ * - 默认模式/对象搜索/回收站过滤：未注册站自动跳过。
+ * 回切/回车两站的焦点落**搜索输入框**（用户可立即输入关键词；Enter =
+ * 提交、Esc = 退出搜索，按钮本体仅鼠标可达——review 23 定案）。
  */
 const SEARCH_ZONE_ORDER: KeyboardZoneId[] = [
+  'nav',
+  'sidebar',
+  'tabbar',
+  'topbar-up',
   'search-back',
   'search-submit',
+  'topbar-sort',
+  'search-type',
+  'search-mode',
+  'search-size-min',
+  'search-size-max',
+  'search-ext-input',
+  'search-format-add',
+  'search-format-quickadd',
+  'search-confirm',
   'search-filters',
+  'search-recent',
   'search-results',
 ];
 
@@ -99,11 +127,16 @@ let currentZoneId: KeyboardZoneId = 'files';
  */
 let cycleMode: 'browse' | 'search' = 'browse';
 
-/** 切换循环模式（复位当前分区到该模式首站） */
+/** 切换循环模式（当前分区若在新模式序内则保留，否则复位到该模式首站） */
 export function setKeyboardCycleMode(mode: 'browse' | 'search'): void {
   if (cycleMode === mode) return;
   cycleMode = mode;
-  currentZoneId = mode === 'search' ? 'search-back' : 'files';
+  // review 23：子组件（Omnibar）effect 先于父组件（ExplorerTab）运行——
+  // 搜索态输入框显式同步的 currentZoneId 不得被模式切换复位覆盖
+  const order = mode === 'search' ? SEARCH_ZONE_ORDER : ZONE_ORDER;
+  if (!order.includes(currentZoneId)) {
+    currentZoneId = mode === 'search' ? 'search-back' : 'files';
+  }
 }
 
 /** 当前循环模式（调试/测试用） */
@@ -153,7 +186,7 @@ export function trackKeyboardZoneFocus(el: Element | null): void {
  * @param dir - 1 = 下一个分区（Tab）；-1 = 上一个分区（Shift+Tab）
  * @returns 是否成功切换（有可用分区）
  */
-export function focusNextKeyboardZone(dir: 1 | -1): boolean {
+export function focusNextKeyboardZone(dir: 1 | -1, steps: number = 1): boolean {
   if (zones.length === 0) return false;
   const order = cycleMode === 'search' ? SEARCH_ZONE_ORDER : ZONE_ORDER;
   const ordered = order.filter((id) => zones.some((z) => z.id === id));
@@ -170,21 +203,39 @@ export function focusNextKeyboardZone(dir: 1 | -1): boolean {
   // 焦点不在当前分区内（首次 Tab）：先落到当前分区（默认 files）
   if (focusedZone !== currentZoneId) {
     const target = cur ?? zones.find((z) => z.id === ordered[0]) ?? zones[0];
-    target.focus();
+    // review 23：先赋值再聚焦——focus() 同步触发 focusin 跟踪，若焦点
+    // 回调把焦点落到**另一分区**的元素上（回切/回车站 → 搜索输入框，
+    // 输入框挂 search-submit 站），focusin 的跟踪结果（实际 DOM 分区）
+    // 必须覆盖站 id 赋值，否则下一次 Tab 走「先落到当前分区」回跳卡死
     currentZoneId = target.id;
+    target.focus();
     return true;
   }
   const idx = ordered.indexOf(currentZoneId);
-  const nextId = ordered[(((idx + dir) % ordered.length) + ordered.length) % ordered.length];
+  // steps（review 23）：回切/回车两站共用搜索输入框焦点——输入框（挂
+  // search-submit 站）后向 Tab 需一步跨过回切站（其焦点回调落回输入框，
+  // 分两次推进会卡死在「先落到当前分区」）
+  const nextId = ordered[(((idx + dir * steps) % ordered.length) + ordered.length) % ordered.length];
   const target = zones.find((z) => z.id === nextId) ?? zones[0];
-  target.focus();
+  // review 23：先赋值再聚焦（同上——focusin 跟踪结果覆盖站 id 赋值）
   currentZoneId = target.id;
+  target.focus();
   return true;
 }
 
 /** 当前分区 id（调试/测试用） */
 export function getCurrentKeyboardZone(): KeyboardZoneId {
   return currentZoneId;
+}
+
+/**
+ * 显式设置当前分区（review 23）：焦点已在目标元素上、未发生 focusin
+ * 时（例如编辑态输入框持焦点切换到搜索态——元素不变、data-kb-zone
+ * 属性变化，focusin 不触发）同步 currentZoneId，防下一次 Tab 走
+ * 「先落到当前分区」分支回跳。
+ */
+export function setCurrentKeyboardZone(id: KeyboardZoneId): void {
+  currentZoneId = id;
 }
 
 /**

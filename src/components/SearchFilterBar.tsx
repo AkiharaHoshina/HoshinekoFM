@@ -295,47 +295,45 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   // ── 快捷添加对话框 ──
   const [quickAddOpen, setQuickAddOpen] = useState(false);
 
-  // ── 第二循环 search-filters 站（review 19）──
+  // ── 第二循环拆站注册（review 23）──
 
   const barRef = useRef<HTMLDivElement | null>(null);
 
-  /** Tab 停靠：聚焦第一个筛选控件（类型下拉） */
-  const searchFiltersFocusRef = useRef<() => void>(() => {});
-  // eslint-disable-next-line react-hooks/refs -- 渲染期同步命令式回调
-  searchFiltersFocusRef.current = () => {
-    barRef.current?.querySelector<HTMLElement>('md-outlined-select')?.focus();
-  };
-
+  /**
+   * 搜索态筛选条件拆成独立 Tab 停靠（用户定案）：类型下拉 → 模式下拉 →
+   * [按模式条件输入区] → 确认。各控件自身挂 data-kb-zone（focusin 分区
+   * 跟踪）；输入框站进站后 Tab 走浏览器原生 DOM 序（min → max → confirm /
+   * ext → add → quickadd → confirm，DOM 序与期望一致）。
+   */
   useEffect(() => {
     if (!keyboardCycle) return;
-    return registerKeyboardZone({ id: 'search-filters', focus: () => searchFiltersFocusRef.current() });
-  }, [keyboardCycle]);
-
-  /** ←/→ 跨控件微调（review 19 决策 6：仅 ←/→ 跨控件——select 内 ↑/↓
-   *  保留 md 语义改选项；文本域内方向键保留光标语义） */
-  const FILTER_NAV_SELECTOR = 'md-outlined-select, md-outlined-text-field, md-text-button, md-outlined-button, md-filled-button, md-icon-button';
-  const handleFilterNavKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    const target = e.target as HTMLElement | null;
-    if (!target || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-    // 文本域宿主：内部 input 持焦点——方向键归光标（shadow 事件 target 已
-    // 重定向为宿主，按 tag 判）
-    if (target.tagName === 'MD-OUTLINED-TEXT-FIELD' || target.tagName === 'MD-FILLED-TEXT-FIELD') return;
-    const bar = e.currentTarget;
-    const items = Array.from(bar.querySelectorAll<HTMLElement>(FILTER_NAV_SELECTOR));
-    const idx = items.indexOf(target);
-    if (idx < 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    items[(idx + (e.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length]?.focus();
-  }, []);
+    const zoneFocus = (selector: string): (() => void) =>
+      () => { barRef.current?.querySelector<HTMLElement>(selector)?.focus(); };
+    const cleanups = [
+      registerKeyboardZone({ id: 'search-type', focus: zoneFocus('.search-filter-type') }),
+      registerKeyboardZone({ id: 'search-mode', focus: zoneFocus('.search-filter-mode') }),
+    ];
+    if (filterMode === 'size') {
+      cleanups.push(
+        registerKeyboardZone({ id: 'search-size-min', focus: zoneFocus('.search-size-min') }),
+        registerKeyboardZone({ id: 'search-size-max', focus: zoneFocus('.search-size-max') }),
+        registerKeyboardZone({ id: 'search-confirm', focus: zoneFocus('.search-confirm-size') }),
+      );
+    } else if (filterMode === 'format') {
+      cleanups.push(
+        registerKeyboardZone({ id: 'search-ext-input', focus: zoneFocus('.search-ext-input') }),
+        registerKeyboardZone({ id: 'search-format-add', focus: zoneFocus('.search-format-add') }),
+        registerKeyboardZone({ id: 'search-format-quickadd', focus: zoneFocus('.search-format-quickadd') }),
+        registerKeyboardZone({ id: 'search-confirm', focus: zoneFocus('.search-confirm-format') }),
+      );
+    }
+    return () => { for (const fn of cleanups) fn(); };
+  }, [keyboardCycle, filterMode]);
 
   return (
     <div
       ref={barRef}
       className="search-filter-bar"
-      data-kb-zone={keyboardCycle ? 'search-filters' : undefined}
-      onKeyDown={keyboardCycle ? handleFilterNavKey : undefined}
     >
       {/* 搜索基准目录：搜索态地址栏被关键词输入框取代，路径常驻于此
           （用户评审定案）；悬停 title 显示完整路径，超长省略 */}
@@ -375,6 +373,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
           <div className="search-filter-row">
             <OutlinedSelect
               className="search-filter-type"
+              data-kb-zone={keyboardCycle ? 'search-type' : undefined}
               value={options.type ?? ''}
               onInput={(e) => {
                 const v = (e.target as HTMLSelectElement).value;
@@ -387,6 +386,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
             </OutlinedSelect>
             <OutlinedSelect
               className="search-filter-mode"
+              data-kb-zone={keyboardCycle ? 'search-mode' : undefined}
               label={t('search.filter_mode')}
               value={filterMode === 'none' ? '' : filterMode}
               onInput={(e) => handleModeChange((e.target as HTMLSelectElement).value)}
@@ -404,6 +404,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
             <div className="search-filter-level2 search-size-level2">
               <OutlinedTextField
                 className="search-size-min"
+                data-kb-zone={keyboardCycle ? 'search-size-min' : undefined}
                 label={t('search.min_size')}
                 value={sizeMin}
                 error={sizeMin.trim() !== '' && !/^(\d+(?:\.\d+)?)([bckwMGTP])?$/i.test(sizeMin.trim())}
@@ -416,6 +417,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
               />
               <OutlinedTextField
                 className="search-size-max"
+                data-kb-zone={keyboardCycle ? 'search-size-max' : undefined}
                 label={t('search.max_size')}
                 value={sizeMax}
                 error={sizeMax.trim() !== '' && !/^(\d+(?:\.\d+)?)([bckwMGTP])?$/i.test(sizeMax.trim())}
@@ -426,7 +428,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
                 }}
                 style={{ width: '200px' }}
               />
-              <Button className="search-confirm-size" onClick={commitSize} disabled={sizeInvalid}>
+              <Button className="search-confirm-size" dataKbZone={keyboardCycle ? 'search-confirm' : undefined} onClick={commitSize} disabled={sizeInvalid}>
                 {t('dialog.button.confirm')}
               </Button>
             </div>
@@ -455,6 +457,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
               <div className="search-format-inputs">
                 <OutlinedTextField
                   className="search-ext-input"
+                  data-kb-zone={keyboardCycle ? 'search-ext-input' : undefined}
                   label={t('search.ext_input')}
                   value={extInput}
                   onInput={(e) => setExtInput((e.target as HTMLInputElement).value)}
@@ -463,17 +466,18 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
                   }}
                   style={{ width: '160px' }}
                 />
-                <Button className="search-format-add" variant="tonal" onClick={handleAdd}>
+                <Button className="search-format-add" dataKbZone={keyboardCycle ? 'search-format-add' : undefined} variant="tonal" onClick={handleAdd}>
                   {t('search.add')}
                 </Button>
                 <Button
                   className="search-format-quickadd"
+                  dataKbZone={keyboardCycle ? 'search-format-quickadd' : undefined}
                   variant="tonal"
                   onClick={() => setQuickAddOpen(true)}
                 >
                   {t('search.quick_add')}
                 </Button>
-                <Button className="search-confirm-format" onClick={commitFormat}>
+                <Button className="search-confirm-format" dataKbZone={keyboardCycle ? 'search-confirm' : undefined} onClick={commitFormat}>
                   {t('dialog.button.confirm')}
                 </Button>
               </div>
@@ -564,11 +568,21 @@ interface QuickAddDialogProps {
  * 快捷添加对话框：列出系统注册的带描述格式（不完整注册默认隐藏，
  * 底部「显示不完整的注册」切换 + 取消/确认），带搜索框；确认把选中
  * 格式加入格式预览区。
+ * review 23 键盘内循环（用户定案）：搜索框 → 已注册格式单项 → 显示
+ * 不完整注册 → 取消 → 确认 → 循环（窗口级捕获 Tab 拦截，md-dialog
+ * 焦点陷阱之上）；单项列表 = 文件区列表模式多选语义：无选中进站选
+ * 首个、有则保持；进站焦点落选中项（白框只框选中单项，↑/↓ 移动后
+ * 焦点回列表容器、白框消失）；键盘 ↑/↓ 单选移动、Shift+↑/↓ 从选中
+ * 项到终点范围多选；鼠标点击 = 单选/多选切换（现状不变）。
  */
 function QuickAddDialog({ entries, onAdd, onClose }: QuickAddDialogProps) {
   const [search, setSearch] = useState('');
   const [showIncomplete, setShowIncomplete] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** 键盘游标（当前单选位）与 Shift 范围锚点（mime 键） */
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -590,6 +604,99 @@ function QuickAddDialog({ entries, onAdd, onClose }: QuickAddDialogProps) {
     });
   };
 
+  // ── review 23 键盘内循环 ──
+
+  /** 停靠序：搜索框 → 单项列表 → 显示不完整注册 → 取消 → 确认 */
+  const stopOf = (el: Element | null): Element | null => {
+    if (!el) return null;
+    const dlg = document.querySelector<HTMLElement>('md-dialog[open] .search-quickadd-body')?.closest('md-dialog');
+    if (!dlg) return null;
+    const searchEl = dlg.querySelector('.search-quickadd-search');
+    const listEl = dlg.querySelector('.search-quickadd-list');
+    const toggleEl = dlg.querySelector('.search-quickadd-toggle');
+    const cancelEl = dlg.querySelector('.search-quickadd-cancel');
+    const confirmEl = dlg.querySelector('.search-quickadd-confirm');
+    const stops = [searchEl, listEl, toggleEl, cancelEl, confirmEl].filter((x): x is Element => !!x);
+    return stops.find((s) => s === el || s.contains(el)) ?? null;
+  };
+
+  /** 进站落点：无选中先选首个、有则保持；焦点落选中项（白框） */
+  const focusListStop = useCallback(() => {
+    const mimes = list.map((x) => x.mime);
+    if (mimes.length === 0) {
+      listRef.current?.focus();
+      return;
+    }
+    const target = selected.size > 0 && cursor !== null && mimes.includes(cursor)
+      ? cursor
+      : (selected.size > 0 ? Array.from(selected)[0] : null);
+    const mime = target ?? mimes[0];
+    if (selected.size === 0) {
+      setSelected(new Set([mime]));
+      setAnchor(mime);
+    }
+    setCursor(mime);
+    document.querySelector<HTMLElement>(`md-dialog[open] .search-quickadd-item[data-mime="${mime}"]`)?.focus();
+  }, [list, selected, cursor]);
+
+  /** 窗口级捕获 Tab 拦截（先于 md-dialog 焦点陷阱）：按停靠序循环 */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const cur = stopOf(e.target as Element | null);
+      if (!cur) return;
+      const dlg = document.querySelector<HTMLElement>('md-dialog[open] .search-quickadd-body')?.closest('md-dialog');
+      if (!dlg) return;
+      const searchEl = dlg.querySelector<HTMLElement>('.search-quickadd-search');
+      const listEl = dlg.querySelector<HTMLElement>('.search-quickadd-list');
+      const stops = [
+        searchEl,
+        listEl,
+        dlg.querySelector('.search-quickadd-toggle'),
+        dlg.querySelector('.search-quickadd-cancel'),
+        dlg.querySelector('.search-quickadd-confirm'),
+      ].filter((x): x is HTMLElement => !!x);
+      const idx = stops.indexOf(cur as HTMLElement);
+      if (idx < 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const next = stops[(idx + (e.shiftKey ? -1 : 1) + stops.length) % stops.length];
+      // 列表站进站 = 无选中选首个 + 焦点落选中项（白框）；其余站直聚焦
+      if (next === listEl) {
+        focusListStop();
+      } else {
+        next?.focus?.();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [focusListStop]);
+
+  /** 单项列表键盘：↑/↓ 单选移动（radio）、Shift+↑/↓ 从锚点到终点范围
+   *  多选（文件区列表模式同款）；移动后焦点回列表容器（白框消失） */
+  const handleListKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const mimes = list.map((x) => x.mime);
+    if (mimes.length === 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const curIdx = cursor !== null ? mimes.indexOf(cursor) : -1;
+    const anchorIdx = anchor !== null ? mimes.indexOf(anchor) : -1;
+    const base = curIdx < 0 ? (anchorIdx >= 0 ? anchorIdx : 0) : curIdx;
+    const nextIdx = e.key === 'ArrowDown' ? Math.min(mimes.length - 1, base + 1) : Math.max(0, base - 1);
+    const nextMime = mimes[nextIdx];
+    setCursor(nextMime);
+    if (e.shiftKey) {
+      const aIdx = anchorIdx >= 0 ? anchorIdx : (curIdx >= 0 ? curIdx : 0);
+      const [lo, hi] = aIdx < nextIdx ? [aIdx, nextIdx] : [nextIdx, aIdx];
+      setSelected(new Set(mimes.slice(lo, hi + 1)));
+    } else {
+      setSelected(new Set([nextMime]));
+      setAnchor(nextMime);
+    }
+    listRef.current?.focus();
+  }, [list, cursor, anchor]);
+
   return (
     <Dialog
       title={t('search.quick_add')}
@@ -606,10 +713,11 @@ function QuickAddDialog({ entries, onAdd, onClose }: QuickAddDialogProps) {
           >
             {t('search.show_incomplete')}
           </Button>
-          <Button variant="text" onClick={onClose}>
+          <Button variant="text" className="search-quickadd-cancel" onClick={onClose}>
             {t('dialog.button.cancel')}
           </Button>
           <Button
+            className="search-quickadd-confirm"
             onClick={() => {
               onAdd(Array.from(selected));
               onClose();
@@ -628,7 +736,12 @@ function QuickAddDialog({ entries, onAdd, onClose }: QuickAddDialogProps) {
           onInput={(e) => setSearch((e.target as HTMLInputElement).value)}
           style={{ width: '100%' }}
         />
-        <div className="search-quickadd-list">
+        <div
+          className="search-quickadd-list"
+          ref={listRef}
+          tabIndex={-1}
+          onKeyDown={handleListKey}
+        >
           {list.length === 0 ? (
             <div className="search-quickadd-empty">{t('search.formats_empty')}</div>
           ) : (
@@ -640,8 +753,9 @@ function QuickAddDialog({ entries, onAdd, onClose }: QuickAddDialogProps) {
                   <ListItem
                     key={e.mime}
                     className="search-quickadd-item"
+                    data-mime={e.mime}
                     data-selected={isSelected ? 'true' : 'false'}
-                    onClick={() => toggle(e.mime)}
+                    onClick={() => { toggle(e.mime); setCursor(e.mime); setAnchor(e.mime); }}
                     style={{ cursor: 'pointer' }}
                   >
                     <span slot="headline">{name}</span>

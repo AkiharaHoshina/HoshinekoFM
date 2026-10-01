@@ -591,6 +591,8 @@ const ruUA = {
   'objects.process_nice_ok': (name: string, nice: number) => `Приоритет процесса ${name} изменён на ${nice}`,
   'objects.process_nice_lock_hint': "Изменение приоритета требует прав администратора; после разблокировки можно свободно менять до закрытия приложения",
   'objects.process_nice_unlocked': "Разблокировано: приоритет процессов можно свободно менять до закрытия приложения",
+  'objects.nice_higher': "Выше",
+  'objects.nice_lower': "Ниже",
   'objects.process_nice_no_tool': 'Утилита renice (util-linux) не найдена',
   'objects.process_nice_helper_failed': 'процесс завершился или не отвечает',
   'objects.process_filter': 'Фильтр по имени / команде / PID',

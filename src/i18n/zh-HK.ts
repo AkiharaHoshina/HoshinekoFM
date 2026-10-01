@@ -549,6 +549,8 @@ const zhHK = {
   'objects.process_nice_ok': (name: string, nice: number) => `已將 ${name} 嘅優先次序調整為 ${nice}`,
   'objects.process_nice_lock_hint': "調整優先次序需要管理員授權；解鎖後今次執行期間可自由調整",
   'objects.process_nice_unlocked': "已解鎖：今次執行期間可自由調整程式優先次序",
+  'objects.nice_higher': "更高",
+  'objects.nice_lower': "更低",
   'objects.process_nice_no_tool': '搵唔到 renice 工具（util-linux）',
   'objects.process_nice_helper_failed': '程序已經消失或者冇回應',
   'objects.process_filter': '按名稱 / 命令 / PID 篩選',

@@ -550,6 +550,8 @@ const koKR = {
   'objects.process_nice_ok': (name: string, nice: number) => `${name} 프로세스의 우선순위를 ${nice}(으)로 변경했습니다`,
   'objects.process_nice_lock_hint': "우선순위를 변경하려면 관리자 권한이 필요합니다. 잠금 해제 후 앱을 닫을 때까지 자유롭게 조정할 수 있습니다",
   'objects.process_nice_unlocked': "잠금 해제됨: 앱을 닫을 때까지 프로세스 우선순위를 자유롭게 조정할 수 있습니다",
+  'objects.nice_higher': "더 높음",
+  'objects.nice_lower': "더 낮음",
   'objects.process_nice_no_tool': 'renice 도구(util-linux)를 찾을 수 없습니다',
   'objects.process_nice_helper_failed': '프로세스가 종료되었거나 응답이 없습니다',
   'objects.process_filter': '이름 / 명령 / PID로 필터링',

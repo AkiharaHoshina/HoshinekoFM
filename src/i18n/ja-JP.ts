@@ -549,6 +549,8 @@ const jaJP = {
   'objects.process_nice_ok': (name: string, nice: number) => `${name} の優先度を ${nice} に変更しました`,
   'objects.process_nice_lock_hint': "優先度の変更には管理者権限が必要です。ロック解除後はアプリを閉じるまで自由に調整できます",
   'objects.process_nice_unlocked': "ロック解除しました：アプリを閉じるまで優先度を自由に調整できます",
+  'objects.nice_higher': "高め",
+  'objects.nice_lower': "低め",
   'objects.process_nice_no_tool': 'renice ツール（util-linux）が見つかりません',
   'objects.process_nice_helper_failed': 'プロセスは終了したか応答がありません',
   'objects.process_filter': '名前・コマンド・PID で絞り込み',

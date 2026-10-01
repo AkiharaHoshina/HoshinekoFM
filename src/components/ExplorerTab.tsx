@@ -1521,6 +1521,21 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     return registerKeyboardZone({ id: 'object-recent', focus: () => objectRecentZoneFocusRef.current() });
   }, [isActive, showObjectRecent]);
 
+  /** search-recent 站（review 23）：文件搜索态词条行 Tab 停靠——仅词条
+   *  行渲染时注册（历史非空且展示条数 > 0）；进站聚焦当前/首词条。
+   *  行容器 data-kb-zone 标记 + ←/→ roving（review 21）在渲染处 */
+  const fileSearchRecentRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!isActive || !searchActive) return;
+    if (fileSearchHistory.length === 0 || searchRecentCount <= 0) return;
+    return registerKeyboardZone({
+      id: 'search-recent',
+      focus: () => {
+        fileSearchRecentRef.current?.querySelector<HTMLElement>('.search-recent-chip')?.focus();
+      },
+    });
+  }, [isActive, searchActive, fileSearchHistory.length, searchRecentCount]);
+
   /**
    * 键盘分区（topbar-up / topbar-omnibar / topbar-sort）：顶栏三站
    * 独立 Tab 停靠——返回上级键（回收站视图无此键，不注册）、地址栏内
@@ -2817,12 +2832,14 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
             />
           )}
           {/* 最近搜索词条（搜索态显示；点击在记录目录重搜该词）。
-              review 21：←/→ 在词条 + 「删除最近搜索」清除按钮间 roving
-              （用户定案两侧同款；本行非 Tab 站——文件搜索态不进第二循环，
-              焦点经点击/方向键进入） */}
+              review 21：←/→ 在词条 + 「删除最近搜索」清除按钮间 roving；
+              review 23：成为 search-recent Tab 停靠（数据 data-kb-zone 挂
+              行容器 + 站注册——进站聚焦当前/首词条） */}
           {searchActive && fileSearchHistory.length > 0 && searchRecentCount > 0 && (
             <div
+              ref={fileSearchRecentRef}
               className="search-recent"
+              data-kb-zone="search-recent"
               onKeyDown={(e) => {
                 if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
                 const chips = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('.search-recent-chip'));

@@ -549,6 +549,8 @@ const zhCN = {
   'objects.process_nice_ok': (name: string, nice: number) => `已将 ${name} 的优先级调整为 ${nice}`,
   'objects.process_nice_lock_hint': "调整优先级需要管理员授权；解锁后本次运行期间可自由调整",
   'objects.process_nice_unlocked': "已解锁：本次运行期间可自由调整进程优先级",
+  'objects.nice_higher': "更高",
+  'objects.nice_lower': "更低",
   'objects.process_nice_no_tool': '未找到 renice 工具（util-linux）',
   'objects.process_nice_helper_failed': '进程已消失或无响应',
   'objects.process_filter': '按名称 / 命令 / PID 筛选',

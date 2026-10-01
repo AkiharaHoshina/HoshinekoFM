@@ -588,6 +588,8 @@ const ukUA = {
   'objects.process_nice_ok': (name: string, nice: number) => `Пріоритет процесу ${name} змінено на ${nice}`,
   'objects.process_nice_lock_hint': "Зміна пріоритету потребує прав адміністратора; після розблокування можна вільно змінювати до закриття програми",
   'objects.process_nice_unlocked': "Розблоковано: пріоритет процесів можна вільно змінювати до закриття програми",
+  'objects.nice_higher': "Вище",
+  'objects.nice_lower': "Нижче",
   'objects.process_nice_no_tool': 'Утиліту renice (util-linux) не знайдено',
   'objects.process_nice_helper_failed': 'процес завершився або не відповідає',
   'objects.process_filter': 'Фільтр за назвою / командою / PID',

@@ -1225,7 +1225,12 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
                 }}
               />
             </div>
-            <span className="object-reading-value">{-r.nice}</span>
+            {/* review 23：数值显示真实值 nice + 相对默认优先级（nice 0）
+                提示（nice < 0 更高 / > 0 更低） */}
+            <span className="object-reading-value">
+              {r.nice}
+              {r.nice < 0 ? ` (${t('objects.nice_higher')})` : r.nice > 0 ? ` (${t('objects.nice_lower')})` : ''}
+            </span>
             {/* review 22：锁定按钮独立 Tab 停靠（滑条 → 锁定） */}
             <div className="object-nice-buttons-group" data-detail-group="process-nice-actions">
               {!privilegedUnlocked && (
@@ -2288,7 +2293,11 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
               }}
             />
           </div>
-          <span className="object-batch-nice-value">{-batchNiceValue}</span>
+          {/* review 23：数值显示真实值 nice + 相对默认优先级提示 */}
+          <span className="object-batch-nice-value">
+            {batchNiceValue}
+            {batchNiceValue < 0 ? ` (${t('objects.nice_higher')})` : batchNiceValue > 0 ? ` (${t('objects.nice_lower')})` : ''}
+          </span>
           <div className="object-batch-lock-zone" data-kb-zone="object-batch-lock" tabIndex={-1}>
             {!privilegedUnlocked ? (
               <Button variant="tonal" disabled={batchSelectedInstances.length < 1} onClick={() => onUnlockPrivileged?.((ok) => { if (ok) setPrivilegedUnlockedGlobal(true); })}>

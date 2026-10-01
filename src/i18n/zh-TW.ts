@@ -549,6 +549,8 @@ const zhTW = {
   'objects.process_nice_ok': (name: string, nice: number) => `已將 ${name} 的優先順序調整為 ${nice}`,
   'objects.process_nice_lock_hint': "調整優先順序需要管理員授權；解鎖後本次執行期間可自由調整",
   'objects.process_nice_unlocked': "已解鎖：本次執行期間可自由調整程式優先順序",
+  'objects.nice_higher': "更高",
+  'objects.nice_lower': "更低",
   'objects.process_nice_no_tool': '找不到 renice 工具（util-linux）',
   'objects.process_nice_helper_failed': '程序已消失或無回應',
   'objects.process_filter': '按名稱 / 命令 / PID 篩選',

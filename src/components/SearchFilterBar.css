@@ -119,6 +119,14 @@
   overflow-y: auto;
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 12px;
+  /* review 23：进站焦点落选中项（白框只框选中单项）——容器抑制默认焦点环 */
+  outline: none;
+}
+
+/* review 23：Tab 进列表站选中项白框；↑/↓ 移动后焦点回容器、白框消失 */
+.search-quickadd-item:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
 }
 
 .search-quickadd-empty {

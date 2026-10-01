@@ -12,7 +12,7 @@ import { expandAddressPath, looksLikePathInput } from "../utils/addressPath";
 import { isSearchPath, parseSearchPath } from "../utils/searchPath";
 import { isObjectSearchPath, parseObjectSearchPath } from "../utils/objectSearchPath";
 import { isObjectsPath } from "../utils/objectsPath";
-import { registerKeyboardZone } from "../utils/focusZones";
+import { registerKeyboardZone, focusNextKeyboardZone, setCurrentKeyboardZone } from "../utils/focusZones";
 import { showToast } from "../utils/toast";
 import "./Omnibar.css";
 
@@ -444,32 +444,26 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
   };
 
   /** 搜索态第二循环两站注册（review 19：回切 → 回车 → …；模式由 ExplorerTab
-   *  经 setKeyboardCycleMode 切换，本组件只注册焦点回调。按钮经 DOM 查询
-   *  定位——IconButton 包装不转发 ref） */
+   *  经 setKeyboardCycleMode 切换，本组件只注册焦点回调。review 23 定案：
+   *  两站焦点落**搜索输入框**（用户可立即输入关键词——Enter = 提交、
+   *  Esc = 退出搜索既有语义；按钮本体仅鼠标可达） */
   useEffect(() => {
     if (mode !== 'search') return;
+    const focusInput = () => document.querySelector<HTMLElement>('.omnibar.mode-search .omnibar-input')?.focus();
+    // review 23：编辑态输入框持焦点切到搜索态时元素不变、focusin 不触发
+    // ——显式同步当前分区到 search-submit（输入框挂该站），防下一次 Tab
+    // 走「先落到当前分区」回跳卡死
+    setCurrentKeyboardZone('search-submit');
     const c1 = registerKeyboardZone({
       id: 'search-back',
-      focus: () => document.querySelector<HTMLElement>('.omnibar-back-address')?.focus(),
+      focus: focusInput,
     });
     const c2 = registerKeyboardZone({
       id: 'search-submit',
-      focus: () => document.querySelector<HTMLElement>('.omnibar-start-search')?.focus(),
+      focus: focusInput,
     });
     return () => { c1(); c2(); };
   }, [mode]);
-
-  /** 回切/回车按钮间 ←/→ 微调（review 19 决策 6：仅 ←/→ 跨控件） */
-  const handleSearchBtnArrow = (e: React.KeyboardEvent<HTMLElement>) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (document.querySelector<HTMLElement>('.omnibar-back-address') === document.activeElement) {
-      document.querySelector<HTMLElement>('.omnibar-start-search')?.focus();
-    } else {
-      document.querySelector<HTMLElement>('.omnibar-back-address')?.focus();
-    }
-  };
 
   return (
     <div className={`omnibar mode-${mode}${mode !== 'breadcrumbs' ? ' editing' : ''}`}>
@@ -497,10 +491,23 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
           <input
             ref={inputRef}
             type="text"
+            data-kb-zone={mode === 'search' ? 'search-submit' : undefined}
             className={`omnibar-input${mode === 'search' ? ' omnibar-input-search' : ''}`}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
+            onKeyDown={(e) => {
+              // review 23：搜索态输入框承载回切/回车两站焦点——Tab 推进
+              // 循环（前向跳过回车站自身 → 右上角按钮群；后向跳过回切站
+              // → 返回上级），否则原生 Tab 落到回切按钮上与分区循环互相
+              // 打架卡死。编辑态仍走 handleKeyDown 迷你循环。
+              if (mode === 'search' && e.key === 'Tab') {
+                e.preventDefault();
+                e.stopPropagation();
+                focusNextKeyboardZone(e.shiftKey ? -1 : 1, e.shiftKey ? 2 : 1);
+                return;
+              }
+              handleKeyDown(e);
+            }}
             onBlur={() => {
               // 编辑态点外部 = 取消回面包屑；搜索态不靠焦点取消（B4 定案）。
               // review 19：迷你循环 Tab 转移焦点时吞掉本次复位（见
@@ -555,7 +562,6 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
               <span
                 data-kb-zone="search-back"
                 style={{ display: 'inline-flex' }}
-                onKeyDown={handleSearchBtnArrow}
               >
                 <IconButton
                   variant="standard"
@@ -570,7 +576,6 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
               <span
                 data-kb-zone="search-submit"
                 style={{ display: 'inline-flex' }}
-                onKeyDown={handleSearchBtnArrow}
               >
                 <IconButton
                   variant="standard"

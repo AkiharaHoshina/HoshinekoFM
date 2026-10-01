@@ -277,8 +277,10 @@ const { ipcMain } = require('electron');
       shown: document.querySelector('.object-nice-row .object-reading-value')?.textContent ?? null,
       inner: document.querySelector('.object-nice-slider').shadowRoot.querySelector('input').value,
     }))()`);
-    h.assert.strictEqual(niceAfterRight.value.shown, '1', `Right 应优先级 +1 显示 1（实际 ${niceAfterRight.value.shown}）`);
-    h.assert.strictEqual(niceAfterRight.value.inner, '1', `滑条内部值应为 1（实际 ${niceAfterRight.value.inner}）`);
+    // review 23：数值 span 显示真实值 nice + 相对默认优先级提示
+    h.assert.ok(/-1/.test(niceAfterRight.value.shown ?? ''), `Right 后数值应显示真实值 -1（实际 ${niceAfterRight.value.shown}）`);
+    h.assert.ok(/更高|Higher|高め|더 높음|Выше|Вище/.test(niceAfterRight.value.shown ?? ''), `nice < 0 应带「更高」提示（实际 ${niceAfterRight.value.shown}）`);
+    h.assert.strictEqual(niceAfterRight.value.inner, '1', `滑条内部值应为优先级 1（实际 ${niceAfterRight.value.inner}）`);
     await h.sleep(200);
     h.assert.strictEqual(niceCalls[niceCalls.length - 1], -1, `写入应取反为 nice -1（实际 ${niceCalls[niceCalls.length - 1]}）`);
   });
