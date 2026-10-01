@@ -191,9 +191,9 @@
   z-index: 2;
   margin: 0 -24px;
   padding: 4px 24px 12px;
-  /* review 29.2：固定区背景与设置页面背景一致（差异只体现在预览卡
-   * 内部——预览器内部保持加深）；保持不透明以遮住滚动穿帮内容 */
-  background: var(--md-sys-color-surface);
+  /* review 29.3：固定区（收起预览字样覆盖的区域）背景指定为
+   *  surface-container-low；保持不透明以遮住滚动穿帮内容 */
+  background: var(--md-sys-color-surface-container-low);
   /* review 29.1：边框与背景同色（无可见分界线） */
   border-bottom: 1px solid transparent;
 }
