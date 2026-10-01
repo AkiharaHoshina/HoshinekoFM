@@ -97,10 +97,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
    * 聚焦控件并滚动跟随：focus 后经 rAF 与 100ms 二次校正——
    * Chromium 的焦点滚动会迟到回放（50–100ms，见 Dialog 焦点校正注释），
    * 仅同步 scrollIntoView 会被其覆盖导致「选中项在页面外不可见」。
+   * 挂顶预览遮挡修正：文件设置页的 sticky 预览区吸顶时会盖住下方
+   * 内容——scrollIntoView 只保证元素在滚动容器视口内，仍可能被预览区
+   * 遮挡；此处检测元素与吸顶预览区相交时额外下滚，把元素顶边挪到
+   * 预览区底缘之下 8px（预览区自身控件不受影响）。
    */
   const focusPageControl = useCallback((el: HTMLElement) => {
     focusKeyboardTarget(el);
-    const adjust = () => el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const adjust = () => {
+      el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      if (el.closest('.settings-preview-fixed')) return;
+      const root = rootRef.current;
+      const fixed = root?.querySelector<HTMLElement>('.settings-preview-fixed');
+      const sc = root?.querySelector<HTMLElement>('.settings-page-scroll');
+      if (!fixed || !sc) return;
+      const r = el.getBoundingClientRect();
+      const f = fixed.getBoundingClientRect();
+      const s = sc.getBoundingClientRect();
+      // 预览区吸顶（贴容器上沿）且元素顶边被其盖住 → 下滚露出
+      if (f.top <= s.top + 1 && r.top < f.bottom && r.bottom > f.top) {
+        sc.scrollTop += r.top - f.bottom - 8;
+      }
+    };
     requestAnimationFrame(adjust);
     setTimeout(adjust, 100);
   }, []);

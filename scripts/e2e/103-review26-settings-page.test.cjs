@@ -343,7 +343,35 @@ const { ipcMain } = require('electron');
       return true;
     })()`, true);
 
+    // ── 挂顶预览遮挡修正：滚动到预览吸顶后，Tab 到预览下方控件不得被盖住 ──
+    await h.js(win, `(() => {
+      const sc = document.querySelector('.settings-page-scroll');
+      if (sc) sc.scrollTop = 400;
+      return true;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.settings-preview-fixed--stuck')`, 8000);
+    // 从预览区开关起 Tab 逐控件走到图标大小滑条（预览区下方控件）
+    const reachedSliderBelow = await tabUntil(`document.activeElement?.tagName === 'MD-SLIDER'`);
+    h.assert.ok(reachedSliderBelow, 'Tab 应可达预览区下方的图标大小滑条');
+    const notCovered = await h.js(win, `(() => {
+      const el = document.activeElement;
+      const fixed = document.querySelector('.settings-preview-fixed');
+      if (!el || !fixed) return null;
+      const r = el.getBoundingClientRect();
+      const f = fixed.getBoundingClientRect();
+      return { covered: r.top < f.bottom - 1, elTop: Math.round(r.top), fixedBottom: Math.round(f.bottom) };
+    })()`);
+    h.assert.ok(notCovered.value?.covered === false, `选中控件不应被挂顶预览遮挡（元素顶 ${notCovered.value?.elTop}px / 预览底 ${notCovered.value?.fixedBottom}px）`);
+    await h.js(win, `(() => {
+      const sc = document.querySelector('.settings-page-scroll');
+      if (sc) sc.scrollTop = 0;
+      return true;
+    })()`, true);
+
     // ── 文件页：Tab 可达图标大小滑条；滑条上 ←/→ 调值不移动焦点 ──
+    // （挂顶段已把焦点停在滑条——显式回起点，防 tabUntil 直接越界放行）
+    await h.js(win, `(() => { document.querySelector('.settings-preview-toggle')?.focus(); return true; })()`, true);
+    await h.sleep(200);
     const reachedSlider = await tabUntil(`document.activeElement?.tagName === 'MD-SLIDER'`);
     h.assert.ok(reachedSlider, 'Tab 应可达图标大小滑条（此前被漏掉）');
     const beforeVal = await h.js(win, `document.activeElement.value`);
