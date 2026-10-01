@@ -53,7 +53,7 @@ const h = require('./harness.cjs');
     //     Folders 组最前）——Space 取消选中 → Tab 满循环一周回 files 分区
     await h.key(win, 'Space');
     await h.sleep(200);
-    for (let i = 0; i < 7; i++) { await h.key(win, 'Tab'); await h.sleep(50); }
+    for (let i = 0; i < 7; i++) { await h.key(win, 'Tab'); await h.sleep(300); }
     await h.sleep(300);
     z = await zoneOf();
     h.assert.strictEqual(z.value, 'files', `满循环后焦点应回 files 分区，实际 ${z.value}`);

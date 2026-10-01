@@ -3,7 +3,7 @@ import { FilterChip, SegmentedButton, SegmentedButtonSet, type SegmentedButtonSe
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 import { t } from '../i18n';
-import { registerKeyboardZone } from '../utils/focusZones';
+import { registerKeyboardZone, focusKeyboardTarget } from '../utils/focusZones';
 import { OBJECTS_CLASS_LABEL } from '../utils/objectsPath';
 import type { ProcessFilterMode, PidCond } from '../utils/objectSearchPath';
 import './SearchBand.css';
@@ -115,7 +115,7 @@ export const ObjectSearchFilterBar: React.FC<ObjectSearchFilterBarProps> = ({
     if (!bar) return;
     const chip = bar.querySelector<HTMLElement>('md-filter-chip');
     if (chip) { chip.focus(); return; }
-    bar.querySelector<HTMLElement>('hoshineko-outlined-segmented-button')?.focus();
+    focusKeyboardTarget(bar.querySelector<HTMLElement>('hoshineko-outlined-segmented-button'));
   };
 
   useEffect(() => {
@@ -142,9 +142,9 @@ export const ObjectSearchFilterBar: React.FC<ObjectSearchFilterBarProps> = ({
     e.preventDefault();
     e.stopPropagation();
     const next = items[(idx + (e.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length];
-    // segmented set 宿主不可聚焦——落到其首个子按钮
+    // segmented set 宿主不可聚焦——落到其首个子按钮（内部 shadow button）
     if (next.tagName === 'MD-OUTLINED-SEGMENTED-BUTTON-SET') {
-      next.querySelector<HTMLElement>('hoshineko-outlined-segmented-button')?.focus();
+      focusKeyboardTarget(next.querySelector<HTMLElement>('hoshineko-outlined-segmented-button'));
     } else {
       next.focus();
     }

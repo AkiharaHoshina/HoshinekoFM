@@ -635,9 +635,12 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       // 记录搜索历史（根页/类页搜索词共用一条历史；空词进入搜索态不记录）
       if (query.trim() !== '') onObjectSearchRecord?.(query);
       // review 19 决策 4：回车执行搜索后焦点落结果第一项（根页命中行 /
-      // 类页列表容器——对象面板渲染为异步导航，延时聚焦）
+      // 类页列表容器——对象面板渲染为异步导航，延时聚焦；**守卫仍在
+      // 搜索态**——若用户已退出搜索（Esc 等），不再落点（否则迟到
+      // 落点会把焦点从地址栏等偷到卡片上，实测 95a 踩中））
       if (query.trim() !== '') {
         setTimeout(() => {
+          if (!document.querySelector('.object-search-filter-bar')) return;
           const first = document.querySelector<HTMLElement>('.object-panel [data-obj-nav]');
           if (first) { first.focus(); return; }
           document.querySelector<HTMLElement>('.object-list-virtual, .object-list')?.focus();
