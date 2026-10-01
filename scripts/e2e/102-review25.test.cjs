@@ -366,8 +366,9 @@ exit 0
     h.assert.ok(style.value.otherBg === 'rgba(0, 0, 0, 0)' || style.value.otherBg === 'transparent', `未选中项应无背景（实际 ${style.value.otherBg}）`);
     h.assert.ok(/^12px$/.test(style.value.radius ?? ''), `选中项圆角应为 12px（实际 ${style.value.radius}）`);
 
-    // review 27：多个相邻选中项的高亮矩形之间应有竖向间隔（条目 margin-block
-    // 4px 对全部条目生效——相邻两个高亮矩形间隙 ≈ 8px，且选中/取消不移位）
+    // review 27/28：多个相邻选中项的高亮矩形之间应有竖向间隔，且与容器
+    // 左右边界同样留间隔——margin 四面 4px（相邻高亮矩形间隙 ≈ 8px、
+    // 左右边界 4px，三处间隔大小一致；对全部条目生效、选中/取消不移位）
     await h.js(win, `(() => {
       const item = document.querySelector('md-dialog[open] .search-quickadd-item[data-mime="text/x-beta"]');
       if (!item) return false;
@@ -378,12 +379,28 @@ exit 0
     const gap = await h.js(win, `(() => {
       const a = document.querySelector('md-dialog[open] .search-quickadd-item[data-mime="text/x-alpha"]');
       const b = document.querySelector('md-dialog[open] .search-quickadd-item[data-mime="text/x-beta"]');
+      const list = document.querySelector('md-dialog[open] .search-quickadd-list');
       const ra = a.getBoundingClientRect();
       const rb = b.getBoundingClientRect();
-      return { gap: rb.top - ra.bottom, marginA: getComputedStyle(a).marginBlockStart };
+      const rl = list.getBoundingClientRect();
+      const cs = getComputedStyle(a);
+      return {
+        vGap: rb.top - ra.bottom,
+        leftGap: ra.left - rl.left,
+        rightGap: rl.right - ra.right,
+        mTop: cs.marginTop,
+        mRight: cs.marginRight,
+        mBottom: cs.marginBottom,
+        mLeft: cs.marginLeft,
+      };
     })()`);
-    h.assert.ok(gap.value.gap >= 6, `相邻选中项高亮间应有间隔（实际 ${gap.value.gap}px）`);
-    h.assert.ok(gap.value.marginA === '4px', `条目应带竖向 margin（实际 ${gap.value.marginA}）`);
+    h.assert.ok(gap.value.vGap >= 6, `相邻选中项高亮间应有竖向间隔（实际 ${gap.value.vGap}px）`);
+    h.assert.ok(Math.abs(gap.value.leftGap - 4) <= 1, `选中项与左边界应间隔 4px（实际 ${gap.value.leftGap}px）`);
+    h.assert.ok(Math.abs(gap.value.rightGap - 4) <= 1, `选中项与右边界应间隔 4px（实际 ${gap.value.rightGap}px）`);
+    h.assert.strictEqual(gap.value.mTop, '4px', `margin-top 应为 4px（实际 ${gap.value.mTop}）`);
+    h.assert.strictEqual(gap.value.mRight, '4px', `margin-right 应为 4px（实际 ${gap.value.mRight}）`);
+    h.assert.strictEqual(gap.value.mBottom, '4px', `margin-bottom 应为 4px（实际 ${gap.value.mBottom}）`);
+    h.assert.strictEqual(gap.value.mLeft, '4px', `margin-left 应为 4px（实际 ${gap.value.mLeft}）`);
   });
 
   h.finish();
