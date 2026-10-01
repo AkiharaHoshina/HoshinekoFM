@@ -62,23 +62,22 @@ export function useProcessActions(confirm: ConfirmFn) {
   }, []);
 
   /**
-   * 提前授权进程优先级（ObjectPanel「解锁」按钮）：拉起持久 nice 助手
-   * （一次 pkexec 授权，**本会话有效**——助手常驻到应用退出，与 polkit
-   * 5 分钟临时授权缓存无关）。「先解锁再拖」模型下所有进程 nice 滑条
-   * 默认锁定，解锁后任意方向调整（含减小 nice 提高优先级）零弹框。
-   * 成功 toast 说明有效期；NO_TOOL/AUTH_FAILED 按码翻译。
+   * 提前授权全部特权滑条写入（ObjectPanel 任一「解锁」按钮，review 22
+   * 全局化）：拉起通用持久助手（一次 pkexec 授权，**本会话有效**——
+   * 助手常驻到应用退出，与 polkit 5 分钟临时授权缓存无关）。所有滑条
+   * （nice/背光/充电阈值）默认锁定，任一解锁后全部可用；任一锁定键
+   * 全部复锁。成功 toast 说明有效期；AUTH_FAILED 按码翻译。
    */
-  const unlockNice = useCallback((onDone?: (ok: boolean) => void) => {
+  const unlockPrivileged = useCallback((onDone?: (ok: boolean) => void) => {
     void (async () => {
-      const res = await window.electron.processNiceAuth();
+      const res = await window.electron.privilegedAuth();
       if (res.ok) {
         onDone?.(true);
         showToast(t('objects.process_nice_unlocked'), 'success');
         return;
       }
       onDone?.(false);
-      if (res.error === 'NO_TOOL') showToast(t('objects.process_nice_no_tool'), 'error');
-      else showToast(t('objects.write_auth_failed'), 'error');
+      showToast(t('objects.write_auth_failed'), 'error');
     })();
   }, []);
 
@@ -140,5 +139,5 @@ export function useProcessActions(confirm: ConfirmFn) {
     })();
   }, [confirm]);
 
-  return { confirmTerminate, niceProcess, unlockNice, batchTerminate, batchNice, toggleNetwork };
+  return { confirmTerminate, niceProcess, unlockPrivileged, batchTerminate, batchNice, toggleNetwork };
 }

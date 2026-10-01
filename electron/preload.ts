@@ -256,12 +256,10 @@ contextBridge.exposeInMainWorld('electron', {
   processSignal: (pid: number, signal: 'TERM' | 'KILL') => ipcRenderer.invoke('system:process-signal', pid, signal),
   /** Object Panel：调整进程 nice（-20..19，renice） */
   processNice: (pid: number, nice: number) => ipcRenderer.invoke('system:process-nice', pid, nice),
-  /** Object Panel：提前授权进程优先级（「解锁」按钮——一次 pkexec，本会话有效） */
-  processNiceAuth: () => ipcRenderer.invoke('system:process-nice-auth'),
-  /** Object Panel：撤销进程优先级授权（「锁定」按钮——kill 持久助手） */
-  processNiceLock: () => ipcRenderer.invoke('system:process-nice-lock'),
-  /** Object Panel：撤销 sysfs 写授权（背光/充电阈值共用「锁定」按钮） */
-  sysfsWriteLock: (classId: string, instanceId: string, key: string) => ipcRenderer.invoke('system:sysfs-write-lock', classId, instanceId, key),
+  /** Object Panel：提前授权全部特权滑条写入（任一「解锁」按钮——一次 pkexec，本会话有效，review 22 全局化） */
+  privilegedAuth: () => ipcRenderer.invoke('system:privileged-auth'),
+  /** Object Panel：撤销全部特权授权（任一「锁定」按钮——kill 通用特权助手） */
+  privilegedLock: () => ipcRenderer.invoke('system:privileged-lock'),
   /** Object Panel：批量终止进程（多选；逐项聚合结果） */
   processSignalBatch: (pids: number[], signal: 'TERM' | 'KILL') => ipcRenderer.invoke('system:process-signal-batch', pids, signal),
   /** Object Panel：批量调整进程 nice（多选预设档；逐项聚合结果） */

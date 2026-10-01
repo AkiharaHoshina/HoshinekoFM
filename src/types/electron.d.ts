@@ -569,12 +569,10 @@ export interface IElectronAPI {
     processSignal: (pid: number, signal: 'TERM' | 'KILL') => Promise<{ ok: boolean; error?: string }>;
     /** Object Panel：调整进程 nice（-20..19，renice） */
     processNice: (pid: number, nice: number) => Promise<{ ok: boolean; error?: string }>;
-    /** Object Panel：提前授权进程优先级（「解锁」按钮——一次 pkexec，本会话有效） */
-    processNiceAuth: () => Promise<{ ok: boolean; error?: string }>;
-    /** Object Panel：撤销进程优先级授权（「锁定」按钮——kill 持久助手） */
-    processNiceLock: () => Promise<{ ok: boolean; error?: string }>;
-    /** Object Panel：撤销 sysfs 写授权（背光/充电阈值共用「锁定」按钮） */
-    sysfsWriteLock: (classId: string, instanceId: string, key: string) => Promise<{ ok: boolean; error?: string }>;
+    /** Object Panel：提前授权全部特权滑条写入（任一「解锁」按钮——一次 pkexec，本会话有效，review 22 全局化） */
+    privilegedAuth: () => Promise<{ ok: boolean; error?: string }>;
+    /** Object Panel：撤销全部特权授权（任一「锁定」按钮——kill 通用特权助手） */
+    privilegedLock: () => Promise<{ ok: boolean; error?: string }>;
     /** Object Panel：批量终止进程（多选；逐项聚合结果） */
     processSignalBatch: (pids: number[], signal: 'TERM' | 'KILL') => Promise<{ ok: boolean; error?: string; results?: { pid: unknown; ok: boolean; error?: string }[] }>;
     /** Object Panel：批量调整进程 nice（多选预设档；逐项聚合结果） */

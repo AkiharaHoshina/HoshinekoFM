@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useSyncExternalStore } from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List, type RowComponentProps, useListRef, useListCallbackRef } from 'react-window';
 import { Icon } from './Icon';
@@ -22,6 +22,37 @@ import { gridNavIndex } from '../utils/gridNav';
 import type { ObjectClassInfo, ObjectInstance, ObjectReading, SmartInfo } from '../types/electron.d';
 import type { IFile } from '../types/files';
 import './ObjectPanel.css';
+
+// ── 全局特权解锁态（review 22） ──
+
+/**
+ * 模块级全局解锁态：解锁应该意味着**所有**需要提权的地方（nice/背光/
+ * 充电阈值滑条）都可用，且**切换页面/标签页不复锁**（助手是主进程级
+ * 通用单例，UI 态与之一致——review 22 用户定案）。任一解锁按钮置
+ * true（一次 pkexec 拉起通用助手）、任一锁定按钮置 false（kill 助手）。
+ * 模块级 store + useSyncExternalStore：同窗口全部 ObjectPanel 实例
+ * （多标签页）共享同一份状态。
+ */
+let privilegedUnlockedGlobal = false;
+const privilegedUnlockedListeners = new Set<() => void>();
+
+/** 设置全局特权解锁态（同一值不通知，防循环） */
+function setPrivilegedUnlockedGlobal(v: boolean): void {
+  if (privilegedUnlockedGlobal === v) return;
+  privilegedUnlockedGlobal = v;
+  for (const listener of privilegedUnlockedListeners) listener();
+}
+
+/** 订阅全局特权解锁态 */
+function usePrivilegedUnlocked(): boolean {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      privilegedUnlockedListeners.add(onStoreChange);
+      return () => { privilegedUnlockedListeners.delete(onStoreChange); };
+    },
+    () => privilegedUnlockedGlobal,
+  );
+}
 
 interface ObjectPanelProps {
   /** 当前 objects:// 路径 */
@@ -53,9 +84,10 @@ interface ObjectPanelProps {
   /** 调整进程 nice（L1，无确认；name 供 toast 文案；
    *  onDone 回报结果——成功后经它乐观回写读数） */
   onNiceProcess?: (pid: number, name: string, nice: number, onDone?: (ok: boolean) => void) => void;
-  /** 提前授权进程优先级（「解锁」按钮——一次 pkexec，本会话有效；
-   *  onDone 回报结果，成功后经它置 processUnlocked） */
-  onUnlockNice?: (onDone?: (ok: boolean) => void) => void;
+  /** 提前授权全部特权滑条写入（任一「解锁」按钮——一次 pkexec 拉起
+   *  通用助手，本会话有效；onDone 回报结果，成功后经它置全局解锁态。
+   *  review 22：解锁/锁定全局通用——nice/背光/充电阈值共用同一状态） */
+  onUnlockPrivileged?: (onDone?: (ok: boolean) => void) => void;
   /** 网络接口 up/down（down 的 L2 确认由 App 侧承担） */
   onNetworkToggle?: (iface: string, up: boolean) => void;
   /** 地址栏发起的对象搜索关键词（'' = 无搜索；根页跨类搜、类页类内搜；
@@ -578,7 +610,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   onEjectDevice,
   onTerminateProcess,
   onNiceProcess,
-  onUnlockNice,
+  onUnlockPrivileged,
   onNetworkToggle,
   searchQuery,
   inSearchState = false,
@@ -644,15 +676,11 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   const [backlightInitial, setBacklightInitial] = useState<number | null>(null);
   /** 充电上限入口值（「恢复原值」目标；路径切换复位） */
   const [chargeInitial, setChargeInitial] = useState<number | null>(null);
-  /** 充电上限会话解锁（「先解锁再拖」；路径切换复位） */
-  const [chargeUnlocked, setChargeUnlocked] = useState(false);
+  /** 全局特权解锁态（review 22：nice/背光/充电阈值共用——模块级 store，
+   *  同窗口全部标签页共享、路径切换不复位；任一锁定键全部复锁） */
+  const privilegedUnlocked = usePrivilegedUnlocked();
   /** 进程页入口 nice（「恢复优先级」目标） */
   const [processInitialNice, setProcessInitialNice] = useState<number | null>(null);
-  /** 背光会话解锁（「先解锁再拖」流程 B；路径切换复位） */
-  const [backlightUnlocked, setBacklightUnlocked] = useState(false);
-  /** nice 会话解锁（「先解锁再拖」——所有进程滑条默认锁定；助手为全局
-   *  单例，授权一次覆盖任意进程，故**路径切换不复位**，仅面板卸载复位） */
-  const [processUnlocked, setProcessUnlocked] = useState(false);
   /** 进程类页多选（与文件区同款模型：鼠标框选 + 快捷键；
    *  processAnchor = Shift 范围/框选锚点，processCursor = 方向键游标） */
   const [processSelected, setProcessSelected] = useState<Set<string>>(new Set());
@@ -821,8 +849,6 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     setProcessInitialNice(null);
     setChargeInitial(null);
     setProcessSort({ key: 'cpu', desc: true });
-    setBacklightUnlocked(false);
-    setChargeUnlocked(false);
     setReadFailCount(0);
     setProcessSelected(new Set());
     setProcessAnchor(null);
@@ -1165,59 +1191,64 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
             动方向不定）——所有进程滑条默认锁定、「先解锁再拖」（与背光
             同款，且解锁经一次 pkexec 授权**本会话有效**、任意方向零弹框：
             助手常驻到应用退出，与 polkit 5 分钟临时授权缓存无关）。
-            解锁按钮 = onUnlockNice（processNiceAuth 拉起助手），onDone
-            置 processUnlocked（面板会话级，路径切换不复位——助手全局
-            单例）；失败 toast 已在 hook 内。写入成功经 onDone 乐观回写
+            解锁按钮 = onUnlockPrivileged（privilegedAuth 拉起通用助手），
+            onDone 置全局解锁态（review 22：nice/背光/充电阈值共用、
+            切换页面不复锁）；失败 toast 已在 hook 内。写入成功经 onDone 乐观回写
             读数——受控滑条不再等 1s 轮询回跳，且与成功 toast 共同确认
             「已生效」。提示行独立在第二行：锁定 = 授权与有效期说明、
             已解锁 = 常驻「已解锁」状态（与背光同款） */}
-        <div className="object-nice-block" data-detail-group="process-nice">
+        <div className="object-nice-block">
           <div className="object-nice-row">
             <span className="object-reading-label">{t('objects.process_nice')}</span>
-            {/* review 21：滑条显示**优先级数值**（= -nice，范围 -19..20）——
-                nice 越低优先级越高（-20 最高），右方向键 = 数值增大 =
-                优先级升高，与「右方向键向右」直觉一致；写入时内部取反
-                为 nice（onNiceProcess/processInitialNice/读数快照全部
-                保持 nice 语义不变） */}
-            <Slider
-              className="object-nice-slider"
-              value={-r.nice}
-              min={-19}
-              max={20}
-              step={1}
-              labeled
-              disabled={!processUnlocked}
-              title={processUnlocked ? undefined : t('objects.need_permission')}
-              onChange={(e) => {
-                const v = Number((e.target as HTMLInputElement).value);
-                if (!Number.isFinite(v)) return;
-                const nice = -v;
-                if (nice !== r.nice) {
-                  onNiceProcess?.(r.pid, r.name, nice, () => setReading((prev) => (prev?.kind === 'process' ? { ...prev, nice } : prev)));
-                }
-              }}
-            />
+            {/* review 21：滑条位置映射**优先级数值**（= -nice，范围
+                -19..20）——右方向键 = 数值增大 = 优先级升高；写入时内部
+                取反为 nice。review 22：labeled 预览气泡经 valueLabel
+                显示真实值（nice）——气泡不取反 */}
+            <div className="object-nice-slider-group" data-detail-group="process-nice-slider">
+              <Slider
+                className="object-nice-slider"
+                value={-r.nice}
+                valueLabel={String(r.nice)}
+                min={-19}
+                max={20}
+                step={1}
+                labeled
+                disabled={!privilegedUnlocked}
+                title={privilegedUnlocked ? undefined : t('objects.need_permission')}
+                onChange={(e) => {
+                  const v = Number((e.target as HTMLInputElement).value);
+                  if (!Number.isFinite(v)) return;
+                  const nice = -v;
+                  if (nice !== r.nice) {
+                    onNiceProcess?.(r.pid, r.name, nice, () => setReading((prev) => (prev?.kind === 'process' ? { ...prev, nice } : prev)));
+                  }
+                }}
+              />
+            </div>
             <span className="object-reading-value">{-r.nice}</span>
-            {!processUnlocked && (
-              <Button variant="tonal" onClick={() => onUnlockNice?.((ok) => { if (ok) setProcessUnlocked(true); })}>
-                {t('objects.unlock')}
-              </Button>
-            )}
-            {processUnlocked && (
-              <>
-                <Button variant="text" onClick={() => { void window.electron.processNiceLock(); setProcessUnlocked(false); }}>
-                  {t('objects.lock')}
+            {/* review 22：锁定按钮独立 Tab 停靠（滑条 → 锁定） */}
+            <div className="object-nice-buttons-group" data-detail-group="process-nice-actions">
+              {!privilegedUnlocked && (
+                <Button variant="tonal" onClick={() => onUnlockPrivileged?.((ok) => { if (ok) setPrivilegedUnlockedGlobal(true); })}>
+                  {t('objects.unlock')}
                 </Button>
-                {processInitialNice !== null && processInitialNice !== r.nice && (
-                  <Button variant="text" onClick={() => onNiceProcess?.(r.pid, r.name, processInitialNice, () => setReading((prev) => (prev?.kind === 'process' ? { ...prev, nice: processInitialNice } : prev)))}>
-                    {t('objects.restore_value')}
+              )}
+              {privilegedUnlocked && (
+                <>
+                  <Button variant="text" onClick={() => { void window.electron.privilegedLock(); setPrivilegedUnlockedGlobal(false); }}>
+                    {t('objects.lock')}
                   </Button>
-                )}
-              </>
-            )}
+                  {processInitialNice !== null && processInitialNice !== r.nice && (
+                    <Button variant="text" onClick={() => onNiceProcess?.(r.pid, r.name, processInitialNice, () => setReading((prev) => (prev?.kind === 'process' ? { ...prev, nice: processInitialNice } : prev)))}>
+                      {t('objects.restore_value')}
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
           <div className="object-hint">
-            {processUnlocked ? t('objects.process_nice_unlocked') : t('objects.process_nice_lock_hint')}
+            {privilegedUnlocked ? t('objects.process_nice_unlocked') : t('objects.process_nice_lock_hint')}
           </div>
         </div>
         {actions.length > 0 ? <div className="object-actions" data-detail-group="process-actions">{actions}</div> : null}
@@ -1229,7 +1260,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   const renderBacklightActions = (inst: ObjectInstance) => {
     const r = reading && reading.kind === 'backlight' ? reading : null;
     if (!r || r.maxBrightness <= 0) return null;
-    const unlocked = r.writable || backlightUnlocked;
+    const unlocked = r.writable || privilegedUnlocked;
     /** 写入（ok 乐观更新 + onOk 回调；失败复位解锁态 + toast——授权取消/助手退出等）；
      *  成功时维护紧急恢复注册表：改离入口值登记、写回入口值清项（首次登记
      *  优先保留会话内最早快照） */
@@ -1246,52 +1277,61 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
           }
           onOk?.();
         } else {
-          setBacklightUnlocked(false);
+          setPrivilegedUnlockedGlobal(false);
           const errMsg = res.error === 'AUTH_FAILED' ? t('objects.write_auth_failed') : t('objects.write_failed', res.error ?? '');
           showToast(errMsg, 'error');
         }
       });
     };
     return (
-      <div className="object-actions-block object-actions-block--slider" data-detail-group="backlight">
+      <div className="object-actions-block object-actions-block--slider">
         <div className="object-actions object-actions--slider">
-          <Slider
-            className="object-brightness-slider"
-            value={r.brightness}
-            min={0}
-            max={r.maxBrightness}
-            step={1}
-            labeled
-            disabled={!unlocked}
-            title={unlocked ? undefined : t('objects.need_permission')}
-            onChange={(e) => {
-              const v = Number((e.target as HTMLInputElement).value);
-              if (!Number.isFinite(v) || v === r.brightness) return;
-              write(v, true);
-            }}
-          />
-          {!unlocked && (
-            <Button variant="tonal" onClick={() => write(r.brightness, false, () => {
-              setBacklightUnlocked(true);
-              showToast(t('objects.backlight_unlocked'), 'success');
-            })}>
-              {t('objects.unlock')}
-            </Button>
-          )}
-          {unlocked && (
-            <>
-              {!r.writable && (
-                <Button variant="text" onClick={() => { void window.electron.sysfsWriteLock('backlight', inst.id, 'brightness'); setBacklightUnlocked(false); }}>
-                  {t('objects.lock')}
-                </Button>
-              )}
-              {backlightInitial !== null && backlightInitial !== r.brightness && (
-                <Button variant="text" onClick={() => write(backlightInitial, true)}>
-                  {t('objects.restore_value')}
-                </Button>
-              )}
-            </>
-          )}
+          {/* review 22：滑条与锁定按钮拆成两个详情页 Tab 停靠（滑条组 →
+             按钮组）——锁定态滑条禁用、组跳过，Tab 落按钮组解锁按钮；
+             解锁态滑条组 → 按钮组锁定按钮 */}
+          <div className="object-brightness-slider-group" data-detail-group="backlight-slider">
+            <Slider
+              className="object-brightness-slider"
+              value={r.brightness}
+              min={0}
+              max={r.maxBrightness}
+              step={1}
+              labeled
+              disabled={!unlocked}
+              title={unlocked ? undefined : t('objects.need_permission')}
+              onChange={(e) => {
+                const v = Number((e.target as HTMLInputElement).value);
+                if (!Number.isFinite(v) || v === r.brightness) return;
+                write(v, true);
+              }}
+            />
+          </div>
+          <div className="object-brightness-buttons-group" data-detail-group="backlight-actions">
+            {!unlocked && (
+              <Button variant="tonal" onClick={() => onUnlockPrivileged?.((ok) => {
+                if (ok) {
+                  setPrivilegedUnlockedGlobal(true);
+                  showToast(t('objects.backlight_unlocked'), 'success');
+                }
+              })}>
+                {t('objects.unlock')}
+              </Button>
+            )}
+            {unlocked && (
+              <>
+                {!r.writable && (
+                  <Button variant="text" onClick={() => { void window.electron.privilegedLock(); setPrivilegedUnlockedGlobal(false); }}>
+                    {t('objects.lock')}
+                  </Button>
+                )}
+                {backlightInitial !== null && backlightInitial !== r.brightness && (
+                  <Button variant="text" onClick={() => write(backlightInitial, true)}>
+                    {t('objects.restore_value')}
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
         </div>
         {/* 提示独立第二行（与进程 nice 同款）：只读设备锁定 = 授权与有效期
             说明、解锁后 = 常驻「已解锁」状态；原生可写设备无锁定概念不提示 */}
@@ -1328,7 +1368,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     const write = (v: number, optimistic: boolean, onOk?: () => void) => {
       void window.electron.writeObject('power', inst.id, 'chargeThreshold', v).then(async (res) => {
         if (!res.ok) {
-          setChargeUnlocked(false);
+          setPrivilegedUnlockedGlobal(false);
           showToast(res.error === 'AUTH_FAILED' ? t('objects.write_auth_failed') : t('objects.write_failed', res.error ?? ''), 'error');
           return;
         }
@@ -1336,7 +1376,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         const back = await window.electron.readObject('power', inst.id);
         const backValue = back?.kind === 'power' ? back.chargeThreshold : null;
         if (backValue !== v) {
-          setChargeUnlocked(false);
+          setPrivilegedUnlockedGlobal(false);
           showToast(t('objects.charge_threshold_unsupported'), 'warning');
           return;
         }
@@ -1345,45 +1385,50 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       });
     };
     return (
-      <div className="object-actions-block object-actions-block--slider" data-detail-group="charge">
+      <div className="object-actions-block object-actions-block--slider">
         <div className="object-actions object-actions--slider">
           <span className="object-reading-label">{t('objects.charge_threshold')}</span>
-          <Slider
-            className="object-brightness-slider"
-            value={threshold}
-            min={0}
-            max={100}
-            step={1}
-            labeled
-            disabled={!chargeUnlocked}
-            title={chargeUnlocked ? undefined : t('objects.need_permission')}
-            onChange={(e) => {
-              const v = Number((e.target as HTMLInputElement).value);
-              if (!Number.isFinite(v) || v === threshold) return;
-              write(v, true);
-            }}
-          />
+          {/* review 22：滑条与锁定按钮拆成两个 Tab 停靠（同背光） */}
+          <div className="object-brightness-slider-group" data-detail-group="charge-slider">
+            <Slider
+              className="object-brightness-slider"
+              value={threshold}
+              min={0}
+              max={100}
+              step={1}
+              labeled
+              disabled={!privilegedUnlocked}
+              title={privilegedUnlocked ? undefined : t('objects.need_permission')}
+              onChange={(e) => {
+                const v = Number((e.target as HTMLInputElement).value);
+                if (!Number.isFinite(v) || v === threshold) return;
+                write(v, true);
+              }}
+            />
+          </div>
           <span className="object-reading-value">{threshold}%</span>
-          {!chargeUnlocked && (
-            <Button variant="tonal" onClick={() => write(threshold, false, () => setChargeUnlocked(true))}>
-              {t('objects.unlock')}
-            </Button>
-          )}
-          {chargeUnlocked && (
-            <>
-              <Button variant="text" onClick={() => { void window.electron.sysfsWriteLock('power', inst.id, 'chargeThreshold'); setChargeUnlocked(false); }}>
-                {t('objects.lock')}
+          <div className="object-brightness-buttons-group" data-detail-group="charge-actions">
+            {!privilegedUnlocked && (
+              <Button variant="tonal" onClick={() => onUnlockPrivileged?.((ok) => { if (ok) setPrivilegedUnlockedGlobal(true); })}>
+                {t('objects.unlock')}
               </Button>
-              {chargeInitial !== null && chargeInitial !== threshold && (
-                <Button variant="text" onClick={() => write(chargeInitial, true)}>
-                  {t('objects.restore_value')}
+            )}
+            {privilegedUnlocked && (
+              <>
+                <Button variant="text" onClick={() => { void window.electron.privilegedLock(); setPrivilegedUnlockedGlobal(false); }}>
+                  {t('objects.lock')}
                 </Button>
-              )}
-            </>
-          )}
+                {chargeInitial !== null && chargeInitial !== threshold && (
+                  <Button variant="text" onClick={() => write(chargeInitial, true)}>
+                    {t('objects.restore_value')}
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
         </div>
         <div className="object-hint">
-          {chargeUnlocked ? t('objects.charge_threshold_unlocked_hint') : t('objects.charge_threshold_lock_hint')}
+          {privilegedUnlocked ? t('objects.charge_threshold_unlocked_hint') : t('objects.charge_threshold_lock_hint')}
         </div>
       </div>
     );
@@ -2227,12 +2272,13 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
             <Slider
               className="object-batch-nice-slider"
               value={-batchNiceValue}
+              valueLabel={String(batchNiceValue)}
               min={-19}
               max={20}
               step={1}
               labeled
-              disabled={batchSelectedInstances.length < 1 || !processUnlocked}
-              title={processUnlocked ? undefined : t('objects.need_permission')}
+              disabled={batchSelectedInstances.length < 1 || !privilegedUnlocked}
+              title={privilegedUnlocked ? undefined : t('objects.need_permission')}
               onChange={(e) => {
                 const v = Number((e.target as HTMLInputElement).value);
                 if (!Number.isFinite(v)) return;
@@ -2244,12 +2290,12 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
           </div>
           <span className="object-batch-nice-value">{-batchNiceValue}</span>
           <div className="object-batch-lock-zone" data-kb-zone="object-batch-lock" tabIndex={-1}>
-            {!processUnlocked ? (
-              <Button variant="tonal" disabled={batchSelectedInstances.length < 1} onClick={() => onUnlockNice?.((ok) => { if (ok) setProcessUnlocked(true); })}>
+            {!privilegedUnlocked ? (
+              <Button variant="tonal" disabled={batchSelectedInstances.length < 1} onClick={() => onUnlockPrivileged?.((ok) => { if (ok) setPrivilegedUnlockedGlobal(true); })}>
                 {t('objects.unlock')}
               </Button>
             ) : (
-              <Button variant="text" disabled={batchSelectedInstances.length < 1} onClick={() => { void window.electron.processNiceLock(); setProcessUnlocked(false); }}>
+              <Button variant="text" disabled={batchSelectedInstances.length < 1} onClick={() => { void window.electron.privilegedLock(); setPrivilegedUnlockedGlobal(false); }}>
                 {t('objects.lock')}
               </Button>
             )}
@@ -2485,7 +2531,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       },
     });
     // 滑条站仅解锁时注册（「如果解锁」）——锁定态不注册自动跳过
-    const c3 = processUnlocked
+    const c3 = privilegedUnlocked
       ? registerKeyboardZone({
         id: 'object-batch-slider',
         focus: () => {
@@ -2506,7 +2552,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       },
     });
     return () => { c1(); c2(); c3?.(); c4(); };
-  }, [isProcessClass, parsed?.instanceId, processUnlocked]);
+  }, [isProcessClass, parsed?.instanceId, privilegedUnlocked]);
 
   /** 排序条线性 roving（决策 9）：segmented 四按钮 + 升降序 + 树按钮按序
    *  ←/→ 移动——捕获阶段拦截 segmented 内部 ←/→ roving（跨控件线性语义

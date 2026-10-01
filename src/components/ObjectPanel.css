@@ -687,6 +687,35 @@
   min-width: 200px;
 }
 
+/* review 22：滑条/按钮组拆成两个详情页 Tab 停靠——组 wrapper 承接原
+ * 滑条的 flex 布局职责（数据 data-detail-group 挂 wrapper）；按钮组
+ * 内部按钮保持原行间距 */
+.object-nice-slider-group,
+.object-brightness-slider-group {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  align-items: center;
+}
+
+.object-brightness-slider-group {
+  min-width: 200px;
+}
+
+.object-nice-slider-group .object-nice-slider,
+.object-brightness-slider-group .object-brightness-slider {
+  flex: 1;
+  min-width: 0;
+}
+
+.object-nice-buttons-group,
+.object-brightness-buttons-group {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .object-actions--slider {
   align-items: center;
 }

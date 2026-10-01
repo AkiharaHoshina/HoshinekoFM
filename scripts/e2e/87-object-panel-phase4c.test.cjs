@@ -34,17 +34,20 @@ const { ipcMain } = require('electron');
   process.env.HOSHINEKO_E2E_SYSFS_DIR = sysfsDir;
   process.env.HOSHINEKO_E2E_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-cfg87-'));
 
-  // 假 pkexec（通用写值助手契约——与 83/85 同款；nice 分支不触发）
+  // 假 pkexec（review 22 通用助手契约：stdin `write <path> <value>` 写
+  // 值回 ok / `nice <nice> <pid>` 回 ok；nice 分支不触发）
   const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-bin87-'));
   const pkLog = path.join(binDir, 'pkexec.log');
   fs.writeFileSync(path.join(binDir, 'pkexec'), `#!/bin/sh
 echo "$@" >> "${pkLog}"
 if [ "$1" != "sh" ]; then exit 126; fi
-target="$5"
 printf 'ready\\n'
-while IFS= read -r v; do
-  chmod u+w "$target" 2>/dev/null
-  if printf '%s' "$v" > "$target"; then chmod u-w "$target" 2>/dev/null; printf 'ok\\n'; else chmod u-w "$target" 2>/dev/null; printf 'err\\n'; fi
+while IFS= read -r line; do
+  set -- $line
+  case "$1" in
+    write) p="$2"; v="$3"; chmod u+w "$p" 2>/dev/null; if printf '%s' "$v" > "$p"; then chmod u-w "$p" 2>/dev/null; printf 'ok\\n'; else chmod u-w "$p" 2>/dev/null; printf 'err\\n'; fi;;
+    nice) printf 'ok\\n';;
+  esac
 done
 exit 0
 `);
@@ -76,10 +79,9 @@ exit 0
       return s ? s.disabled : null;
     })()`);
     h.assert.ok(locked.value === true, '充电上限滑条应默认锁定');
-    // 解锁（写当前值 → EPERM → 助手授权；pkexec 一次）
+    // 解锁（privilegedAuth 直接拉起通用助手；pkexec 一次）
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-actions--slider > *')];
-      const b = btns.find((x) => /解锁|Unlock|ロック解除|잠금 해제/.test(x.textContent ?? ''));
+      const b = document.querySelector('.object-brightness-buttons-group md-filled-tonal-button');
       if (!b) return false;
       b.click();
       return true;
@@ -107,8 +109,7 @@ exit 0
     h.assert.ok(pkLines().length === 1, `拖动不应再次拉起 pkexec（实际 ${pkLines().length} 次）`);
     // 恢复原值 → 100
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-actions--slider > *')];
-      const b = btns.find((x) => /恢复原值|Restore value|元の値に戻す|원래 값으로/.test(x.textContent ?? ''));
+      const b = [...document.querySelectorAll('.object-brightness-buttons-group > *')].find((x) => /恢复原值|Restore value|元の値に戻す|원래 값으로/.test(x.textContent ?? ''));
       if (!b) return false;
       b.click();
       return true;

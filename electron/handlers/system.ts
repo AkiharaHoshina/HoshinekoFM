@@ -3525,9 +3525,9 @@ export function registerSystemHandlers(
       const msg = getExecError(e).message;
       if (PERMISSION_DENIED_RE.test(msg)) {
         try {
-          const helper = await ensureNiceHelper();
+          const helper = await ensurePrivHelper();
           if (!helper) return { ok: false, error: 'AUTH_FAILED' };
-          const wrote = await privilegedHelperWrite(helper, `${niceNum} ${pidNum}`);
+          const wrote = await privilegedHelperWrite(helper, `nice ${niceNum} ${pidNum}`);
           return wrote ? { ok: true, escalated: true } : { ok: false, error: 'HELPER_FAILED' };
         } catch (e2) {
           return { ok: false, error: getExecError(e2).message.slice(0, 200) || 'AUTH_FAILED' };
@@ -3648,52 +3648,29 @@ export function registerSystemHandlers(
 
   // ── 背光特权写助手 ──
 
-  /**
-   * 背光只读文件（root:root 644 的 intel_backlight 等）的持久特权写助手。
-   * 助手脚本只用 shell 内建（printf/read/test）——pkexec 环境无 PATH，
-   * 不依赖外部命令。安全：target 在 spawn 前已过 SYSFS_ID_RE + 前缀
-   * 双保险（无引号/空格/斜杠），值在主进程侧整数校验（0..max_brightness）。
-   * 动机与生命周期语义见 launchPrivilegedHelper 注释。
-   */
-  const backlightHelpers = new Map<string, PrivilegedHelper>();
+  // ── 通用特权助手（review 22：背光 / 充电阈值 / 进程 nice 合并） ──
 
   /**
-   * 获取（或拉起）target 的写助手（背光/充电阈值等 sysfs 写目标共用——
-   * 助手脚本通用「写值到 $1」）；授权失败/超时回 null。写入侧调用——
-   * 非 null 即已收到 ready 行（pkexec 授权成功、sh 就绪）。
-   */
-  async function ensureBacklightHelper(target: string): Promise<PrivilegedHelper | null> {
-    const existing = backlightHelpers.get(target);
-    if (existing) {
-      if (existing.proc.exitCode === null && existing.proc.signalCode === null) return existing;
-      backlightHelpers.delete(target);
-    }
-    return launchPrivilegedHelper(
-      backlightHelpers,
-      target,
-      'printf "ready\\n"; while IFS= read -r v; do printf "%s" "$v" > "$1" && printf "ok\\n" || printf "err\\n"; done',
-      'hoshineko-backlight',
-      [target],
-    );
-  }
-
-  // ── 进程 nice 特权助手 ──
-
-  /**
-   * 进程优先级（nice）持久特权助手——跨用户/root 进程 renice 需要
-   * CAP_SYS_NICE（直跑 EPERM，见 process-nice 的回落分支）。与背光同款
-   * 「一次 pkexec 授权、拖动零弹框」。助手脚本：stdin 行协议
-   * `nice pid\n` → `renice -n <nice> -p <pid>` → ok/err。
+   * 通用持久特权助手——一次 pkexec 授权覆盖全部需要提权的滑条写入
+   * （sysfs 只读文件的背光/充电阈值直写 EACCES 回落、跨用户 renice
+   * EPERM 回落）。「先解锁再拖」模型下所有滑条默认锁定，任一解锁按钮 =
+   * system:privileged-auth 提前拉起本助手（一次 pkexec）；本会话内
+   * 任意写入零弹框；任一锁定按钮 = system:privileged-lock kill 助手、
+   * 全部复锁（review 22 用户定案：解锁/锁定全局通用、切换页面不复锁）。
    *
-   * renice 传**绝对路径**（pkexec 环境无 PATH，与 network-set 的 ip 同源
-   * 手法；ensure 时经 command -v 解析，缺失回 null = NO_TOOL 语义）。
-   * 安全：nice/pid 在主进程侧整数校验后才进 stdin；助手除 renice 无其他
-   * 能力。单例（key 固定 'nice'）：renice 不依赖目标，授权一次即可调整
-   * 任意进程——**「先解锁再拖」模型下所有进程滑条默认锁定，解锁按钮 =
-   * system:process-nice-auth 提前拉起助手（一次 pkexec）**；本会话内
-   * 任意方向调整（含减小 nice 提高优先级）零弹框。
+   * stdin 行协议（主进程侧校验后才进 stdin）：
+   * - `write <path> <value>` → `printf %s value > path` → ok/err（path 经
+   *   SYSFS_ID_RE + 前缀 + 固定文件名解析，无空格/斜杠注入面；value 整数）；
+   * - `nice <nice> <pid>` → `renice -n nice -p pid` → ok/err（nice/pid 整数；
+   *   renice 绝对路径经 command -v 解析——pkexec 环境无 PATH，与
+   *   network-set 的 ip 同源手法；缺失时 nice 命令恒 err = NO_TOOL 语义）。
+   *
+   * 助手脚本只用 shell 内建（printf/read/test/case）+ renice——pkexec
+   * 环境无 PATH，不依赖外部命令。单例（key 'priv'）：授权一次覆盖全部
+   * 目标；安全面与旧按 target 键控助手一致（路径仍由主进程白名单解析，
+   * 助手不接触任何用户可控字符串之外的数据）。
    */
-  const niceHelpers = new Map<string, PrivilegedHelper>();
+  const privHelpers = new Map<string, PrivilegedHelper>();
 
   /** renice 绝对路径解析（会话内缓存——renice 不会中途消失） */
   let renicePathCache: string | null | undefined;
@@ -3707,35 +3684,35 @@ export function registerSystemHandlers(
     return renicePathCache;
   }
 
-  /** 获取（或拉起）全局 nice 助手；授权失败/超时/工具缺失回 null */
-  async function ensureNiceHelper(): Promise<PrivilegedHelper | null> {
-    const existing = niceHelpers.get('nice');
+  /**
+   * 获取（或拉起）全局通用特权助手；授权失败/超时回 null。写入侧调用——
+   * 非 null 即已收到 ready 行（pkexec 授权成功、sh 就绪）。
+   */
+  async function ensurePrivHelper(): Promise<PrivilegedHelper | null> {
+    const existing = privHelpers.get('priv');
     if (existing) {
       if (existing.proc.exitCode === null && existing.proc.signalCode === null) return existing;
-      niceHelpers.delete('nice');
+      privHelpers.delete('priv');
     }
     const renicePath = await resolveRenicePath();
-    if (!renicePath) return null;
     return launchPrivilegedHelper(
-      niceHelpers,
-      'nice',
-      'printf "ready\\n"; r="$1"; while IFS= read -r line; do set -- $line; "$r" -n "$1" -p "$2" >/dev/null 2>&1 && printf "ok\\n" || printf "err\\n"; done',
-      'hoshineko-nice',
-      [renicePath],
+      privHelpers,
+      'priv',
+      'printf "ready\\n"; R="$1"; while IFS= read -r line; do set -- $line; case "$1" in write) printf "%s" "$3" > "$2" && printf "ok\\n" || printf "err\\n";; nice) [ -n "$R" ] && "$R" -n "$2" -p "$3" >/dev/null 2>&1 && printf "ok\\n" || printf "err\\n";; esac; done',
+      'hoshineko-priv',
+      [renicePath ?? ''],
     );
   }
 
   /**
-   * 提前授权进程优先级调整（前端「解锁」按钮）：直接拉起持久 nice 助手
-   * ——一次 pkexec 授权，**本会话有效**（助手常驻到主进程退出，与
-   * polkit 5 分钟临时授权缓存无关——缓存只影响重新 spawn pkexec，助手
-   * 只 spawn 一次；后续写走 stdin 行协议零弹框）。失败码：
-   * NO_TOOL（renice 缺失）/AUTH_FAILED（授权取消/超时/助手拉起失败）。
+   * 提前授权全部特权滑条写入（前端任一「解锁」按钮，review 22 全局化）：
+   * 直接拉起通用持久助手——一次 pkexec 授权，**本会话有效**（助手常驻到
+   * 主进程退出，与 polkit 5 分钟临时授权缓存无关；后续写走 stdin 行协议
+   * 零弹框）。失败码：AUTH_FAILED（授权取消/超时/助手拉起失败）。
    */
-  ipcMain.handle('system:process-nice-auth', async () => {
-    if (!(await resolveRenicePath())) return { ok: false, error: 'NO_TOOL' };
+  ipcMain.handle('system:privileged-auth', async () => {
     try {
-      const helper = await ensureNiceHelper();
+      const helper = await ensurePrivHelper();
       return helper ? { ok: true } : { ok: false, error: 'AUTH_FAILED' };
     } catch (e) {
       return { ok: false, error: getExecError(e).message.slice(0, 200) || 'AUTH_FAILED' };
@@ -3750,31 +3727,12 @@ export function registerSystemHandlers(
   }
 
   /**
-   * 撤销进程优先级授权（前端「锁定」按钮）：kill nice 单例助手——下次
-   * 减小 nice 重新弹 pkexec 授权。与解锁对称，补齐「一次授权会话有效」
-   * 的收回入口。
+   * 撤销全部特权授权（前端任一「锁定」按钮，review 22 全局化）：kill
+   * 通用助手——下次任何需要提权的写入重新弹 pkexec 授权。所有锁定键
+   * 通用（用户定案）。
    */
-  ipcMain.handle('system:process-nice-lock', () => {
-    killPrivilegedHelper(niceHelpers, 'nice');
-    return { ok: true };
-  });
-
-  /**
-   * 撤销 sysfs 写授权（前端「锁定」按钮；背光/充电阈值共用）：按
-   * 类/键/实例定位写目标（与 write-object 同源校验）kill 助手
-   * （registry key 与 ensureBacklightHelper 同源）。
-   */
-  ipcMain.handle('system:sysfs-write-lock', (_event, classId: unknown, instanceId: unknown, key: unknown) => {
-    if (typeof instanceId !== 'string' || !SYSFS_ID_RE.test(instanceId)) return { ok: false, error: 'INVALID_ID' };
-    let target: string;
-    if (classId === 'backlight' && key === 'brightness') {
-      target = path.join(getSysfsRoot(), 'class', 'backlight', instanceId, 'brightness');
-    } else if (classId === 'power' && key === 'chargeThreshold') {
-      target = path.join(getSysfsRoot(), 'class', 'power_supply', instanceId, 'charge_control_end_threshold');
-    } else {
-      return { ok: false, error: 'UNKNOWN_CLASS' };
-    }
-    killPrivilegedHelper(backlightHelpers, target);
+  ipcMain.handle('system:privileged-lock', () => {
+    killPrivilegedHelper(privHelpers, 'priv');
     return { ok: true };
   });
 
@@ -4009,12 +3967,12 @@ export function registerSystemHandlers(
         const msg = getExecError(e).message;
         if (PERMISSION_DENIED_RE.test(msg)) {
           try {
-            const helper = await ensureNiceHelper();
+            const helper = await ensurePrivHelper();
             if (!helper) {
               results.push({ pid, ok: false, error: 'AUTH_FAILED' });
               continue;
             }
-            const wrote = await privilegedHelperWrite(helper, `${niceNum} ${pidNum}`);
+            const wrote = await privilegedHelperWrite(helper, `nice ${niceNum} ${pidNum}`);
             results.push(wrote ? { pid, ok: true } : { pid, ok: false, error: 'HELPER_FAILED' });
           } catch (e2) {
             results.push({ pid, ok: false, error: getExecError(e2).message.slice(0, 200) || 'AUTH_FAILED' });
@@ -4070,9 +4028,9 @@ export function registerSystemHandlers(
         return { ok: false, error: msg.slice(0, 200) };
       }
       try {
-        const helper = await ensureBacklightHelper(target);
+        const helper = await ensurePrivHelper();
         if (!helper) return { ok: false, error: 'AUTH_FAILED' };
-        const wrote = await privilegedHelperWrite(helper, String(v));
+        const wrote = await privilegedHelperWrite(helper, `write ${target} ${v}`);
         return wrote ? { ok: true, previous, escalated: true } : { ok: false, error: 'WRITE_FAILED' };
       } catch (e2) {
         return { ok: false, error: getExecError(e2).message.slice(0, 200) || 'AUTH_FAILED' };

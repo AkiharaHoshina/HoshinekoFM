@@ -6,7 +6,7 @@
  *   默认锁定（先解锁再拖）；
  * - 假数据（removeHandler 模式）：指标列渲染、排序条（按 CPU 翻转行序）、
  *   实例页读数、终止/强制结束走 App 级 ConfirmDialog（取消不调用、确认
- *   记录 TERM/KILL）、nice 滑条锁定→解锁（假 process-nice-auth）→拖动
+ *   记录 TERM/KILL）、nice 滑条锁定→解锁（假 privileged-auth）→拖动
  *   记录 + 恢复按钮回写初值。
  */
 const h = require('./harness.cjs');
@@ -116,7 +116,7 @@ const { ipcMain } = require('electron');
     ipcMain.removeHandler('system:read-object');
     ipcMain.removeHandler('system:process-signal');
     ipcMain.removeHandler('system:process-nice');
-    ipcMain.removeHandler('system:process-nice-auth');
+    ipcMain.removeHandler('system:privileged-auth');
     ipcMain.handle('system:list-objects', async () => [
       { id: 'storage', icon: 'hard_drive', instances: [] },
       { id: 'processor', icon: 'memory', instances: [] },
@@ -126,7 +126,7 @@ const { ipcMain } = require('electron');
     ipcMain.handle('system:read-object', async (_e, _c, instanceId) => (READINGS[instanceId] ? makeReading(instanceId) : null));
     ipcMain.handle('system:process-signal', async (_e, pid, signal) => { signalCalls.push({ pid, signal }); return { ok: true }; });
     ipcMain.handle('system:process-nice', async (_e, pid, nice) => { niceCalls.push({ pid, nice }); niceState[String(pid)] = nice; return { ok: true }; });
-    ipcMain.handle('system:process-nice-auth', async () => ({ ok: true }));
+    ipcMain.handle('system:privileged-auth', async () => ({ ok: true }));
 
     const dir = h.tempDir();
     h.makeFileTree(dir, { 'a.txt': 'x' });
@@ -291,8 +291,7 @@ const { ipcMain } = require('electron');
     h.assert.ok(lockedNice.value.disabled === true, 'nice 滑条应默认锁定');
     h.assert.ok(lockedNice.value.hasUnlock === true, '应有「解锁」按钮');
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-nice-row > *')];
-      const b = btns.find((x) => /解锁|Unlock|ロック解除|잠금 해제/.test(x.textContent ?? ''));
+      const b = document.querySelector('.object-nice-buttons-group md-filled-tonal-button');
       if (!b) return false;
       b.click();
       return true;
@@ -310,9 +309,9 @@ const { ipcMain } = require('electron');
     })()`, true);
     await h.sleep(300);
     h.assert.ok(niceCalls.length === 1 && niceCalls[0].pid === 100 && niceCalls[0].nice === 5, `应记录 nice=5：${JSON.stringify(niceCalls)}`);
-    await h.waitFor(win, `Array.from(document.querySelectorAll('.object-actions button, .object-nice-row > *')).some((x) => /恢复原值|Restore value|元の値に戻す|원래 값으로/.test(x.textContent ?? ''))`, { timeout: 8000 });
+    await h.waitFor(win, `Array.from(document.querySelectorAll('.object-nice-buttons-group > *')).some((x) => /恢复原值|Restore value|元の値に戻す|원래 값으로/.test(x.textContent ?? ''))`, { timeout: 8000 });
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-nice-row > *')];
+      const btns = [...document.querySelectorAll('.object-nice-buttons-group > *')];
       const b = btns.find((x) => /恢复原值|Restore value|元の値に戻す|원래 값으로/.test(x.textContent ?? ''));
       if (!b) return false;
       b.click();

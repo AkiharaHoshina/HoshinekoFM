@@ -200,8 +200,8 @@ const { ipcMain } = require('electron');
         exe: '/usr/bin/x', cwd: '/', isSelf: false, ownUser: true,
       };
     });
-    ipcMain.removeHandler('system:process-nice-auth');
-    ipcMain.handle('system:process-nice-auth', async () => ({ ok: true }));
+    ipcMain.removeHandler('system:privileged-auth');
+    ipcMain.handle('system:privileged-auth', async () => ({ ok: true }));
     ipcMain.removeHandler('system:process-nice');
     ipcMain.handle('system:process-nice', async (_e, _p, v) => { niceVal = v; niceCalls.push(v); return { ok: true }; });
 
@@ -292,8 +292,8 @@ const { ipcMain } = require('electron');
     ]);
     ipcMain.removeHandler('system:read-object');
     ipcMain.handle('system:read-object', async () => null);
-    ipcMain.removeHandler('system:process-nice-auth');
-    ipcMain.handle('system:process-nice-auth', async () => ({ ok: true }));
+    ipcMain.removeHandler('system:privileged-auth');
+    ipcMain.handle('system:privileged-auth', async () => ({ ok: true }));
 
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);

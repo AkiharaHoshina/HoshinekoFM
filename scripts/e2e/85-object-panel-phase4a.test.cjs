@@ -115,8 +115,7 @@ exit 0
     const before1 = pkLines().length;
     // 解锁 → 拉起 nice 助手（pkexec 一次）
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-nice-row > *')];
-      const b = btns.find((x) => /解锁|Unlock|ロック解除|잠금 해제/.test(x.textContent ?? ''));
+      const b = document.querySelector('.object-nice-buttons-group md-filled-tonal-button');
       if (!b) return false;
       b.click();
       return true;
@@ -128,8 +127,7 @@ exit 0
     h.assert.ok(pkLines().length === before1 + 1, `解锁应拉起一次 pkexec（${before1}→${pkLines().length}）`);
     // 锁定 → 滑条回禁用
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-nice-row > *')];
-      const b = btns.find((x) => /锁定|Lock|ロック|잠금/.test(x.textContent ?? ''));
+      const b = document.querySelector('.object-nice-buttons-group md-text-button');
       if (!b) return false;
       b.click();
       return true;
@@ -140,8 +138,7 @@ exit 0
     })()`, { timeout: 8000 });
     // 再次解锁 → pkexec 重新调用（助手已被 kill）
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-nice-row > *')];
-      const b = btns.find((x) => /解锁|Unlock|ロック解除|잠금 해제/.test(x.textContent ?? ''));
+      const b = document.querySelector('.object-nice-buttons-group md-filled-tonal-button');
       if (!b) return false;
       b.click();
       return true;
@@ -158,22 +155,18 @@ exit 0
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
     await h.js(win, `document.querySelector('.object-row .object-row-details').click()`, true);
     await h.waitFor(win, `!!document.querySelector('.object-brightness-slider')`, { timeout: 8000 });
-    const before2 = pkLines().length;
-    await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-actions--slider > *')];
-      const b = btns.find((x) => /解锁|Unlock|ロック解除|잠금 해제/.test(x.textContent ?? ''));
-      if (!b) return false;
-      b.click();
-      return true;
-    })()`, true);
-    await h.waitFor(win, `(() => {
+    // review 22 全局解锁：nice 解锁后切到背光页应**已解锁**（助手复用、
+    // 切换页面不复锁——pkexec 不增）
+    const alreadyUnlocked = await h.js(win, `(() => {
       const s = document.querySelector('.object-brightness-slider');
       return !!s && s.disabled === false;
     })()`, { timeout: 8000 });
-    h.assert.ok(pkLines().length === before2 + 1, `背光解锁应拉起一次 pkexec（${before2}→${pkLines().length}）`);
+    h.assert.ok(alreadyUnlocked.value === true, 'nice 解锁后背光滑条应已解锁（全局解锁、切页不复锁）');
+    h.assert.ok(pkLines().length === 2, `全局解锁不应再次拉起 pkexec（实际 ${pkLines().length} 次）`);
+    const before2 = pkLines().length;
+    // 锁定（kill 通用助手 + 全局复位）→ 滑条禁用
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-actions--slider > *')];
-      const b = btns.find((x) => /锁定|Lock|ロック|잠금/.test(x.textContent ?? ''));
+      const b = document.querySelector('.object-brightness-buttons-group md-text-button');
       if (!b) return false;
       b.click();
       return true;
@@ -183,8 +176,7 @@ exit 0
       return !!s && s.disabled === true;
     })()`, { timeout: 8000 });
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-actions--slider > *')];
-      const b = btns.find((x) => /解锁|Unlock|ロック解除|잠금 해제/.test(x.textContent ?? ''));
+      const b = document.querySelector('.object-brightness-buttons-group md-filled-tonal-button');
       if (!b) return false;
       b.click();
       return true;
@@ -193,7 +185,7 @@ exit 0
       const s = document.querySelector('.object-brightness-slider');
       return !!s && s.disabled === false;
     })()`, { timeout: 8000 });
-    h.assert.ok(pkLines().length === before2 + 2, `背光锁定后再次解锁应重新 pkexec（实际 ${pkLines().length - before2} 次）`);
+    h.assert.ok(pkLines().length === before2 + 1, `背光锁定后解锁应重新 pkexec（实际 ${pkLines().length - before2} 次）`);
   });
 
   await h.run('85b 进程树视图（DFS 行序 + 缩进 + 折叠）', async () => {
@@ -241,7 +233,7 @@ exit 0
     const niceCalls = [];
     ipcMain.removeHandler('system:process-signal-batch');
     ipcMain.removeHandler('system:process-nice-batch');
-    ipcMain.removeHandler('system:process-nice-auth');
+    ipcMain.removeHandler('system:privileged-auth');
     ipcMain.handle('system:process-signal-batch', async (_e, pids, signal) => {
       signalCalls.push({ pids, signal });
       return { ok: true, results: pids.map((p) => ({ pid: p, ok: true })) };
@@ -250,7 +242,7 @@ exit 0
       niceCalls.push({ pids, nice });
       return { ok: true, results: pids.map((p) => ({ pid: p, ok: true })) };
     });
-    ipcMain.handle('system:process-nice-auth', async () => ({ ok: true }));
+    ipcMain.handle('system:privileged-auth', async () => ({ ok: true }));
 
     const dir = h.tempDir();
     h.makeFileTree(dir, { 'a.txt': 'x' });
@@ -422,8 +414,7 @@ exit 0
     await h.js(win, `document.querySelector('.object-row[data-id="10"] .object-row-details').click()`, true);
     await h.waitFor(win, `!!document.querySelector('.object-nice-slider')`, { timeout: 8000 });
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-nice-row > *')];
-      const b = btns.find((x) => /解锁|Unlock|ロック解除|잠금 해제/.test(x.textContent ?? ''));
+      const b = document.querySelector('.object-nice-buttons-group md-filled-tonal-button');
       if (!b) return false;
       b.click();
       return true;

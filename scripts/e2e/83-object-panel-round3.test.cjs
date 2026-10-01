@@ -46,8 +46,8 @@ const { ipcMain } = require('electron');
 
   // 假命令目录（PATH 前置）：iw（rx 6.0/tx 866.7——iwlwifi 空闲态实测）、
   // renice（恒中文 EPERM 权限不够——zh_CN glibc 新译，逼真复刻本机
-  // 场景，绝不真实 renice）、pkexec（双分支
-  // 持久助手：backlight 写 $5 目标、nice 记录载荷行回 ok）
+  // 场景，绝不真实 renice）、pkexec（review 22 通用助手：write 行写
+  // 目标文件、nice 行记录载荷 `nice pid` 回 ok）
   const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-bin83-'));
   const pkLog = path.join(binDir, 'pkexec.log');
   const niceLog = path.join(binDir, 'nice.log');
@@ -67,19 +67,13 @@ exit 1
   fs.writeFileSync(path.join(binDir, 'pkexec'), `#!/bin/sh
 echo "$@" >> "${pkLog}"
 if [ "$1" != "sh" ]; then exit 126; fi
-if [ "$4" = "hoshineko-nice" ]; then
-  printf 'ready\\n'
-  while IFS= read -r line; do
-    echo "$line" >> "${niceLog}"
-    printf 'ok\\n'
-  done
-  exit 0
-fi
-target="$5"
 printf 'ready\\n'
-while IFS= read -r v; do
-  chmod u+w "$target" 2>/dev/null
-  if printf '%s' "$v" > "$target"; then chmod u-w "$target" 2>/dev/null; printf 'ok\\n'; else chmod u-w "$target" 2>/dev/null; printf 'err\\n'; fi
+while IFS= read -r line; do
+  set -- $line
+  case "$1" in
+    write) p="$2"; v="$3"; chmod u+w "$p" 2>/dev/null; if printf '%s' "$v" > "$p"; then chmod u-w "$p" 2>/dev/null; printf 'ok\\n'; else chmod u-w "$p" 2>/dev/null; printf 'err\\n'; fi;;
+    nice) echo "$2 $3" >> "${niceLog}"; printf 'ok\\n';;
+  esac
 done
 exit 0
 `);
@@ -109,8 +103,7 @@ exit 0
 
     // 解锁（拉起持久助手，pkexec 一次）
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-actions--slider > *')];
-      const b = btns.find((x) => /解锁|Unlock|ロック解除|잠금 해제/.test(x.textContent ?? ''));
+      const b = document.querySelector('.object-brightness-buttons-group md-filled-tonal-button');
       if (!b) return false;
       b.click();
       return true;
@@ -210,6 +203,10 @@ exit 0
     h.makeFileTree(dir, { 'a.txt': 'x' });
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    // review 22：通用助手是主进程级单例、跨窗口/用例存活——83b 已拉起
+    // 助手，83a 解锁不应复用它（本用例断言「解锁拉起一次 pkexec」）：
+    // 先经真实 handler kill 复位
+    await h.js(win, `window.electron.privilegedLock()`, true);
     await h.js(win, `(() => {
       const b = [...document.querySelectorAll('.sidebar-item')].find((x) => /对象|Objects/.test(x.textContent ?? ''));
       b.click(); return true;
@@ -238,8 +235,7 @@ exit 0
     // 不写任何 nice 载荷（授权 ≠ 写入）
     const logBefore = fs.existsSync(pkLog) ? fs.readFileSync(pkLog, 'utf-8') : '';
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-nice-row > *')];
-      const b = btns.find((x) => /解锁|Unlock|ロック解除|잠금 해제/.test(x.textContent ?? ''));
+      const b = document.querySelector('.object-nice-buttons-group md-filled-tonal-button');
       if (!b) return false;
       b.click();
       return true;
@@ -250,7 +246,7 @@ exit 0
     })()`, { timeout: 8000 });
     const pkAfterUnlock = fs.readFileSync(pkLog, 'utf-8');
     const unlockLines = pkAfterUnlock.slice(logBefore.length).split('\n').filter(Boolean);
-    h.assert.ok(unlockLines.length === 1 && unlockLines[0].includes('hoshineko-nice'), `解锁应恰好拉起一次 nice 助手：${JSON.stringify(unlockLines)}`);
+    h.assert.ok(unlockLines.length === 1 && unlockLines[0].includes('hoshineko-priv'), `解锁应恰好拉起一次通用助手：${JSON.stringify(unlockLines)}`);
     let niceLines = fs.existsSync(niceLog) ? fs.readFileSync(niceLog, 'utf-8').split('\n').filter(Boolean) : [];
     h.assert.ok(niceLines.length === 0, `解锁授权不应写任何 nice 载荷：${JSON.stringify(niceLines)}`);
     // 解锁后常驻提示转「已解锁」（第二行 .object-hint）

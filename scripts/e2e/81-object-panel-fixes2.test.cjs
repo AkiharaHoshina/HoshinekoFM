@@ -46,20 +46,23 @@ const { ipcMain } = require('electron');
   fs.writeFileSync(path.join(hwDir, 'in0_max'), '0');
   process.env.HOSHINEKO_E2E_SYSFS_DIR = sysfsDir;
 
-  // 假 pkexec：记录调用（argv 含 target，值走 stdin）+ 模拟持久助手
-  // （ready 握手 → stdin 行协议写值回 ok；每写一次恢复 444 只读，
-  //  逼真复刻 root:root 644 下每次直写都失败、必须经助手的场景）
+  // 假 pkexec：记录调用（review 22 通用助手契约：argv = sh -c SCRIPT
+  // hoshineko-priv <renice路径>；stdin `write <path> <value>` 写值回 ok /
+  // `nice <nice> <pid>` 回 ok）+ 模拟持久助手（每写一次恢复 444 只读，
+  // 逼真复刻 root:root 644 下每次直写都失败、必须经助手的场景）
   const pkBinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-pkexec81-'));
   const pkLog = path.join(pkBinDir, 'pkexec.log');
   const pkPath = path.join(pkBinDir, 'pkexec');
   fs.writeFileSync(pkPath, `#!/bin/sh
 echo "$@" >> "${pkLog}"
 if [ "$1" != "sh" ]; then exit 126; fi
-target="$5"
 printf 'ready\\n'
-while IFS= read -r v; do
-  chmod u+w "$target" 2>/dev/null
-  if printf '%s' "$v" > "$target"; then chmod u-w "$target" 2>/dev/null; printf 'ok\\n'; else chmod u-w "$target" 2>/dev/null; printf 'err\\n'; fi
+while IFS= read -r line; do
+  set -- $line
+  case "$1" in
+    write) p="$2"; v="$3"; chmod u+w "$p" 2>/dev/null; if printf '%s' "$v" > "$p"; then chmod u-w "$p" 2>/dev/null; printf 'ok\\n'; else chmod u-w "$p" 2>/dev/null; printf 'err\\n'; fi;;
+    nice) printf 'ok\\n';;
+  esac
 done
 exit 0
 `);
@@ -98,11 +101,10 @@ exit 0
     h.assert.ok(locked.value.disabled === true, '只读实例滑条应禁用');
     h.assert.ok(locked.value.hasUnlock && locked.value.hasHint, '应有「解锁」按钮与权限提示');
 
-    // 解锁：写当前值 → 直写 444 失败 → 拉起持久助手（pkexec 仅此一次）→ 滑条启用
+    // 解锁：privilegedAuth 直接拉起通用持久助手（pkexec 仅此一次）→ 滑条启用
     const logBefore = fs.existsSync(pkLog) ? fs.readFileSync(pkLog, 'utf-8') : '';
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-actions--slider > *')];
-      const b = btns.find((x) => /解锁|Unlock|ロック解除|잠금 해제/.test(x.textContent ?? ''));
+      const b = document.querySelector('.object-brightness-buttons-group md-filled-tonal-button');
       if (!b) return false;
       b.click();
       return true;
@@ -113,7 +115,7 @@ exit 0
     })()`, { timeout: 8000 });
     const pkAfterUnlock = fs.existsSync(pkLog) ? fs.readFileSync(pkLog, 'utf-8') : '';
     const unlockLines = pkAfterUnlock.slice(logBefore.length).split('\n').filter(Boolean);
-    h.assert.ok(unlockLines.length === 1 && unlockLines[0].includes('acpi_video0'), `解锁应恰好拉起一次助手（argv 含目标路径）：${JSON.stringify(unlockLines)}`);
+    h.assert.ok(unlockLines.length === 1 && unlockLines[0].includes('hoshineko-priv'), `解锁应恰好拉起一次通用助手：${JSON.stringify(unlockLines)}`);
 
     // 拖动 → 120：经助手 stdin 写入沙箱，pkexec 不得再次调用（回归每松手弹框）
     await h.js(win, `(() => {
@@ -133,9 +135,9 @@ exit 0
     h.assert.ok(pkAfterDrag === pkAfterUnlock, '拖动不应再次调用 pkexec（持久助手复用）');
 
     // 恢复原值 → 50：同样经助手，pkexec 不增
-    await h.waitFor(win, `Array.from(document.querySelectorAll('.object-actions--slider > *')).some((x) => /恢复原值|Restore value|元の値に戻す|원래 값으로/.test(x.textContent ?? ''))`, { timeout: 8000 });
+    await h.waitFor(win, `Array.from(document.querySelectorAll('.object-brightness-buttons-group > *')).some((x) => /恢复原值|Restore value|元の値に戻す|원래 값으로/.test(x.textContent ?? ''))`, { timeout: 8000 });
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-actions--slider > *')];
+      const btns = [...document.querySelectorAll('.object-brightness-buttons-group > *')];
       const b = btns.find((x) => /恢复原值|Restore value|元の値に戻す|원래 값으로/.test(x.textContent ?? ''));
       if (!b) return false;
       b.click();
