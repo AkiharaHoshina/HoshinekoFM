@@ -365,6 +365,25 @@ exit 0
     h.assert.ok(style.value.bg !== 'rgba(0, 0, 0, 0)' && style.value.bg !== 'transparent', `选中项应有背景（实际 ${style.value.bg}）`);
     h.assert.ok(style.value.otherBg === 'rgba(0, 0, 0, 0)' || style.value.otherBg === 'transparent', `未选中项应无背景（实际 ${style.value.otherBg}）`);
     h.assert.ok(/^12px$/.test(style.value.radius ?? ''), `选中项圆角应为 12px（实际 ${style.value.radius}）`);
+
+    // review 27：多个相邻选中项的高亮矩形之间应有竖向间隔（条目 margin-block
+    // 4px 对全部条目生效——相邻两个高亮矩形间隙 ≈ 8px，且选中/取消不移位）
+    await h.js(win, `(() => {
+      const item = document.querySelector('md-dialog[open] .search-quickadd-item[data-mime="text/x-beta"]');
+      if (!item) return false;
+      item.click();
+      return true;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('md-dialog[open] .search-quickadd-item[data-mime="text/x-beta"][data-selected="true"]')`, { timeout: 8000 });
+    const gap = await h.js(win, `(() => {
+      const a = document.querySelector('md-dialog[open] .search-quickadd-item[data-mime="text/x-alpha"]');
+      const b = document.querySelector('md-dialog[open] .search-quickadd-item[data-mime="text/x-beta"]');
+      const ra = a.getBoundingClientRect();
+      const rb = b.getBoundingClientRect();
+      return { gap: rb.top - ra.bottom, marginA: getComputedStyle(a).marginBlockStart };
+    })()`);
+    h.assert.ok(gap.value.gap >= 6, `相邻选中项高亮间应有间隔（实际 ${gap.value.gap}px）`);
+    h.assert.ok(gap.value.marginA === '4px', `条目应带竖向 margin（实际 ${gap.value.marginA}）`);
   });
 
   h.finish();

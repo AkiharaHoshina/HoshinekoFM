@@ -130,7 +130,14 @@
 }
 
 /* review 25：已选中项圆角长方形高亮（文件区列表模式选中同款——
- *  secondary-container 背景 + 12px 圆角；check 图标随主色不变） */
+ *  secondary-container 背景 + 12px 圆角；check 图标随主色不变）。
+ * review 27：条目间留竖向间距（margin-block 4px 对全部条目生效——相邻
+ * 两个选中高亮的圆角矩形间有 8px 间隔，且切换选中时条目不移位；
+ * 只给选中项加 margin 会在选中/取消时跳动） */
+.search-quickadd-item {
+  margin-block: 4px;
+}
+
 .search-quickadd-item[data-selected="true"] {
   background-color: var(--md-sys-color-secondary-container);
   border-radius: 12px;
