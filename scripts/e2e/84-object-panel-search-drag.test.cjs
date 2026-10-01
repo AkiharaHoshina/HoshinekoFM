@@ -416,7 +416,7 @@ const { ipcMain } = require('electron');
     m.removeAllListeners('terminal:write');
     m.on('terminal:write', (_e, _pid, data) => { writes.push(String(data)); });
 
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 2 });
+    await h.clickPlace(win, 'terminal');
     await h.waitFor(win, `!!document.querySelector('.terminal-panel')`);
     await h.waitFor(win, `!!document.querySelector('.terminal-pane--focused')`);
 

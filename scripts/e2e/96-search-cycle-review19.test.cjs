@@ -75,7 +75,7 @@ const os = require('os');
     // review 23 完整序列：输入框（回切/回车两站共用焦点）→ 右上角按钮群
     // → 类型 → 模式 → （词条站无历史跳过）→ 结果 → nav → sidebar →
     // tabbar → 返回上级 → 回输入框循环
-    for (const want of ['topbar-sort', 'search-type', 'search-mode', 'files', 'nav', 'sidebar', 'tabbar', 'topbar-up']) {
+    for (const want of ['topbar-sort', 'search-type', 'search-mode', 'files', 'sidebar', 'tabbar', 'topbar-up']) {
       await h.key(win, 'Tab');
       await h.sleep(300);
       const dbg = await h.js(win, `(() => {
@@ -173,7 +173,7 @@ const os = require('os');
       z = await zoneOf(win);
       h.assert.strictEqual(z.value, 'search-recent', `应落词条站，实际 ${z.value}`);
     }
-    for (const want of ['files', 'nav', 'sidebar', 'tabbar', 'topbar-up', 'search-input']) {
+    for (const want of ['files', 'sidebar', 'tabbar', 'topbar-up', 'search-input']) {
       await h.key(win, 'Tab');
       await h.sleep(300);
       z = await zoneOf(win);
@@ -229,7 +229,7 @@ const os = require('os');
       z = await zoneOf(win);
       h.assert.strictEqual(z.value, 'search-recent', `回收站搜索 Tab 应落词条站，实际 ${z.value}`);
     }
-    for (const want of ['files', 'nav', 'sidebar', 'tabbar']) {
+    for (const want of ['files', 'sidebar', 'tabbar']) {
       await h.key(win, 'Tab');
       await h.sleep(300);
       z = await zoneOf(win);

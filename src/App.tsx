@@ -11,7 +11,6 @@ import { DragProvider } from "./contexts/DragContext";
 import type { SortBy, SortOrder } from "./utils/fileSort";
 import { ThemeService } from "./services/ThemeService";
 import { FileSystemService } from "./services/FileSystemService";
-import { NavigationRail } from "./components/NavigationRail";
 import { Sidebar, type SidebarPinnedItem } from "./components/Sidebar";
 import type { PinnedItem } from "./components/Dashboard";
 import { Icon } from "./components/Icon";
@@ -2664,54 +2663,6 @@ function AppContent() {
           />
         )}
         <div className="app-shell" onClick={closeContextMenu}>
-          <NavigationRail
-            items={[
-              {
-                icon: <Icon name="dashboard" />,
-                activeIcon: <Icon name="dashboard" filled />,
-                label: "Dashboard",
-                // 仪表盘位于功能栏最上方：仅在浏览仪表盘时高亮
-                active: currentPath === "app://dashboard",
-                onClick: () => handleSidebarNavigate("app://dashboard"),
-              },
-              {
-                icon: <Icon name="folder" />,
-                activeIcon: <Icon name="folder" filled />,
-                label: "Files",
-                // 浏览仪表盘/回收站/设置页以外的任何路径时高亮
-                active:
-              currentPath !== "app://dashboard" &&
-              currentPath !== "trash://" &&
-              !currentPath.startsWith("settings://"),
-                onClick: () => handleSidebarNavigate("/"),
-              },
-              {
-                icon: <Icon name="delete" />,
-                activeIcon: <Icon name="delete" filled />,
-                label: "Trash",
-                // 回收站位于文件按钮下方：仅在浏览回收站时高亮（与仪表盘逻辑一致）
-                active: currentPath === "trash://",
-                onClick: () => handleSidebarNavigate("trash://"),
-              },
-              {
-                icon: <Icon name="terminal" />,
-                activeIcon: <Icon name="terminal" filled />,
-                label: "Terminal",
-                // 内置终端打开时高亮，不影响其他按钮（active 相互独立）
-                active: terminalOpen,
-                onClick: toggleTerminal,
-              },
-              {
-                icon: <Icon name="settings" />,
-                activeIcon: <Icon name="settings" filled />,
-                label: "Settings",
-                // review 26：设置页化——浏览设置页时高亮（最小改线，左侧栏
-                // 存废的大动作留待以后）
-                active: currentPath.startsWith("settings://"),
-                onClick: () => handleSidebarNavigate("settings://"),
-              },
-            ]}
-          />
 
           <Sidebar
             onNavigate={handleSidebarNavigate}

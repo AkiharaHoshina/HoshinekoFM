@@ -49,7 +49,7 @@ const h = require('./harness.cjs');
     // 回收站 → 「回收站」（中英文双匹配）
     // 活动项是 md-filled-icon-button 变体（标准 md-icon-button 选择器不含活动项，
     // 此处当前活动项为 Files → 标准按钮下标 0..3 = 仪表盘/回收站/终端/设置）
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 1 });
+    await h.clickPlace(win, 'delete');
     await h.waitFor(win, `/回收站|Trash/.test(document.querySelector('.title-bar-title .marquee-container')?.title ?? '')`);
 
     // 仪表盘（经地址栏输入虚拟路径）→ 「Hoshineko Nya~」

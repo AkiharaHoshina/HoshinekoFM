@@ -49,7 +49,7 @@ const h = require('./harness.cjs');
     const openTerminal = async () => {
       // 当前在真实目录 → Files 活动项为 md-filled-icon-button，不计入
       // md-icon-button 列表：0=仪表盘 1=回收站 2=终端 3=设置
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 2 });
+      await h.clickPlace(win, 'terminal');
       await h.waitFor(win, `!!document.querySelector('.terminal-panel')`);
     };
     const waitWrites = async (n) => {

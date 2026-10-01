@@ -145,8 +145,6 @@ const { ipcMain } = require('electron');
       const items = [...document.querySelectorAll('.sidebar-section:first-of-type .sidebar-item')];
       return !items.some((x) => (x.querySelector('md-icon')?.textContent ?? '') === 'dashboard');
     })()`, 8000);
-    // 导航栏仪表盘按钮仍在
-    h.assert.ok((await h.js(win, `[...document.querySelectorAll('.m3-navigation-rail__item')].some((x) => (x.querySelector('md-icon')?.textContent ?? '') === 'dashboard')`)).value, '导航栏仪表盘按钮不应受影响');
     // 重新打开 → Places 恢复
     await h.js(win, `(() => {
       const rows = [...document.querySelectorAll('.settings-row')];
@@ -172,12 +170,7 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     await h.sleep(600);
     await h.openSettingsPage(win);
-    await h.js(win, `(() => {
-      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
-      const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'terminal');
-      it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
-      return !!it;
-    })()`, true);
+    await h.clickPlace(win, 'terminal');
     await h.waitFor(win, `!!document.querySelector('.terminal-panel')`, { timeout: 8000 });
     const t0 = Date.now();
     while (Date.now() - t0 < 8000) {
@@ -309,7 +302,7 @@ const { ipcMain } = require('electron');
         const ok = await h.js(win, pred);
         if (ok.value) return true;
         const z = (await zoneOf()).value;
-        if (z === 'nav') return false; // 已放行全局循环——没找到
+        if (z === 'sidebar') return false; // 已放行全局循环——没找到
       }
       return false;
     };
@@ -407,7 +400,7 @@ const { ipcMain } = require('electron');
     await h.key(win, 'Tab');
     await h.sleep(200);
     const z = (await zoneOf()).value;
-    h.assert.strictEqual(z, 'nav', `主题页末控件 Tab 应放行走全局循环（实际 ${z}）`);
+    h.assert.strictEqual(z, 'sidebar', `主题页末控件 Tab 应放行走全局循环（实际 ${z}）`);
   });
 
   await h.run('103g review29：显示对象面板开关 + Places 内建终端入口', async () => {
@@ -534,7 +527,7 @@ const { ipcMain } = require('electron');
     await h.key(win, 'Tab');
     await h.sleep(200);
     const z = (await zoneOf()).value;
-    h.assert.strictEqual(z, 'nav', `末控件 Tab 应放行走全局循环（实际 ${z}）`);
+    h.assert.strictEqual(z, 'sidebar', `末控件 Tab 应放行走全局循环（实际 ${z}）`);
 
     // 方向键：回到设置页内按序移动落点
     for (let i = 0; i < 12; i++) {

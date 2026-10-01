@@ -27,7 +27,7 @@ const h = require('./harness.cjs');
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
 
     // 切到回收站（活动项为 Files → 标准按钮下标 0..3 = 仪表盘/回收站/终端/设置）
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 1 });
+    await h.clickPlace(win, 'delete');
     await h.waitFor(win, `document.querySelector('.file-preview-name')?.textContent === 'trash://'`);
 
     // 目录属性网格出现（真实回收站目录 stat 成功），错误占位不出现

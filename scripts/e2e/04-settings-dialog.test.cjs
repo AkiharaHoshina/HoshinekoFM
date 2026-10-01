@@ -11,7 +11,6 @@ const h = require('./harness.cjs');
     const dir = h.tempDir();
     h.makeFileTree(dir, { 'a.txt': 'hello' });
     const win = await h.createTestWindow({ argv: ['electron', dir] });
-    await h.waitFor(win, `document.querySelectorAll('.m3-navigation-rail__item').length >= 1`);
     // 侧边栏布局异步移位（46 号坑）：真实输入前等文件区就绪 + 布局稳定
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     await h.sleep(600);

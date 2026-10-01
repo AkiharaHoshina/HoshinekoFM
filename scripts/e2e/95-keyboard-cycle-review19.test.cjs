@@ -87,7 +87,7 @@ const { ipcMain } = require('electron');
     // （closeSearch 延时聚焦触发钮），从 topbar-omnibar 起步走完整循环：
     // object-recent → objects → nav → sidebar → tabbar → topbar-omnibar
     await h.waitFor(win, `document.activeElement === document.querySelector('.omnibar-trigger')`, { timeout: 8000 });
-    const expected = ['object-recent', 'objects', 'nav', 'sidebar', 'tabbar', 'topbar-omnibar'];
+    const expected = ['object-recent', 'objects', 'sidebar', 'tabbar', 'topbar-omnibar'];
     for (const z of expected) {
       await h.key(win, 'Tab');
       await h.sleep(300);
@@ -296,7 +296,7 @@ const { ipcMain } = require('electron');
     }))()`);
     h.assert.strictEqual(entrySel.value.selected, '100', `进程项进站应选中首行（实际 ${entrySel.value.selected}）`);
     h.assert.strictEqual(entrySel.value.focusId, '100', `进程项进站焦点应落在选中行（实际 ${entrySel.value.focusId}）`);
-    for (const want of ['nav', 'sidebar', 'tabbar', 'topbar-up', 'topbar-omnibar', 'object-sortbar']) {
+    for (const want of ['sidebar', 'tabbar', 'topbar-up', 'topbar-omnibar', 'object-sortbar']) {
       await h.key(win, 'Tab');
       await h.sleep(300);
       const z = (await zoneOf(win)).value;
@@ -344,7 +344,7 @@ const { ipcMain } = require('electron');
     await h.key(win, 'Tab');
     await h.sleep(300);
     z = (await zoneOf(win)).value;
-    h.assert.strictEqual(z, 'nav', `进程项后 Tab 应循环回功能栏，实际 ${z}`);
+    h.assert.strictEqual(z, 'sidebar', `进程项后 Tab 应循环回侧边栏（review 30 导航栏已删），实际 ${z}`);
   });
 
   h.finish();

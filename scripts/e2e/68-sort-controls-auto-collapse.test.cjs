@@ -137,14 +137,8 @@ const BUTTONS = 'md-filled-button, md-outlined-button, md-text-button';
     // ── 设置开启（review 26 立即生效：点击即落盘） ──
     await toggleAutoRow();
     await h.waitFor(win, `${autoKeyExpr} === 'true'`, 5000);
-    // 回文件视图（设置页无排序控件，顶栏断言须在文件页做；导航栏按
-    // 图标 ligature 定位防活动项变体下标漂移）
-    await h.js(win, `(() => {
-      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
-      const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'folder');
-      it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
-      return !!it;
-    })()`, true);
+    // 回文件视图（设置页无排序控件，顶栏断言须在文件页做）
+    await h.clickPlace(win, 'home');
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`, 8000);
 
     // 宽顶栏：展开态但无收起把手（5 按钮）、单行
@@ -245,12 +239,7 @@ const BUTTONS = 'md-filled-button, md-outlined-button, md-text-button';
     );
     await h.waitFor(win, `${autoKeyExpr} === 'false'`, 5000);
     // 回文件视图再断言顶栏
-    await h.js(win, `(() => {
-      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
-      const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'folder');
-      it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
-      return !!it;
-    })()`, true);
+    await h.clickPlace(win, 'home');
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`, 8000);
     await setTopbarMaxWidth(win, 1200);
     await waitZoneBtnCount(win, 6);

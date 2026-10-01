@@ -121,12 +121,7 @@ const marqueeCountExpr = `document.querySelectorAll('.settings-preview .marquee-
     await h.waitFor(win, `${previewKeyExpr} === 'true'`, 5000);
     h.assert.ok((await h.js(win, `!!document.querySelector('.settings-preview-toggle')`)).value, '收起后开关应仍在（固定区只剩开关细条）');
     // 离开（仪表盘）再回：收起状态持久化保持
-    await h.js(win, `(() => {
-      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
-      const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'dashboard');
-      it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
-      return !!it;
-    })()`, true);
+    await h.clickPlace(win, 'dashboard');
     await h.waitFor(win, `!!document.querySelector('.dashboard-container')`, 8000);
     await openFilesSettings();
     await h.waitFor(win, `!document.querySelector('.settings-preview-body')`, 8000);
@@ -217,12 +212,7 @@ const marqueeCountExpr = `document.querySelectorAll('.settings-preview .marquee-
 
     // ── 分组关闭 → 预览无分组头 ──
     // 回文件视图关分组（分组开（默认）时按钮为 filled 变体）
-    await h.js(win, `(() => {
-      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
-      const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'folder');
-      it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
-      return !!it;
-    })()`, true);
+    await h.clickPlace(win, 'home');
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`, 8000);
     await h.clickEl(win, '[data-kb-zone="topbar-sort"] md-filled-icon-button');
     await h.waitFor(win, `localStorage.getItem('settings.groupingEnabled') === 'false'`, 5000);

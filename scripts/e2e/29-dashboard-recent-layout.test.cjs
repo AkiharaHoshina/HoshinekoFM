@@ -39,7 +39,7 @@ const h = require('./harness.cjs');
     })()`;
 
     // 进入仪表盘（导航栏第 0 项）
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 0 });
+    await h.clickPlace(win, 'dashboard');
     await h.waitFor(win, `!!(${findItem('index-dir')})`);
 
     // 整行 title = 完整路径
@@ -81,7 +81,7 @@ const h = require('./harness.cjs');
       `localStorage.setItem('settings.marqueeEnabled', JSON.stringify(false)); location.reload();`,
     );
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 0 });
+    await h.clickPlace(win, 'dashboard');
     await h.waitFor(win, `!!(${findItem(longName)})`);
     win.setSize(680, 800);
     await h.sleep(500);

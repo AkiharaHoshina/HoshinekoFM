@@ -51,7 +51,7 @@ const { ipcMain } = require('electron');
     await h.js(win, `localStorage.setItem('dashboard.pinned', ${JSON.stringify(JSON.stringify(pins))}); location.reload();`);
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     // 进入仪表盘（导航栏第 0 项）
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 0 });
+    await h.clickPlace(win, 'dashboard');
     await h.waitFor(win, `!!document.querySelector('.pinned-grid')`, { timeout: 8000 });
     // 注入网格宽度 → 3 列（minmax(80px,1fr) + 16px gap：300px ≈ 3 列）
     await h.js(win, `(() => { document.querySelector('.pinned-grid').style.width = '300px'; return true; })()`, true);
@@ -313,7 +313,7 @@ const { ipcMain } = require('electron');
     await h.key(win, 'Tab');
     await h.sleep(300);
     const z = (await zoneOf(win)).value;
-    h.assert.strictEqual(z, 'nav', `末组后 Tab 应放行走全局循环到 nav，实际 ${z}`);
+    h.assert.strictEqual(z, 'sidebar', `末组后 Tab 应放行走全局循环到 sidebar（review 30 导航栏已删），实际 ${z}`);
     // Shift+Tab 反向回详情页 → 落标题
     await h.key(win, 'Tab', ['shift']);
     await h.sleep(300);

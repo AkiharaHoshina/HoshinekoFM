@@ -107,12 +107,7 @@ const h = require('./harness.cjs');
     );
     h.assert.ok(rowIdx.value === -1, '设置页不应再有「搜索包含对象」行（C6 移除）');
     // 回文件页（页面无关闭步骤）
-    await h.js(win, `(() => {
-      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
-      const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'folder');
-      it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
-      return !!it;
-    })()`, true);
+    await h.clickPlace(win, 'home');
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`, { timeout: 8000 });
 
     // 文件搜索 'a'（会命中大量真实文件；对象侧也有 processor/cpu 等）：

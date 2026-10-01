@@ -45,7 +45,7 @@ const fs = require('fs');
       await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
 
       // ── 一、回收站子目录预览 ──
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 1 });
+      await h.clickPlace(win, 'delete');
       await h.waitFor(win, `document.querySelector('.breadcrumb-chip md-icon')?.textContent === 'delete'`);
       await h.waitFor(
         win,
@@ -98,7 +98,7 @@ const fs = require('fs');
       });
 
       const openTerminalRail = async () => {
-        await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 2 });
+        await h.clickPlace(win, 'terminal');
         await h.waitFor(win, `!!document.querySelector('.terminal-panel')`);
       };
       const closeTerminal = async () => {
@@ -122,7 +122,7 @@ const fs = require('fs');
       await closeTerminal();
 
       // 2) 仪表盘 → cwd 空串（后端回落 ~）
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 0 });
+      await h.clickPlace(win, 'dashboard');
       await h.waitFor(win, `!!document.querySelector('.dashboard-container')`);
       await openTerminalRail();
       await waitSpawnCount(2);
@@ -130,7 +130,7 @@ const fs = require('fs');
       await closeTerminal();
 
       // 3) 回收站根（trash://）→ cwd 空串（后端回落 ~）
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 1 });
+      await h.clickPlace(win, 'delete');
       await h.waitFor(win, `document.querySelector('.breadcrumb-chip md-icon')?.textContent === 'delete'`);
       await openTerminalRail();
       await waitSpawnCount(3);

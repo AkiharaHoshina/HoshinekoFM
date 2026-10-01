@@ -25,7 +25,7 @@ const path = require('path');
     const dir = h.tempDir();
     h.makeFileTree(dir, { 'a.txt': 'x' });
     const win = await h.createTestWindow({ argv: ['electron', dir] });
-    await h.waitFor(win, `document.querySelectorAll('.m3-navigation-rail__item').length >= 1`);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
 
     // 设置页 → 系统集成分类（review 26 页面化）
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);

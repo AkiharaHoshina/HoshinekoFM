@@ -133,7 +133,7 @@ const { ipcMain } = require('electron');
 
     // 完整循环走一圈回输入框——回切/回车两站焦点都应落搜索输入框
     // （对象搜索无 topbar-sort/类型/模式/条件站——注册跳过）
-    for (const want of ['search-filters', 'objects', 'nav', 'sidebar', 'tabbar', 'search-input']) {
+    for (const want of ['search-filters', 'objects', 'sidebar', 'tabbar', 'search-input']) {
       await h.key(win, 'Tab');
       await h.sleep(300);
       const z = await zoneOf(win);

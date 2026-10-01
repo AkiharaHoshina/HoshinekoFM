@@ -77,13 +77,13 @@ const h = require('./harness.cjs');
     // 预置 filePreview=true：先在文件视图断言预览面板常驻（未选中时显示
     // 目录属性），再进设置页关闭（立即生效——localStorage 即刻变化），
     // 回文件视图断言面板消失（设置页独占内容区、面板不渲染）
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 1 });
+    await h.clickPlace(win, 'home');
     await h.waitFor(win, `!!document.querySelector('.file-preview-panel')`, 8000);
     await h.openSettingsPage(win, `/文件|Files/`);
     await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
     await toggleRowSwitch(`/文件预览|File preview/`);
     await h.waitFor(win, `localStorage.getItem('settings.filePreview') === 'false'`, 8000);
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 1 });
+    await h.clickPlace(win, 'home');
     await h.waitFor(win, `!document.querySelector('.file-preview-panel')`, 8000);
 
     // ── 恢复默认设置：取消不变 / 确认生效 ──

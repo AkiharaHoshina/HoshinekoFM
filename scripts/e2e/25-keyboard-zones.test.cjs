@@ -70,7 +70,7 @@ const h = require('./harness.cjs');
     //     Folders 组最前）——Space 取消选中 → Tab 满循环一周回 files 分区
     await h.key(win, 'Space');
     await h.sleep(200);
-    for (let i = 0; i < 7; i++) { await h.key(win, 'Tab'); await h.sleep(300); }
+    for (let i = 0; i < 6; i++) { await h.key(win, 'Tab'); await h.sleep(300); }
     await h.sleep(300);
     z = await zoneOf();
     h.assert.strictEqual(z.value, 'files', `满循环后焦点应回 files 分区，实际 ${z.value}`);
@@ -104,25 +104,25 @@ const h = require('./harness.cjs');
     const after = await h.js(win, `document.querySelectorAll('.file-list-item.selected').length`);
     h.assert.notStrictEqual(after.value, before.value, 'Space 应切换选中状态');
 
-    // 5) files → 功能栏（nav）→ ↓ → Enter 激活切到回收站
+    // 5) files → sidebar → ↑/↓ 移到「回收站」条目 → Enter 激活切到回收站
     await h.key(win, 'Tab');
     await h.sleep(300);
     z = await zoneOf();
-    h.assert.strictEqual(z.value, 'nav', `files 后 Tab 应在 nav 分区，实际 ${z.value}`);
-    await h.key(win, 'Down');
-    await h.sleep(300);
+    h.assert.strictEqual(z.value, 'sidebar', `files 后 Tab 应循环到 sidebar（review 30 导航栏已删），实际 ${z.value}`);
+    let onTrash = false;
+    for (let i = 0; i < 25; i++) {
+      await h.key(win, 'Up');
+      await h.sleep(80);
+      const r = await h.js(win, `/回收站|Trash/.test(document.activeElement?.textContent ?? '')`);
+      if (r.value) { onTrash = true; break; }
+    }
+    h.assert.ok(onTrash, '侧边栏 ↑ 应能移动到回收站条目');
     await h.key(win, 'Enter');
     await h.sleep(600);
     const inTrash = await h.js(win, `document.title === '回收站' || document.title === 'Trash'`);
-    h.assert.ok(inTrash.value, '导航栏 Enter 应激活焦点项（切到回收站）');
+    h.assert.ok(inTrash.value, '侧边栏 Enter 应激活焦点项（切到回收站）');
 
-    // 6) nav → places（sidebar）→ ↑ 移动到「仪表盘」条目 → Enter 激活
-    await h.key(win, 'Tab');
-    await h.sleep(300);
-    z = await zoneOf();
-    h.assert.strictEqual(z.value, 'sidebar', '从 nav Tab 应到 sidebar 分区');
-    const sidebarFocus = await h.js(win, `document.activeElement?.matches('.sidebar-item, .sidebar-partition') ?? false`);
-    h.assert.ok(sidebarFocus.value, '侧边栏分区焦点应落在条目上');
+    // 6) 回收站条目上 ↑ 循环到「仪表盘」条目 → Enter 激活
     let onDashboard = false;
     for (let i = 0; i < 25; i++) {
       await h.key(win, 'Up');
@@ -173,11 +173,7 @@ const h = require('./harness.cjs');
     await h.key(win, 'Tab');
     await h.sleep(300);
     z = await zoneOf();
-    h.assert.strictEqual(z.value, 'nav', '仪表盘退出后 Tab 应循环到 nav');
-    await h.key(win, 'Tab');
-    await h.sleep(300);
-    z = await zoneOf();
-    h.assert.strictEqual(z.value, 'sidebar', 'nav 后 Tab 应在 sidebar');
+    h.assert.strictEqual(z.value, 'sidebar', '仪表盘退出后 Tab 应循环到 sidebar（review 30 导航栏已删）');
     await h.key(win, 'Tab');
     await h.sleep(300);
     z = await zoneOf();

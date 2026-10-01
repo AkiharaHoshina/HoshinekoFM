@@ -10,7 +10,6 @@
  */
 
 export type KeyboardZoneId =
-  | 'nav'
   | 'sidebar'
   | 'tabbar'
   | 'topbar-up'
@@ -65,7 +64,6 @@ export interface KeyboardZone {
  *   最近访问子区（文件页专属分区未注册自动跳过）。
  */
 const ZONE_ORDER: KeyboardZoneId[] = [
-  'nav',
   'sidebar',
   'tabbar',
   'topbar-up',
@@ -96,7 +94,6 @@ const ZONE_ORDER: KeyboardZoneId[] = [
  * 提交、Esc = 退出搜索，按钮本体仅鼠标可达——review 23 定案）。
  */
 const SEARCH_ZONE_ORDER: KeyboardZoneId[] = [
-  'nav',
   'sidebar',
   'tabbar',
   'topbar-up',

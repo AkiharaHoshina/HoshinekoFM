@@ -999,18 +999,14 @@ async function escCloseSearch(win) {
  * 返回后设置页仍留在该标签页（再次点击导航栏按钮 = 重新导航到根）。
  */
 async function openSettingsPage(win, categoryRe) {
-  // 设置项可能是活动变体（md-filled-icon-button）——标准 md-icon-button
-  // 列表会漏掉它（点击落到上一个按钮）；按「最后一个含按钮的 rail item」
-  // 定位（rail 末尾有无按钮的占位项），与真实点击同链
+  // review 30：导航栏已删除——设置入口改经 Places（侧边栏 settings 条目）
   await js(
     win,
     `(() => {
-      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
-      const last = [...items].reverse().find((it) => it.querySelector('md-icon-button, md-filled-icon-button'));
-      const btn = last?.querySelector('md-icon-button, md-filled-icon-button');
-      if (!btn) return false;
-      btn.click();
-      return true;
+      const items = [...document.querySelectorAll('.sidebar-section:first-of-type .sidebar-item')];
+      const it = items.find((x) => (x.querySelector('md-icon')?.textContent ?? '') === 'settings');
+      it?.click();
+      return !!it;
     })()`,
     true,
   );
@@ -1049,6 +1045,26 @@ async function scrollSettingsTo(win, selector, index = 0) {
     true,
   );
   await sleep(200);
+}
+
+
+/**
+ * review 30：Places 条目点击（左侧导航栏已删除——经侧边栏 Places 的
+ * md-icon ligature 定位条目并 js 点击导航）。ligature：dashboard/
+ * home/delete/settings/terminal/widgets 等。
+ */
+async function clickPlace(win, ligature) {
+  const r = await js(
+    win,
+    `(() => {
+      const items = [...document.querySelectorAll('.sidebar-section:first-of-type .sidebar-item')];
+      const it = items.find((x) => (x.querySelector('md-icon')?.textContent ?? '') === ${JSON.stringify(ligature)});
+      it?.click();
+      return !!it;
+    })()`,
+    true,
+  );
+  if (!r.ok || !r.value) throw new Error(`clickPlace: 未找到 Places 条目 ${ligature}`);
 }
 
 /**
@@ -1159,6 +1175,7 @@ module.exports = {
   escCloseSearch,
   scrollIntoView,
   openSettingsPage,
+  clickPlace,
   scrollSettingsTo,
   selectOption,
   segmentClick,

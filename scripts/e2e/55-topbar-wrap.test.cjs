@@ -178,7 +178,7 @@ async function waitClosed(picker) {
     await setTopbarMaxWidth(win, null);
 
     // ── 回收站视图（无返回上级键）：同语义 ──
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 1 });
+    await h.clickPlace(win, 'delete');
     await h.waitFor(win, `!!document.querySelector('[data-kb-zone="topbar-omnibar"]')`);
     await h.sleep(500);
     await setTopbarMaxWidth(win, 500);

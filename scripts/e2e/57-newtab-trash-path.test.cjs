@@ -301,14 +301,8 @@ const fs = require('fs');
       await closeActiveTab();
 
       // ── 三、回收站子目录地址栏（混合路径模型）──
-      // 切到回收站（按图标 ligature 定位——活动项变体（filled）不进标准
-      // md-icon-button 列表，绝对下标随当前活动项漂移，不可硬编码）
-      await h.js(win, `(() => {
-        const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
-        const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'delete');
-        it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
-        return !!it;
-      })()`, true);
+      // 切到回收站（Places 回收站条目）
+      await h.clickPlace(win, 'delete');
       await h.waitFor(win, scoped(`act.querySelector('.breadcrumb-chip md-icon')?.textContent === 'delete'`));
       const trashFound = await h.waitFor(
         win,
