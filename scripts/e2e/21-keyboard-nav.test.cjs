@@ -317,9 +317,14 @@ const h = require('./harness.cjs');
       `Shift 矩形应跨分组头（zdir 同列 col0 → Documents 首行 col0），实际 ${JSON.stringify(cross.value)}`,
     );
 
-    // ── 鼠标 Shift+点击：网格矩形（f05 → f23）──
-    await h.clickEl(win, `.file-list-item[data-path="${dir}/f05.txt"]`);
-    const target = await h.elementCenter(win, `.file-list-item[data-path="${dir}/f23.txt"]`);
+    // ── 鼠标 Shift+点击：网格矩形（同列三行——列数随窗口宽度变化，
+    //    动态取末列：row0 末列 → row2 末列）──
+    const anchorIdx = cols; // row0 末列 = f{cols}
+    const tgtIdx = cols * 3; // row2 末列 = f{3*cols}
+    const rectAnchor = `${dir}/f${String(anchorIdx).padStart(2, '0')}.txt`;
+    const rectTarget = `${dir}/f${String(tgtIdx).padStart(2, '0')}.txt`;
+    await h.clickEl(win, `.file-list-item[data-path="${rectAnchor}"]`);
+    const target = await h.elementCenter(win, `.file-list-item[data-path="${rectTarget}"]`);
     const zf = win.webContents.getZoomFactor();
     // 先移动（带 shift 修饰）再按下/抬起：注入事件的修饰键状态
     // 以最新输入事件为准，move 预置可避免 down/up 偶发丢 shift
@@ -336,8 +341,12 @@ const h = require('./harness.cjs');
     });
     await h.sleep(300);
     s = await sel();
-    // f05 (row0 col4) → f23 (row2 col4)：同列三行
-    const rectExpected = [`${dir}/f05.txt`, `${dir}/f${String(5 + cols).padStart(2, '0')}.txt`, `${dir}/f23.txt`];
+    // row0/row1/row2 末列：同列三行
+    const rectExpected = [
+      rectAnchor,
+      `${dir}/f${String(anchorIdx + cols).padStart(2, '0')}.txt`,
+      rectTarget,
+    ];
     h.assert.deepStrictEqual(
       s.value,
       rectExpected,

@@ -37,13 +37,18 @@ const { app } = require('electron');
   const enterPath = async (win, value) => {
     const inSearch = await h.js(win, `!!document.querySelector('.omnibar.mode-search')`);
     if (inSearch.value) {
-      await h.clickEl(win, '.omnibar-back-address');
+      await h.js(win, `(() => { document.querySelector('.omnibar-back-address')?.click(); return true; })()`, true);
       await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     } else {
       await h.waitFor(win, `!!document.querySelector('.omnibar-trigger')`);
-      await h.clickEl(win, '.omnibar-trigger');
+      await h.js(win, `(() => { document.querySelector('.omnibar-trigger')?.click(); return true; })()`, true);
       await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     }
+    // 显式聚焦输入框再提交：编辑态 focus 由 effect 异步完成——waitFor
+    // 只保证 DOM 存在，若 Enter 早于聚焦到达则 keydown 落在别处、提交
+    // 丢失（导航不生效的 flake 根因）
+    await h.js(win, `(() => { document.querySelector('.omnibar.mode-edit .omnibar-input')?.focus(); return true; })()`, true);
+    await h.sleep(150);
     await h.setReactInput(win, '.omnibar.mode-edit .omnibar-input', value);
     await h.key(win, 'Enter');
   };
@@ -56,11 +61,11 @@ const { app } = require('electron');
   const readAddressBar = async (win) => {
     const inSearch = await h.js(win, `!!document.querySelector('.omnibar.mode-search')`);
     if (inSearch.value) {
-      await h.clickEl(win, '.omnibar-back-address');
+      await h.js(win, `(() => { document.querySelector('.omnibar-back-address')?.click(); return true; })()`, true);
       await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     } else {
       await h.waitFor(win, `!!document.querySelector('.omnibar-trigger')`);
-      await h.clickEl(win, '.omnibar-trigger');
+      await h.js(win, `(() => { document.querySelector('.omnibar-trigger')?.click(); return true; })()`, true);
       await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     }
     const r = await h.js(win, `document.querySelector('.omnibar.mode-edit .omnibar-input').value`);
