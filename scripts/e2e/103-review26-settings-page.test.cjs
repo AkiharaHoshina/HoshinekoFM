@@ -350,5 +350,70 @@ const { ipcMain } = require('electron');
     })()`, 8000);
   });
 
+  await h.run('103h 设置页内 Tab/方向键逐控件停靠（不漏控件）', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await h.sleep(600);
+    await h.openSettingsPage(win, `/仪表盘|Dashboard/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
+
+    const zoneOf = () => h.js(win, `(() => {
+      const a = document.activeElement;
+      if (!a) return 'none';
+      return a.closest('[data-kb-zone]')?.getAttribute('data-kb-zone') ?? 'other';
+    })()`);
+    // Tab 进 settings 站（首控件 = 显示仪表盘开关）
+    for (let i = 0; i < 12; i++) {
+      await h.key(win, 'Tab');
+      await h.sleep(120);
+      if ((await zoneOf()).value === 'settings') break;
+    }
+    const onFirst = await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /在位置中显示仪表盘|Show dashboard in Places/.test(r.textContent ?? ''));
+      return document.activeElement === row?.querySelector('md-switch');
+    })()`);
+    h.assert.ok(onFirst.value, '进站应落在首个控件（显示仪表盘开关）');
+
+    // Tab → 第二控件（显示主页存储占用开关）——此前漏掉
+    await h.key(win, 'Tab');
+    await h.sleep(200);
+    const onSecond = await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /主页存储占用|home storage usage/.test(r.textContent ?? ''));
+      return document.activeElement === row?.querySelector('md-switch');
+    })()`);
+    h.assert.ok(onSecond.value, 'Tab 应停靠到第二个控件（显示主页存储占用开关）');
+
+    // 末控件再 Tab → 放行全局分区循环（files 未注册 → 下一站 nav）
+    await h.key(win, 'Tab');
+    await h.sleep(200);
+    const z = (await zoneOf()).value;
+    h.assert.strictEqual(z, 'nav', `末控件 Tab 应放行走全局循环（实际 ${z}）`);
+
+    // 方向键：回到设置页内按序移动落点
+    for (let i = 0; i < 12; i++) {
+      await h.key(win, 'Tab');
+      await h.sleep(120);
+      if ((await zoneOf()).value === 'settings') break;
+    }
+    await h.key(win, 'Down');
+    await h.sleep(200);
+    const movedDown = await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /主页存储占用|home storage usage/.test(r.textContent ?? ''));
+      return document.activeElement === row?.querySelector('md-switch');
+    })()`);
+    h.assert.ok(movedDown.value, '↓ 应从首个控件移到第二控件');
+    await h.key(win, 'Up');
+    await h.sleep(200);
+    const movedUp = await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /在位置中显示仪表盘|Show dashboard in Places/.test(r.textContent ?? ''));
+      return document.activeElement === row?.querySelector('md-switch');
+    })()`);
+    h.assert.ok(movedUp.value, '↑ 应回到首个控件');
+  });
+
   h.finish();
 })();

@@ -8,7 +8,6 @@ import {
   type ParsedSettingsPath,
 } from '../../utils/settingsPath';
 import { registerKeyboardZone } from '../../utils/focusZones';
-import { gridNavIndex } from '../../utils/gridNav';
 import {
   DashboardSettings,
   FilesSettings,
@@ -47,31 +46,48 @@ function pageTitleOf(parsed: ParsedSettingsPath): string {
 }
 
 /**
+ * 设置页内可聚焦控件（DOM 序 = 从上到下、从左到右的阅读序）——
+ * 根页类卡片 / 行内 switch·按钮·下拉·滑条·文本域·三态开关区。
+ * md-* 宿主 focus() 会把焦点落到 shadow 内部输入，document.activeElement
+ * 经重定向仍是宿主本身，indexOf 可直接命中。
+ */
+const PAGE_CONTROLS =
+  '.settings-category-card, .settings-row[tabindex="0"], .settings-titlebar-switch-area, '
+  + '.settings-row > md-switch, .settings-row > md-outlined-button, .settings-row > md-text-button, '
+  + '.settings-row > md-filled-button, .settings-row > md-filled-tonal-button, '
+  + '.settings-row > md-outlined-select, .settings-row > md-outlined-text-field, '
+  + '.settings-row > md-slider, .settings-row > md-icon-button';
+
+/**
  * 设置页（review 26：设置从对话框改为页面，虚拟路径 settings://）。
- * - 根页：分类卡片网格（对象面板同款卡片样式，新类名 .settings-category-card
- *   防对象面板 e2e 选择器污染）；方向键按网格语义移动（gridNav，与仪表盘
- *   固定项/对象类卡片同款）、Enter/Space 经 click 激活；
+ * - 根页：分类卡片网格（对象面板同款卡片样式）；
  * - 分类页：页头 + 分区行，内容经 SettingsContext 读写（立即生效）；
- * - 键盘：注册 `settings` 站进 Tab 循环（根页聚焦首卡；分类页聚焦
- *   首个可操作控件）。
+ * - 键盘（review 29.3 重构）：注册 `settings` 站进 Tab 循环；**页内
+ *   Tab/Shift+Tab 按 DOM 序（从上到下、从左到右）逐控件停靠**——此前
+ *   Tab 进站即跳下一分区，行内第二个及以后控件被漏掉；到首/末控件
+ *   再 Tab 放行全局分区循环（App 的 Tab 拦截尊重 defaultPrevented）。
+ *   方向键同样按序移动键盘落点（滑条/下拉/文本域的原生方向键语义
+ *   放行不拦截）；每次移动后 scrollIntoView 保证目标可见。
  */
 export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNavigate }) => {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const parsed = isSettingsPath(path) ? parseSettingsPath(path) : null;
 
-  /** settings 站进站落点：根页聚焦首卡；分类页聚焦首个可交互行/控件 */
-  const focusSettingsZone = useCallback(() => {
+  /** 页内全部可聚焦控件（启用态；DOM 序） */
+  const pageControls = useCallback((): HTMLElement[] => {
     const root = rootRef.current;
-    if (!root) return;
-    if (!parsed || parsed.cat === null) {
-      root.querySelector<HTMLElement>('.settings-category-card')?.focus();
-      return;
-    }
-    root.querySelector<HTMLElement>(
-      '.settings-row[tabindex], .settings-row [tabindex="0"], .settings-row md-switch, .settings-row button, .settings-row md-outlined-select, .settings-row md-slider, .settings-row md-outlined-button, .settings-row md-text-button',
-    )?.focus();
-  }, [parsed]);
+    if (!root) return [];
+    return Array.from(root.querySelectorAll<HTMLElement>(PAGE_CONTROLS))
+      .filter((el) => !el.hasAttribute('disabled'));
+  }, []);
+
+  /** settings 站进站落点：第一个可用控件 */
+  const focusSettingsZone = useCallback(() => {
+    const controls = pageControls();
+    controls[0]?.focus();
+    controls[0]?.scrollIntoView({ block: 'nearest' });
+  }, [pageControls]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -79,25 +95,46 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
     return unreg;
   }, [isActive, focusSettingsZone]);
 
+  /** 页内键盘（容器级）：Tab/Shift+Tab 逐控件停靠、方向键移动落点 */
+  const handlePageKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const isTab = e.key === 'Tab';
+    const isArrow = e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+    if (!isTab && !isArrow) return;
+    const target = e.target as HTMLElement | null;
+    // 方向键原生消费者放行（滑条调值/下拉展开/文本光标移动）
+    if (isArrow && target?.closest('md-slider, md-select, md-outlined-select, md-outlined-text-field, input, textarea')) return;
+    const controls = pageControls();
+    if (controls.length === 0) return;
+    const active = document.activeElement as HTMLElement | null;
+    let idx = active ? controls.indexOf(active) : -1;
+    if (idx < 0) {
+      // 焦点不在已知控件上（进站瞬间/点空白）：前向从头、后向从尾
+      idx = e.shiftKey ? controls.length : -1;
+    }
+    const dir = isTab
+      ? (e.shiftKey ? -1 : 1)
+      : ((e.key === 'ArrowUp' || e.key === 'ArrowLeft') ? -1 : 1);
+    const next = idx + dir;
+    // 越界：Tab 放行全局分区循环（App Tab 拦截尊重 defaultPrevented）；
+    // 方向键边缘不动（不越界、不循环）
+    if (next < 0 || next >= controls.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const el = controls[next];
+    el.focus();
+    el.scrollIntoView({ block: 'nearest' });
+  }, [pageControls]);
+
   // review 26：隐藏标签页不渲染（预览污染守卫，见 props 注释）
   if (!isActive || !parsed) return null;
 
-  /** 根页卡片键盘（网格方向键 + Enter/Space 激活） */
+  /** 根页卡片 Enter/Space 激活（方向键/Tab 由容器级 handlePageKeyDown 接管） */
   const handleCardKeyDown = (e: React.KeyboardEvent<HTMLElement>, catId: string) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       e.stopPropagation();
       onNavigate(`settings://${catId}`);
-      return;
     }
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-    e.preventDefault();
-    const root = rootRef.current;
-    if (!root) return;
-    const items = Array.from(root.querySelectorAll<HTMLElement>('.settings-category-card'));
-    const idx = items.indexOf(e.currentTarget as HTMLElement);
-    if (idx < 0) return;
-    items[gridNavIndex(idx, items, e.key)]?.focus();
   };
 
   /** 分类页渲染（按分类 id 分派） */
@@ -122,7 +159,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
   };
 
   return (
-    <div className="settings-page" ref={rootRef} data-kb-zone="settings">
+    <div className="settings-page" ref={rootRef} data-kb-zone="settings" onKeyDown={handlePageKeyDown}>
       {parsed.cat === null ? (
         <div className="settings-page-scroll">
           {/* review 29.1：主页标题与对象面板一模一样（复用
@@ -139,7 +176,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
                 className="settings-category-card"
                 role="button"
                 tabIndex={0}
-                data-obj-nav={undefined}
                 onClick={() => onNavigate(`settings://${c.id}`)}
                 onKeyDown={(e) => handleCardKeyDown(e, c.id)}
               >
