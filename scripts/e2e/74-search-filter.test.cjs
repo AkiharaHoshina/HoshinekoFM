@@ -392,7 +392,9 @@ const os = require('os');
     // 无限制：回文件页搜索 'f' → 4 条结果且无 capped 提示
     await gotoDir(win, dir);
     await h.searchViaOmnibar(win, 'f');
-    await h.waitFor(win, `document.querySelectorAll('.file-list-item').length === 4`, { timeout: 8000 });
+    // 无效输入 = 无限制：4 个 fN.txt 全部命中（目录随机名可能含 f，
+    // 会额外命中目录自身——不按精确计数断言）
+    await h.waitFor(win, `['f1.txt','f2.txt','f3.txt','f4.txt'].every((n) => [...document.querySelectorAll('.file-list-item')].some((el) => (el.dataset.path || '').endsWith('/' + n)))`, { timeout: 8000 });
     h.assert.ok((await h.js(win, `!document.querySelector('.search-filter-capped')`)).value, '无效输入视为无限制：不应出现 capped 提示');
 
     // ── 清空 → 空串保存 + 无限制 ──

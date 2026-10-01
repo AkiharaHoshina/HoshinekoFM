@@ -25,6 +25,28 @@ const { ipcMain } = require('electron');
 
     await h.openSettingsPage(win);
     h.assert.strictEqual((await h.js(win, `document.querySelectorAll('.settings-category-card').length`)).value, 11, '根页应有 11 张分类卡片（含内建终端）');
+
+    // review 29.3：地址栏 → 标题间隔与对象面板完全一致（几何断言——
+    // 对象页/设置页的 object-panel-header 顶边与顶栏底边间隙相等）
+    const gapOf = (sel) => h.js(win, `(() => {
+      const topbar = document.querySelector('[data-kb-zone="topbar-omnibar"]')?.parentElement;
+      const el = document.querySelector(${JSON.stringify(sel)});
+      if (!topbar || !el) return null;
+      const tb = topbar.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      return Math.round(r.top - tb.bottom);
+    })()`);
+    const settingsGap = (await gapOf('.settings-page .object-panel-title')).value;
+    await h.js(win, `(() => {
+      const b = [...document.querySelectorAll('.sidebar-item')].find((x) => /对象|Objects/.test(x.textContent ?? ''));
+      b?.click();
+      return !!b;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.object-panel .object-panel-header')`, { timeout: 8000 });
+    const objectsGap = (await gapOf('.object-panel .object-panel-title')).value;
+    h.assert.strictEqual(settingsGap, objectsGap, `设置页与对象页「地址栏→标题」间隔应完全一致（设置 ${settingsGap}px / 对象 ${objectsGap}px）`);
+    // 回设置页继续后续断言
+    await h.openSettingsPage(win);
     // 根页无返回上级键
     h.assert.ok((await h.js(win, `!document.querySelector('[data-kb-zone="topbar-up"]')`)).value, '设置根页不应有返回上级键');
     // 标签页/窗口标题 = 设置

@@ -27,10 +27,11 @@
 /* review 29.1：标题/介绍复用对象面板的 .object-panel-header /
  * .object-panel-title / .object-panel-hint（ObjectPanel.css 全局注入），
  * 布局与大小保证与对象面板一模一样；
- * review 29.2：标题距地址栏间隔与对象面板一致（顶栏 margin-bottom
- * 已归 0，此处补 16px padding-top） */
+ * review 29.3：地址栏 → 标题间隔与对象面板**完全一致**——对象面板 =
+ * 顶栏 margin-bottom 16px + .object-panel padding-top 16px = 32px；
+ * 设置页顶栏 margin-bottom 已归 0（预览吸顶），此处补 32px padding-top */
 .settings-page .object-panel-header {
-  padding-top: 16px;
+  padding-top: 32px;
 }
 
 /* ── 根页分类卡片（对象面板卡片同款视觉、独立类名防 e2e 选择器污染） ── */

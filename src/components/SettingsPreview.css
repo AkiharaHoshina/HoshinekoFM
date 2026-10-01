@@ -12,7 +12,10 @@
  * 规则统一为 M3 样式）——固定上限同时规避 uiScale 放大时吸顶预览
  * 高过整个 scroller 视口、遮住全部设置行的缺陷（200px < 视口上限） */
 .settings-preview-body {
-  background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 85%, black);
+  /* review 29.3：预览器内部改**深色**——以页面背景 surface 为基准混
+   * 黑 20%：明暗两模式下都比页面更深（此前 surface-container-high
+   * 基准在暗色模式比页面更浅，视觉反了） */
+  background: color-mix(in srgb, var(--md-sys-color-surface) 80%, black);
   border-radius: 16px;
   overflow-y: auto;
   overflow-x: hidden;
