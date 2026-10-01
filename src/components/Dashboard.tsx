@@ -9,6 +9,7 @@ import type { IFile, AllDevice } from '../types/files';
 import { getDeviceIcon } from '../utils/deviceUtils';
 import { t as ti } from '../i18n';
 import { readObjectDrag, type ObjectDragPayload } from '../utils/objectDrag';
+import { gridNavTarget, type GridNavKey } from '../utils/gridNav';
 import { useDrag } from '../contexts/DragContext';
 
 interface DashboardProps {
@@ -222,6 +223,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
     if (e.key === 'Enter' || e.key === ' ') {
       const el = document.activeElement as HTMLElement | null;
       if (el && container.contains(el) && items.includes(el)) {
+        e.preventDefault();
+        e.stopPropagation();
+        el.click();
+      }
+    }
+  };
+
+  /**
+   * 固定项网格键盘（review 20）：↑/↓/←/→ 按**网格**移动（上下钳制、
+   * 左右行内循环——列数由条目 offsetTop 几何实时推导，窗口缩放/拖拽
+   * 换序天然正确，见 gridNav.ts）；「添加固定」瓦片同为网格一格参与
+   * 导航（用户定案）。Enter/Space 激活焦点条目（与通用处理同款）。
+   */
+  const handlePinnedZoneKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      e.stopPropagation();
+      const target = gridNavTarget(e.currentTarget, '.pinned-item', e.key as GridNavKey, document.activeElement);
+      target?.focus();
+      return;
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && e.currentTarget.contains(el) && el.classList.contains('pinned-item')) {
         e.preventDefault();
         e.stopPropagation();
         el.click();
@@ -586,7 +611,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
             ref={pinnedZoneRef}
             className="pinned-grid"
             data-kb-zone="dashboard-pinned"
-            onKeyDown={(e) => handleZoneKeyDown(e, '.pinned-item')}
+            onKeyDown={handlePinnedZoneKeyDown}
             onDragOver={handleObjectDragOver}
             onDragLeave={handleObjectDragLeave}
             onDrop={handleObjectDrop}

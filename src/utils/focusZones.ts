@@ -43,6 +43,10 @@ export interface KeyboardZone {
  * - 对象页（review 19）：功能栏 → places → 标签页 → 返回上级键（如果有）
  *   → 地址栏内 → 最近搜索项 → 对象类或对象（topbar-sort/files 不注册
  *   自动跳过）；
+ * - 进程类页（review 20 定案）：… → 地址栏内 → 分类和视图行
+ *   （object-sortbar）→ 批量操作行（object-batch）→ 进程项（objects）
+ *   → 循环——sortbar/batch 仅进程类**列表页**注册（实例详情页不注册，
+ *   见 ObjectPanel 注册守卫），objects 在序内排其后；
  * - 仪表盘：功能栏 → places → 标签页 → 存储子区 → 固定项子区 →
  *   最近访问子区（文件页专属分区未注册自动跳过）。
  */
@@ -53,9 +57,9 @@ const ZONE_ORDER: KeyboardZoneId[] = [
   'topbar-up',
   'topbar-omnibar',
   'object-recent',
-  'objects',
   'object-sortbar',
   'object-batch',
+  'objects',
   'topbar-sort',
   'dashboard-storage',
   'dashboard-pinned',

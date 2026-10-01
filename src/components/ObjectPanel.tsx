@@ -18,6 +18,7 @@ import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import { useRubberBandSelection } from '../hooks/useRubberBandSelection';
 import { registerKeyboardZone, focusKeyboardTarget } from '../utils/focusZones';
+import { gridNavIndex } from '../utils/gridNav';
 import type { ObjectClassInfo, ObjectInstance, ObjectReading, SmartInfo } from '../types/electron.d';
 import type { IFile } from '../types/files';
 import './ObjectPanel.css';
@@ -121,6 +122,18 @@ const PROCESS_CLASS_POLL_MS = 3000;
  *  .object-list-virtual .object-row（行本体 height 48 + margin 3px 6px） */
 const PROCESS_ROW_HEIGHT = 54;
 
+/** 详情页可操作组内的焦点控件选择器（组内 roving 与「组内第一个可
+ *  聚焦控件」共用，review 20 详情页分组迷你循环）。注意 Button 包装的
+ *  variant 映射：tonal = md-filled-tonal-button（无 md-tonal-button 标签） */
+const DETAIL_CONTROLS = 'md-text-button, md-filled-button, md-outlined-button, md-filled-tonal-button, md-elevated-button, md-icon-button, md-slider, md-switch';
+
+/** 组内第一个可聚焦且未禁用的控件（页头自身可聚焦）；全禁用回 null */
+const firstGroupControl = (group: HTMLElement): HTMLElement | null => {
+  if (group.classList.contains('object-panel-header')) return group;
+  const controls = Array.from(group.querySelectorAll<HTMLElement>(DETAIL_CONTROLS));
+  return controls.find((el) => !el.hasAttribute('disabled')) ?? null;
+};
+
 /**
  * 性能模式区块（power 类实例页；powerprofilesctl 检测到才显示——与
  * SMART 同款哲学）：一次性读取可用档位 + 当前档位，三态按钮切换；
@@ -137,7 +150,7 @@ const PowerProfileSection: React.FC = () => {
   }, []);
   if (!info || !info.ok || !info.available || info.available.length === 0) return null;
   return (
-    <div className="object-power-profile">
+    <div className="object-power-profile" data-detail-group="power-profile">
       <div className="object-power-profile-label">{t('objects.power_profile')}</div>
       <div className="object-power-profile-modes">
         {info.available.map((m) => (
@@ -348,6 +361,7 @@ const ProcessListRow = ({
       <div
         data-id={inst.id}
         className={`object-row${selected ? ' object-row--selected' : ''}`}
+        tabIndex={selected ? 0 : -1}
         style={meta ? { paddingLeft: 8 + meta.depth * 16 } : undefined}
         onClick={(e) => onSelect(inst.id, e)}
         onDoubleClick={() => void onOpen(inst)}
@@ -1115,7 +1129,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         );
       }
     }
-    return actions.length > 0 ? <div className="object-actions">{actions}</div> : null;
+    return actions.length > 0 ? <div className="object-actions" data-detail-group="storage">{actions}</div> : null;
   };
 
   /** 进程类实例页操作区（终止/强制结束/nice 滑条/打开位置） */
@@ -1157,7 +1171,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
             读数——受控滑条不再等 1s 轮询回跳，且与成功 toast 共同确认
             「已生效」。提示行独立在第二行：锁定 = 授权与有效期说明、
             已解锁 = 常驻「已解锁」状态（与背光同款） */}
-        <div className="object-nice-block">
+        <div className="object-nice-block" data-detail-group="process-nice">
           <div className="object-nice-row">
             <span className="object-reading-label">{t('objects.process_nice')}</span>
             <Slider
@@ -1199,7 +1213,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
             {processUnlocked ? t('objects.process_nice_unlocked') : t('objects.process_nice_lock_hint')}
           </div>
         </div>
-        {actions.length > 0 ? <div className="object-actions">{actions}</div> : null}
+        {actions.length > 0 ? <div className="object-actions" data-detail-group="process-actions">{actions}</div> : null}
       </>
     );
   };
@@ -1232,7 +1246,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       });
     };
     return (
-      <div className="object-actions-block object-actions-block--slider">
+      <div className="object-actions-block object-actions-block--slider" data-detail-group="backlight">
         <div className="object-actions object-actions--slider">
           <Slider
             className="object-brightness-slider"
@@ -1324,7 +1338,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       });
     };
     return (
-      <div className="object-actions-block object-actions-block--slider">
+      <div className="object-actions-block object-actions-block--slider" data-detail-group="charge">
         <div className="object-actions object-actions--slider">
           <span className="object-reading-label">{t('objects.charge_threshold')}</span>
           <Slider
@@ -1373,7 +1387,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     if (!r || r.isLoopback || !onNetworkToggle) return null;
     const isUp = r.operstate === 'up' || r.operstate === 'unknown';
     return (
-      <div className="object-actions">
+      <div className="object-actions" data-detail-group="network">
         <Button
           variant={isUp ? 'outlined' : 'tonal'}
           onClick={() => onNetworkToggle(inst.id, !isUp)}
@@ -1762,6 +1776,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         key={inst.id}
         data-id={inst.id}
         className={`object-row${selected ? ' object-row--selected' : ''}`}
+        tabIndex={selected ? 0 : -1}
         onClick={() => setSelectedId(inst.id)}
         onDoubleClick={() => void handleInstanceDoubleClick(inst)}
         draggable
@@ -2050,7 +2065,21 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         setProcessSelected(new Set([ids[next]]));
         setProcessAnchor(ids[next]);
       }
+      // review 20：方向键移动后焦点回容器——进站白框（游标行焦点环）
+      // 随之消失、选中高亮继续（用户定案「动方向键后白框消失」）
+      (e.currentTarget as HTMLElement).focus();
       processListImperativeRef.current?.scrollToRow?.({ index: next, align: 'smart' });
+      return;
+    }
+    if (e.key === 'Enter') {
+      // review 20：进站焦点在游标行上——Enter 打开游标实例（与通用类页
+      // Enter 语义对齐；双击同链路）
+      e.preventDefault();
+      e.stopPropagation();
+      const inst = processCursor !== null
+        ? processVisibleList.find((i) => i.id === processCursor)
+        : processVisibleList[0];
+      if (inst) void handleInstanceDoubleClick(inst);
       return;
     }
     if ((e.key === 'a' || e.key === 'A') && (e.ctrlKey || e.metaKey)) {
@@ -2071,7 +2100,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       return;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- processListImperativeRef 为稳定 ref 对象
-  }, [processVisibleList, processCursor, processAnchor, treeActive, treeRows]);
+  }, [processVisibleList, processCursor, processAnchor, treeActive, treeRows, handleInstanceDoubleClick]);
 
   /** 存储类实例的显式分类（后端 storageKind 优先；旧快照/假数据缺字段
    *  时按 nativeIsDir 回落——挂载点语义恒为目录） */
@@ -2224,20 +2253,34 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   const genericListRef = useRef<HTMLDivElement | null>(null);
 
   /** 根页对象导航元素（类卡片/搜索命中行）roving（review 19 objects 站）：
-   *  ←/→（及 ↑/↓ 线性）在面板内 `[data-obj-nav]` 元素间移动、Enter/Space
-   *  经 click 激活（div 无原生按键激活） */
+   *  review 20 起类卡片按**网格**语义移动（↑/↓ 按列钳制、←/→ 行内循环——
+   *  auto-fill 网格列数随宽度变化，几何实时推导，见 gridNav.ts）；
+   *  搜索命中行是按类分组列表，保持线性 roving。Enter/Space 经 click
+   *  激活（div 无原生按键激活） */
   const handleObjNavKey = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
     const cur = e.currentTarget;
     const panel = cur.closest('.object-panel');
-    const items = panel ? Array.from(panel.querySelectorAll<HTMLElement>('[data-obj-nav]')) : [];
-    const idx = items.indexOf(cur);
-    if (idx < 0) return;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    if (!panel) return;
+    // 网格分支：仅类卡片（.object-class-grid 内）；命中行/组头保持线性
+    const isGrid = !!cur.closest('.object-class-grid');
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault();
-      items[(idx + 1) % items.length]?.focus();
-    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      items[(idx - 1 + items.length) % items.length]?.focus();
+      if (isGrid) {
+        const gridItems = Array.from(panel.querySelectorAll<HTMLElement>('.object-class-grid [data-obj-nav]'));
+        const idx = gridItems.indexOf(cur);
+        if (idx < 0) return;
+        const next = gridNavIndex(idx, gridItems, e.key);
+        gridItems[next]?.focus();
+        return;
+      }
+      const items = Array.from(panel.querySelectorAll<HTMLElement>('[data-obj-nav]'));
+      const idx = items.indexOf(cur);
+      if (idx < 0) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        items[(idx + 1) % items.length]?.focus();
+      } else {
+        items[(idx - 1 + items.length) % items.length]?.focus();
+      }
     } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       // 阻止冒泡到窗口级文件区 Enter handler：导航重渲染会把当前元素
@@ -2249,7 +2292,8 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   }, []);
 
   /** 通用类页列表键盘（review 19）：↑/↓ 移动 selectedId（无选中从首行起）、
-   *  Enter 打开实例（与双击同链路） */
+   *  Enter 打开实例（与双击同链路）。review 20：方向键移动后焦点回容器
+   *  ——进站白框（选中行焦点环）随之消失、选中高亮继续（用户定案） */
   const handleGenericListKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     const list = genericFilteredInstances ?? [];
     if (list.length === 0) return;
@@ -2262,6 +2306,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         : Math.max(0, base - 1);
       const next = list[nextIdx];
       setSelectedId(next.id);
+      genericListRef.current?.focus();
       document.querySelector<HTMLElement>(`.object-list [data-id="${next.id}"]`)?.scrollIntoView({ block: 'nearest' });
     } else if (e.key === 'Enter') {
       e.preventDefault();
@@ -2275,20 +2320,53 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
 
   /** 实例详情页导航 roving（review 19 决策 7：Tab 停靠页头；←/→ 在
    *  页头与操作按钮间微调） */
+  /** 详情页分组迷你循环（review 20 定案）：
+   *  - Tab/Shift+Tab：对象标题 → 各可操作组（data-detail-group，DOM 序）
+   *    按序停靠 → 末尾/开头**放行**（不 preventDefault）走全局分区循环
+   *    （App Tab 拦截尊重 defaultPrevented，与 Omnibar 编辑态迷你循环
+   *    同款机制）；组内全禁用时跳过该组。
+   *  - ←/→：组内控件间 roving（类内可用方向键移动）；焦点在滑条上时
+   *    放行内部调值语义（用户定案，与批量站 handleBatchNav 同款）。
+   */
   const handleDetailNavKey = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
     const panel = e.currentTarget;
     const header = panel.querySelector<HTMLElement>('.object-panel-header');
-    const buttons = Array.from(panel.querySelectorAll<HTMLElement>(
-      '.object-detail md-text-button, .object-detail md-tonal-button, .object-detail md-outlined-button, .object-detail md-filled-button, .object-refresh-toggle md-text-button',
-    ));
-    const items = [header, ...buttons].filter((x): x is HTMLElement => !!x);
-    if (items.length === 0) return;
-    const t = e.target as HTMLElement;
-    const idx = items.findIndex((el) => el === t || el.contains(t));
+    const groups = [
+      header,
+      ...Array.from(panel.querySelectorAll<HTMLElement>('[data-detail-group]')),
+    ].filter((g): g is HTMLElement => !!g);
+    if (groups.length === 0) return;
+    const t = e.target as HTMLElement | null;
+    if (!t) return;
+    const idx = groups.findIndex((g) => g === t || g.contains(t));
     if (idx < 0) return;
+    if (e.key === 'Tab') {
+      const dir = e.shiftKey ? -1 : 1;
+      let next = idx + dir;
+      while (next >= 0 && next < groups.length) {
+        const target = firstGroupControl(groups[next]);
+        if (target) {
+          e.preventDefault();
+          e.stopPropagation();
+          target.focus();
+          return;
+        }
+        next += dir;
+      }
+      return; // 越界：放行全局循环
+    }
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    // 滑条内部 ←/→ 调值语义放行（不拦截）
+    if (t.closest('md-slider')) return;
+    const group = groups[idx];
+    const controls = Array.from(group.querySelectorAll<HTMLElement>(DETAIL_CONTROLS))
+      .filter((el) => !el.hasAttribute('disabled'));
+    const el = (t.closest(DETAIL_CONTROLS) as HTMLElement | null) ?? null;
+    const ci = el ? controls.indexOf(el) : -1;
+    if (ci < 0) return;
     e.preventDefault();
-    items[(idx + (e.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length]?.focus();
+    e.stopPropagation();
+    controls[(ci + (e.key === 'ArrowRight' ? 1 : controls.length - 1)) % controls.length]?.focus();
   }, []);
 
   /**
@@ -2325,12 +2403,24 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         setProcessAnchor(firstId);
         setProcessSelected(new Set([firstId]));
       }
-      container.focus();
+      // review 20：进站焦点落游标行（白框只框选中单项，不再套整个
+      // 列表）；游标行未挂载（虚拟化滚动出视口）时回落容器
+      const cursorId = processCursor !== null ? processCursor : (processVisibleList[0]?.id ?? null);
+      const rowEl = cursorId !== null
+        ? container.querySelector<HTMLElement>(`.object-row[data-id="${CSS.escape(cursorId)}"]`)
+        : null;
+      (rowEl ?? container).focus();
       return;
     }
     const list = genericFilteredInstances ?? [];
-    if (list.length > 0 && selectedId === null) setSelectedId(list[0].id);
-    genericListRef.current?.focus();
+    const targetId = selectedId !== null ? selectedId : (list.length > 0 ? list[0].id : null);
+    if (targetId !== null && selectedId === null) setSelectedId(targetId);
+    // review 20：进站焦点落选中行（白框只框选中单项）；选中行已渲染
+    // （无选中时按 data-id 直接聚焦——类名要等下一轮渲染才更新）
+    const rowEl = targetId !== null
+      ? genericListRef.current?.querySelector<HTMLElement>(`.object-row[data-id="${CSS.escape(targetId)}"]`)
+      : null;
+    (rowEl ?? genericListRef.current)?.focus();
   };
 
   /**
@@ -2347,11 +2437,14 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
   }, []);
 
   /** 排序条/批量操作站（review 19 决策 9：进程类页键盘可达）——
-   *  仅进程类页浏览态注册；搜索态不在 SEARCH_ZONE_ORDER 内惰性 */
+   *  仅进程类**列表页**注册（实例详情页不注册——详情页有自己的分组
+   *  迷你循环，review 20；此前 isProcessClass 含实例页会让详情页 Tab
+   *  循环经过两个无 DOM 的死站，焦点空转）；搜索态不在 SEARCH_ZONE_ORDER
+   *  内惰性 */
   const sortBarRef = useRef<HTMLDivElement | null>(null);
   const batchZoneRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (!isProcessClass) return;
+    if (!isProcessClass || parsed?.instanceId !== null) return;
     const c1 = registerKeyboardZone({
       id: 'object-sortbar',
       focus: () => focusKeyboardTarget(sortBarRef.current?.querySelector<HTMLElement>('hoshineko-outlined-segmented-button') ?? null),
@@ -2366,7 +2459,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       },
     });
     return () => { c1(); c2(); };
-  }, [isProcessClass]);
+  }, [isProcessClass, parsed?.instanceId]);
 
   /** 排序条线性 roving（决策 9）：segmented 四按钮 + 升降序 + 树按钮按序
    *  ←/→ 移动——捕获阶段拦截 segmented 内部 ←/→ roving（跨控件线性语义
@@ -2641,7 +2734,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         </div>
         <div className="object-detail">
           {isPolled && (
-            <div className="object-refresh-toggle">
+            <div className="object-refresh-toggle" data-detail-group="refresh">
               <Button variant="text" onClick={() => setReadingPaused((v) => !v)}>
                 {readingPaused ? t('objects.resume_refresh') : t('objects.pause_refresh')}
               </Button>

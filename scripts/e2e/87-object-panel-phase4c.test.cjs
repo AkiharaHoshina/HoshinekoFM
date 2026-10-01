@@ -332,6 +332,10 @@ exit 0
     };
     // 地址栏非编辑态是面包屑——进入编辑态读输入框值（63 号手法），读完 Escape 退出
     const readOmnibar = async () => {
+      // 先等定位导航落定（离开对象视图）再进编辑态读地址栏——导航在途
+      // 时点击触发钮会打开旧视图的编辑态，随后路径更新重渲染把模式复位
+      // 回面包屑、waitFor 扑空（87d 实测 flake，clean HEAD 复现 2/3）
+      await h.waitFor(win, `!document.querySelector('.object-panel')`, { timeout: 8000 });
       await h.clickEl(win, '.omnibar-trigger');
       await h.waitFor(win, `!!document.querySelector('.omnibar-input')`, { timeout: 8000 });
       const r = await h.js(win, `document.querySelector('.omnibar-input').value`);

@@ -104,6 +104,10 @@
 .object-list {
   display: flex;
   flex-direction: column;
+  /* review 20：Tab 进站键盘聚焦时抑制容器默认焦点环（此前暗色主题下
+   * 呈白色双环套住整个列表——「所有对象被框上白框」的根因；进站焦点
+   * 改落在选中行上，见 .object-row:focus-visible） */
+  outline: none;
 }
 
 .object-row {
@@ -113,6 +117,14 @@
   padding: 10px 12px;
   border-radius: 12px;
   cursor: pointer;
+}
+
+/* review 20：进站焦点在选中行（roving tabindex）——焦点环只框选中
+ * 单项；鼠标点击聚焦不触发 :focus-visible，无视觉回归。方向键移动后
+ * 焦点回容器、环随之消失（用户定案「动方向键后白框消失」） */
+.object-row:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
 }
 
 .object-row:hover {
