@@ -315,6 +315,16 @@ const os = require('os');
     // ── 上限输入 2 → 原文保存 '2' + 搜索 2 条 capped ──
     await h.openSettingsPage(win, `/搜索|Search/`);
     await h.waitFor(win, `!!document.querySelector('.settings-input-num')`, { timeout: 8000 });
+    // review 29.2：上限/超时输入框与下方「最近搜索展示条数」下拉严格同宽
+    const widthEq = await h.js(win, `(() => {
+      const inputs = [...document.querySelectorAll('.settings-input-num')];
+      const sel = document.querySelector('.settings-select--compact');
+      if (inputs.length === 0 || !sel) return null;
+      const iw = inputs[0].getBoundingClientRect().width;
+      const sw = sel.getBoundingClientRect().width;
+      return { iw, sw, ok: Math.abs(iw - sw) <= 1 };
+    })()`);
+    h.assert.ok(widthEq.value?.ok === true, `输入框应与下拉同宽（输入框 ${widthEq.value?.iw}px / 下拉 ${widthEq.value?.sw}px）`);
     const inputSel = `(() => {
       const rows = [...document.querySelectorAll('.settings-row')];
       const row = rows.find((r) => /搜索结果上限|Search result limit/.test(r.textContent ?? ''));

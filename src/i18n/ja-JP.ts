@@ -163,6 +163,7 @@ const jaJP = {
 
   // ── 设置弹窗 ──
   'settings.title': '設定',
+  'settings.beta_stage': 'テスト段階',
   "settings.choose_category": '設定のカテゴリを選択して表示・操作します',
   "settings.show_objects": 'オブジェクトパネルを表示',
   "settings.cat_terminal": '内蔵ターミナル',

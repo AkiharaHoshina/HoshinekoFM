@@ -992,64 +992,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
             </button>
           )}
-          {/* Object Panel（objects:// 虚拟页集）入口：Places 顶部（决策 F）。
-              选择器不支持 objects://（无该虚拟页渲染），仅主窗口显示 */}
-          {!isPicker && showObjectsPlace && (
-            <button
-              className={`sidebar-item ${currentPath.startsWith("objects://") ? "active" : ""}`}
-              tabIndex={-1}
-              onClick={() => onNavigate("objects://")}
-            >
-              <Icon
-                name="widgets"
-                className="sidebar-icon"
-                filled={currentPath.startsWith("objects://")}
-              />
-              <span className="sidebar-label">
-                <MarqueeText enabled={marqueeEnabled}>{t("objects.title")}</MarqueeText>
-              </span>
-            </button>
-          )}
-          {/* 设置页入口（review 26）：Places 中位于对象下方；仅主窗口 */}
-          {!isPicker && (
-            <button
-              className={`sidebar-item ${currentPath.startsWith("settings://") ? "active" : ""}`}
-              tabIndex={-1}
-              onClick={() => onNavigate("settings://")}
-            >
-              <Icon
-                name="settings"
-                className="sidebar-icon"
-                filled={currentPath.startsWith("settings://")}
-              />
-              <span className="sidebar-label">
-                <MarqueeText enabled={marqueeEnabled}>{t("settings.title")}</MarqueeText>
-              </span>
-            </button>
-          )}
-          {/* 内建终端入口（review 29 #15）：位于设置下方；点击 = toggle
-              终端（与导航栏终端按钮同行为）；开启时高亮且比普通 active
-              更深（color-mix primary 18%——浅色模式自动更浅） */}
-          {!isPicker && showTerminalPlace && (
-            <button
-              className={`sidebar-item${terminalOpen ? ' active sidebar-item--terminal-active' : ''}`}
-              tabIndex={-1}
-              onClick={() => onToggleTerminal?.()}
-            >
-              <Icon
-                name="terminal"
-                className="sidebar-icon"
-                filled={terminalOpen}
-              />
-              <span className="sidebar-label">
-                <MarqueeText enabled={marqueeEnabled}>{t("settings.cat_terminal")}</MarqueeText>
-              </span>
-            </button>
-          )}
+          {/* review 29.2：文件位置（主页/桌面/文档/下载/音乐/图片/视频）
+              紧接仪表盘；该 Place 已被用户固定时，高亮让位给固定条目
+              （避免两处同时高亮） */}
           {places
-            .filter((place) => !(hideTrash && place.name === "Trash"))
+            .filter((place) => place.name !== "Trash")
             .map((place) => {
-            // 该 Place 已被用户固定时，高亮让位给固定条目（避免两处同时高亮）
               const pinnedSamePath = pinnedDirs.some((p) => p.path === place.path);
               return (
                 <button
@@ -1076,6 +1024,90 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
               );
             })}
+          {/* 设置页入口（review 26）：位于文件位置之后；仅主窗口 */}
+          {!isPicker && (
+            <button
+              className={`sidebar-item ${currentPath.startsWith("settings://") ? "active" : ""}`}
+              tabIndex={-1}
+              onClick={() => onNavigate("settings://")}
+            >
+              <Icon
+                name="settings"
+                className="sidebar-icon"
+                filled={currentPath.startsWith("settings://")}
+              />
+              <span className="sidebar-label">
+                <MarqueeText enabled={marqueeEnabled}>{t("settings.title")}</MarqueeText>
+              </span>
+            </button>
+          )}
+          {/* Object Panel（objects:// 虚拟页集）入口：设置下方；
+              选择器不支持 objects://（无该虚拟页渲染），仅主窗口显示 */}
+          {!isPicker && showObjectsPlace && (
+            <button
+              className={`sidebar-item ${currentPath.startsWith("objects://") ? "active" : ""}`}
+              tabIndex={-1}
+              onClick={() => onNavigate("objects://")}
+            >
+              <Icon
+                name="widgets"
+                className="sidebar-icon"
+                filled={currentPath.startsWith("objects://")}
+              />
+              <span className="sidebar-label">
+                <MarqueeText enabled={marqueeEnabled}>{t("objects.title")}</MarqueeText>
+              </span>
+            </button>
+          )}
+          {/* 内建终端入口（review 29 #15）：对象下方；点击 = toggle
+              终端（与导航栏终端按钮同行为）；开启时高亮为更次要的
+              color-mix primary 10%（review 29.2 调低） */}
+          {!isPicker && showTerminalPlace && (
+            <button
+              className={`sidebar-item${terminalOpen ? ' active sidebar-item--terminal-active' : ''}`}
+              tabIndex={-1}
+              onClick={() => onToggleTerminal?.()}
+            >
+              <Icon
+                name="terminal"
+                className="sidebar-icon"
+                filled={terminalOpen}
+              />
+              <span className="sidebar-label">
+                <MarqueeText enabled={marqueeEnabled}>{t("settings.cat_terminal")}</MarqueeText>
+              </span>
+            </button>
+          )}
+          {/* 回收站：末位（review 29.2 顺序定案） */}
+          {!hideTrash && (() => {
+            const place = places.find((p) => p.name === "Trash");
+            if (!place) return null;
+            const pinnedSamePath = pinnedDirs.some((p) => p.path === place.path);
+            return (
+              <button
+                key={place.path}
+                className={`sidebar-item ${!pinnedSamePath && currentPath === place.path ? "active" : ""} ${dragOverTarget === `${TARGET_PREFIX_PLACE}${place.path}` ? "drag-over" : ""}`}
+                data-sidebar-target={`${TARGET_PREFIX_PLACE}${place.path}`}
+                tabIndex={-1}
+                onClick={() => onNavigate(place.path)}
+                onContextMenu={(e) => {
+                  if (!onPlaceContextMenu) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onPlaceContextMenu(e, place);
+                }}
+              >
+                <Icon
+                  name={getPlaceIcon(place.name)}
+                  className="sidebar-icon"
+                  filled={!pinnedSamePath && currentPath.startsWith(place.path)}
+                />
+                <span className="sidebar-label">
+                  <MarqueeText enabled={marqueeEnabled}>{getPlaceLabel(place.name)}</MarqueeText>
+                </span>
+              </button>
+            );
+          })()}
         </div>
       </div>
 

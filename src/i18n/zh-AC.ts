@@ -163,6 +163,7 @@ const zhAC = {
 
   // ── 设置弹窗 ──
   'settings.title': '设置',
+  'settings.beta_stage': '测试阶段',
   "settings.choose_category": '选择一类设置以查看与操作',
   "settings.show_objects": '显示对象面板',
   "settings.cat_terminal": '内建终端',

@@ -202,6 +202,7 @@ const ukUA = {
 
   // ── 设置弹窗 ──
   'settings.title': 'Налаштування',
+  'settings.beta_stage': 'Стадія тестування',
   "settings.choose_category": 'Виберіть категорію налаштувань для перегляду та зміни',
   "settings.show_objects": "Показувати панель об'єктів",
   "settings.cat_terminal": 'Вбудований термінал',

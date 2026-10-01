@@ -109,7 +109,8 @@
  * 双类选择器保证特异性（0,2,0）与 .sidebar-item.active 同级且排其后，
  * 覆盖其背景） */
 .sidebar-item.sidebar-item--terminal-active {
-    background-color: color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
+    /* review 29.2：高亮更次要（10% 主色混合，视觉权重低于普通 active） */
+    background-color: color-mix(in srgb, var(--md-sys-color-primary) 10%, transparent);
     color: var(--md-sys-color-on-surface);
 }
 

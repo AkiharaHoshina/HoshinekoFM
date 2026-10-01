@@ -174,6 +174,7 @@ const enUS = {
 
   // ── 设置弹窗 ──
   'settings.title': 'Settings',
+  'settings.beta_stage': 'Beta Stage',
   "settings.choose_category": 'Choose a category to view and change settings',
   "settings.show_objects": 'Show object panel',
   "settings.cat_terminal": 'Built-in Terminal',

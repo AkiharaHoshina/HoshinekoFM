@@ -285,25 +285,29 @@ export const DisplaySettings: React.FC<{ onNavigate: (p: string) => void }> = ({
   );
 };
 
-/** 图标大小行（review 29 #3：松手生效——拖动中仅数值标签跟随） */
+/** 图标大小行（review 29 #3：松手生效；review 29.2：拖动中不 setState
+ *  ——onInput 经 ref 命令式更新数值标签文本，零重渲染，避免受控
+ *  value 重渲染把已提交旧值回写 md-slider 导致滑块抖动） */
 const IconSizeRow: React.FC = () => {
   const s = useSettings();
-  const [dragSize, setDragSize] = useState<number | null>(null);
-  const shown = dragSize ?? s.iconSize;
+  const valueRef = useRef<HTMLSpanElement | null>(null);
   return (
     <div className="settings-icon-size">
       <div className="settings-icon-size__header">
         <span>{t('settings.icon_size')}</span>
-        <span className="settings-icon-size__value">{shown}px</span>
+        <span ref={valueRef} className="settings-icon-size__value">{s.iconSize}px</span>
       </div>
       <Slider
         min={ICON_SIZE_MIN}
         max={ICON_SIZE_MAX}
         step={ICON_SIZE_STEP}
         value={s.iconSize}
-        onInput={(e) => setDragSize(Number((e.target as HTMLInputElement).value))}
+        onInput={(e) => {
+          if (valueRef.current) {
+            valueRef.current.textContent = `${Number((e.target as HTMLInputElement).value)}px`;
+          }
+        }}
         onChange={(e) => {
-          setDragSize(null);
           s.setIconSize(Number((e.target as HTMLInputElement).value));
         }}
         style={{ width: '100%' }}
@@ -312,25 +316,28 @@ const IconSizeRow: React.FC = () => {
   );
 };
 
-/** 界面缩放行（松手生效——拖动中仅数值标签跟随，不应用整页缩放） */
+/** 界面缩放行（松手生效；review 29.2：拖动中经 ref 命令式更新标签，
+ *  零重渲染——与图标大小行同款抖动修复） */
 const UiScaleRow: React.FC = () => {
   const s = useSettings();
-  const [dragScale, setDragScale] = useState<number | null>(null);
-  const shown = dragScale ?? s.uiScale;
+  const valueRef = useRef<HTMLSpanElement | null>(null);
   return (
     <div className="settings-icon-size">
       <div className="settings-icon-size__header">
         <span>{t('settings.ui_scale')}</span>
-        <span className="settings-icon-size__value">{shown}%</span>
+        <span ref={valueRef} className="settings-icon-size__value">{s.uiScale}%</span>
       </div>
       <Slider
         min={50}
         max={200}
         step={5}
         value={s.uiScale}
-        onInput={(e) => setDragScale(Number((e.target as HTMLInputElement).value))}
+        onInput={(e) => {
+          if (valueRef.current) {
+            valueRef.current.textContent = `${Number((e.target as HTMLInputElement).value)}%`;
+          }
+        }}
         onChange={(e) => {
-          setDragScale(null);
           s.setUiScale(Number((e.target as HTMLInputElement).value));
         }}
         style={{ width: '100%' }}
@@ -868,6 +875,11 @@ export const AboutSettings: React.FC = () => {
   }, []);
   return (
     <>
+      {/* review 29.2：测试阶段（Beta）行位于版本之前，UI 与版本号行一致 */}
+      <div className="settings-about-row">
+        <span className="settings-row__label">{t('settings.beta_stage')}</span>
+        <span className="settings-about-version">Beta</span>
+      </div>
       <div className="settings-about-row">
         <span className="settings-row__label">{t('settings.version')}</span>
         <span className="settings-about-version">{version}</span>

@@ -163,6 +163,7 @@ const zhHK = {
 
   // ── 設定彈窗 ──
   'settings.title': '設定',
+  'settings.beta_stage': '測試階段',
   "settings.choose_category": '選擇一類設定以查看與操作',
   "settings.show_objects": '顯示物件面板',
   "settings.cat_terminal": '內建終端',

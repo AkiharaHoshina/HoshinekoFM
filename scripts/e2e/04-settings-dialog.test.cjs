@@ -62,6 +62,16 @@ const h = require('./harness.cjs');
     await h.waitFor(win, `!!document.querySelector('.settings-page .object-panel-header')`, { timeout: 8000 });
     const aboutTitle = await h.js(win, `document.querySelector('.settings-page .object-panel-title')?.textContent ?? ''`);
     h.assert.ok(/关于|About/.test(aboutTitle.value), `关于页标题应显示（实际 ${aboutTitle.value}）`);
+    // review 29.2：测试阶段（Beta）行位于版本行之前，UI 与版本号一致
+    const betaInfo = await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-about-row')];
+      const betaIdx = rows.findIndex((r) => /测试阶段|Beta Stage/.test(r.textContent ?? ''));
+      const verIdx = rows.findIndex((r) => /版本|Version/.test(r.textContent ?? ''));
+      const betaVal = betaIdx >= 0 ? (rows[betaIdx].querySelector('.settings-about-version')?.textContent ?? '') : '';
+      return { betaIdx, verIdx, betaVal };
+    })()`);
+    h.assert.ok(betaInfo.value.betaIdx >= 0 && betaInfo.value.betaIdx < betaInfo.value.verIdx, `测试阶段行应位于版本行之前（实际 ${JSON.stringify(betaInfo.value)}）`);
+    h.assert.strictEqual(betaInfo.value.betaVal, 'Beta', `测试阶段值应为 Beta（实际 ${betaInfo.value.betaVal}）`);
   });
 
   h.finish();

@@ -164,6 +164,7 @@ const koCN = {
 
   // ── 설정 팝업 ──
   'settings.title': '설정',
+  'settings.beta_stage': '테스트 단계',
   "settings.choose_category": '설정 범주를 선택하여 확인하고 조작하세요',
   "settings.show_objects": '객체 패널 표시',
   "settings.cat_terminal": '내장 터미널',

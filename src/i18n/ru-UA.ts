@@ -205,6 +205,7 @@ const ruUA = {
 
   // ── 设置弹窗 ──
   'settings.title': 'Настройки',
+  'settings.beta_stage': 'Этап тестирования',
   "settings.choose_category": 'Выберите категорию настроек для просмотра и изменения',
   "settings.show_objects": 'Показывать панель объектов',
   "settings.cat_terminal": 'Встроенный терминал',

@@ -26,7 +26,12 @@
 
 /* review 29.1：标题/介绍复用对象面板的 .object-panel-header /
  * .object-panel-title / .object-panel-hint（ObjectPanel.css 全局注入），
- * 布局与大小保证与对象面板一模一样 */
+ * 布局与大小保证与对象面板一模一样；
+ * review 29.2：标题距地址栏间隔与对象面板一致（顶栏 margin-bottom
+ * 已归 0，此处补 16px padding-top） */
+.settings-page .object-panel-header {
+  padding-top: 16px;
+}
 
 /* ── 根页分类卡片（对象面板卡片同款视觉、独立类名防 e2e 选择器污染） ── */
 
@@ -178,7 +183,9 @@
   z-index: 2;
   margin: 0 -24px;
   padding: 4px 24px 12px;
-  background: var(--md-sys-color-surface-container-high);
+  /* review 29.2：固定区背景与设置页面背景一致（差异只体现在预览卡
+   * 内部——预览器内部保持加深）；保持不透明以遮住滚动穿帮内容 */
+  background: var(--md-sys-color-surface);
   /* review 29.1：边框与背景同色（无可见分界线） */
   border-bottom: 1px solid transparent;
 }
@@ -231,6 +238,9 @@
 
 .settings-select--compact {
   width: 128px;
+  /* review 29.2：MD 内部 min-width（~210px）会把 128px 钳制变宽——
+   * 归 0 使收起态字段与页内输入框（.settings-input-num 128px）严格同宽 */
+  min-width: 128px;
 }
 
 .settings-about-row {
