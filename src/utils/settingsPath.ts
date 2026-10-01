@@ -32,10 +32,10 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
   { id: 'objects', labelKey: 'settings.cat_objects', icon: 'widgets', count: 4 },
   { id: 'portal', labelKey: 'settings.cat_portal', icon: 'integration_instructions', count: 3 },
   { id: 'shortcut', labelKey: 'settings.cat_shortcut', icon: 'bolt', count: 2 },
+  { id: 'built-in-terminal', labelKey: 'settings.cat_terminal', icon: 'terminal', count: 1 },
   { id: 'i18n', labelKey: 'settings.cat_i18n', icon: 'translate', count: 1 },
   { id: 'defaultrecovery', labelKey: 'settings.cat_defaults', icon: 'restart_alt', count: 1 },
   { id: 'about', labelKey: 'settings.cat_about', icon: 'info', count: 2 },
-  { id: 'built-in-terminal', labelKey: 'settings.cat_terminal', icon: 'terminal', count: 1 },
 ];
 
 /** 二级子页（cat → 子页 id → 标题 i18n 键）——目前仅 display/theme */

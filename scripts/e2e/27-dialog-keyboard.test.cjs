@@ -146,7 +146,7 @@ const h = require('./harness.cjs');
     })()`, true);
     await h.key(win, 'Enter');
     await h.waitFor(win, `!!document.querySelector('.theme-color-preset-grid')`, { timeout: 8000 });
-    const title = await h.js(win, `document.querySelector('.settings-page-title')?.textContent ?? ''`);
+    const title = await h.js(win, `document.querySelector('.settings-page .object-panel-title')?.textContent ?? ''`);
     h.assert.ok(/主题|Theme/.test(title.value), `应导航到主题子页（实际 ${title.value}）`);
     // 预设色盘 + 特殊颜色卡 + 三按钮（调色盘/选择壁纸/导入 Matugen）
     const themeBody = await h.js(win, `(() => {

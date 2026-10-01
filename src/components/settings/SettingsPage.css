@@ -24,16 +24,9 @@
   min-width: 0;
 }
 
-.settings-page-header {
-  padding: 8px 0 4px;
-}
-
-.settings-page-title {
-  font-size: 1.5rem;
-  line-height: 2rem;
-  font-weight: 400;
-  color: var(--md-sys-color-on-surface);
-}
+/* review 29.1：标题/介绍复用对象面板的 .object-panel-header /
+ * .object-panel-title / .object-panel-hint（ObjectPanel.css 全局注入），
+ * 布局与大小保证与对象面板一模一样 */
 
 /* ── 根页分类卡片（对象面板卡片同款视觉、独立类名防 e2e 选择器污染） ── */
 
@@ -85,24 +78,7 @@
   color: var(--md-sys-color-on-surface-variant);
 }
 
-/* 主页标题行（review 29 #12：[图标] 设置 + 副标题） */
-.settings-page-title-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 0 0;
-}
 
-.settings-page-title-icon {
-  color: var(--md-sys-color-primary);
-  font-size: 32px;
-}
-
-.settings-page-subtitle {
-  font-size: 13px;
-  color: var(--md-sys-color-on-surface-variant);
-  padding: 4px 0 8px;
-}
 
 /* ── 内容区（行/分区，自旧 SettingsDialog.css 平移） ── */
 
@@ -203,7 +179,8 @@
   margin: 0 -24px;
   padding: 4px 24px 12px;
   background: var(--md-sys-color-surface-container-high);
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  /* review 29.1：边框与背景同色（无可见分界线） */
+  border-bottom: 1px solid transparent;
 }
 
 .settings-preview-toggle {
@@ -307,8 +284,8 @@
 }
 
 .theme-color-preset {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   flex-shrink: 0;
   border-radius: 50%;
   border: 2px solid var(--md-sys-color-outline-variant);
@@ -326,10 +303,17 @@
   box-shadow: 0 0 0 2px var(--md-sys-color-surface), 0 0 0 4px var(--md-sys-color-on-surface);
 }
 
+/* review 29.1：特殊颜色卡不填满界面——固定宽度与设置主页卡片一致
+ * （180px），高度自然（换行小字两行）；flex-wrap 动态排列 */
 .theme-color-specials {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
+}
+
+.theme-color-specials .theme-color-special {
+  width: 180px;
+  flex-shrink: 0;
 }
 
 .theme-color-special {
@@ -390,7 +374,13 @@
   flex-wrap: wrap;
 }
 
-/* review 29 #6：页内数字输入框（搜索上限/超时） */
+/* review 29 #6：页内数字输入框（搜索上限/超时）；
+ *  review 29.1：宽度与下方下拉菜单（settings-select--compact 128px）一致 */
 .settings-input-num {
-  width: 140px;
+  width: 128px;
+}
+
+/* review 29.1：系统集成行卸载/重装双按钮间隙 */
+.settings-row > md-outlined-button + md-outlined-button {
+  margin-left: 8px;
 }

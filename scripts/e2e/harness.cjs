@@ -995,7 +995,7 @@ async function escCloseSearch(win) {
 
 /**
  * review 26：打开设置页（导航栏最后一个按钮 = 设置 → settings:// 根）。
- * categoryRe 非空时点击匹配的分类卡片并等待分类页（.settings-page-header）。
+ * categoryRe 非空时点击匹配的分类卡片并等待分类页（.settings-page .object-panel-header）。
  * 返回后设置页仍留在该标签页（再次点击导航栏按钮 = 重新导航到根）。
  */
 async function openSettingsPage(win, categoryRe) {
@@ -1028,7 +1028,7 @@ async function openSettingsPage(win, categoryRe) {
       })()`,
       true,
     );
-    await waitFor(win, `!!document.querySelector('.settings-page-header')`, { timeout: 8000 });
+    await waitFor(win, `!!document.querySelector('.settings-page .object-panel-header')`, { timeout: 8000 });
   }
 }
 

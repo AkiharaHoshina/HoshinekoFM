@@ -32,7 +32,7 @@ const { ipcMain } = require('electron');
 
     // 主题和显示分类 → 子页入口
     await h.openSettingsPage(win, `/主题和显示|Theme & Display/`);
-    await h.waitFor(win, `!!document.querySelector('.settings-page-header')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.settings-page .object-panel-header')`, { timeout: 8000 });
     h.assert.ok((await h.js(win, `!!document.querySelector('[data-kb-zone="topbar-up"]')`)).value, '分类页应有返回上级键');
     h.assert.ok(/设置 · 主题和显示|Settings · Theme & Display/.test((await h.js(win, `document.querySelector('.tab-item.active .tab-title')?.textContent ?? ''`)).value), '分类页标签标题应含类名');
     // 面包屑：设置胶囊 + 类段
@@ -46,7 +46,7 @@ const { ipcMain } = require('electron');
       return !!row;
     })()`, true);
     await h.waitFor(win, `!!document.querySelector('.theme-color-preset-grid')`, { timeout: 8000 });
-    h.assert.ok(/主题|Theme/.test((await h.js(win, `document.querySelector('.settings-page-title')?.textContent ?? ''`)).value), '子页标题应为主题');
+    h.assert.ok(/主题|Theme/.test((await h.js(win, `document.querySelector('.settings-page .object-panel-title')?.textContent ?? ''`)).value), '子页标题应为主题');
     h.assert.ok((await h.js(win, `document.querySelectorAll('.breadcrumb-item').length >= 2`)).value, '子页面包屑应有 设置/主题和显示/主题 三段');
 
     // 返回上级：子页 → 分类页 → 根
@@ -225,7 +225,7 @@ const { ipcMain } = require('electron');
     h.assert.ok(moved.value, '→ 应移到第二张卡片');
     // Enter 打开分类
     await h.key(win, 'Enter');
-    await h.waitFor(win, `!!document.querySelector('.settings-page-header')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.settings-page .object-panel-header')`, { timeout: 8000 });
   });
 
   await h.run('103g review29：显示对象面板开关 + Places 内建终端入口', async () => {

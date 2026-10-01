@@ -50,7 +50,7 @@ const h = require('./harness.cjs');
 
     // 关于页（settings://about）前台
     await h.openSettingsPage(win, `/关于|About/`);
-    await h.waitFor(win, `!!document.querySelector('.settings-page-header')`, { timeout: 8000 });
+    await h.waitFor(win, `!!document.querySelector('.settings-page .object-panel-header')`, { timeout: 8000 });
 
     // 普通 PgDn（无 Ctrl）不触发
     await press(false);

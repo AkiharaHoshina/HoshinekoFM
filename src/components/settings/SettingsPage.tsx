@@ -125,12 +125,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
     <div className="settings-page" ref={rootRef} data-kb-zone="settings">
       {parsed.cat === null ? (
         <div className="settings-page-scroll">
-          {/* review 29 #12：主页标题行（[图标] 设置 + 介绍） */}
-          <div className="settings-page-title-row">
-            <Icon name="settings" className="settings-page-title-icon" />
-            <span className="settings-page-title">{t('settings.title')}</span>
+          {/* review 29.1：主页标题与对象面板一模一样（复用
+              .object-panel-header/.object-panel-title/.object-panel-hint） */}
+          <div className="object-panel-header">
+            <Icon name="settings" className="object-panel-header-icon" />
+            <div className="object-panel-title">{t('settings.title')}</div>
           </div>
-          <div className="settings-page-subtitle">{t('settings.choose_category')}</div>
+          <div className="object-panel-hint">{t('settings.choose_category')}</div>
           <div className="settings-category-grid">
             {SETTINGS_CATEGORIES.map((c) => (
               <div
@@ -151,8 +152,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
         </div>
       ) : (
         <div className="settings-page-scroll">
-          <div className="settings-page-header">
-            <span className="settings-page-title">{pageTitleOf(parsed)}</span>
+          {/* review 29.1：分类页标题与对象面板类页一模一样（图标 +
+              20px/600 标题） */}
+          <div className="object-panel-header">
+            <Icon
+              name={SETTINGS_CATEGORIES.find((c) => c.id === parsed.cat)?.icon ?? 'settings'}
+              className="object-panel-header-icon"
+            />
+            <div className="object-panel-title">{pageTitleOf(parsed)}</div>
           </div>
           <div className="settings-content">
             {renderCategory(parsed.cat)}

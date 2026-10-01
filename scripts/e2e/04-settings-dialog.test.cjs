@@ -59,8 +59,8 @@ const h = require('./harness.cjs');
     await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     await h.setReactInput(win, '.omnibar.mode-edit .omnibar-input', 'settings://about');
     await h.key(win, 'Enter');
-    await h.waitFor(win, `!!document.querySelector('.settings-page-header')`, { timeout: 8000 });
-    const aboutTitle = await h.js(win, `document.querySelector('.settings-page-title')?.textContent ?? ''`);
+    await h.waitFor(win, `!!document.querySelector('.settings-page .object-panel-header')`, { timeout: 8000 });
+    const aboutTitle = await h.js(win, `document.querySelector('.settings-page .object-panel-title')?.textContent ?? ''`);
     h.assert.ok(/关于|About/.test(aboutTitle.value), `关于页标题应显示（实际 ${aboutTitle.value}）`);
   });
 
