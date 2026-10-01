@@ -10,9 +10,15 @@
  * - 103f 键盘：settings 站进 Tab 循环、根页卡片方向键网格导航。
  */
 const h = require('./harness.cjs');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { ipcMain } = require('electron');
 
 (async () => {
+  // 沙箱 CONFIG_DIR：搜索历史决定对象根页 search-recent 条带是否渲染
+  // （52px 高度会污染「地址栏→标题」间隔对比断言——84h 坑同源）
+  process.env.HOSHINEKO_E2E_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-cfg103-'));
   await h.setupApp();
 
   const dir = h.tempDir();
@@ -260,9 +266,120 @@ const { ipcMain } = require('electron');
       return document.activeElement === cards[1];
     })()`);
     h.assert.ok(moved.value, '→ 应移到第二张卡片');
+    // review 29.3：类卡片为网格语义——注入 3 列宽度后 ↓ 按列移动（0 → 3）
+    await h.js(win, `(() => {
+      const grid = document.querySelector('.settings-category-grid');
+      if (grid) grid.style.width = '576px';
+      return true;
+    })()`, true);
+    await h.js(win, `document.querySelector('.settings-category-card')?.focus(); true`, true);
+    await h.sleep(200);
+    await h.key(win, 'Down');
+    await h.sleep(200);
+    const gridMoved = await h.js(win, `(() => {
+      const cards = [...document.querySelectorAll('.settings-category-card')];
+      return cards.indexOf(document.activeElement);
+    })()`);
+    h.assert.strictEqual(gridMoved.value, 3, `3 列网格下 ↓ 应从首卡移到第 4 张（实际 ${gridMoved.value}）`);
+    await h.js(win, `(() => {
+      const grid = document.querySelector('.settings-category-grid');
+      if (grid) grid.style.width = '';
+      return true;
+    })()`, true);
     // Enter 打开分类
     await h.key(win, 'Enter');
     await h.waitFor(win, `!!document.querySelector('.settings-page .object-panel-header')`, { timeout: 8000 });
+  });
+
+  await h.run('103i 滑条/主题控件 Tab 可达 + 滑条方向键调值 + 进站滚动跟随', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await h.sleep(600);
+
+    const zoneOf = () => h.js(win, `(() => {
+      const a = document.activeElement;
+      if (!a) return 'none';
+      return a.closest('[data-kb-zone]')?.getAttribute('data-kb-zone') ?? 'other';
+    })()`);
+    /** Tab 直到谓词成立（上限 40 次） */
+    const tabUntil = async (pred) => {
+      for (let i = 0; i < 40; i++) {
+        await h.key(win, 'Tab');
+        await h.sleep(100);
+        const ok = await h.js(win, pred);
+        if (ok.value) return true;
+        const z = (await zoneOf()).value;
+        if (z === 'nav') return false; // 已放行全局循环——没找到
+      }
+      return false;
+    };
+
+    // ── 文件页：滚动到底后 Tab 进站，首控件可见（进站滚动跟随）──
+    await h.openSettingsPage(win, `/文件|Files/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-preview-toggle')`, { timeout: 8000 });
+    await h.js(win, `(() => {
+      const sc = document.querySelector('.settings-page-scroll');
+      if (sc) sc.scrollTop = sc.scrollHeight;
+      return true;
+    })()`, true);
+    await h.sleep(300);
+    for (let i = 0; i < 12; i++) {
+      await h.key(win, 'Tab');
+      await h.sleep(120);
+      if ((await zoneOf()).value === 'settings') break;
+    }
+    const entryVisible = await h.js(win, `(() => {
+      const sc = document.querySelector('.settings-page-scroll');
+      const el = document.activeElement;
+      if (!sc || !el) return null;
+      const sr = sc.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      return r.top >= sr.top - 1 && r.bottom <= sr.bottom + 1;
+    })()`);
+    h.assert.ok(entryVisible.value === true, '滚动到底后 Tab 进站，首控件应滚动回可见位置');
+    await h.js(win, `(() => {
+      const sc = document.querySelector('.settings-page-scroll');
+      if (sc) sc.scrollTop = 0;
+      return true;
+    })()`, true);
+
+    // ── 文件页：Tab 可达图标大小滑条；滑条上 ←/→ 调值不移动焦点 ──
+    const reachedSlider = await tabUntil(`document.activeElement?.tagName === 'MD-SLIDER'`);
+    h.assert.ok(reachedSlider, 'Tab 应可达图标大小滑条（此前被漏掉）');
+    const beforeVal = await h.js(win, `document.activeElement.value`);
+    await h.key(win, 'Right');
+    await h.sleep(200);
+    const afterVal = await h.js(win, `(() => {
+      const el = document.activeElement;
+      return { v: el.value, stillSlider: el.tagName === 'MD-SLIDER' };
+    })()`);
+    h.assert.ok(afterVal.value.v !== beforeVal.value, `滑条上 → 应调整数值（${beforeVal.value} → ${afterVal.value.v}）`);
+    h.assert.ok(afterVal.value.stillSlider, '滑条上方向键应保持焦点在滑条（不移动落点）');
+
+    // ── 主题页：Tab 可达预设色钮 / 特殊色卡 / 最下两按钮 ──
+    await h.openSettingsPage(win, `/主题和显示|Theme & Display/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
+    await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /^(主题|Theme)$/.test((r.querySelector('.settings-row__label')?.textContent ?? '').trim()));
+      row?.click();
+      return !!row;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.theme-color-preset')`, { timeout: 8000 });
+    const reachedPreset = await tabUntil(`!!document.activeElement?.classList.contains('theme-color-preset')`);
+    h.assert.ok(reachedPreset, 'Tab 应可达预设颜色按钮（此前被漏掉）');
+    const reachedSpecial = await tabUntil(`!!document.activeElement?.classList.contains('theme-color-special')`);
+    h.assert.ok(reachedSpecial, 'Tab 应可达特殊颜色卡（此前被漏掉）');
+    const reachedPalette = await tabUntil(`(() => {
+      const a = document.activeElement;
+      return !!a?.closest('.theme-color-palette-row') && /导入|Matugen|matugen/i.test(a.textContent ?? '');
+    })()`);
+    h.assert.ok(reachedPalette, 'Tab 应可达最下方按钮（选择壁纸/导入 Matugen——此前被漏掉）');
+    // 末控件（导入 Matugen）再 Tab → 放行全局循环
+    await h.key(win, 'Tab');
+    await h.sleep(200);
+    const z = (await zoneOf()).value;
+    h.assert.strictEqual(z, 'nav', `主题页末控件 Tab 应放行走全局循环（实际 ${z}）`);
   });
 
   await h.run('103g review29：显示对象面板开关 + Places 内建终端入口', async () => {
