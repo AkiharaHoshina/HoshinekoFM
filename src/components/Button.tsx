@@ -22,6 +22,9 @@ interface ButtonProps {
   onContextMenu?: React.MouseEventHandler<HTMLElement>;
   children?: React.ReactNode;
   tabIndex?: number;
+  /** 键盘分区标记（review 21：批量操作行子站——Button 不透传未知属性，
+   *  需显式 prop；与 tabIndex 同款可选） */
+  dataKbZone?: string;
   id?: string;
   title?: string;
 }
@@ -49,6 +52,7 @@ export const Button: React.FC<ButtonProps> = ({
   onDrop,
   onContextMenu,
   tabIndex,
+  dataKbZone,
   id,
   title,
 }) => {
@@ -68,6 +72,7 @@ export const Button: React.FC<ButtonProps> = ({
       onDrop={onDrop}
       onContextMenu={onContextMenu}
       tabIndex={tabIndex}
+      data-kb-zone={dataKbZone}
       id={id}
       title={title}
     >

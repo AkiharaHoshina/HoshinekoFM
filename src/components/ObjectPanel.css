@@ -505,6 +505,16 @@
   min-width: 0;
 }
 
+/* review 21 拆三站：按钮/滑条/锁定各包一层 zone 容器（data-kb-zone 挂
+ * wrapper，禁用态回落聚焦 wrapper 自身——closest 命中本站、focusin
+ * 跟踪不卡循环），wrapper 同时承接原控件的 flex 布局职责 */
+.object-sortbar-actions .object-batch-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 /* 批量 nice 组（滑条 + 解锁/锁定，占第三行更宽份额） */
 .object-sortbar-actions .object-batch-nice {
   flex: 2.5 1 0;
@@ -512,6 +522,24 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
+}
+
+.object-batch-nice .object-batch-slider-zone {
+  flex: 1;
+  min-width: 80px;
+  display: flex;
+  align-items: center;
+}
+
+.object-batch-slider-zone .object-batch-nice-slider {
+  flex: 1;
+  min-width: 0;
+}
+
+.object-batch-nice .object-batch-lock-zone {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 .object-batch-nice-label {

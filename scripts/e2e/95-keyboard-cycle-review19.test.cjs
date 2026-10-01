@@ -284,8 +284,9 @@ const { ipcMain } = require('electron');
     })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 1`, { timeout: 8000 });
 
-    // review 20 定案顺序（进程类页完整循环）：… 地址栏 →
-    // object-sortbar（分类和视图行）→ object-batch（批量操作行）→
+    // review 20/21 定案顺序（进程类页完整循环，锁定态）：… 地址栏 →
+    // object-sortbar（分类和视图行）→ object-batch（终止/强制结束）→
+    // object-batch-lock（解锁按钮；滑条站锁定态不注册自动跳过）→
     // objects（进程项）→ 循环回 nav。从 objects 起步（进站选中首行，
     // 批量操作行依赖选中才启用）走完整一圈。
     await tabToZone(win, 'objects');
@@ -307,27 +308,32 @@ const { ipcMain } = require('electron');
     for (let i = 0; i < 4; i++) { await h.key(win, 'Right'); await h.sleep(150); }
     const onDir = await h.js(win, `document.activeElement === document.querySelector('.object-sortbar-dir')`);
     h.assert.ok(onDir.value, '→ 应从 segmented 末按钮移到升降序按钮');
-    // object-batch：Tab → TERM 按钮（已有选中 → 启用）→ → KILL → → 绕回
+    // Tab → object-batch（按钮站）
     await h.key(win, 'Tab');
     await h.sleep(300);
     let z = (await zoneOf(win)).value;
-    h.assert.strictEqual(z, 'object-batch', `应落批量操作站，实际 ${z}`);
+    h.assert.strictEqual(z, 'object-batch', `应落批量按钮站，实际 ${z}`);
     const onTerm = await h.js(win, `document.activeElement === document.querySelector('.object-sortbar-actions md-outlined-button')`);
-    h.assert.ok(onTerm.value, '批量站应聚焦终止按钮');
+    h.assert.ok(onTerm.value, '批量按钮站应聚焦终止按钮');
     await h.key(win, 'Right');
     await h.sleep(300);
     const onKill = await h.js(win, `document.activeElement === document.querySelector('.object-sortbar-actions .object-action-danger')`);
     h.assert.ok(onKill.value, '→ 应从终止移到强制结束');
-    // nice 滑条未解锁时 disabled（不可聚焦）——roving 跳过、绕回终止
     await h.key(win, 'Right');
     await h.sleep(300);
     const wrapTerm = await h.js(win, `document.activeElement === document.querySelector('.object-sortbar-actions md-outlined-button')`);
-    h.assert.ok(wrapTerm.value, '滑条禁用时 → 应跳过并绕回终止按钮');
-    // Tab → objects（进程项）：已有选中保持不变 + 焦点落选中行
+    h.assert.ok(wrapTerm.value, '按钮站 → 应绕回终止（滑条已是独立子站不进 roving）');
+    // Tab → object-batch-lock（解锁按钮）→ objects（进程项）→ nav
     await h.key(win, 'Tab');
     await h.sleep(300);
     z = (await zoneOf(win)).value;
-    h.assert.strictEqual(z, 'objects', `批量操作行后 Tab 应落进程项站，实际 ${z}`);
+    h.assert.strictEqual(z, 'object-batch-lock', `按钮站后 Tab 应落锁定站，实际 ${z}`);
+    const onUnlock = await h.js(win, `document.activeElement?.closest('[data-kb-zone="object-batch-lock"]') != null`);
+    h.assert.ok(onUnlock.value, '锁定站应聚焦解锁按钮（锁定态滑条站不注册）');
+    await h.key(win, 'Tab');
+    await h.sleep(300);
+    z = (await zoneOf(win)).value;
+    h.assert.strictEqual(z, 'objects', `锁定站后 Tab 应落进程项站，实际 ${z}`);
     const procSel = await h.js(win, `(() => ({
       focusId: document.activeElement?.dataset?.id ?? null,
       selected: document.querySelector('.object-row--selected')?.dataset.id ?? null,

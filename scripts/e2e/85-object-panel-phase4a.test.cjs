@@ -267,7 +267,7 @@ exit 0
       return !!h && /1/.test(h.textContent ?? '');
     })()`, { timeout: 8000 });
     const singleTerm = await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-sortbar-actions > *')];
+      const btns = [...document.querySelectorAll('.object-batch-buttons > *')]; // review 21：按钮包在 .object-batch-buttons wrapper 内
       const b = btns.find((x) => /终止|Terminate/.test(x.textContent ?? ''));
       return !!b && !b.disabled;
     })()`);
@@ -298,7 +298,7 @@ exit 0
 
     // 批量 TERM：确认对话框 → 确认 → 记录
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-sortbar-actions > *')];
+      const btns = [...document.querySelectorAll('.object-batch-buttons > *')]; // review 21：按钮包在 .object-batch-buttons wrapper 内
       const b = btns.find((x) => /终止|Terminate/.test(x.textContent ?? ''));
       if (!b) return false;
       b.click();

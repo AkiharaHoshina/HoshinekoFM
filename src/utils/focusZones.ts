@@ -19,6 +19,8 @@ export type KeyboardZoneId =
   | 'objects'
   | 'object-sortbar'
   | 'object-batch'
+  | 'object-batch-slider'
+  | 'object-batch-lock'
   | 'topbar-sort'
   | 'dashboard-storage'
   | 'dashboard-pinned'
@@ -43,10 +45,12 @@ export interface KeyboardZone {
  * - 对象页（review 19）：功能栏 → places → 标签页 → 返回上级键（如果有）
  *   → 地址栏内 → 最近搜索项 → 对象类或对象（topbar-sort/files 不注册
  *   自动跳过）；
- * - 进程类页（review 20 定案）：… → 地址栏内 → 分类和视图行
- *   （object-sortbar）→ 批量操作行（object-batch）→ 进程项（objects）
- *   → 循环——sortbar/batch 仅进程类**列表页**注册（实例详情页不注册，
- *   见 ObjectPanel 注册守卫），objects 在序内排其后；
+ * - 进程类页（review 20/21 定案）：… → 地址栏内 → 分类和视图行
+ *   （object-sortbar）→ 批量操作行按钮（object-batch，终止/强制结束）
+ *   → 滑条（object-batch-slider，**仅解锁时注册**）→ 锁定按钮
+ *   （object-batch-lock）→ 进程项（objects）→ 循环——sortbar/batch 系列
+ *   仅进程类**列表页**注册（实例详情页不注册，见 ObjectPanel 注册守卫），
+ *   objects 在序内排其后；
  * - 仪表盘：功能栏 → places → 标签页 → 存储子区 → 固定项子区 →
  *   最近访问子区（文件页专属分区未注册自动跳过）。
  */
@@ -59,6 +63,8 @@ const ZONE_ORDER: KeyboardZoneId[] = [
   'object-recent',
   'object-sortbar',
   'object-batch',
+  'object-batch-slider',
+  'object-batch-lock',
   'objects',
   'topbar-sort',
   'dashboard-storage',

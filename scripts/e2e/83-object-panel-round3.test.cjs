@@ -260,10 +260,11 @@ exit 0
     })()`);
     h.assert.ok(/已解锁|已解鎖|Unlocked|ロック解除済み|잠금 해제됨|Разблокировано|Розблоковано/.test(unlockedHint.value), `解锁后应有「已解锁」常驻提示：${unlockedHint.value}`);
 
-    // 拖动 → 5：经助手 stdin，pkexec 不得再次调用
+    // 拖动 → nice 5（review 21 滑条显示优先级数值 = -nice：值设 -5）
+    // ：经助手 stdin，pkexec 不得再次调用
     await h.js(win, `(() => {
       const s = document.querySelector('.object-nice-slider');
-      s.value = 5;
+      s.value = -5;
       s.dispatchEvent(new Event('change'));
       return true;
     })()`, true);
@@ -275,10 +276,10 @@ exit 0
     h.assert.ok(niceLines.includes('5 1234'), `解锁后拖动应经助手写 nice 5：${JSON.stringify(niceLines)}`);
     h.assert.ok(fs.readFileSync(pkLog, 'utf-8') === pkAfterUnlock, '拖动不应再次调用 pkexec（nice 助手复用）');
 
-    // 再拖 → 10：仍经同一助手
+    // 再拖 → nice 10（review 21 优先级显示：值设 -10）：仍经同一助手
     await h.js(win, `(() => {
       const s = document.querySelector('.object-nice-slider');
-      s.value = 10;
+      s.value = -10;
       s.dispatchEvent(new Event('change'));
       return true;
     })()`, true);
@@ -309,7 +310,7 @@ exit 0
     await h.js(win, `document.querySelector('.object-row[data-id="9999"] .object-row-details').click()`, true);
     await h.waitFor(win, `(() => {
       const s = document.querySelector('.object-nice-slider');
-      return !!s && s.value === 2;
+      return !!s && s.value === -2; // review 21：显示优先级数值（nice 2 → -2）
     })()`, { timeout: 8000 });
     const ownPage = await h.js(win, `(() => {
       const s = document.querySelector('.object-nice-slider');

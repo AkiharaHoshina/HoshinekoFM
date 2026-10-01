@@ -1174,23 +1174,30 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         <div className="object-nice-block" data-detail-group="process-nice">
           <div className="object-nice-row">
             <span className="object-reading-label">{t('objects.process_nice')}</span>
+            {/* review 21：滑条显示**优先级数值**（= -nice，范围 -19..20）——
+                nice 越低优先级越高（-20 最高），右方向键 = 数值增大 =
+                优先级升高，与「右方向键向右」直觉一致；写入时内部取反
+                为 nice（onNiceProcess/processInitialNice/读数快照全部
+                保持 nice 语义不变） */}
             <Slider
               className="object-nice-slider"
-              value={r.nice}
-              min={-20}
-              max={19}
+              value={-r.nice}
+              min={-19}
+              max={20}
               step={1}
               labeled
               disabled={!processUnlocked}
               title={processUnlocked ? undefined : t('objects.need_permission')}
               onChange={(e) => {
                 const v = Number((e.target as HTMLInputElement).value);
-                if (Number.isFinite(v) && v !== r.nice) {
-                  onNiceProcess?.(r.pid, r.name, v, () => setReading((prev) => (prev?.kind === 'process' ? { ...prev, nice: v } : prev)));
+                if (!Number.isFinite(v)) return;
+                const nice = -v;
+                if (nice !== r.nice) {
+                  onNiceProcess?.(r.pid, r.name, nice, () => setReading((prev) => (prev?.kind === 'process' ? { ...prev, nice } : prev)));
                 }
               }}
             />
-            <span className="object-reading-value">{r.nice}</span>
+            <span className="object-reading-value">{-r.nice}</span>
             {!processUnlocked && (
               <Button variant="tonal" onClick={() => onUnlockNice?.((ok) => { if (ok) setProcessUnlocked(true); })}>
                 {t('objects.unlock')}
@@ -2176,65 +2183,77 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         </span>
       </div>
       {/* 第三行：多选操作（恒常占位——未选中时禁用态，排满整行）：
-          终止/强制结束 + nice 滑条（批量优先级，先解锁再拖与实例页同款） */}
+          终止/强制结束 + nice 滑条（批量优先级，先解锁再拖与实例页同款）。
+          review 21 拆三站：各子站包一层 zone 容器（data-kb-zone 挂
+          wrapper——禁用态回落聚焦 wrapper 自身，closest 命中本站、focusin
+          跟踪不卡循环；此前把容器当回落点会回卷到外层 sortbar 分区，
+          下一 Tab 从排序条重新起跳、子站永不可达，98e 实测死循环） */}
       <div
         className="object-sortbar-actions"
         ref={batchZoneRef}
-        data-kb-zone="object-batch"
         tabIndex={-1}
         onKeyDown={handleBatchNav}
       >
-        <Button
-          variant="outlined"
-          disabled={batchSelectedInstances.length < 1}
-          onClick={() => onBatchTerminate?.(
-            batchSelectedInstances.map((i) => Number(i.id)),
-            batchSelectedInstances[0]?.name ?? '',
-            'TERM',
-          )}
-        >
-          {t('objects.terminate')}
-        </Button>
-        <Button
-          variant="outlined"
-          className="object-action-danger"
-          disabled={batchSelectedInstances.length < 1}
-          onClick={() => onBatchTerminate?.(
-            batchSelectedInstances.map((i) => Number(i.id)),
-            batchSelectedInstances[0]?.name ?? '',
-            'KILL',
-          )}
-        >
-          {t('objects.kill')}
-        </Button>
+        <div className="object-batch-buttons" data-kb-zone="object-batch" tabIndex={-1}>
+          <Button
+            variant="outlined"
+            disabled={batchSelectedInstances.length < 1}
+            onClick={() => onBatchTerminate?.(
+              batchSelectedInstances.map((i) => Number(i.id)),
+              batchSelectedInstances[0]?.name ?? '',
+              'TERM',
+            )}
+          >
+            {t('objects.terminate')}
+          </Button>
+          <Button
+            variant="outlined"
+            className="object-action-danger"
+            disabled={batchSelectedInstances.length < 1}
+            onClick={() => onBatchTerminate?.(
+              batchSelectedInstances.map((i) => Number(i.id)),
+              batchSelectedInstances[0]?.name ?? '',
+              'KILL',
+            )}
+          >
+            {t('objects.kill')}
+          </Button>
+        </div>
         <div className="object-batch-nice">
           <span className="object-batch-nice-label">{t('objects.process_nice')}</span>
-          <Slider
-            className="object-batch-nice-slider"
-            value={batchNiceValue}
-            min={-20}
-            max={19}
-            step={1}
-            labeled
-            disabled={batchSelectedInstances.length < 1 || !processUnlocked}
-            title={processUnlocked ? undefined : t('objects.need_permission')}
-            onChange={(e) => {
-              const v = Number((e.target as HTMLInputElement).value);
-              if (!Number.isFinite(v)) return;
-              setBatchNiceValue(v);
-              onBatchNice?.(batchSelectedInstances.map((i) => Number(i.id)), v);
-            }}
-          />
-          <span className="object-batch-nice-value">{batchNiceValue}</span>
-          {!processUnlocked ? (
-            <Button variant="tonal" disabled={batchSelectedInstances.length < 1} onClick={() => onUnlockNice?.((ok) => { if (ok) setProcessUnlocked(true); })}>
-              {t('objects.unlock')}
-            </Button>
-          ) : (
-            <Button variant="text" disabled={batchSelectedInstances.length < 1} onClick={() => { void window.electron.processNiceLock(); setProcessUnlocked(false); }}>
-              {t('objects.lock')}
-            </Button>
-          )}
+          {/* review 21：批量滑条同实例页——显示优先级数值（= -nice，
+             范围 -19..20），写入内部取反 */}
+          <div className="object-batch-slider-zone" data-kb-zone="object-batch-slider" tabIndex={-1}>
+            <Slider
+              className="object-batch-nice-slider"
+              value={-batchNiceValue}
+              min={-19}
+              max={20}
+              step={1}
+              labeled
+              disabled={batchSelectedInstances.length < 1 || !processUnlocked}
+              title={processUnlocked ? undefined : t('objects.need_permission')}
+              onChange={(e) => {
+                const v = Number((e.target as HTMLInputElement).value);
+                if (!Number.isFinite(v)) return;
+                const nice = -v;
+                setBatchNiceValue(nice);
+                onBatchNice?.(batchSelectedInstances.map((i) => Number(i.id)), nice);
+              }}
+            />
+          </div>
+          <span className="object-batch-nice-value">{-batchNiceValue}</span>
+          <div className="object-batch-lock-zone" data-kb-zone="object-batch-lock" tabIndex={-1}>
+            {!processUnlocked ? (
+              <Button variant="tonal" disabled={batchSelectedInstances.length < 1} onClick={() => onUnlockNice?.((ok) => { if (ok) setProcessUnlocked(true); })}>
+                {t('objects.unlock')}
+              </Button>
+            ) : (
+              <Button variant="text" disabled={batchSelectedInstances.length < 1} onClick={() => { void window.electron.processNiceLock(); setProcessUnlocked(false); }}>
+                {t('objects.lock')}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -2314,9 +2333,12 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       // 元素摘出 DOM，分区守卫失效 → 误判空选择执行 handleUp）
       e.stopPropagation();
       const inst = selectedId !== null ? list.find((i) => i.id === selectedId) : list[0];
-      if (inst) void handleInstanceDoubleClick(inst);
+      // review 21：键盘回车**恒进详情页**（存储类双击保持「打开挂载点」
+      // 语义——handleInstanceDoubleClick 对已挂载存储走 onOpenLocation，
+      // 回车不再复用该分支）
+      if (inst) onNavigate(buildObjectsPath(parsed?.className ?? 'storage', inst.id));
     }
-  }, [genericFilteredInstances, selectedId, handleInstanceDoubleClick]);
+  }, [genericFilteredInstances, selectedId, onNavigate, parsed?.className]);
 
   /** 实例详情页导航 roving（review 19 决策 7：Tab 停靠页头；←/→ 在
    *  页头与操作按钮间微调） */
@@ -2436,11 +2458,14 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     return () => { c1(); c2(); };
   }, []);
 
-  /** 排序条/批量操作站（review 19 决策 9：进程类页键盘可达）——
+  /** 排序条/批量操作三站（review 19 决策 9 + review 21 拆三站）——
    *  仅进程类**列表页**注册（实例详情页不注册——详情页有自己的分组
-   *  迷你循环，review 20；此前 isProcessClass 含实例页会让详情页 Tab
-   *  循环经过两个无 DOM 的死站，焦点空转）；搜索态不在 SEARCH_ZONE_ORDER
-   *  内惰性 */
+   *  迷你循环，review 20）；搜索态不在 SEARCH_ZONE_ORDER 内惰性。
+   *  review 21 顺序（用户定案）：按钮站（终止/强制结束）→ 滑条站
+   *  （**仅解锁时注册**——「如果解锁」）→ 锁定站（解锁/锁定按钮）→
+   *  objects。子站 data-kb-zone 挂在滑条/锁定按钮自身上（focusin 分区
+   *  跟踪按 closest，无标记 Tab 会回跳按钮站）；禁用态回落容器聚焦
+   *  （P4 同款，不卡站） */
   const sortBarRef = useRef<HTMLDivElement | null>(null);
   const batchZoneRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -2454,12 +2479,34 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       focus: () => {
         const btn = batchZoneRef.current?.querySelector<HTMLElement>('md-outlined-button:not([disabled])');
         if (btn) { btn.focus(); return; }
-        // 全禁用（无选中）时聚焦容器自身（可继续 Tab 循环，不卡站）
-        batchZoneRef.current?.focus();
+        // 全禁用（无选中）时聚焦本站 wrapper（zone 标记在 wrapper——
+        // 回落聚焦不得落在其他分区内，否则 focusin 回卷卡死循环）
+        batchZoneRef.current?.querySelector<HTMLElement>('.object-batch-buttons')?.focus();
       },
     });
-    return () => { c1(); c2(); };
-  }, [isProcessClass, parsed?.instanceId]);
+    // 滑条站仅解锁时注册（「如果解锁」）——锁定态不注册自动跳过
+    const c3 = processUnlocked
+      ? registerKeyboardZone({
+        id: 'object-batch-slider',
+        focus: () => {
+          const zone = batchZoneRef.current?.querySelector<HTMLElement>('.object-batch-slider-zone') ?? null;
+          const s = zone?.querySelector<HTMLElement>('.object-batch-nice-slider') ?? null;
+          if (s && !s.hasAttribute('disabled')) { s.focus(); return; }
+          zone?.focus();
+        },
+      })
+      : null;
+    const c4 = registerKeyboardZone({
+      id: 'object-batch-lock',
+      focus: () => {
+        const zone = batchZoneRef.current?.querySelector<HTMLElement>('.object-batch-lock-zone') ?? null;
+        const btn = zone?.querySelector<HTMLElement>('md-filled-tonal-button, md-text-button') ?? null;
+        if (btn && !btn.hasAttribute('disabled')) { btn.focus(); return; }
+        zone?.focus();
+      },
+    });
+    return () => { c1(); c2(); c3?.(); c4(); };
+  }, [isProcessClass, parsed?.instanceId, processUnlocked]);
 
   /** 排序条线性 roving（决策 9）：segmented 四按钮 + 升降序 + 树按钮按序
    *  ←/→ 移动——捕获阶段拦截 segmented 内部 ←/→ roving（跨控件线性语义
@@ -2478,15 +2525,17 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     focusKeyboardTarget(order[(idx + (e.key === 'ArrowRight' ? 1 : order.length - 1)) % order.length]);
   }, []);
 
-  /** 批量操作线性 roving：终止/KILL/nice 滑条——禁用控件跳过（未选中/
-   *  未解锁时按钮与滑条全 disabled，不可聚焦）；滑条上 ←/→ 保留内部调值
-   *  （不拦截），从按钮可移动到滑条（「至少可聚焦」，解锁态） */
-  const BATCH_NAV = '.object-sortbar-actions md-outlined-button, .object-batch-nice-slider';
+  /** 批量按钮站线性 roving（review 21 拆站后只含终止/强制结束）：
+   *  禁用控件跳过；滑条/锁定按钮是独立子站、不在 roving 内——滑条上
+   *  ←/→ 必须放行内部调值（契约：closest 不在 BATCH_NAV 即不拦截，
+   *  勿移除 md-slider 放行语义） */
+  const BATCH_NAV = '.object-sortbar-actions md-outlined-button';
   const handleBatchNav = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
     const target = e.target as HTMLElement | null;
     if (!target) return;
-    if (target.closest('.object-batch-nice-slider')) return; // 滑条内部语义
+    // 滑条（子站）持焦点：方向键归滑条内部调值（不拦截）
+    if (target.closest('md-slider')) return;
     const order = Array.from(e.currentTarget.querySelectorAll<HTMLElement>(BATCH_NAV))
       .filter((el) => !el.hasAttribute('disabled'));
     const el = (target.closest(BATCH_NAV) as HTMLElement | null) ?? null;

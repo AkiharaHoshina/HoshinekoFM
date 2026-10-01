@@ -1461,11 +1461,29 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     }
     // 结果行尚未挂载（react-window 首帧测量/AutoSizer 二次提交）：
     // 短暂轮询直至出现条目；超时（约 2s，无结果或渲染异常）仍聚焦
-    // 容器。每轮检查「仍在搜索态」——用户 Esc/取消即放弃。
+    // 容器。每轮检查「仍在搜索态」——用户 Esc/取消即放弃；**用户已把
+    // 焦点移走（点击词条行/其他控件）也放弃**——否则轮询落点会把焦点
+    // 从用户当前位置偷回文件区（98b 实测踩中：回车后点词条 chip 被
+    // 100ms 轮询抢焦）
     let attempts = 0;
     const timer = window.setInterval(() => {
       attempts += 1;
       if (!searchActiveRef.current) {
+        window.clearInterval(timer);
+        focusAfterSearchRef.current = false;
+        return;
+      }
+      const activeEl = document.activeElement as HTMLElement | null;
+      const container = fileZoneRef.current;
+      // 用户已把焦点移到搜索 UI 之外（词条行/筛选控件等）：放弃落点，
+      // 不抢焦点（98b 实测：回车后点词条 chip 被 100ms 轮询抢焦）——
+      // body（焦点未落）/omnibar（回车后输入框持焦点 = 等待态）/
+      // 文件区容器内（结果行/容器）视为等待态继续轮询
+      const waiting = !activeEl
+        || activeEl === document.body
+        || !!activeEl.closest('.omnibar')
+        || (container !== null && container.contains(activeEl));
+      if (!waiting) {
         window.clearInterval(timer);
         focusAfterSearchRef.current = false;
         return;
@@ -2661,7 +2679,27 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                   && parseObjectsPath(currentPath)?.className == null
                   && objectSearchHistory.length > 0
                   && searchRecentCount > 0 && (
-                  <div className="search-recent" data-kb-zone="object-recent">
+                  <div
+                    className="search-recent"
+                    data-kb-zone="object-recent"
+                    onKeyDown={(e) => {
+                      // review 21：roving 覆盖词条 chip + 「删除最近搜索」
+                      // 清除按钮（此前只覆盖 chips，清除按钮键盘不可达）
+                      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                      const chips = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('.search-recent-chip'));
+                      const clear = e.currentTarget.querySelector<HTMLElement>('.search-recent-clear');
+                      const items = clear ? [...chips, clear] : chips;
+                      if (items.length === 0) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const cur = document.activeElement as HTMLElement | null;
+                      const idx = cur ? items.indexOf(cur) : -1;
+                      const base = idx < 0 ? Math.min(objectRecentFocus, items.length - 1) : idx;
+                      const next = (base + (e.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length;
+                      if (next < chips.length) setObjectRecentFocus(next);
+                      items[next]?.focus();
+                    }}
+                  >
                     <span className="search-recent-label">{t('objects.search_recent')}</span>
                     {objectSearchHistory.slice(0, searchRecentCount).map((q, idx) => (
                       <Button
@@ -2670,16 +2708,6 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
                         className="search-recent-chip"
                         tabIndex={idx === objectRecentFocus ? 0 : -1}
                         onClick={() => loadPath(buildObjectSearchPath(null, q), true)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-                            e.preventDefault();
-                            const chips = Array.from(document.querySelectorAll<HTMLElement>('.search-recent-chip'));
-                            const n = chips.length;
-                            const next = (idx + (e.key === 'ArrowRight' ? 1 : n - 1)) % n;
-                            setObjectRecentFocus(next);
-                            chips[next]?.focus();
-                          }
-                        }}
                       >
                         {q}
                       </Button>
@@ -2788,9 +2816,27 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
               }}
             />
           )}
-          {/* 最近搜索词条（搜索态显示；点击在记录目录重搜该词） */}
+          {/* 最近搜索词条（搜索态显示；点击在记录目录重搜该词）。
+              review 21：←/→ 在词条 + 「删除最近搜索」清除按钮间 roving
+              （用户定案两侧同款；本行非 Tab 站——文件搜索态不进第二循环，
+              焦点经点击/方向键进入） */}
           {searchActive && fileSearchHistory.length > 0 && searchRecentCount > 0 && (
-            <div className="search-recent">
+            <div
+              className="search-recent"
+              onKeyDown={(e) => {
+                if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                const chips = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('.search-recent-chip'));
+                const clear = e.currentTarget.querySelector<HTMLElement>('.search-recent-clear');
+                const items = clear ? [...chips, clear] : chips;
+                if (items.length === 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const cur = document.activeElement as HTMLElement | null;
+                const idx = cur ? items.indexOf(cur) : -1;
+                const next = ((idx < 0 ? 0 : idx) + (e.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length;
+                items[next]?.focus();
+              }}
+            >
               <span className="search-recent-label">{t('search.recent')}</span>
               {fileSearchHistory.slice(0, searchRecentCount).map((entry) => (
                 <Button

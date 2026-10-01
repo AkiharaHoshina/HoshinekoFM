@@ -304,7 +304,7 @@ const { ipcMain } = require('electron');
     await h.js(win, `(() => {
       const s = document.querySelector('.object-nice-slider');
       if (!s) return false;
-      s.value = 5;
+      s.value = -5; // review 21：滑条显示优先级数值（nice 5 → 值 -5）
       s.dispatchEvent(new Event('change'));
       return true;
     })()`, true);
