@@ -1,85 +1,67 @@
 /**
- * e2e 04：设置对话框（打开/开关交互/关闭 + Dialog 串行化等待）。
+ * e2e 04：设置页（review 26 页面化——settings:// 虚拟路径 + 分类卡片 +
+ * 立即生效；原「设置对话框」语义已废弃）。
  */
 const h = require('./harness.cjs');
 
 (async () => {
   await h.setupApp();
 
-  await h.run('04 设置对话框开关与关闭', async () => {
+  await h.run('04 设置页打开与立即生效', async () => {
     const dir = h.tempDir();
     h.makeFileTree(dir, { 'a.txt': 'hello' });
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `document.querySelectorAll('.m3-navigation-rail__item').length >= 1`);
+    // 侧边栏布局异步移位（46 号坑）：真实输入前等文件区就绪 + 布局稳定
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await h.sleep(600);
 
-    // 打开设置（功能栏最后一个 md-icon-button = 设置；item 列表含一个
-    // 无按钮的占位项，须按按钮计数定位）
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some(d => d.open === true)`);
-    // 打开动画未完成时点击会落在错位坐标（Wayland 软件渲染下动画更慢，
-    // rect 带亚像素小数即动画中）——须等动画收尾再交互（见 AGENTS.md 坑点）
-    await h.waitDialogAnim();
+    // 导航栏设置按钮 → settings:// 根（分类卡片页）
+    await h.openSettingsPage(win);
+    const cardCount = await h.js(win, `document.querySelectorAll('.settings-category-card').length`);
+    h.assert.strictEqual(cardCount.value, 10, '设置根页应有 10 张分类卡片');
 
-    // 系统集成描述副标题：长文本换行完整显示（不加省略号）
-    const integSub = await h.js(win, `(() => {
-      const el = document.querySelector('md-dialog .settings-row__sub--wrap');
-      if (!el) return null;
-      return { whiteSpace: getComputedStyle(el).whiteSpace, wrapped: el.scrollWidth <= el.clientWidth + 1 };
-    })()`);
-    h.assert.ok(integSub.value, '应找到系统集成描述副标题');
-    h.assert.strictEqual(integSub.value.whiteSpace, 'normal', '系统集成描述应为换行显示');
+    // 分类卡片 → 文件页（外观预览挂顶 + 行为 + 文件预览分区）
+    await h.openSettingsPage(win, `/文件|Files/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-preview-fixed')`, { timeout: 8000 });
 
-    // 对话框宽度稳定为 640px（外观预览加宽适配长语言按钮；md-dialog
-    // max-width 经文档级 !important 覆盖，与 portal 安装状态无关）
-    const dialogW = await h.js(win, `(() => {
-      const d = [...document.querySelectorAll('md-dialog')].find(x => x.open === true);
-      return d ? d.shadowRoot.querySelector('dialog').getBoundingClientRect().width : -1;
-    })()`);
-    h.assert.ok(Math.abs(dialogW.value - 640) < 1, `设置对话框宽度应稳定为 640px，实际 ${dialogW.value}`);
-
-    // 实心图标开关行（全部设置项应用/确定时生效：对话框内切换只改
-    // 草稿、不写持久化键；点「确定」（应用并关闭）后才生效——
-    // .settings-row 按列表取第 2 个 = 实心图标行，nth-of-type 会数进
-    // 区块标题等 div，不可用；点击前滚动入视野）
+    // 立即生效：实心图标开关（外观区）点击即写持久化键（无草稿/确定步骤）
     const before = await h.js(win, `localStorage.getItem('settings.filledIcons')`);
-    await h.scrollIntoView(win, '.settings-row', 1);
-    // js click 落在行元素上（行 onClick 单次切换）——本环境程序化滚动
-    // shadow scroller 后真实指针命中间歇性落在 md-dialog 宿主上
     await h.js(win, `(() => {
-      const row = document.querySelectorAll('.settings-row')[1];
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /实心图标|Filled icons/.test(r.textContent ?? ''));
       if (!row) return false;
       row.click();
       return true;
     })()`, true);
-    await h.sleep(400);
-    const draft = await h.js(win, `localStorage.getItem('settings.filledIcons')`);
-    h.assert.strictEqual(draft.value, before.value, '确定前切换开关不应写持久化键（仅草稿）');
-
-    // Escape = 取消（v0.11.48 起：不保存退出，与主题颜色对话框一致）：
-    // 关闭对话框且草稿被丢弃、持久化键不变
-    await h.key(win, 'Escape');
-    await h.waitDialogAnim();
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).every(d => d.open === false)`);
-    const afterCancel = await h.js(win, `localStorage.getItem('settings.filledIcons')`);
-    h.assert.strictEqual(afterCancel.value, before.value, 'Escape 取消后草稿应被丢弃（不写持久化键）');
-
-    // 重开设置 → 切换开关 → 点「确定」按钮（应用并关闭）→ 落盘
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some(d => d.open === true)`);
-    await h.waitDialogAnim();
-    await h.scrollIntoView(win, '.settings-row', 1);
-    await h.js(win, `(() => {
-      const row = document.querySelectorAll('.settings-row')[1];
-      if (!row) return false;
-      row.click();
-      return true;
-    })()`, true);
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
     await h.waitFor(win, `localStorage.getItem('settings.filledIcons') !== ${JSON.stringify(before.value)}`);
-    const stillOpen = await h.js(win, `Array.from(document.querySelectorAll('md-dialog')).some(d => d.open === true)`);
-    h.assert.strictEqual(stillOpen.value, false, '设置对话框应已关闭');
+
+    // 切换后开关已选中（无对话框「确定」步骤）
+    const toggled = await h.js(win, `(() => {
+      const rows = [...document.querySelectorAll('.settings-row')];
+      const row = rows.find((r) => /实心图标|Filled icons/.test(r.textContent ?? ''));
+      const sw = row?.querySelector('md-switch');
+      return sw ? sw.selected : null;
+    })()`);
+    h.assert.ok(toggled.value === true, '切换后开关应为选中（立即生效）');
+
+    // 分类页无真实文件区（files 键盘站/文件列表不渲染——预览复用
+    // .file-list-container 类但无 data-kb-zone="files" 标记）
+    const noFiles = await h.js(win, `!document.querySelector('[data-kb-zone="files"]') && !!document.querySelector('.settings-preview')`);
+    h.assert.ok(noFiles.value === true, '设置页不应渲染真实文件区（预览除外）');
+
+    // 返回上级 → 根页（分类页有返回上级键）
+    await h.clickEl(win, '[data-kb-zone="topbar-up"] md-icon-button');
+    await h.waitFor(win, `!!document.querySelector('.settings-category-grid')`, { timeout: 8000 });
+
+    // 地址栏编辑态输设置路径可直通（isVirtualAddressInput 白名单）
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.setReactInput(win, '.omnibar.mode-edit .omnibar-input', 'settings://about');
+    await h.key(win, 'Enter');
+    await h.waitFor(win, `!!document.querySelector('.settings-page-header')`, { timeout: 8000 });
+    const aboutTitle = await h.js(win, `document.querySelector('.settings-page-title')?.textContent ?? ''`);
+    h.assert.ok(/关于|About/.test(aboutTitle.value), `关于页标题应显示（实际 ${aboutTitle.value}）`);
   });
 
   h.finish();

@@ -27,16 +27,16 @@ const path = require('path');
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `document.querySelectorAll('.m3-navigation-rail__item').length >= 1`);
 
-    // 打开设置
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some(d => d.open === true)`);
+    // 设置页 → 系统集成分类（review 26 页面化）
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await h.sleep(600);
+    await h.openSettingsPage(win, `/系统集成|System Integration/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
 
     const clickInstall = () =>
       h.js(win, `(() => {
-        const d = [...document.querySelectorAll('md-dialog')].find(x => x.open === true);
-        const btn = [...d.querySelectorAll('md-outlined-button')]
-          .find(b => /安装 Portal 集成|Install portal integration/.test(b.textContent));
+        const btns = [...document.querySelectorAll('.settings-row md-outlined-button')];
+        const btn = btns.find(b => /安装 Portal 集成|Install portal integration/.test(b.textContent || ''));
         btn?.click();
         return !!btn;
       })()`);

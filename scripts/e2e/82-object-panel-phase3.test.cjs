@@ -53,15 +53,29 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.sparkline polyline')`, { timeout: 8000 });
     await h.waitFor(win, `document.querySelector('.sparkline polyline').getAttribute('points').split(' ').length >= 2`, { timeout: 8000 });
 
-    // 打开设置 → 走势图时间范围改 30s → 确定（应用 + 关闭）
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true && !!d.querySelector('.settings-content'))`);
-    await h.waitDialogAnim();
+    // 设置页 → 对象面板分类 → 走势图时间范围改 30s（立即生效）
+    await h.openSettingsPage(win, `/对象面板|Object Panel/`);
     await h.waitFor(win, `!!document.querySelector('.settings-select--compact')`, { timeout: 8000 });
     await h.selectOption(win, '.settings-select--compact', '30');
-    await h.clickSettingsConfirm(win);
-    await h.waitFor(win, `!Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`, { timeout: 8000 });
+    await h.waitFor(win, `localStorage.getItem('settings.sparklineWindowSeconds') === '30'`, 5000);
+    // 回对象实例页（导航回对象面板根 → 处理器类 → 双击进入）
+    await h.js(win, `(() => {
+      const b = [...document.querySelectorAll('.sidebar-item')].find((x) => /对象|Objects/.test(x.textContent ?? ''));
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.object-class-grid')`, { timeout: 8000 });
+    await h.js(win, `(() => {
+      const cards = [...document.querySelectorAll('.object-class-card')];
+      const c = cards.find((x) => /处理器|Processor/.test(x.textContent ?? ''));
+      if (!c) return false;
+      c.click();
+      return true;
+    })()`, true);
+    await h.waitFor(win, `document.querySelectorAll('.object-row').length >= 2`, { timeout: 8000 });
+    await h.doubleClickEl(win, '.object-row');
+    await h.waitFor(win, `!!document.querySelector('.sparkline polyline')`, { timeout: 8000 });
 
     // 33s 采样（1s 轮询）：cap=30 → 点数恒为 30；若设置未生效（cap 60）
     // 点数会涨到 33+ ——断言 === 30
@@ -69,16 +83,14 @@ const { ipcMain } = require('electron');
     const pts = await h.js(win, `document.querySelector('.sparkline polyline').getAttribute('points').split(' ').length`);
     h.assert.ok(pts.value === 30, `窗口 30s 时点数上限应为 30（实际 ${pts.value}）`);
 
-    // 重开设置：草稿回显已应用值 30
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true && !!d.querySelector('.settings-content'))`);
-    await h.waitDialogAnim();
+    // 再进设置页：回显已应用值 30
+    await h.openSettingsPage(win, `/对象面板|Object Panel/`);
     await h.waitFor(win, `!!document.querySelector('.settings-select--compact')`, { timeout: 8000 });
     const sel = await h.js(win, `document.querySelector('.settings-select--compact').value`);
-    h.assert.ok(sel.value === '30', `重开设置应回显 30s（实际 ${sel.value}）`);
-    // 恢复 60s 并确定（避免污染后续用例的走势图窗口）
+    h.assert.ok(sel.value === '30', `设置页应回显 30s（实际 ${sel.value}）`);
+    // 恢复 60s（立即生效，避免污染后续用例的走势图窗口）
     await h.selectOption(win, '.settings-select--compact', '60');
-    await h.clickSettingsConfirm(win);
+    await h.waitFor(win, `localStorage.getItem('settings.sparklineWindowSeconds') === '60'`, 5000);
   });
 
   await h.run('82c 进程类页虚拟化（真实 /proc：视口渲染 + 内部滚动）', async () => {

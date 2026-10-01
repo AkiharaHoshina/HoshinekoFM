@@ -108,32 +108,18 @@ const fs = require('fs');
       );
       await closeActiveTab();
 
-      // ── 二、设置对话框 UI 链路 ──
-      const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
+      // ── 二、设置页 UI 链路（review 26 页面化：二级确认即落盘）──
       const newTabBefore = await h.js(win, `localStorage.getItem('settings.newTabPath')`);
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-      await h.waitDialogAnim();
+      await h.openSettingsPage(win, `/文件|Files/`);
+      await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
 
-      // 行为区「新建标签页目录」行存在；滚动到视野后点「自定义」按钮
-      const rowReady = await h.js(
-        win,
-        `(() => {
-          const rows = Array.from(document.querySelectorAll('.settings-row'));
-          const idx = rows.findIndex((row) => /新建标签页目录|New tab directory/.test(row.textContent ?? ''));
-          if (idx === -1) return false;
-          rows[idx].scrollIntoView({ block: 'center' });
-          window.__newtabRowIdx = idx;
-          return true;
-        })()`,
-      );
-      h.assert.ok(rowReady.value, '设置对话框应存在「新建标签页目录」行');
-      await h.sleep(300);
+      // 行为区「新建标签页目录」行存在；点「自定义」按钮打开二级对话框
       const openDialog = await h.js(
         win,
         `(() => {
           const rows = Array.from(document.querySelectorAll('.settings-row'));
-          const btn = rows[window.__newtabRowIdx].querySelector('md-outlined-button');
+          const row = rows.find((r) => /新建标签页目录|New tab directory/.test(r.textContent ?? ''));
+          const btn = row?.querySelector('md-outlined-button');
           if (!btn) return false;
           btn.click();
           return true;
@@ -141,7 +127,7 @@ const fs = require('fs');
         true,
       );
       h.assert.ok(openDialog.value, '「自定义」按钮应能打开二级对话框');
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length >= 2`);
+      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
       await h.waitDialogAnim();
 
       // 二级对话框带背景遮罩（Dialog backdrop：shadow 内注入 dialog::backdrop 样式）
@@ -182,6 +168,19 @@ const fs = require('fs');
         })()`,
       );
 
+      // settings:// 合法（review 26 白名单：新标签页可直达设置页）
+      await h.setReactInput(win, 'md-dialog[open] md-outlined-text-field', 'settings://');
+      await h.waitFor(
+        win,
+        `(() => {
+          const dlgs = Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true);
+          const dlg = dlgs[dlgs.length - 1];
+          const tf = dlg.querySelector('md-outlined-text-field');
+          const btn = dlg.querySelector('md-filled-button');
+          return (tf?.error === false) && (btn?.disabled === false);
+        })()`,
+      );
+
       // 合法输入 dashboard://：错误消失、确认可用
       await h.setReactInput(win, 'md-dialog[open] md-outlined-text-field', 'dashboard://');
       await h.waitFor(
@@ -205,15 +204,8 @@ const fs = require('fs');
         true,
       );
       h.assert.ok(confirmed.value, '确认按钮应可点击');
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
-      await h.waitDialogAnim();
-      // 二级对话框确认只写草稿：外层未点确定时持久化键不变
-      const newTabDraft = await h.js(win, `localStorage.getItem('settings.newTabPath')`);
-      h.assert.strictEqual(newTabDraft.value, newTabBefore.value, '二级对话框确认后未确定不应写持久化键');
-
-      // 点「确定」退出 → 草稿应用落盘
-      await h.clickSettingsConfirm(win);
-      await h.waitDialogAnim();
+      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 0`);
+      // review 26 立即生效：二级确认即落盘（无外层「确定」步骤）
       await h.waitFor(win, `localStorage.getItem('settings.newTabPath') === '"app://dashboard"'`, 5000);
 
       // 新建标签页 → 仪表盘
@@ -221,36 +213,24 @@ const fs = require('fs');
       await h.waitFor(win, scoped(`!!act.querySelector('.dashboard-container')`));
       await closeActiveTab();
 
-      // ── 二·五、~ / ~/xxx 家目录展开（确认时展开为绝对路径存储）──
+      // ── 二·五、~ / ~/xxx 家目录展开（二级确认即展开为绝对路径落盘）──
       tildeDir = fs.mkdtempSync(path.join(os.homedir(), 'e2e-tilde-'));
       fs.writeFileSync(path.join(tildeDir, 'tilde.txt'), 'x');
 
-      // 打开设置 → 自定义对话框：输入 `~` → 合法（错误消失、确认可用）
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-      await h.waitDialogAnim();
+      // 设置页 → 自定义对话框：输入 `~` → 合法（错误消失、确认可用）
+      await h.openSettingsPage(win, `/文件|Files/`);
+      await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
       await h.js(
         win,
         `(() => {
           const rows = Array.from(document.querySelectorAll('.settings-row'));
-          const idx = rows.findIndex((row) => /新建标签页目录|New tab directory/.test(row.textContent ?? ''));
-          if (idx === -1) return false;
-          rows[idx].scrollIntoView({ block: 'center' });
-          window.__newtabRowIdx = idx;
-          return true;
-        })()`,
-      );
-      await h.sleep(300);
-      await h.js(
-        win,
-        `(() => {
-          const rows = Array.from(document.querySelectorAll('.settings-row'));
-          rows[window.__newtabRowIdx].querySelector('md-outlined-button').click();
+          const row = rows.find((r) => /新建标签页目录|New tab directory/.test(r.textContent ?? ''));
+          row?.querySelector('md-outlined-button')?.click();
           return true;
         })()`,
         true,
       );
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length >= 2`);
+      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
       await h.waitDialogAnim();
 
       // 全角 ～（IME 输入）合法：错误消失、确认可用
@@ -286,40 +266,21 @@ const fs = require('fs');
         })()`,
         true,
       );
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
-      await h.waitDialogAnim();
-      // 草稿未应用：点确定后 ~ 才展开为家目录绝对路径落盘
-      await h.clickSettingsConfirm(win);
-      await h.waitDialogAnim();
+      // review 26 立即生效：二级确认即展开为家目录绝对路径落盘
       await h.waitFor(win, `localStorage.getItem('settings.newTabPath') === ${JSON.stringify(JSON.stringify(os.homedir()))}`, 5000);
 
-      // 重新打开设置 → 自定义：输入 ~/<临时目录名> → 确认 → 点确定
-      // 落盘家目录下绝对路径 → 新建标签页打开该目录
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-      await h.waitDialogAnim();
+      // 再改 ~/<临时目录名> → 确认 → 落盘家目录下绝对路径
       await h.js(
         win,
         `(() => {
           const rows = Array.from(document.querySelectorAll('.settings-row'));
-          const idx = rows.findIndex((row) => /新建标签页目录|New tab directory/.test(row.textContent ?? ''));
-          if (idx === -1) return false;
-          rows[idx].scrollIntoView({ block: 'center' });
-          window.__newtabRowIdx = idx;
-          return true;
-        })()`,
-      );
-      await h.sleep(300);
-      await h.js(
-        win,
-        `(() => {
-          const rows = Array.from(document.querySelectorAll('.settings-row'));
-          rows[window.__newtabRowIdx].querySelector('md-outlined-button').click();
+          const row = rows.find((r) => /新建标签页目录|New tab directory/.test(r.textContent ?? ''));
+          row?.querySelector('md-outlined-button')?.click();
           return true;
         })()`,
         true,
       );
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length >= 2`);
+      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
       await h.waitDialogAnim();
       await h.setReactInput(win, 'md-dialog[open] md-outlined-text-field', `~/${path.basename(tildeDir)}`);
       await h.js(
@@ -331,11 +292,6 @@ const fs = require('fs');
         })()`,
         true,
       );
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
-      await h.waitDialogAnim();
-
-      await h.clickSettingsConfirm(win);
-      await h.waitDialogAnim();
       await h.waitFor(win, `localStorage.getItem('settings.newTabPath') === ${JSON.stringify(JSON.stringify(tildeDir))}`, 5000);
       await clickNewTab();
       await h.waitFor(
@@ -345,8 +301,14 @@ const fs = require('fs');
       await closeActiveTab();
 
       // ── 三、回收站子目录地址栏（混合路径模型）──
-      // 切到回收站（活动项为 Files → 标准按钮下标 0..3 = 仪表盘/回收站/终端/设置）
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 1 });
+      // 切到回收站（按图标 ligature 定位——活动项变体（filled）不进标准
+      // md-icon-button 列表，绝对下标随当前活动项漂移，不可硬编码）
+      await h.js(win, `(() => {
+        const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
+        const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'delete');
+        it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
+        return !!it;
+      })()`, true);
       await h.waitFor(win, scoped(`act.querySelector('.breadcrumb-chip md-icon')?.textContent === 'delete'`));
       const trashFound = await h.waitFor(
         win,

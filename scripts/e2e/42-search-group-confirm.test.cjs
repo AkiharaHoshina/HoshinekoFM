@@ -44,28 +44,15 @@ const h = require('./harness.cjs');
     const gStill = await h.js(win, `localStorage.getItem('settings.groupingEnabled')`);
     h.assert.strictEqual(gStill.value, 'false', '强制态点击分组按钮不应改变分组开关');
 
-    // ── 设置项改名 + 确定时生效 ──
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    const openSettings = async () => {
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-      await h.waitDialogAnim();
-    };
-    const searchRowIdx = async () => {
-      const r = await h.js(
-        win,
-        `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /搜索结果按所在目录分类|Group search results by directory/.test(row.textContent ?? ''))`,
-      );
-      h.assert.ok(r.value >= 0, '设置中应存在「搜索结果按所在目录分类」项');
-      return r.value;
-    };
-    const toggleSearchGroupSwitch = async () => {
-      const idx = await searchRowIdx();
-      await h.scrollIntoView(win, '.settings-row', idx);
+    // ── review 26 设置页化：立即生效 ──
+    const toggleSearchGroupSwitch = async (expect) => {
+      await h.openSettingsPage(win, `/搜索|Search/`);
+      await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
       await h.js(
         win,
         `(() => {
-          const row = document.querySelectorAll('.settings-row')[${idx}];
+          const rows = [...document.querySelectorAll('.settings-row')];
+          const row = rows.find((r) => /搜索结果按所在目录分类|Group search results by directory/.test(r.textContent ?? ''));
           const sw = row ? row.querySelector('md-switch') : null;
           if (!sw) return false;
           sw.click();
@@ -73,26 +60,35 @@ const h = require('./harness.cjs');
         })()`,
         true,
       );
+      // 立即生效：持久化键即刻变化
+      await h.waitFor(win, `localStorage.getItem('settings.searchGroupByDir') === ${JSON.stringify(expect)}`, 8000);
     };
 
-    await openSettings();
-    await toggleSearchGroupSwitch();
-    await h.sleep(400);
-    // 对话框内切换只是预览：搜索结果仍按目录分组
-    const stillGrouped = await h.js(win, dirHeaders);
-    h.assert.ok(stillGrouped.value, '未确定时搜索分类不应立即生效');
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
-    // 确定后生效：搜索结果不再按目录分组（分组开关已关 → 无目录组头）
+    // 切到设置页关掉搜索分类（立即生效——标签页离开搜索视图后须重新发起
+    // 搜索验证结果形态）
+    await toggleSearchGroupSwitch('false');
+    // 回文件页重新搜索：不再按目录分组（设置页上搜索被 toast 拒绝，
+    // 须先导航回目录——地址栏编辑态输入目录路径）
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.setReactInput(win, '.omnibar.mode-edit .omnibar-input', dir);
+    await h.key(win, 'Enter');
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`, 8000);
+    await h.searchViaOmnibar(win, 'a');
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub/a.txt"]')`, { timeout: 8000 });
     await h.waitFor(win, `!(${dirHeaders})`, 8000);
     const ungroupedTag = await h.js(win, groupBtnTag);
     h.assert.strictEqual(ungroupedTag.value, 'md-icon-button', '关闭搜索分类后分组按钮应恢复 standard 变体');
 
-    // 再打开设置切回开启 → 确定 → 搜索态重新分组且按钮再次强制高亮
-    await openSettings();
-    await toggleSearchGroupSwitch();
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
+    // 再切回开启 → 重新搜索：结果按目录分组且按钮再次强制高亮
+    await toggleSearchGroupSwitch('true');
+    await h.clickEl(win, '.omnibar-trigger');
+    await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
+    await h.setReactInput(win, '.omnibar.mode-edit .omnibar-input', dir);
+    await h.key(win, 'Enter');
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`, 8000);
+    await h.searchViaOmnibar(win, 'a');
+    await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/sub/a.txt"]')`, { timeout: 8000 });
     await h.waitFor(win, dirHeaders, 8000);
     const forcedTag2 = await h.js(win, groupBtnTag);
     h.assert.strictEqual(forcedTag2.value, 'md-filled-icon-button', '重新开启后搜索态分组按钮应再次强制高亮');

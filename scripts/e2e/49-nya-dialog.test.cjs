@@ -1,7 +1,8 @@
 /**
- * e2e 49：彩蛋对话框「Hoshineko Nya~」（设置打开期间按 Ctrl+PgDn）。
- * - 设置未打开时按 Ctrl+PgDn：不弹彩蛋（监听仅在设置打开期间挂载）；
- * - 设置打开后按 Ctrl+PgDn：弹出与设置同宽（560px）的 M3 对话框
+ * e2e 49：彩蛋对话框「Hoshineko Nya~」（review 26 定案：仅**关于页
+ * （settings://about）处于前台时**按 Ctrl+PgDn 触发，其他页面不触发）。
+ * - 关于页不在前台（文件页/设置其他分类页）时按 Ctrl+PgDn：不弹彩蛋；
+ * - 关于页前台时按 Ctrl+PgDn：弹出与设置页同宽（560px）的 M3 对话框
  *   （标题「Hoshineko Nya~」，叠层遮罩盖在设置之上），内容为两张
  *   图片（HoshinekoAkihara.png + Transgender Pride 旗，纵向排列，
  *   大小锁定 ≈293px 宽不随对话框宽度缩放），确定按钮关闭；
@@ -28,20 +29,28 @@ const h = require('./harness.cjs');
     const press = (ctrl) =>
       h.js(win, `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', ctrlKey: ${ctrl} })); true`);
 
-    // 设置未打开：Ctrl+PgDn 不弹彩蛋
+    // 关于页不在前台（文件页）：Ctrl+PgDn 不弹彩蛋
     await press(true);
     await new Promise((r) => setTimeout(r, 500));
     h.assert.strictEqual(
       (await h.js(win, `(${nya}) !== undefined`)).value,
       false,
-      '设置未打开时 Ctrl+PgDn 不应弹彩蛋',
+      '关于页不在前台时 Ctrl+PgDn 不应弹彩蛋',
     );
 
-    // 打开设置（功能栏最后一个 md-icon-button）
-    await h.waitFor(win, `document.querySelectorAll('.m3-navigation-rail__item').length >= 1`);
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `[...document.querySelectorAll('md-dialog')].some(d => d.open)`);
+    // 进入设置分类页（非关于页）：Ctrl+PgDn 仍不触发
+    await h.openSettingsPage(win, `/语言|Language/`);
+    await press(true);
+    await new Promise((r) => setTimeout(r, 500));
+    h.assert.strictEqual(
+      (await h.js(win, `(${nya}) !== undefined`)).value,
+      false,
+      '设置其他分类页前台时 Ctrl+PgDn 不应弹彩蛋',
+    );
+
+    // 关于页（settings://about）前台
+    await h.openSettingsPage(win, `/关于|About/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-page-header')`, { timeout: 8000 });
 
     // 普通 PgDn（无 Ctrl）不触发
     await press(false);
@@ -156,8 +165,8 @@ const h = require('./harness.cjs');
       return true;
     })()`);
     await h.waitFor(win, `(${nya}) === undefined`, 5000);
-    const settingsStillOpen = await h.js(win, `[...document.querySelectorAll('md-dialog')].some(d => d.open)`);
-    h.assert.strictEqual(settingsStillOpen.value, true, '关闭彩蛋后设置对话框应保持打开');
+    const settingsStillOpen = await h.js(win, `!!document.querySelector('.settings-page')`);
+    h.assert.strictEqual(settingsStillOpen.value, true, '关闭彩蛋后设置页应保持（页面非对话框）');
 
     // ── Ctrl+PgUp：打开 portal 运行时信息（开发详情视图，标题
     // 「Portal 运行时状态」，正文含 appVersion: 字段定位不受 locale 影响）──
@@ -225,10 +234,7 @@ const h = require('./harness.cjs');
     // scroller（回归：曾无法翻页）。
     const short = await h.createTestWindow({ argv: ['electron', dir], width: 800, height: 400 });
     await h.waitFor(short, `!!document.querySelector('.file-list-item')`);
-    await h.waitFor(short, `document.querySelectorAll('.m3-navigation-rail__item').length >= 1`);
-    const btnCount2 = await h.js(short, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    await h.clickEl(short, `.m3-navigation-rail__item md-icon-button`, { index: btnCount2.value - 1 });
-    await h.waitFor(short, `[...document.querySelectorAll('md-dialog')].some(d => d.open)`);
+    await h.openSettingsPage(short, `/关于|About/`);
     await h.js(short, `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', ctrlKey: true })); true`);
     await h.waitFor(short, `(${nya}) !== undefined`, 8000);
     // 等待溢出生效：内容（PNG 40vh 上限 + SVG 固定 176px）超过矮窗口

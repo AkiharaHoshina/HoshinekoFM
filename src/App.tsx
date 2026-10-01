@@ -15,11 +15,10 @@ import { NavigationRail } from "./components/NavigationRail";
 import { Sidebar, type SidebarPinnedItem } from "./components/Sidebar";
 import type { PinnedItem } from "./components/Dashboard";
 import { Icon } from "./components/Icon";
+/* eslint-disable react-hooks/preserve-manual-memoization -- React Compiler 对超大型组件（AppContent ~3300 行，review 26 设置页面化后再度越过阈值）bail out，依赖数组由源码人工维护（该规则仅在编译跳过时审计） */
+import { SettingsContext } from "./contexts/SettingsContext";
 import { ContextMenu } from "./components/ContextMenu";
 import type { ContextMenuItem } from "./components/ContextMenu";
-import { SettingsDialog } from "./components/SettingsDialog";
-import { ThemeColorDialog } from "./components/ThemeColorDialog";
-import { OpenRuleManagerDialog } from "./components/OpenRuleManagerDialog";
 import { HoshinekoNyaDialog } from "./components/HoshinekoNyaDialog";
 import { TerminalPanel, DEFAULT_TERMINAL_HEIGHT } from "./components/TerminalPanel";
 import { TitleBar } from "./components/TitleBar";
@@ -38,6 +37,7 @@ import { zoomIconSize } from "./utils/iconZoom";
 import { parseSearchPath, SEARCH_DEFAULT_LIMIT, SEARCH_DEFAULT_TIMEOUT } from "./utils/searchPath";
 import { parseObjectsPath } from "./utils/objectsPath";
 import { parseObjectSearchPath } from "./utils/objectSearchPath";
+import { settingsPathTitle } from "./utils/settingsPath";
 import { isObjectProjectionPath, type ObjectDragPayload } from "./utils/objectDrag";
 import { isSearchSchemaPath, searchSchemaDisplayName } from "./utils/searchSchema";
 import type { ThemeConfig } from "./types/theme";
@@ -112,6 +112,11 @@ function AppContent() {
     handleScrollToComplete,
     refreshActiveTab,
   } = useTabs();
+
+  /** 活动标签页路径（前置定义——设置页状态刷新/彩蛋守卫等 effect 用） */
+  const activeTabPath = tabs.find((t) => t.id === activeTabId)?.path ?? '';
+  /** 活动标签页是否在设置页（review 26：设置页活动时刷新状态查询） */
+  const settingsPageActive = activeTabPath.startsWith('settings://');
 
   const {
     contextMenu,
@@ -694,9 +699,7 @@ function AppContent() {
 
   const { clipboard, copy, cut, clear: clearClipboard } = useClipboard();
 
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
-
-  /** 彩蛋对话框「Hoshineko Nya~」开关（设置打开期间按 PgDn 触发） */
+  /** 彩蛋对话框「Hoshineko Nya~」开关（关于页前台期间按 Ctrl+PgDn 触发） */
   const [nyaDialogOpen, setNyaDialogOpen] = useState(false);
 
   const [showHiddenFiles, setShowHiddenFiles] = useLocalStorage<boolean>(
@@ -921,6 +924,13 @@ function AppContent() {
     false,
   );
 
+  /** 仪表盘入口是否显示在 Places（review 26；默认开——设置页「显示仪表盘」
+   *  开关立即生效，关闭即从侧边栏 Places 隐藏；导航栏不受影响） */
+  const [showDashboard, setShowDashboard] = useLocalStorage<boolean>(
+    "settings.showDashboard",
+    true,
+  );
+
   /** 文件预览面板开关（默认关闭，设置 → 行为；确定时生效） */
   const [filePreviewEnabled, setFilePreviewEnabled] = useLocalStorage<boolean>(
     "settings.filePreview",
@@ -1025,14 +1035,12 @@ function AppContent() {
   );
 
   /**
-   * 选择器设置快照上报（确认时同步组）：设置对话框里开关的个性化
-   * 设置（搜索分类、标题栏完整路径、语言）本身即在主窗口设置点
-   * 「应用」/「确定」时生效（见 SettingsDialog），此处在其生效后同步
-   * 到服务模式选择器/保存器。settingsDialogOpen 关闭即上报（取消时
-   * 应用值未变、重复上报同值为幂等）；初始挂载也上报一次（种子值）。
+   * 选择器设置快照上报（review 26 改为**每次变更即上报**）：设置页
+   * 立即生效语义下不再有「确定时」——搜索分类、标题栏完整路径、语言
+   * 任何变更即时同步到服务模式选择器/保存器（原子写开销小，频率上升
+   * 可接受）；初始挂载也上报一次（种子值）。
    */
   useEffect(() => {
-    if (settingsDialogOpen) return;
     void window.electron.setPickerSettings({
       searchGroupByDir,
       showFullPathTitle,
@@ -1040,7 +1048,7 @@ function AppContent() {
     }).catch(() => {
       /* 主进程无此 handler（旧版/测试环境）时静默忽略 */
     });
-  }, [settingsDialogOpen, searchGroupByDir, showFullPathTitle, locale]);
+  }, [searchGroupByDir, showFullPathTitle, locale]);
 
   /** 默认文件管理器：是否为 inode/directory 的默认处理程序（xdg-mime） */
   const [isDefaultFileManager, setIsDefaultFileManager] = useState(false);
@@ -1165,14 +1173,14 @@ function AppContent() {
   }, [portalVersionDialog]);
 
   /**
-   * 彩蛋：设置对话框打开期间按 Ctrl+PgDn → 打开「Hoshineko Nya~」
-   * 对话框（叠层遮罩盖在设置之上）；Ctrl+PgUp → 打开 portal 运行时
-   * 信息（PortalVersionDialog 开发详情视图，标题「Portal 运行时
-   * 状态」——运行时诊断调试入口，现拉现取）。仅在设置打开时挂监听；
+   * 彩蛋：**关于页处于前台时**（review 26 定案：仅 settings://about，
+   * 其他页面不触发）按 Ctrl+PgDn → 打开「Hoshineko Nya~」对话框；
+   * Ctrl+PgUp → 打开 portal 运行时信息（PortalVersionDialog 开发详情
+   * 视图，标题「Portal 运行时状态」——运行时诊断调试入口，现拉现取）。
    * portal 版本弹窗打开期间不生效（其 PgDn 有独立的开发详情切换语义）。
    */
   useEffect(() => {
-    if (!settingsDialogOpen || portalVersionDialog) return;
+    if (activeTabPath !== 'settings://about' || portalVersionDialog) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (!e.ctrlKey) return;
       if (e.key === 'PageDown') {
@@ -1192,7 +1200,7 @@ function AppContent() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [settingsDialogOpen, portalVersionDialog]);
+  }, [activeTabPath, portalVersionDialog]);
 
   /**
    * 版本不一致弹窗「一键重装」：reinstall.sh 卸载 + 安装合并为单次
@@ -1225,9 +1233,10 @@ function AppContent() {
     }
   }, [reinstallBusy]);
 
-  /** 设置对话框打开时刷新默认文件管理器状态（异步回填） */
+  /** 设置页活动时刷新默认文件管理器状态（异步回填——review 26：设置
+   *  从对话框改为页面，refresh 门控从 settingsDialogOpen 改为设置页活动） */
   useEffect(() => {
-    if (!settingsDialogOpen) return;
+    if (!settingsPageActive) return;
     let cancelled = false;
     void window.electron
       ?.getDirMimeHandler()
@@ -1240,11 +1249,11 @@ function AppContent() {
     return () => {
       cancelled = true;
     };
-  }, [settingsDialogOpen]);
+  }, [settingsPageActive]);
 
-  /** 设置对话框打开时刷新系统集成安装状态（异步回填） */
+  /** 设置页活动时刷新系统集成安装状态（异步回填） */
   useEffect(() => {
-    if (!settingsDialogOpen) return;
+    if (!settingsPageActive) return;
     let cancelled = false;
     void window.electron
       ?.getSystemIntegrationStatus()
@@ -1264,7 +1273,7 @@ function AppContent() {
     return () => {
       cancelled = true;
     };
-  }, [settingsDialogOpen, maybeAlertPortalConflict]);
+  }, [settingsPageActive, maybeAlertPortalConflict]);
 
   /**
    * 启动时检查已安装 portal 版本 + 查询后端总线名冲突（顺序执行）：
@@ -1304,9 +1313,9 @@ function AppContent() {
     };
   }, [maybeAlertPortalConflict]);
 
-  /** 设置对话框打开时刷新缩略图缓存占用（异步回填） */
+  /** 设置页活动时刷新缩略图缓存占用（异步回填） */
   useEffect(() => {
-    if (!settingsDialogOpen) return;
+    if (!settingsPageActive) return;
     let cancelled = false;
     void window.electron
       ?.getThumbnailCacheInfo()
@@ -1317,7 +1326,7 @@ function AppContent() {
     return () => {
       cancelled = true;
     };
-  }, [settingsDialogOpen]);
+  }, [settingsPageActive]);
 
   /** 清空缩略图缓存：toast 提示释放空间并刷新占用显示 */
   const handleClearThumbCache = useCallback(async () => {
@@ -1503,11 +1512,11 @@ function AppContent() {
    * - 回收站 → 回收站（nav.trash）；
    * - 真实目录 → 目录名（根目录为 /）；「显示完整路径」开启时显示完整路径。
    */
-  const activeTabPath = tabs.find((t) => t.id === activeTabId)?.path ?? '';
   /**
-   * 当前标签页是否为虚拟路径（仪表盘/回收站根/搜索态）：虚拟路径不可
-   * 作为终端工作目录——左侧功能栏打开终端时回落主进程默认（~ 家目录），
-   * 否则 node-pty 以不存在的目录 spawn、shell 立即退出（见 TerminalPane）。
+   * 当前标签页是否为虚拟路径（仪表盘/回收站根/搜索态/设置页）：虚拟路径
+   * 不可作为终端工作目录——左侧功能栏打开终端时回落主进程默认
+   * （~ 家目录），否则 node-pty 以不存在的目录 spawn、shell 立即退出
+   * （见 TerminalPane）。
    */
   const isVirtualTerminalDir =
     activeTabPath === 'app://dashboard' ||
@@ -1515,7 +1524,8 @@ function AppContent() {
     activeTabPath === 'trash://' ||
     activeTabPath.startsWith('search://') ||
     activeTabPath.startsWith('objects://') ||
-    activeTabPath.startsWith('objectsearch://');
+    activeTabPath.startsWith('objectsearch://') ||
+    activeTabPath.startsWith('settings://');
   const windowTitle = useMemo(() => {
     if (activeTabPath === 'app://dashboard') return 'Hoshineko Nya~';
     if (activeTabPath === 'trash://') return t('nav.trash');
@@ -1548,6 +1558,8 @@ function AppContent() {
           : t('objects.object_search');
       }
     }
+    // 设置页虚拟路径（review 26）：与标签页标题同源（settingsPathTitle）
+    if (activeTabPath.startsWith('settings://')) return settingsPathTitle(activeTabPath);
     return activeTabPath === '/'
       ? '/'
       : activeTabPath.split('/').filter(Boolean).pop() || '/';
@@ -1613,10 +1625,6 @@ function AppContent() {
       off?.();
     };
   }, [darkMode]);
-  /** 主题颜色二级对话框开关 */
-  const [themeColorOpen, setThemeColorOpen] = useState(false);
-  /** 打开方式配置管理二级对话框开关 */
-  const [openRuleManagerOpen, setOpenRuleManagerOpen] = useState(false);
 
   /** 主题配置变化时（含首次挂载）应用主题颜色 */
   useEffect(() => {
@@ -1684,6 +1692,7 @@ function AppContent() {
     setAutoCreateDesktopEntry(true);
     setAutoCreateAppMenuEntry(true);
     setNewTabPath("/");
+    setShowDashboard(true);
     // 恢复默认 = 开关回到开：显式补一次创建意图（marker 幂等；若此前
     // 开关关闭并确定删除过条目/清过 marker，恢复后立即重建）
     void window.electron.ensureLauncherEntry("desktop").catch(() => {
@@ -1721,6 +1730,7 @@ function AppContent() {
     setAutoCreateDesktopEntry,
     setAutoCreateAppMenuEntry,
     setNewTabPath,
+    setShowDashboard,
   ]);
 
   const hasInitialized = useRef(false);
@@ -2583,421 +2593,498 @@ function AppContent() {
     : [];
 
   return (
-    <div className="app-root">
-      {titleBarVisible && (
-        <TitleBar
-          title={windowTitle}
-          marqueeEnabled={marqueeEnabled}
-          hideMinimize={detectedWm?.kind === 'tiling'}
-        />
-      )}
-      <div className="app-shell" onClick={closeContextMenu}>
-        <NavigationRail
-          items={[
-            {
-              icon: <Icon name="dashboard" />,
-              activeIcon: <Icon name="dashboard" filled />,
-              label: "Dashboard",
-              // 仪表盘位于功能栏最上方：仅在浏览仪表盘时高亮
-              active: !settingsDialogOpen && currentPath === "app://dashboard",
-              onClick: () => handleSidebarNavigate("app://dashboard"),
-            },
-            {
-              icon: <Icon name="folder" />,
-              activeIcon: <Icon name="folder" filled />,
-              label: "Files",
-              // 浏览仪表盘/回收站以外的任何路径时高亮
-              active:
-              !settingsDialogOpen &&
+    <SettingsContext.Provider
+      value={{
+        showDashboard,
+        setShowDashboard,
+        showHomeStorageUsage,
+        setShowHomeStorageUsage,
+        viewMode,
+        setViewMode,
+        iconSize,
+        setIconSize,
+        filledIcons,
+        setFilledIcons,
+        marqueeEnabled,
+        setMarqueeEnabled,
+        sortControlsAutoCollapse,
+        setSortControlsAutoCollapse,
+        previewCollapsed,
+        setPreviewCollapsed,
+        groupingEnabled,
+        showHiddenFiles,
+        setShowHiddenFiles,
+        newTabPath,
+        setNewTabPath,
+        filePreviewEnabled,
+        setFilePreviewEnabled,
+        calculateDirSize,
+        setCalculateDirSize,
+        themeConfig,
+        setThemeConfig,
+        darkMode,
+        setDarkMode,
+        titleBarMode,
+        setTitleBarMode,
+        showFullPathTitle,
+        setShowFullPathTitle,
+        detectedWm,
+        uiScale,
+        setUiScale,
+        searchGroupByDir,
+        setSearchGroupByDir,
+        searchLimit,
+        setSearchLimit,
+        searchTimeout,
+        setSearchTimeout,
+        searchRecentCount,
+        setSearchRecentCount,
+        sparklineWindowSeconds,
+        setSparklineWindowSeconds,
+        alertTempC,
+        setAlertTempC,
+        alertDiskPct,
+        setAlertDiskPct,
+        isDefaultFileManager,
+        fmBusy,
+        setDefaultFm: () => void handleSetDefaultFm(),
+        restoreDefaultFm: () => void handleRestoreDefaultFm(),
+        integrationStatus,
+        integrationBusy,
+        installIntegration: () => void handleInstallIntegration(),
+        uninstallIntegration: () => void handleUninstallIntegration(),
+        backendConflicts,
+        sessionBusBusy,
+        restartSessionBus: () => void handleRestartSessionBus(),
+        autoCreateDesktopEntry,
+        setAutoCreateDesktopEntry: handleAutoCreateDesktopEntryChange,
+        autoCreateAppMenuEntry,
+        setAutoCreateAppMenuEntry: handleAutoCreateAppMenuEntryChange,
+        locale,
+        setLocale: handleLocaleChange,
+        restoreDefaults: handleRestoreDefaults,
+        thumbCacheInfo,
+        thumbCacheBusy,
+        clearThumbCache: () => void handleClearThumbCache(),
+      }}
+    >
+      <div className="app-root">
+        {titleBarVisible && (
+          <TitleBar
+            title={windowTitle}
+            marqueeEnabled={marqueeEnabled}
+            hideMinimize={detectedWm?.kind === 'tiling'}
+          />
+        )}
+        <div className="app-shell" onClick={closeContextMenu}>
+          <NavigationRail
+            items={[
+              {
+                icon: <Icon name="dashboard" />,
+                activeIcon: <Icon name="dashboard" filled />,
+                label: "Dashboard",
+                // 仪表盘位于功能栏最上方：仅在浏览仪表盘时高亮
+                active: currentPath === "app://dashboard",
+                onClick: () => handleSidebarNavigate("app://dashboard"),
+              },
+              {
+                icon: <Icon name="folder" />,
+                activeIcon: <Icon name="folder" filled />,
+                label: "Files",
+                // 浏览仪表盘/回收站/设置页以外的任何路径时高亮
+                active:
               currentPath !== "app://dashboard" &&
-              currentPath !== "trash://",
-              onClick: () => handleSidebarNavigate("/"),
-            },
-            {
-              icon: <Icon name="delete" />,
-              activeIcon: <Icon name="delete" filled />,
-              label: "Trash",
-              // 回收站位于文件按钮下方：仅在浏览回收站时高亮（与仪表盘逻辑一致）
-              active: !settingsDialogOpen && currentPath === "trash://",
-              onClick: () => handleSidebarNavigate("trash://"),
-            },
-            {
-              icon: <Icon name="terminal" />,
-              activeIcon: <Icon name="terminal" filled />,
-              label: "Terminal",
-              // 内置终端打开时高亮，不影响其他按钮（active 相互独立）
-              active: !settingsDialogOpen && terminalOpen,
-              onClick: toggleTerminal,
-            },
-            {
-              icon: <Icon name="settings" />,
-              activeIcon: <Icon name="settings" filled />,
-              label: "Settings",
-              // 设置对话框打开时高亮，并抑制其他按钮的高亮
-              active: settingsDialogOpen,
-              onClick: () => setSettingsDialogOpen(true),
-            },
-          ]}
-        />
+              currentPath !== "trash://" &&
+              !currentPath.startsWith("settings://"),
+                onClick: () => handleSidebarNavigate("/"),
+              },
+              {
+                icon: <Icon name="delete" />,
+                activeIcon: <Icon name="delete" filled />,
+                label: "Trash",
+                // 回收站位于文件按钮下方：仅在浏览回收站时高亮（与仪表盘逻辑一致）
+                active: currentPath === "trash://",
+                onClick: () => handleSidebarNavigate("trash://"),
+              },
+              {
+                icon: <Icon name="terminal" />,
+                activeIcon: <Icon name="terminal" filled />,
+                label: "Terminal",
+                // 内置终端打开时高亮，不影响其他按钮（active 相互独立）
+                active: terminalOpen,
+                onClick: toggleTerminal,
+              },
+              {
+                icon: <Icon name="settings" />,
+                activeIcon: <Icon name="settings" filled />,
+                label: "Settings",
+                // review 26：设置页化——浏览设置页时高亮（最小改线，左侧栏
+                // 存废的大动作留待以后）
+                active: currentPath.startsWith("settings://"),
+                onClick: () => handleSidebarNavigate("settings://"),
+              },
+            ]}
+          />
 
-        <Sidebar
-          onNavigate={handleSidebarNavigate}
-          currentPath={currentPath}
-          onDeviceContextMenu={handleDeviceContextMenu}
-          onDeviceMount={handleDeviceMount}
-          onDeviceUnmount={handleDeviceUnmount}
-          onDeviceEject={handleDeviceEject}
-          onGvfsMount={handleGvfsMount}
-          onGvfsUnmount={handleGvfsUnmountWithNav}
-          onGvfsContextMenu={handleGvfsContextMenu}
-          marqueeEnabled={marqueeEnabled}
-          onDropFiles={handleSidebarDropFiles}
-          pinnedDirs={pinnedDirs}
-          onPinPath={pinSidebarDir}
-          onUnpinPath={unpinSidebarDir}
-          onReorderPin={reorderPinnedDir}
-          onPinObject={(obj) => pinObjectProjection("sidebar", obj)}
-          onMovePinAcross={movePinnedAcross}
-          showPinBadges={showPinBadges}
-          onPinnedContextMenu={handlePinnedDirContextMenu}
-          onPlaceContextMenu={handlePlaceContextMenu}
-        />
+          <Sidebar
+            onNavigate={handleSidebarNavigate}
+            currentPath={currentPath}
+            onDeviceContextMenu={handleDeviceContextMenu}
+            onDeviceMount={handleDeviceMount}
+            onDeviceUnmount={handleDeviceUnmount}
+            onDeviceEject={handleDeviceEject}
+            onGvfsMount={handleGvfsMount}
+            onGvfsUnmount={handleGvfsUnmountWithNav}
+            onGvfsContextMenu={handleGvfsContextMenu}
+            marqueeEnabled={marqueeEnabled}
+            onDropFiles={handleSidebarDropFiles}
+            pinnedDirs={pinnedDirs}
+            onPinPath={pinSidebarDir}
+            onUnpinPath={unpinSidebarDir}
+            onReorderPin={reorderPinnedDir}
+            onPinObject={(obj) => pinObjectProjection("sidebar", obj)}
+            onMovePinAcross={movePinnedAcross}
+            showPinBadges={showPinBadges}
+            onPinnedContextMenu={handlePinnedDirContextMenu}
+            onPlaceContextMenu={handlePlaceContextMenu}
+            showDashboardPlace={showDashboard}
+          />
 
-        <main className="main-content">
-          <header className="tab-header-bar">
-            <TabBar
-              tabs={tabs}
-              activeTabId={activeTabId}
-              onTabClick={setActiveTabId}
-              onTabClose={handleCloseTab}
-              onNewTab={() => handleAddTab(newTabPath)}
-              onDropFiles={handleDropOnTab}
-              onDropObject={handleDropObjectOnTab}
-            />
-          </header>
+          <main className="main-content">
+            <header className="tab-header-bar">
+              <TabBar
+                tabs={tabs}
+                activeTabId={activeTabId}
+                onTabClick={setActiveTabId}
+                onTabClose={handleCloseTab}
+                onNewTab={() => handleAddTab(newTabPath)}
+                onDropFiles={handleDropOnTab}
+                onDropObject={handleDropObjectOnTab}
+              />
+            </header>
 
-          <div className="content-area">
-            {tabs.map((tab) => (
-              <div
-                key={tab.id}
-                style={{
-                  display: tab.id === activeTabId ? "block" : "none",
-                  height: "100%",
-                }}
-              >
-                <ExplorerTab
-                  tabId={tab.id}
-                  isActive={tab.id === activeTabId}
-                  initialPath={tab.path}
-                  onPathChange={handleTabPathUpdate}
-                  onContextMenu={handleContextMenu}
-                  onBgMenuItems={handleBgMenuItems}
-                  onOpenWithFile={handleOpenWithFile}
-                  onPropertiesFile={handlePropertiesFile}
-                  onOpenTerminalAt={openTerminalAt}
-                  onRevealFile={(path, name) => {
-                    const parent = path.substring(0, path.lastIndexOf("/")) || "/";
-                    handleSidebarNavigate(parent, name);
+            <div className="content-area">
+              {tabs.map((tab) => (
+                <div
+                  key={tab.id}
+                  style={{
+                    display: tab.id === activeTabId ? "block" : "none",
+                    height: "100%",
                   }}
-                  onCreateDialog={handleCreateDialog}
-                  onConflictDialog={handleConflictDialog}
-                  onConfirmDialog={confirm}
-                  onDragAction={requestDragAction}
-                  showHiddenFiles={showHiddenFiles}
-                  iconSize={iconSize}
-                  viewMode={viewMode}
-                  filledIcons={filledIcons}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  groupingEnabled={groupingEnabled}
-                  searchGroupByDir={searchGroupByDir}
-                  searchLimit={searchLimit}
-                  searchTimeout={searchTimeout}
-                  onUnmountDevice={handleDeviceUnmount}
-                  onEjectDevice={handleDeviceEject}
-                  onTerminateProcess={confirmTerminate}
-                  onNiceProcess={niceProcess}
-                  onUnlockPrivileged={unlockPrivileged}
-                  onPinObject={(host, obj) => pinObjectProjection(host, obj)}
-                  onSearchContextMenu={handleSearchContextMenu}
-                  onBatchTerminate={batchTerminate}
-                  onBatchNice={batchNice}
-                  objectClassOrder={objectClassOrder}
-                  onObjectClassOrderChange={setObjectClassOrder}
-                  objectSearchHistory={objectSearchHistory}
-                  onObjectSearchRecord={recordObjectSearch}
-                  onObjectSearchHistoryClear={clearObjectSearchHistory}
-                  fileSearchHistory={fileSearchHistory}
-                  onFileSearchRecord={recordFileSearch}
-                  onFileSearchHistoryClear={clearFileSearchHistory}
-                  searchRecentCount={searchRecentCount}
-                  onNetworkToggle={toggleNetwork}
-                  onSortByChange={setSortBy}
-                  onSortOrderChange={setSortOrder}
-                  onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}
-                  onViewModeChange={setViewMode}
-                  sortControlsCollapsed={sortControlsCollapsed}
-                  sortControlsAutoCollapse={sortControlsAutoCollapse}
-                  onSortControlsCollapsedChange={setSortControlsCollapsed}
-                  sparklineWindowSeconds={sparklineWindowSeconds}
-                  alertTempC={alertTempC}
-                  alertDiskPct={alertDiskPct}
-                  refreshSignal={tab.version}
-                  scrollToFileName={tab.pendingSelectFile}
-                  onScrollToComplete={handleScrollToComplete}
-                  pendingPropertiesPath={
-                    startupPropertiesPath && tab.id === activeTabId
-                      ? startupPropertiesPath
-                      : undefined
-                  }
-                  onPropertiesComplete={() => setStartupPropertiesPath(null)}
-                  onMountDevice={handleDeviceMount}
-                  marqueeEnabled={marqueeEnabled}
-                  pendingDrop={
-                    pendingTabDrop?.tabId === tab.id
-                      ? pendingTabDrop
-                      : tab.id === activeTabId
-                        ? pendingSidebarDrop
-                        : null
-                  }
-                  onPendingDropHandled={() => {
-                    setPendingTabDrop(null);
-                    setPendingSidebarDrop(null);
-                  }}
-                  dashboardPinned={dashboardPinned}
-                  onDashboardPinItem={pinDashboardItem}
-                  onDashboardRemovePin={removeDashboardPinAt}
-                  onDashboardReorderPin={reorderDashboardPin}
-                  onDashboardPinObject={(obj) => pinObjectProjection("dashboard", obj)}
-                  onMovePinAcross={movePinnedAcross}
-                  showHomeStorageUsage={showHomeStorageUsage}
-                  filePreviewEnabled={filePreviewEnabled}
-                  previewWidth={previewWidth}
-                  onPreviewWidthChange={setPreviewWidth}
-                  terminalOpen={terminalOpen}
-                />
-              </div>
-            ))}
-            {tabs.length === 0 && (
-              <div className="empty-state">
-                <div className="empty-state-content">
-                  <Icon name="tab" size={48} />
-                  <p>{t("empty.no_tabs")}</p>
-                  <Button onClick={() => handleAddTab(newTabPath)}>{t("empty.open_new_tab")}</Button>
+                >
+                  <ExplorerTab
+                    tabId={tab.id}
+                    isActive={tab.id === activeTabId}
+                    initialPath={tab.path}
+                    onPathChange={handleTabPathUpdate}
+                    onContextMenu={handleContextMenu}
+                    onBgMenuItems={handleBgMenuItems}
+                    onOpenWithFile={handleOpenWithFile}
+                    onPropertiesFile={handlePropertiesFile}
+                    onOpenTerminalAt={openTerminalAt}
+                    onRevealFile={(path, name) => {
+                      const parent = path.substring(0, path.lastIndexOf("/")) || "/";
+                      handleSidebarNavigate(parent, name);
+                    }}
+                    onCreateDialog={handleCreateDialog}
+                    onConflictDialog={handleConflictDialog}
+                    onConfirmDialog={confirm}
+                    onDragAction={requestDragAction}
+                    showHiddenFiles={showHiddenFiles}
+                    iconSize={iconSize}
+                    viewMode={viewMode}
+                    filledIcons={filledIcons}
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    groupingEnabled={groupingEnabled}
+                    searchGroupByDir={searchGroupByDir}
+                    searchLimit={searchLimit}
+                    searchTimeout={searchTimeout}
+                    onUnmountDevice={handleDeviceUnmount}
+                    onEjectDevice={handleDeviceEject}
+                    onTerminateProcess={confirmTerminate}
+                    onNiceProcess={niceProcess}
+                    onUnlockPrivileged={unlockPrivileged}
+                    onPinObject={(host, obj) => pinObjectProjection(host, obj)}
+                    onSearchContextMenu={handleSearchContextMenu}
+                    onBatchTerminate={batchTerminate}
+                    onBatchNice={batchNice}
+                    objectClassOrder={objectClassOrder}
+                    onObjectClassOrderChange={setObjectClassOrder}
+                    objectSearchHistory={objectSearchHistory}
+                    onObjectSearchRecord={recordObjectSearch}
+                    onObjectSearchHistoryClear={clearObjectSearchHistory}
+                    fileSearchHistory={fileSearchHistory}
+                    onFileSearchRecord={recordFileSearch}
+                    onFileSearchHistoryClear={clearFileSearchHistory}
+                    searchRecentCount={searchRecentCount}
+                    onNetworkToggle={toggleNetwork}
+                    onSortByChange={setSortBy}
+                    onSortOrderChange={setSortOrder}
+                    onGroupingToggle={() => setGroupingEnabled(!groupingEnabled)}
+                    onViewModeChange={setViewMode}
+                    sortControlsCollapsed={sortControlsCollapsed}
+                    sortControlsAutoCollapse={sortControlsAutoCollapse}
+                    onSortControlsCollapsedChange={setSortControlsCollapsed}
+                    sparklineWindowSeconds={sparklineWindowSeconds}
+                    alertTempC={alertTempC}
+                    alertDiskPct={alertDiskPct}
+                    refreshSignal={tab.version}
+                    scrollToFileName={tab.pendingSelectFile}
+                    onScrollToComplete={handleScrollToComplete}
+                    pendingPropertiesPath={
+                      startupPropertiesPath && tab.id === activeTabId
+                        ? startupPropertiesPath
+                        : undefined
+                    }
+                    onPropertiesComplete={() => setStartupPropertiesPath(null)}
+                    onMountDevice={handleDeviceMount}
+                    marqueeEnabled={marqueeEnabled}
+                    pendingDrop={
+                      pendingTabDrop?.tabId === tab.id
+                        ? pendingTabDrop
+                        : tab.id === activeTabId
+                          ? pendingSidebarDrop
+                          : null
+                    }
+                    onPendingDropHandled={() => {
+                      setPendingTabDrop(null);
+                      setPendingSidebarDrop(null);
+                    }}
+                    dashboardPinned={dashboardPinned}
+                    onDashboardPinItem={pinDashboardItem}
+                    onDashboardRemovePin={removeDashboardPinAt}
+                    onDashboardReorderPin={reorderDashboardPin}
+                    onDashboardPinObject={(obj) => pinObjectProjection("dashboard", obj)}
+                    onMovePinAcross={movePinnedAcross}
+                    showHomeStorageUsage={showHomeStorageUsage}
+                    filePreviewEnabled={filePreviewEnabled}
+                    previewWidth={previewWidth}
+                    onPreviewWidthChange={setPreviewWidth}
+                    terminalOpen={terminalOpen}
+                  />
                 </div>
-              </div>
-            )}
-          </div>
+              ))}
+              {tabs.length === 0 && (
+                <div className="empty-state">
+                  <div className="empty-state-content">
+                    <Icon name="tab" size={48} />
+                    <p>{t("empty.no_tabs")}</p>
+                    <Button onClick={() => handleAddTab(newTabPath)}>{t("empty.open_new_tab")}</Button>
+                  </div>
+                </div>
+              )}
+            </div>
 
-          {terminalOpen && (
-            <TerminalPanel
-              cwd={
-                terminalCwd ||
+            {terminalOpen && (
+              <TerminalPanel
+                cwd={
+                  terminalCwd ||
                 (isVirtualTerminalDir
                   ? undefined
                   : tabs.find((t) => t.id === activeTabId)?.path) ||
                 undefined
-              }
-              currentDir={tabs.find((t) => t.id === activeTabId)?.path || undefined}
-              cdRequest={terminalCdRequest}
-              focusRequest={terminalFocusRequest}
-              onFocusChange={setTerminalFocused}
-              onFocusEscape={escapeTerminalFocus}
-              height={terminalHeight}
-              onHeightChange={setTerminalHeight}
-              onResetHeight={() => setTerminalHeight(DEFAULT_TERMINAL_HEIGHT)}
-              onClose={() => {
-                setTerminalOpen(false);
-                // 卸载不派发 blur，焦点状态须显式复位
-                setTerminalFocused(false);
-                // 关闭时清空显式启动目录，下次呼出以当前标签页目录启动
-                setTerminalCwd(undefined);
-              }}
-            />
-          )}
+                }
+                currentDir={tabs.find((t) => t.id === activeTabId)?.path || undefined}
+                cdRequest={terminalCdRequest}
+                focusRequest={terminalFocusRequest}
+                onFocusChange={setTerminalFocused}
+                onFocusEscape={escapeTerminalFocus}
+                height={terminalHeight}
+                onHeightChange={setTerminalHeight}
+                onResetHeight={() => setTerminalHeight(DEFAULT_TERMINAL_HEIGHT)}
+                onClose={() => {
+                  setTerminalOpen(false);
+                  // 卸载不派发 blur，焦点状态须显式复位
+                  setTerminalFocused(false);
+                  // 关闭时清空显式启动目录，下次呼出以当前标签页目录启动
+                  setTerminalCwd(undefined);
+                }}
+              />
+            )}
 
-          {contextMenu && (
-            <ContextMenu
-              x={contextMenu.x}
-              y={contextMenu.y}
-              items={menuItems}
-              onClose={closeContextMenu}
-            />
-          )}
+            {contextMenu && (
+              <ContextMenu
+                x={contextMenu.x}
+                y={contextMenu.y}
+                items={menuItems}
+                onClose={closeContextMenu}
+              />
+            )}
 
-          {deviceContextMenu && (
-            <ContextMenu
-              x={deviceContextMenu.x}
-              y={deviceContextMenu.y}
-              items={(() => {
-                const d = deviceContextMenu.device;
-                const items: ContextMenuItem[] = [];
-                items.push({
-                  label: t("device.go_to_source"),
-                  icon: "hard_drive",
-                  action: () => {
-                    handleSidebarNavigate("/dev", d.name);
-                    closeDeviceContextMenu();
-                  },
-                });
-                if (d.mounted) {
+            {deviceContextMenu && (
+              <ContextMenu
+                x={deviceContextMenu.x}
+                y={deviceContextMenu.y}
+                items={(() => {
+                  const d = deviceContextMenu.device;
+                  const items: ContextMenuItem[] = [];
                   items.push({
-                    label: t("device.unmount"),
-                    icon: "eject",
+                    label: t("device.go_to_source"),
+                    icon: "hard_drive",
                     action: () => {
-                      handleDeviceUnmount(d.devicePath);
+                      handleSidebarNavigate("/dev", d.name);
                       closeDeviceContextMenu();
                     },
                   });
-                  if (d.type !== 'part' && (d.hotplug || d.rm || d.tran === 'usb')) {
+                  if (d.mounted) {
                     items.push({
-                      label: t("device.eject"),
-                      icon: "power_settings_new",
+                      label: t("device.unmount"),
+                      icon: "eject",
                       action: () => {
-                        handleDeviceEject(d.devicePath);
+                        handleDeviceUnmount(d.devicePath);
+                        closeDeviceContextMenu();
+                      },
+                    });
+                    if (d.type !== 'part' && (d.hotplug || d.rm || d.tran === 'usb')) {
+                      items.push({
+                        label: t("device.eject"),
+                        icon: "power_settings_new",
+                        action: () => {
+                          handleDeviceEject(d.devicePath);
+                          closeDeviceContextMenu();
+                        },
+                      });
+                    }
+                  } else {
+                    items.push({
+                      label: t("device.mount"),
+                      icon: "hard_drive",
+                      action: () => {
+                        handleDeviceMount(d.devicePath);
                         closeDeviceContextMenu();
                       },
                     });
                   }
-                } else {
-                  items.push({
-                    label: t("device.mount"),
-                    icon: "hard_drive",
-                    action: () => {
-                      handleDeviceMount(d.devicePath);
-                      closeDeviceContextMenu();
-                    },
-                  });
-                }
-                return items;
-              })()}
-              onClose={closeDeviceContextMenu}
-            />
-          )}
+                  return items;
+                })()}
+                onClose={closeDeviceContextMenu}
+              />
+            )}
 
-          {gvfsContextMenu && (
-            <ContextMenu
-              x={gvfsContextMenu.x}
-              y={gvfsContextMenu.y}
-              items={(() => {
-                const v = gvfsContextMenu.volume;
-                const items: ContextMenuItem[] = [];
-                if (v.mounted) {
-                  items.push({
-                    label: t("device.unmount"),
-                    icon: "eject",
-                    action: () => {
-                      handleGvfsUnmountWithNav(v);
-                      closeGvfsContextMenu();
-                    },
-                  });
-                } else if (v.deviceId) {
-                  items.push({
-                    label: t("device.mount"),
-                    icon: "hard_drive",
-                    action: () => {
-                      void handleGvfsMount(v);
-                      closeGvfsContextMenu();
-                    },
-                  });
-                }
-                return items;
-              })()}
-              onClose={closeGvfsContextMenu}
-            />
-          )}
+            {gvfsContextMenu && (
+              <ContextMenu
+                x={gvfsContextMenu.x}
+                y={gvfsContextMenu.y}
+                items={(() => {
+                  const v = gvfsContextMenu.volume;
+                  const items: ContextMenuItem[] = [];
+                  if (v.mounted) {
+                    items.push({
+                      label: t("device.unmount"),
+                      icon: "eject",
+                      action: () => {
+                        handleGvfsUnmountWithNav(v);
+                        closeGvfsContextMenu();
+                      },
+                    });
+                  } else if (v.deviceId) {
+                    items.push({
+                      label: t("device.mount"),
+                      icon: "hard_drive",
+                      action: () => {
+                        void handleGvfsMount(v);
+                        closeGvfsContextMenu();
+                      },
+                    });
+                  }
+                  return items;
+                })()}
+                onClose={closeGvfsContextMenu}
+              />
+            )}
 
-          {pinnedDirMenu && (
-            <ContextMenu
-              x={pinnedDirMenu.x}
-              y={pinnedDirMenu.y}
-              items={pinnedDirMenuItems}
-              onClose={() => setPinnedDirMenu(null)}
-            />
-          )}
+            {pinnedDirMenu && (
+              <ContextMenu
+                x={pinnedDirMenu.x}
+                y={pinnedDirMenu.y}
+                items={pinnedDirMenuItems}
+                onClose={() => setPinnedDirMenu(null)}
+              />
+            )}
 
-          {searchCtxMenu && (
-            <ContextMenu
-              x={searchCtxMenu.x}
-              y={searchCtxMenu.y}
-              items={searchCtxMenuItems}
-              onClose={() => setSearchCtxMenu(null)}
-            />
-          )}
+            {searchCtxMenu && (
+              <ContextMenu
+                x={searchCtxMenu.x}
+                y={searchCtxMenu.y}
+                items={searchCtxMenuItems}
+                onClose={() => setSearchCtxMenu(null)}
+              />
+            )}
 
-          {placeMenu && (
-            <ContextMenu
-              x={placeMenu.x}
-              y={placeMenu.y}
-              items={placeMenuItems}
-              onClose={() => setPlaceMenu(null)}
-            />
-          )}
+            {placeMenu && (
+              <ContextMenu
+                x={placeMenu.x}
+                y={placeMenu.y}
+                items={placeMenuItems}
+                onClose={() => setPlaceMenu(null)}
+              />
+            )}
 
-          <Dialog
-            title={t("dialog.rename.title")}
-            open={renameDialogOpen}
-            onClose={() => setRenameDialogOpen(false)}
-            actions={
-              <>
-                <Button variant="text" onClick={() => setRenameDialogOpen(false)}>
-                  {t("dialog.rename.cancel")}
-                </Button>
-                <Button onClick={handleRename}>{t("dialog.rename.confirm")}</Button>
-              </>
-            }
-          >
-            <OutlinedTextField
-              label={t("dialog.rename.title")}
-              value={newName}
-              onInput={(e) => setNewName((e.target as HTMLInputElement).value)}
-              onKeyDown={(e) => {
-                if ((e as React.KeyboardEvent).key === "Enter") handleRename();
-              }}
-              style={{ width: "100%" }}
-            />
-          </Dialog>
+            <Dialog
+              title={t("dialog.rename.title")}
+              open={renameDialogOpen}
+              onClose={() => setRenameDialogOpen(false)}
+              actions={
+                <>
+                  <Button variant="text" onClick={() => setRenameDialogOpen(false)}>
+                    {t("dialog.rename.cancel")}
+                  </Button>
+                  <Button onClick={handleRename}>{t("dialog.rename.confirm")}</Button>
+                </>
+              }
+            >
+              <OutlinedTextField
+                label={t("dialog.rename.title")}
+                value={newName}
+                onInput={(e) => setNewName((e.target as HTMLInputElement).value)}
+                onKeyDown={(e) => {
+                  if ((e as React.KeyboardEvent).key === "Enter") handleRename();
+                }}
+                style={{ width: "100%" }}
+              />
+            </Dialog>
 
-          {createDialog && (
-            <NameInputDialog
-              title={createDialog.type === "folder" ? t("dialog.create.folder") : t("dialog.create.file")}
-              defaultName={createDialog.defaultName}
-              isDir={createDialog.type === "folder"}
-              existingNames={createDialog.existingNames}
-              onConfirm={(name) => {
-                const r = createDialog.resolve;
-                setCreateDialog(null);
-                r(name);
-              }}
-              onCancel={() => {
-                const r = createDialog.resolve;
-                setCreateDialog(null);
-                r(null);
-              }}
-            />
-          )}
+            {createDialog && (
+              <NameInputDialog
+                title={createDialog.type === "folder" ? t("dialog.create.folder") : t("dialog.create.file")}
+                defaultName={createDialog.defaultName}
+                isDir={createDialog.type === "folder"}
+                existingNames={createDialog.existingNames}
+                onConfirm={(name) => {
+                  const r = createDialog.resolve;
+                  setCreateDialog(null);
+                  r(name);
+                }}
+                onCancel={() => {
+                  const r = createDialog.resolve;
+                  setCreateDialog(null);
+                  r(null);
+                }}
+              />
+            )}
 
-          {compressDialog && (
-            <CompressDialog
-              paths={compressDialog.paths}
-              destDir={compressDialog.destDir}
-              defaultBaseName={compressDialog.defaultBaseName}
-              existingNames={compressDialog.existingNames}
-              onConfirm={handleCompressConfirm}
-              onCancel={() => setCompressDialog(null)}
-            />
-          )}
+            {compressDialog && (
+              <CompressDialog
+                paths={compressDialog.paths}
+                destDir={compressDialog.destDir}
+                defaultBaseName={compressDialog.defaultBaseName}
+                existingNames={compressDialog.existingNames}
+                onConfirm={handleCompressConfirm}
+                onCancel={() => setCompressDialog(null)}
+              />
+            )}
 
-          {batchRenameFiles && (
-            <BatchRenameDialog
-              files={batchRenameFiles}
-              marqueeEnabled={marqueeEnabled}
-              onConfirm={handleBatchRenameConfirm}
-              onCancel={() => setBatchRenameFiles(null)}
-            />
-          )}
+            {batchRenameFiles && (
+              <BatchRenameDialog
+                files={batchRenameFiles}
+                marqueeEnabled={marqueeEnabled}
+                onConfirm={handleBatchRenameConfirm}
+                onCancel={() => setBatchRenameFiles(null)}
+              />
+            )}
 
-          {singleConflict &&
+            {singleConflict &&
           (() => {
             const c = singleConflict;
             const { base, ext } = splitNameExt(
@@ -3036,213 +3123,127 @@ function AppContent() {
             );
           })()}
 
-          {multiConflict && (
-            <ConflictDialog
-              conflicts={multiConflict.conflicts}
-              destDir={multiConflict.destDir}
-              existingNames={multiConflict.existingNames}
-              sourcePath={multiConflict.sourcePath}
-              operation={multiConflict.operation}
-              onConfirm={(result) => {
-                const resolve = multiConflict.resolve;
-                setMultiConflict(null);
-                resolve(result);
-              }}
-              onCancel={() => {
-                const resolve = multiConflict.resolve;
-                setMultiConflict(null);
-                resolve({ action: "cancel" });
-              }}
+            {multiConflict && (
+              <ConflictDialog
+                conflicts={multiConflict.conflicts}
+                destDir={multiConflict.destDir}
+                existingNames={multiConflict.existingNames}
+                sourcePath={multiConflict.sourcePath}
+                operation={multiConflict.operation}
+                onConfirm={(result) => {
+                  const resolve = multiConflict.resolve;
+                  setMultiConflict(null);
+                  resolve(result);
+                }}
+                onCancel={() => {
+                  const resolve = multiConflict.resolve;
+                  setMultiConflict(null);
+                  resolve({ action: "cancel" });
+                }}
+              />
+            )}
+
+            <PropertiesDialog
+              open={propertiesDialogOpen}
+              onClose={() => setPropertiesDialogOpen(false)}
+              file={propertiesFile}
+              group={propertiesGroup ?? undefined}
+              onPermissionsChanged={refreshActiveTab}
             />
-          )}
 
-          <PropertiesDialog
-            open={propertiesDialogOpen}
-            onClose={() => setPropertiesDialogOpen(false)}
-            file={propertiesFile}
-            group={propertiesGroup ?? undefined}
-            onPermissionsChanged={refreshActiveTab}
-          />
+            <ConfirmDialog
+              open={!!confirmDialog}
+              title={confirmDialog?.title ?? ""}
+              message={confirmDialog?.message ?? ""}
+              onConfirm={handleConfirm}
+              onCancel={handleCancel}
+            />
 
-          <ConfirmDialog
-            open={!!confirmDialog}
-            title={confirmDialog?.title ?? ""}
-            message={confirmDialog?.message ?? ""}
-            onConfirm={handleConfirm}
-            onCancel={handleCancel}
-          />
-
-          {/* portal 后端冲突警告弹窗（带遮罩）：toast 替代——冲突属
+            {/* portal 后端冲突警告弹窗（带遮罩）：toast 替代——冲突属
               「portal 文件选择器被劫持」级故障，需用户明确知晓；
               每次会话只弹一次，详情常驻设置页 */}
-          <AlertDialog
-            open={!!conflictAlert}
-            title={t("settings.backend_conflict_alert_title")}
-            message={
-              conflictAlert
-                ? conflictAlert.state === "outdated"
-                  ? t("settings.backend_conflict_outdated", conflictAlert.remoteVersion ?? "")
-                  : conflictAlert.state === "noVersion"
-                    ? t("settings.backend_conflict_no_version")
-                    : t("settings.backend_conflict_unresponsive")
-                : ""
-            }
-            onClose={() => setConflictAlert(null)}
-          />
-
-          {/* portal 版本不一致弹窗：打包版取消/一键重装（PgDn 切换开发
-              详情）；开发版取消/重新安装 Portal + 运行时诊断详情 */}
-          <PortalVersionDialog
-            open={!!portalVersionDialog}
-            mode={portalVersionDialog?.mode ?? "user"}
-            info={portalRuntimeInfo}
-            busy={reinstallBusy}
-            onReinstall={() => void handleReinstallIntegration()}
-            onClose={() => setPortalVersionDialog(null)}
-          />
-
-          {/* portal 相关操作结果弹窗（toast 替代：安装/卸载/重装/会话
-              总线重启的结果，带遮罩强制用户知晓） */}
-          <AlertDialog
-            open={!!portalNotice}
-            title={portalNotice?.title ?? ""}
-            message={portalNotice?.message ?? ""}
-            onClose={() => setPortalNotice(null)}
-          />
-
-          {/* 打开方式「还原默认打开方式」成功提示（带遮罩：标题「已还原」
-              正文「已还原为默认打开方式」） */}
-          <AlertDialog
-            open={openRuleNotice}
-            title={t("open_with.restored_title")}
-            message={t("open_with.restored_notice")}
-            onClose={() => setOpenRuleNotice(false)}
-          />
-
-          <DragActionDialog
-            open={!!dragAction}
-            title={dragAction?.title ?? ""}
-            message={dragAction?.message ?? ""}
-            onMove={handleDragMove}
-            onCopy={handleDragCopy}
-            onCancel={handleDragActionCancel}
-          />
-          {openWithFile && (
-            <OpenWithDialog
-              open={!!openWithFile}
-              path={openWithFile.path}
-              onClose={() => setOpenWithFile(null)}
-              onRestored={() => setOpenRuleNotice(true)}
-              onSelect={async (exec, desktopFile) => {
-                if (openWithFile) {
-                  const result = await window.electron.openWith(
-                    exec,
-                    openWithFile.path,
-                    desktopFile,
-                  );
-                  if (result !== true) {
-                    showToast(t("toast.launch_failed", exec, result), "error");
-                  }
-                }
-                setOpenWithFile(null);
-              }}
+            <AlertDialog
+              open={!!conflictAlert}
+              title={t("settings.backend_conflict_alert_title")}
+              message={
+                conflictAlert
+                  ? conflictAlert.state === "outdated"
+                    ? t("settings.backend_conflict_outdated", conflictAlert.remoteVersion ?? "")
+                    : conflictAlert.state === "noVersion"
+                      ? t("settings.backend_conflict_no_version")
+                      : t("settings.backend_conflict_unresponsive")
+                  : ""
+              }
+              onClose={() => setConflictAlert(null)}
             />
-          )}
 
-          <SettingsDialog
-            open={settingsDialogOpen}
-            onClose={() => setSettingsDialogOpen(false)}
-            showHiddenFiles={showHiddenFiles}
-            onShowHiddenFilesChange={setShowHiddenFiles}
-            iconSize={iconSize}
-            onIconSizeChange={setIconSize}
-            uiScale={uiScale}
-            onUiScaleChange={setUiScale}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            filledIcons={filledIcons}
-            onFilledIconsChange={setFilledIcons}
-            sortControlsAutoCollapse={sortControlsAutoCollapse}
-            onSortControlsAutoCollapseChange={setSortControlsAutoCollapse}
-            sparklineWindowSeconds={sparklineWindowSeconds}
-            onSparklineWindowSecondsChange={setSparklineWindowSeconds}
-            searchRecentCount={searchRecentCount}
-            onSearchRecentCountChange={setSearchRecentCount}
-            alertTempC={alertTempC}
-            onAlertTempCChange={setAlertTempC}
-            alertDiskPct={alertDiskPct}
-            onAlertDiskPctChange={setAlertDiskPct}
-            locale={locale}
-            onLocaleChange={handleLocaleChange}
-            marqueeEnabled={marqueeEnabled}
-            onMarqueeChange={setMarqueeEnabled}
-            showHomeStorageUsage={showHomeStorageUsage}
-            onShowHomeStorageUsageChange={setShowHomeStorageUsage}
-            filePreviewEnabled={filePreviewEnabled}
-            onFilePreviewChange={setFilePreviewEnabled}
-            calculateDirSize={calculateDirSize}
-            onCalculateDirSizeChange={setCalculateDirSize}
-            autoCreateDesktopEntry={autoCreateDesktopEntry}
-            onAutoCreateDesktopEntryChange={handleAutoCreateDesktopEntryChange}
-            autoCreateAppMenuEntry={autoCreateAppMenuEntry}
-            onAutoCreateAppMenuEntryChange={handleAutoCreateAppMenuEntryChange}
-            newTabPath={newTabPath}
-            onNewTabPathChange={setNewTabPath}
-            isDefaultFileManager={isDefaultFileManager}
-            fmBusy={fmBusy}
-            onSetDefaultFm={() => void handleSetDefaultFm()}
-            onRestoreDefaultFm={() => void handleRestoreDefaultFm()}
-            integrationStatus={integrationStatus}
-            integrationBusy={integrationBusy}
-            onInstallIntegration={() => void handleInstallIntegration()}
-            onUninstallIntegration={() => void handleUninstallIntegration()}
-            backendConflicts={backendConflicts}
-            sessionBusBusy={sessionBusBusy}
-            onRestartSessionBus={() => void handleRestartSessionBus()}
-            thumbCacheInfo={thumbCacheInfo}
-            thumbCacheBusy={thumbCacheBusy}
-            onClearThumbCache={() => void handleClearThumbCache()}
-            searchGroupByDir={searchGroupByDir}
-            onSearchGroupByDirChange={setSearchGroupByDir}
-            searchLimit={searchLimit}
-            onSearchLimitChange={setSearchLimit}
-            searchTimeout={searchTimeout}
-            onSearchTimeoutChange={setSearchTimeout}
-            titleBarMode={titleBarMode}
-            onTitleBarChange={setTitleBarMode}
-            showFullPathTitle={showFullPathTitle}
-            onShowFullPathTitleChange={setShowFullPathTitle}
-            detectedWm={detectedWm}
-            onThemeColor={() => setThemeColorOpen(true)}
-            themeSeedColor={themeConfig?.seed}
-            groupingEnabled={groupingEnabled}
-            previewCollapsed={previewCollapsed}
-            onPreviewCollapsedChange={setPreviewCollapsed}
-            onRestoreDefaults={handleRestoreDefaults}
-            onOpenRuleManager={() => setOpenRuleManagerOpen(true)}
-          />
+            {/* portal 版本不一致弹窗：打包版取消/一键重装（PgDn 切换开发
+              详情）；开发版取消/重新安装 Portal + 运行时诊断详情 */}
+            <PortalVersionDialog
+              open={!!portalVersionDialog}
+              mode={portalVersionDialog?.mode ?? "user"}
+              info={portalRuntimeInfo}
+              busy={reinstallBusy}
+              onReinstall={() => void handleReinstallIntegration()}
+              onClose={() => setPortalVersionDialog(null)}
+            />
 
-          <ThemeColorDialog
-            open={themeColorOpen}
-            current={themeConfig}
-            onSave={(cfg) => setThemeConfig(cfg)}
-            onClose={() => setThemeColorOpen(false)}
-            darkMode={darkMode}
-            onDarkModeChange={setDarkMode}
-          />
+            {/* portal 相关操作结果弹窗（toast 替代：安装/卸载/重装/会话
+              总线重启的结果，带遮罩强制用户知晓） */}
+            <AlertDialog
+              open={!!portalNotice}
+              title={portalNotice?.title ?? ""}
+              message={portalNotice?.message ?? ""}
+              onClose={() => setPortalNotice(null)}
+            />
 
-          <OpenRuleManagerDialog
-            open={openRuleManagerOpen}
-            onClose={() => setOpenRuleManagerOpen(false)}
-          />
+            {/* 打开方式「还原默认打开方式」成功提示（带遮罩：标题「已还原」
+              正文「已还原为默认打开方式」） */}
+            <AlertDialog
+              open={openRuleNotice}
+              title={t("open_with.restored_title")}
+              message={t("open_with.restored_notice")}
+              onClose={() => setOpenRuleNotice(false)}
+            />
 
-          <HoshinekoNyaDialog
-            open={nyaDialogOpen}
-            onClose={() => setNyaDialogOpen(false)}
-          />
-        </main>
+            <DragActionDialog
+              open={!!dragAction}
+              title={dragAction?.title ?? ""}
+              message={dragAction?.message ?? ""}
+              onMove={handleDragMove}
+              onCopy={handleDragCopy}
+              onCancel={handleDragActionCancel}
+            />
+            {openWithFile && (
+              <OpenWithDialog
+                open={!!openWithFile}
+                path={openWithFile.path}
+                onClose={() => setOpenWithFile(null)}
+                onRestored={() => setOpenRuleNotice(true)}
+                onSelect={async (exec, desktopFile) => {
+                  if (openWithFile) {
+                    const result = await window.electron.openWith(
+                      exec,
+                      openWithFile.path,
+                      desktopFile,
+                    );
+                    if (result !== true) {
+                      showToast(t("toast.launch_failed", exec, result), "error");
+                    }
+                  }
+                  setOpenWithFile(null);
+                }}
+              />
+            )}
+
+            <HoshinekoNyaDialog
+              open={nyaDialogOpen}
+              onClose={() => setNyaDialogOpen(false)}
+            />
+          </main>
+        </div>
       </div>
-    </div>
+    </SettingsContext.Provider>
   );
 }
 

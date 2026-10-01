@@ -46,28 +46,23 @@ const OURS = 'HoshinekoFM.desktop';
           await h.sleep(200);
         }
       }
-      // 打开设置 → 定位「默认文件管理器」行 → 点击「设为默认」
-      const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
+      // 设置页 → 系统集成分类 → 定位「默认文件管理器」行 → 点击「设为默认」
+      await h.openSettingsPage(win, `/系统集成|System Integration/`);
+      await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
       // 按行文案定位（设置行数量会随新增开关变化，勿用硬编码下标）
-      const rowIdx = await h.js(
-        win,
-        `Array.from(document.querySelectorAll('.settings-row')).findIndex((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''))`,
-      );
-      h.assert.ok(rowIdx.ok && rowIdx.value >= 0, '应找到「默认文件管理器」设置行');
-      await h.scrollIntoView(win, '.settings-row', rowIdx.value);
       const btnClicked = await h.js(
         win,
         `(() => {
-          const row = document.querySelectorAll('.settings-row')[${rowIdx.value}];
-          const btn = row ? row.querySelector('md-outlined-button') : null;
+          const rows = [...document.querySelectorAll('.settings-row')];
+          const row = rows.find((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''));
+          const btn = row?.querySelector('md-outlined-button');
           if (!btn) return false;
           btn.click();
           return true;
         })()`,
         true,
       );
+      h.assert.ok(btnClicked.value, '「设为默认」按钮应可点击');
       h.assert.ok(btnClicked.value, '应找到「设为默认」按钮');
 
       // 关联生效：query 变为 HoshinekoFM.desktop
@@ -103,12 +98,13 @@ const OURS = 'HoshinekoFM.desktop';
       const invalid = await h.js(win, `window.electron.setDirMimeHandler('../evil')`);
       h.assert.strictEqual(invalid.value.success, false, '非法 handler 应被拒绝');
 
-      // 恢复：点击「恢复为系统默认」
+      // 恢复：点击「恢复为系统默认」（设置页仍在系统集成分类）
       const restoredClicked = await h.js(
         win,
         `(() => {
-          const row = document.querySelectorAll('.settings-row')[${rowIdx.value}];
-          const btn = row ? row.querySelector('md-outlined-button') : null;
+          const rows = [...document.querySelectorAll('.settings-row')];
+          const row = rows.find((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''));
+          const btn = row?.querySelector('md-outlined-button');
           if (!btn) return false;
           btn.click();
           return true;
@@ -170,34 +166,37 @@ const OURS = 'HoshinekoFM.desktop';
       fs.mkdirSync(path.dirname(mimeappsPath), { recursive: true });
       fs.writeFileSync(mimeappsPath, '[Default Applications]\ninode/directory=HoshinekoFM.desktop\n');
 
-      // 打开设置 → 定位「默认文件管理器」行（按文案定位，勿用硬编码下标）
-      const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-      const rowIdx = await h.js(
-        win,
-        `Array.from(document.querySelectorAll('.settings-row')).findIndex((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''))`,
-      );
-      h.assert.ok(rowIdx.ok && rowIdx.value >= 0, '应找到「默认文件管理器」设置行');
+      // 设置页 → 系统集成分类 → 定位「默认文件管理器」行（按文案定位）
+      await h.openSettingsPage(win, `/系统集成|System Integration/`);
+      await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
       // 状态回填后按钮必须存在（修复前为 null——按钮直接消失）
       await h.waitFor(
         win,
-        `!!document.querySelectorAll('.settings-row')[${rowIdx.value}]?.querySelector('md-outlined-button')`,
+        `(() => {
+          const rows = [...document.querySelectorAll('.settings-row')];
+          const row = rows.find((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''));
+          return !!row?.querySelector('md-outlined-button');
+        })()`,
       );
       const btnLabel = await h.js(
         win,
-        `document.querySelectorAll('.settings-row')[${rowIdx.value}]?.querySelector('md-outlined-button')?.textContent ?? ''`,
+        `(() => {
+          const rows = [...document.querySelectorAll('.settings-row')];
+          const row = rows.find((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''));
+          return row?.querySelector('md-outlined-button')?.textContent ?? '';
+        })()`,
       );
       h.assert.ok(
         /恢复/.test(btnLabel.value),
         '已是默认且无记录时按钮应显示「恢复为系统默认」',
       );
 
-      await h.scrollIntoView(win, '.settings-row', rowIdx.value);
       const clicked = await h.js(
         win,
         `(() => {
-          const b = document.querySelectorAll('.settings-row')[${rowIdx.value}]?.querySelector('md-outlined-button');
+          const rows = [...document.querySelectorAll('.settings-row')];
+          const row = rows.find((r) => /默认文件管理器|Default file manager/.test(r.textContent ?? ''));
+          const b = row?.querySelector('md-outlined-button');
           if (!b) return false;
           b.click();
           return true;

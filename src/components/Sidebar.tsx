@@ -112,6 +112,12 @@ interface SidebarProps {
   variant?: 'default' | 'picker';
   /** 隐藏 Places 中的回收站条目（保存模式选择器用：回收站不可作保存目标） */
   hideTrash?: boolean;
+  /**
+   * 是否显示 Places 中的仪表盘入口（review 26：设置页「显示仪表盘」开关
+   * 立即生效——关闭即从 Places 隐藏；导航栏/仪表盘固定项不受影响）。
+   * 默认 true；picker 变体恒不显示（isPicker 守卫优先级更高）。
+   */
+  showDashboardPlace?: boolean;
 }
 
 /** 侧边栏拖放目标标识前缀与常量 */
@@ -163,6 +169,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onPlaceContextMenu,
   variant = 'default',
   hideTrash = false,
+  showDashboardPlace = true,
 }) => {
   const isPicker = variant === 'picker';
   const [places, setPlaces] = useState<
@@ -945,7 +952,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="sidebar-section">
         <h3 className="sidebar-title">{t("sidebar.places")}</h3>
         <div className="sidebar-list">
-          {!isPicker && (
+          {!isPicker && showDashboardPlace && (
             <button
               className={`sidebar-item ${currentPath === "app://dashboard" ? "active" : ""}`}
               tabIndex={-1}
@@ -986,6 +993,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
               />
               <span className="sidebar-label">
                 <MarqueeText enabled={marqueeEnabled}>{t("objects.title")}</MarqueeText>
+              </span>
+            </button>
+          )}
+          {/* 设置页入口（review 26）：Places 中位于对象下方；仅主窗口 */}
+          {!isPicker && (
+            <button
+              className={`sidebar-item ${currentPath.startsWith("settings://") ? "active" : ""}`}
+              tabIndex={-1}
+              onClick={() => onNavigate("settings://")}
+            >
+              <Icon
+                name="settings"
+                className="sidebar-icon"
+                filled={currentPath.startsWith("settings://")}
+              />
+              <span className="sidebar-label">
+                <MarqueeText enabled={marqueeEnabled}>{t("settings.title")}</MarqueeText>
               </span>
             </button>
           )}

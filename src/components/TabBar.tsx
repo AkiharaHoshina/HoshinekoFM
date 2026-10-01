@@ -10,6 +10,7 @@ import { registerKeyboardZone } from '../utils/focusZones';
 import { parseSearchPath } from '../utils/searchPath';
 import { parseObjectsPath } from '../utils/objectsPath';
 import { parseObjectSearchPath } from '../utils/objectSearchPath';
+import { isSettingsPath, settingsPathTitle } from '../utils/settingsPath';
 import type { IFile } from '../types/files';
 import './TabBar.css';
 
@@ -49,7 +50,8 @@ const isDroppableTab = (tab: Tab): boolean => !tab.path.startsWith('app://');
  */
 const isFileDroppableTab = (tab: Tab): boolean => isDroppableTab(tab)
   && !tab.path.startsWith('search://')
-  && !tab.path.startsWith('objectsearch://');
+  && !tab.path.startsWith('objectsearch://')
+  && !isSettingsPath(tab.path);
 
 const getTabTitle = (title: string): string => {
   const normalizeTitle = title.toLowerCase();
@@ -96,6 +98,10 @@ const getTabTitle = (title: string): string => {
         return parsed.query ? `${t('objects.object_search')} · ${parsed.query}` : t('objects.object_search');
       }
     }
+    // 设置页虚拟路径（review 26）：根 = 「设置」、分类页 = 「设置 · 类名」、
+    // 二级页 = 「设置 · 子页名」（标题与窗口标题同源 settingsPathTitle；
+    // 设置页不接收文件拖放——isFileDroppableTab 已排除）
+    if (isSettingsPath(title)) return settingsPathTitle(title);
     return title;
   }
 };

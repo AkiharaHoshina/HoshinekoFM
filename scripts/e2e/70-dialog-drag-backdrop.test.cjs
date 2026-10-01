@@ -21,37 +21,27 @@ const h = require('./harness.cjs');
     h.makeFileTree(dir, { 'a.txt': 'hello' });
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `document.querySelectorAll('.m3-navigation-rail__item').length >= 1`);
+    // 侧边栏布局异步移位（46 号坑）：真实输入前等文件区就绪 + 布局稳定
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await h.sleep(600);
 
     // 预置较长的默认新标签页目录：输入框文本足够长，mousedown 在
     // 文本中部（field 左缘 +30px）必然落在字符上，拖选必非折叠
     const longPath = `${dir}/some-longer-dir-name`;
 
-    // 打开设置（功能栏最后一个 md-icon-button = 设置）
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-    await h.waitDialogAnim();
-
-    // 行为区「新建标签页目录」行 → 「自定义」按钮 → 二级对话框
-    const rowReady = await h.js(win, `(() => {
-      const rows = Array.from(document.querySelectorAll('.settings-row'));
-      const idx = rows.findIndex((row) => /新建标签页目录|New tab directory/.test(row.textContent ?? ''));
-      if (idx === -1) return false;
-      rows[idx].scrollIntoView({ block: 'center' });
-      window.__newtabRowIdx = idx;
-      return true;
-    })()`);
-    h.assert.ok(rowReady.value, '设置对话框应存在「新建标签页目录」行');
-    await h.sleep(300);
+    // 设置页 → 文件分类 → 「新建标签页目录」行 → 「自定义」按钮 → 二级对话框
+    await h.openSettingsPage(win, `/文件|Files/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
     const openDialog = await h.js(win, `(() => {
       const rows = Array.from(document.querySelectorAll('.settings-row'));
-      const btn = rows[window.__newtabRowIdx].querySelector('md-outlined-button');
+      const row = rows.find((r) => /新建标签页目录|New tab directory/.test(r.textContent ?? ''));
+      const btn = row?.querySelector('md-outlined-button');
       if (!btn) return false;
       btn.click();
       return true;
     })()`, true);
     h.assert.ok(openDialog.value, '「自定义」按钮应能打开二级对话框');
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length >= 2`);
+    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
     await h.waitDialogAnim();
 
     // 写入长路径（md-outlined-text-field 受控输入，走 prototype setter）

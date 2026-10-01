@@ -103,24 +103,15 @@ const path = require('path');
     h.assert.ok(!fs.existsSync(desktopFile), '手动删除桌面条目后重载不得重建');
     h.assert.ok(!fs.existsSync(appmenuFile), '手动删除菜单条目后重载不得重建');
 
-    // ── 应用/确定时生效：点确定 → 删除条目并清 marker；重开点确定 → 再建 ──
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    const openSettings = async () => {
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-      await h.waitDialogAnim();
-    };
+    // ── review 26 立即生效：切换开关即删除/创建条目并清/记 marker ──
     const toggleDesktopSwitch = async () => {
-      const rowIdx = await h.js(
-        win,
-        `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /桌面图标|Desktop shortcut/.test(row.textContent ?? ''))`,
-      );
-      h.assert.ok(rowIdx.value >= 0, '设置中应存在「桌面图标」行');
-      await h.scrollIntoView(win, '.settings-row', rowIdx.value);
+      await h.openSettingsPage(win, `/快捷方式|Shortcuts/`);
+      await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
       await h.js(
         win,
         `(() => {
-          const row = document.querySelectorAll('.settings-row')[${rowIdx.value}];
+          const rows = [...document.querySelectorAll('.settings-row')];
+          const row = rows.find((r) => /桌面图标|Desktop shortcut/.test(r.textContent ?? ''));
           const sw = row ? row.querySelector('md-switch') : null;
           if (!sw) return false;
           sw.click();
@@ -128,33 +119,37 @@ const path = require('path');
         })()`,
         true,
       );
-      await h.sleep(400);
-    };
-    const applyByConfirm = async () => {
-      await h.clickSettingsConfirm(win);
-      await h.waitDialogAnim();
     };
 
-    // 点确定（文件此前已被手动删除 + marker 有 desktop 标志）：
-    // 删除为 no-op 但 marker 被清除
-    await openSettings();
+    // 关闭（文件此前已被手动删除 + marker 有 desktop 标志）：
+    // 删除为 no-op 但 marker 被清除——立即生效
     await toggleDesktopSwitch();
-    await applyByConfirm();
     await h.waitFor(win, `localStorage.getItem('settings.autoCreateDesktopEntry') === 'false'`, 8000);
-    h.assert.deepStrictEqual(readMarker(), { appmenu: true }, '关闭并确定应清除桌面条目 marker');
+    await (async () => {
+      const start = Date.now();
+      while (Date.now() - start < 5000) {
+        if (JSON.stringify(readMarker()) === JSON.stringify({ appmenu: true })) return;
+        await h.sleep(100);
+      }
+      throw new Error('关闭后应清除桌面条目 marker');
+    })();
 
-    // 重新打开点确定：marker 已清 → 再次创建（显式往返 = 新创建意图）
-    await openSettings();
+    // 重新打开：marker 已清 → 再次创建（显式往返 = 新创建意图）
     await toggleDesktopSwitch();
-    await applyByConfirm();
     await h.waitFor(win, `localStorage.getItem('settings.autoCreateDesktopEntry') === 'true'`, 8000);
     await waitForFile(desktopFile);
-    h.assert.deepStrictEqual(readMarker(), { desktop: true, appmenu: true }, '重开并确定应再次创建并记录 marker');
+    await (async () => {
+      const start = Date.now();
+      while (Date.now() - start < 10000) {
+        const m = readMarker();
+        if (m.desktop === true && m.appmenu === true) return;
+        await h.sleep(100);
+      }
+      throw new Error(`重开后应再次创建并记录 marker（实际 ${JSON.stringify(readMarker())}）`);
+    })();
 
-    // 再点确定：这次文件真实存在 → 实际删除断言
-    await openSettings();
+    // 再关：这次文件真实存在 → 实际删除断言
     await toggleDesktopSwitch();
-    await applyByConfirm();
     await h.waitFor(win, `localStorage.getItem('settings.autoCreateDesktopEntry') === 'false'`, 8000);
     const removePoll = async () => {
       const start = Date.now();

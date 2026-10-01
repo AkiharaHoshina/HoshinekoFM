@@ -1,5 +1,27 @@
 # 更新日志
 
+## v0.11.50-dev — review 26：设置重构（settings:// 页面化 + 立即生效）
+
+- **设置页化**：设置从对话框改为页面，虚拟路径 settings://（根 = 分类卡片
+  页、settings://<cat> 分类页、settings://display/theme 主题二级页）——
+  类卡片对象面板同款视觉（独立类名防 e2e 污染）、面包屑 设置/类/子页、
+  标签页/窗口标题「设置 · 类名」；Places 设置入口（对象下方）+ 导航栏
+  设置按钮最小改线（导航到 settings://）
+- **全部设置立即生效**：v0.11.48 的 pending/取消/应用/确定机制与主题预览卡
+  一并废弃（主题选择即全局应用）；新建标签页目录二级确认直接落盘；
+  界面缩放松手生效；快捷方式开关立即创建/删除启动器条目；picker 快照
+  每次变更即上报
+- **新开关**：「显示仪表盘」（settings.showDashboard，控制 Places 仪表盘
+  入口）；主题页收纳原 ThemeColorDialog（明暗三态开关 + 预设色盘 + 特殊
+  颜色卡 + 调色盘/壁纸/Matugen）
+- **数据中枢**：SettingsContext（App 持有、页面消费——同窗口写入不触发
+  storage 事件，页面不自建 useLocalStorage）
+- **守卫**：settings:// 与 objects:// 同款逐项过（终端 cwd 回落家目录/
+  拒绝拖放/搜索 toast 拒绝/无状态栏/隐藏标签页不渲染内容防预览污染）；
+  newTabPath 允许 settings://；彩蛋 Ctrl+PgDn/PgUp 仅关于页前台触发
+- e2e 103 新增（路径层级/Places 入口/终端回落/newTabPath/搜索拒绝/键盘）；
+  04/05/15/16/19/27/42/44/49/56/57/64/68/69/70/74/76/82 改写；全套回归绿
+
 ## v0.11.50-dev — review 25：Esc 全局退出 / 解锁助手全局化 / 跨窗口滑条同步 / Tab 组内逐键
 
 - **编辑/搜索态 Esc 全局退出（任何焦点）**：StateMachineOmnibar 新

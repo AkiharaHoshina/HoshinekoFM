@@ -12,6 +12,7 @@ import { expandAddressPath, looksLikePathInput } from "../utils/addressPath";
 import { isSearchPath, parseSearchPath } from "../utils/searchPath";
 import { isObjectSearchPath, parseObjectSearchPath } from "../utils/objectSearchPath";
 import { isObjectsPath } from "../utils/objectsPath";
+import { isSettingsPath } from "../utils/settingsPath";
 import { registerKeyboardZone, focusNextKeyboardZone, setCurrentKeyboardZone } from "../utils/focusZones";
 import { showToast } from "../utils/toast";
 import "./Omnibar.css";
@@ -88,6 +89,7 @@ function isVirtualAddressInput(v: string): boolean {
     isSearchPath(v) ||
     isObjectSearchPath(v) ||
     isObjectsPath(v) ||
+    isSettingsPath(v) ||
     v === 'trash://' ||
     v.startsWith('trash://') ||
     v === 'app://dashboard' ||
@@ -151,13 +153,14 @@ function useOmnibarCommon({
 
   /** 检测当前路径中是否有任意段是软链接 */
   useEffect(() => {
-    // 虚拟路径（trash://…、search://…、objectsearch://…）无真实目录段，
-    // 跳过软链接检测
+    // 虚拟路径（trash://…、search://…、objectsearch://…、settings://）
+    // 无真实目录段，跳过软链接检测
     if (
       currentPath.startsWith('trash://') ||
       isSearchPath(currentPath) ||
       isObjectSearchPath(currentPath) ||
-      isObjectsPath(currentPath)
+      isObjectsPath(currentPath) ||
+      isSettingsPath(currentPath)
     ) return;
     const segments = currentPath.split('/').filter(Boolean)
       .map((_, i, arr) => '/' + arr.slice(0, i + 1).join('/'));

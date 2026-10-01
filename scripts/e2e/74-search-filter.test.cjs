@@ -283,24 +283,15 @@ const os = require('os');
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 4`);
 
-    // 打开设置（导航栏最后一个按钮）
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-    await h.waitDialogAnim();
-
-    // 定位「搜索结果上限」行并点「自定义」按钮
-    const rowIdx = await h.js(
-      win,
-      `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /搜索结果上限|Search result limit/.test(row.textContent ?? ''))`,
-    );
-    h.assert.ok(rowIdx.value >= 0, '设置中应存在「搜索结果上限」行');
-    await h.scrollIntoView(win, '.settings-row', rowIdx.value);
+    // 设置页 → 搜索分类 → 「搜索结果上限」行 → 「自定义」按钮
+    await h.openSettingsPage(win, `/搜索|Search/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
     await h.js(
       win,
       `(() => {
-        const row = document.querySelectorAll('.settings-row')[${rowIdx.value}];
-        const btn = row ? row.querySelector('md-outlined-button') : null;
+        const rows = [...document.querySelectorAll('.settings-row')];
+        const row = rows.find((r) => /搜索结果上限|Search result limit/.test(r.textContent ?? ''));
+        const btn = row?.querySelector('md-outlined-button');
         if (!btn) return false;
         btn.click();
         return true;
@@ -308,7 +299,7 @@ const os = require('os');
       true,
     );
 
-    // 二级对话框：输入 2 → 确认（只写草稿）
+    // 二级对话框：输入 2 → 确认（review 26 立即生效落盘）
     await h.waitFor(win, `[...document.querySelectorAll('md-dialog')].some((d) => d.open === true && d.querySelector('.search-limit-dialog-input'))`);
     await h.waitDialogAnim();
     await h.setReactInput(win, '.search-limit-dialog-input', '2');
@@ -324,10 +315,15 @@ const os = require('os');
       true,
     );
     await h.waitDialogAnim();
-
-    // 外层「确定」应用设置
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
+    // 立即生效：上限键落盘 → 回文件页搜索验证
+    await h.waitFor(win, `localStorage.getItem('settings.searchLimit') === '2'`, 5000);
+    await h.js(win, `(() => {
+      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
+      const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'folder');
+      it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
+      return !!it;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`, 8000);
 
     // 搜索 'f'（4 个文件全匹配）：默认上限 2 → 2 条结果 + capped 提示
     await h.searchViaOmnibar(win, 'f');
@@ -337,22 +333,15 @@ const os = require('os');
     const capText = await h.js(win, `document.querySelector('.search-filter-capped')?.textContent ?? ''`);
     h.assert.ok(/2/.test(capText.value), `上限提示应含 2：${capText.value}`);
 
-    // ── 设置 → 搜索超时时长：二级对话框输入 120 → 确定生效 ──
-    const btnCount2 = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount2.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-    await h.waitDialogAnim();
-    const timeoutRowIdx = await h.js(
-      win,
-      `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /搜索超时时长|Search timeout/.test(row.textContent ?? ''))`,
-    );
-    h.assert.ok(timeoutRowIdx.value >= 0, '设置中应存在「搜索超时时长」行');
-    await h.scrollIntoView(win, '.settings-row', timeoutRowIdx.value);
+    // ── 设置 → 搜索超时时长：二级对话框输入 120 → 立即生效 ──
+    await h.openSettingsPage(win, `/搜索|Search/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
     await h.js(
       win,
       `(() => {
-        const row = document.querySelectorAll('.settings-row')[${timeoutRowIdx.value}];
-        const btn = row ? row.querySelector('md-outlined-button') : null;
+        const rows = [...document.querySelectorAll('.settings-row')];
+        const row = rows.find((r) => /搜索超时时长|Search timeout/.test(r.textContent ?? ''));
+        const btn = row?.querySelector('md-outlined-button');
         if (!btn) return false;
         btn.click();
         return true;
@@ -374,25 +363,15 @@ const os = require('os');
       true,
     );
     await h.waitDialogAnim();
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
-    await h.waitFor(win, `localStorage.getItem('settings.searchTimeout') === '120'`, 8000);
+    await h.waitFor(win, `localStorage.getItem('settings.searchTimeout') === '120'`, 5000);
 
     // ── 设置上限无效输入 → 移除上限（无限制）保存为 null ──
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount2.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-    await h.waitDialogAnim();
-    const limitRowIdx = await h.js(
-      win,
-      `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /搜索结果上限|Search result limit/.test(row.textContent ?? ''))`,
-    );
-    h.assert.ok(limitRowIdx.value >= 0, '设置中应存在「搜索结果上限」行');
-    await h.scrollIntoView(win, '.settings-row', limitRowIdx.value);
     await h.js(
       win,
       `(() => {
-        const row = document.querySelectorAll('.settings-row')[${limitRowIdx.value}];
-        const btn = row ? row.querySelector('md-outlined-button') : null;
+        const rows = [...document.querySelectorAll('.settings-row')];
+        const row = rows.find((r) => /搜索结果上限|Search result limit/.test(r.textContent ?? ''));
+        const btn = row?.querySelector('md-outlined-button');
         if (!btn) return false;
         btn.click();
         return true;
@@ -413,8 +392,6 @@ const os = require('os');
       })()`,
       true,
     );
-    await h.waitDialogAnim();
-    await h.clickSettingsConfirm(win);
     await h.waitDialogAnim();
     await h.waitFor(win, `localStorage.getItem('settings.searchLimit') === 'null'`, 8000);
   });

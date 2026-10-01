@@ -72,58 +72,27 @@ const h = require('./harness.cjs');
     await h.sleep(300);
     h.assert.strictEqual(win.isMinimized(), false, '平铺 WM 下 minimizeWindow 应 no-op');
 
-    // 设置应用/确定时生效（非即时）：打开设置 → 切换标题栏开关 → 对话框内
-    // 不立即变化 → 点「确定」（应用并关闭）→ 标题栏消失。
-    // 行定位按标签文本精确匹配（外观区新增行会移动绝对下标，且
-    // 「标题栏显示完整路径」行同样含「标题栏」——须精确匹配标签）
-    const titleBarRowIdxExpr = `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => {
-      const label = row.querySelector('.settings-row__label');
-      return !!label && /^(标题栏|Title bar)$/.test((label.textContent ?? '').trim());
-    })`;
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-    await h.waitDialogAnim();
-    const tbRow = await h.js(win, titleBarRowIdxExpr);
-    h.assert.ok(tbRow.value >= 0, '应找到标题栏开关行');
-    await h.scrollIntoView(win, '.settings-row', tbRow.value);
-    const switchClicked = await h.js(
-      win,
-      `(() => {
-        const row = document.querySelectorAll('.settings-row')[${tbRow.value}];
-        const sw = row ? row.querySelector('md-switch') : null;
-        if (!sw) return false;
-        sw.click();
-        return true;
-      })()`,
-      true,
-    );
-    h.assert.ok(switchClicked.value, '应找到标题栏开关');
-    await h.sleep(400);
-    const stillVisible = await h.js(win, `document.querySelectorAll('.title-bar').length`);
-    h.assert.strictEqual(stillVisible.value, 1, '切换开关后未确定时标题栏不应立即消失');
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
+    // 立即生效（review 26 设置页化）：打开设置 → 主题和显示分类 → 切
+    // 标题栏开关 → 立即消失（无对话框「确定」步骤）
+    await h.openSettingsPage(win, `/主题和显示|Theme & Display|テーマと表示|테마 및 표시/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-titlebar-switch-area')`, { timeout: 8000 });
+    await h.js(win, `(() => {
+      const sw = document.querySelector('.settings-titlebar-switch-area');
+      if (!sw) return false;
+      sw.click();
+      return true;
+    })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.title-bar').length === 0`);
+    const stillOnSettings = await h.js(win, `!!document.querySelector('.settings-page')`);
+    h.assert.ok(stillOnSettings.value === true, '标题栏消失但设置页应保持打开（页面非对话框）');
 
-    // 再打开设置切回开启 → 确定 → 恢复显示
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-    await h.waitDialogAnim();
-    await h.scrollIntoView(win, '.settings-row', tbRow.value);
-    await h.js(
-      win,
-      `(() => {
-        const row = document.querySelectorAll('.settings-row')[${tbRow.value}];
-        const sw = row ? row.querySelector('md-switch') : null;
-        if (!sw) return false;
-        sw.click();
-        return true;
-      })()`,
-      true,
-    );
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
+    // 再切回开启 → 立即恢复显示
+    await h.js(win, `(() => {
+      const sw = document.querySelector('.settings-titlebar-switch-area');
+      if (!sw) return false;
+      sw.click();
+      return true;
+    })()`, true);
     await h.waitFor(win, `document.querySelectorAll('.title-bar').length === 1`);
 
     // v 菜单：平铺 WM 下三条目（新建窗口 / 最大化 / 退出，无最小化），
@@ -221,17 +190,12 @@ const h = require('./harness.cjs');
     const wm = await h.js(win, `window.electron.detectWindowManager()`);
     h.assert.ok(wm.value && wm.value.kind === 'tiling', `本机应检测为平铺 WM，实际 ${JSON.stringify(wm.value)}`);
 
-    // 跟随系统模式下点开关（js click 落在 role=switch 外层容器——本环境
-    // 程序化滚动 shadow scroller 后真实指针命中有时落在 md-dialog 宿主上
-    // （Wayland 软件渲染，间歇性）；交互由外层容器 onClick 接管、md-switch
-    // 纯展示化 pointer-events:none，js click 走同一 React handler 链）：
+    // 跟随系统模式下点开关（设置页的 .settings-titlebar-switch-area
+    // role=switch 外层容器：md-switch 纯展示化 pointer-events:none，
+    // js click 走同一 React handler 链）：
     // 退出跟随 + 切换为开（平铺 WM 生效值 = 隐藏，点一次应变为手动开）
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-    await h.waitFor(win, `!!document.querySelector('.settings-titlebar-switch-area')`);
-    // 打开动画未收尾时交互会落在错位坐标/cycle 重挂载会重置 scrollTop
-    await h.waitDialogAnim();
-    await h.scrollIntoView(win, '.settings-titlebar-switch-area', 0);
+    await h.openSettingsPage(win, `/主题和显示|Theme & Display|テーマと表示|테마 및 표시/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-titlebar-switch-area')`, { timeout: 8000 });
     const followChecked = await h.js(win, `document.querySelector('.settings-titlebar-switch-area')?.getAttribute('aria-checked')`);
     h.assert.strictEqual(followChecked.value, 'false', '跟随系统（平铺隐藏）时开关应显示关');
     await h.js(win, `(() => {
@@ -240,13 +204,11 @@ const h = require('./harness.cjs');
       sw.click();
       return true;
     })()`, true);
-    await h.sleep(300);
     const afterToggle = await h.js(win, `document.querySelector('.settings-titlebar-switch-area')?.getAttribute('aria-checked')`);
     h.assert.strictEqual(afterToggle.value, 'true', '跟随模式下点一次开关应退出跟随并切换为开');
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
     await h.waitFor(win, `document.querySelectorAll('.title-bar').length === 1`);
 
+    void titleOf;
     void titleOf;
   });
 

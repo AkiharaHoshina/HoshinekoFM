@@ -104,29 +104,15 @@ const BUTTONS = 'md-filled-button, md-outlined-button, md-text-button';
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
 
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    const openSettings = async () => {
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-      await h.waitDialogAnim();
-    };
-    const autoRowIdx = async () => {
-      const r = await h.js(
-        win,
-        `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /地址栏按钮自动收缩|Auto-collapse address bar buttons/.test(row.textContent ?? ''))`,
-      );
-      h.assert.ok(r.value >= 0, '设置外观区应存在「地址栏按钮自动收缩」行');
-      return r.value;
-    };
-    /** 点击设置行（js click 直接落在行元素上——行在滚动区下方时真实
-     *  输入会命中 md-dialog 覆盖层；行 onClick 只切换草稿，确定才落盘） */
+    /** 打开设置页 → 文件分类（review 26 页面化，行定位按文案） */
     const toggleAutoRow = async () => {
-      const idx = await autoRowIdx();
-      await h.scrollIntoView(win, '.settings-row', idx);
+      await h.openSettingsPage(win, `/文件|Files/`);
+      await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
       const ok = await h.js(
         win,
         `(() => {
-          const row = document.querySelectorAll('.settings-row')[${idx}];
+          const rows = [...document.querySelectorAll('.settings-row')];
+          const row = rows.find((r) => /地址栏按钮自动收缩|Auto-collapse address bar buttons/.test(r.textContent ?? ''));
           if (!row) return false;
           row.click();
           return true;
@@ -148,15 +134,18 @@ const BUTTONS = 'md-filled-button, md-outlined-button, md-text-button';
     await setTopbarMaxWidth(win, 1200);
     await waitWrapped(win, false);
 
-    // ── 设置开启（应用/确定时生效：对话框内切换只改草稿） ──
-    await openSettings();
+    // ── 设置开启（review 26 立即生效：点击即落盘） ──
     await toggleAutoRow();
-    await h.sleep(400);
-    const draftKey = await h.js(win, autoKeyExpr);
-    h.assert.ok(draftKey.value === null || draftKey.value === 'false', `确定前不应写 localStorage（实际 ${draftKey.value}）`);
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
     await h.waitFor(win, `${autoKeyExpr} === 'true'`, 5000);
+    // 回文件视图（设置页无排序控件，顶栏断言须在文件页做；导航栏按
+    // 图标 ligature 定位防活动项变体下标漂移）
+    await h.js(win, `(() => {
+      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
+      const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'folder');
+      it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
+      return !!it;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`, 8000);
 
     // 宽顶栏：展开态但无收起把手（5 按钮）、单行
     await setTopbarMaxWidth(win, 1200);
@@ -226,21 +215,13 @@ const BUTTONS = 'md-filled-button, md-outlined-button, md-text-button';
     await waitClosed(picker);
 
     // ── 恢复默认设置：开关重置（回手动模式 6 按钮 + 把手） ──
-    await openSettings();
-    const restoreRowIdx = async () => {
-      const r = await h.js(
-        win,
-        `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /恢复默认设置|Restore Default Settings/.test(row.textContent ?? ''))`,
-      );
-      h.assert.ok(r.value >= 0, '设置底部应存在「恢复默认设置」行');
-      return r.value;
-    };
-    const idx = await restoreRowIdx();
-    await h.scrollIntoView(win, '.settings-row', idx);
+    await h.openSettingsPage(win, `/默认设置|Defaults/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
     const clicked = await h.js(
       win,
       `(() => {
-        const row = document.querySelectorAll('.settings-row')[${idx}];
+        const rows = [...document.querySelectorAll('.settings-row')];
+        const row = rows.find((r) => /恢复默认设置|Restore Default Settings/.test(r.textContent ?? ''));
         const b = row ? Array.from(row.querySelectorAll(${JSON.stringify(BUTTONS)})).find((x) => /恢复默认设置|Restore Default Settings/.test(x.textContent ?? '')) : null;
         if (!b) return false;
         b.click();
@@ -249,7 +230,7 @@ const BUTTONS = 'md-filled-button, md-outlined-button, md-text-button';
       true,
     );
     h.assert.ok(clicked.value, '应找到恢复默认设置按钮');
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length >= 2`);
+    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
     await h.js(
       win,
       `(() => {
@@ -262,10 +243,15 @@ const BUTTONS = 'md-filled-button, md-outlined-button, md-text-button';
       })()`,
       true,
     );
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
     await h.waitFor(win, `${autoKeyExpr} === 'false'`, 5000);
+    // 回文件视图再断言顶栏
+    await h.js(win, `(() => {
+      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
+      const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'folder');
+      it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
+      return !!it;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`, 8000);
     await setTopbarMaxWidth(win, 1200);
     await waitZoneBtnCount(win, 6);
     h.assert.ok((await h.js(win, zoneHasIconExpr('chevron_right'))).value, '恢复默认后应回到手动模式（有收起把手）');

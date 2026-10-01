@@ -97,19 +97,23 @@ const h = require('./harness.cjs');
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
 
     // 设置页不再有「搜索包含对象」行（C6 定案移除：文件区只搜文件，
-    // search/objectsearch 两套搜索逻辑不重叠）
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-    await h.waitDialogAnim();
+    // search/objectsearch 两套搜索逻辑不重叠）——遍历设置页全部分类
+    // （review 26 页面化后无单一对话框，检查搜索分类页即可）
+    await h.openSettingsPage(win, `/搜索|Search/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
     const rowIdx = await h.js(
       win,
       `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /搜索包含对象|Include objects/.test(row.textContent ?? ''))`,
     );
     h.assert.ok(rowIdx.value === -1, '设置页不应再有「搜索包含对象」行（C6 移除）');
-    // 关闭设置对话框（Escape = 取消，草稿不保存）
-    await h.key(win, 'Escape');
-    await h.waitFor(win, `!Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`, { timeout: 8000 });
+    // 回文件页（页面无关闭步骤）
+    await h.js(win, `(() => {
+      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
+      const it = items.find((x) => x.querySelector('md-icon')?.textContent === 'folder');
+      it?.querySelector('md-icon-button, md-filled-icon-button')?.click();
+      return !!it;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`, { timeout: 8000 });
 
     // 文件搜索 'a'（会命中大量真实文件；对象侧也有 processor/cpu 等）：
     // 不再出现对象命中条（旧「搜索包含对象」混入逻辑已删）

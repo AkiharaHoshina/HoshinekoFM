@@ -1,0 +1,359 @@
+/* review 26 设置页（settings://）样式：行/分区样式从旧 SettingsDialog.css
+ * 迁入（对话框专属的 md-dialog :has() hack 已删——页面版 sticky 直接
+ * 用普通滚动容器，无需 shadow 穿透）；主题分区样式从 ThemeColorDialog.css
+ * 迁入（预览卡已删，立即生效语义）。 */
+
+/* ── 页面布局 ── */
+
+.settings-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+.settings-page-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 24px 24px;
+  min-width: 0;
+}
+
+.settings-page-header {
+  padding: 8px 0 4px;
+}
+
+.settings-page-title {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 400;
+  color: var(--md-sys-color-on-surface);
+}
+
+/* ── 根页分类卡片（对象面板卡片同款视觉、独立类名防 e2e 选择器污染） ── */
+
+.settings-category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
+  padding: 16px 0;
+}
+
+.settings-category-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 12px;
+  border-radius: 16px;
+  background-color: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.1s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.settings-category-card:hover {
+  background-color: var(--md-sys-color-surface-container-high);
+}
+
+.settings-category-card:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+.settings-category-icon {
+  font-size: 32px;
+  color: var(--md-sys-color-primary);
+}
+
+.settings-category-label {
+  font-size: 14px;
+  color: var(--md-sys-color-on-surface);
+  text-align: center;
+}
+
+/* ── 内容区（行/分区，自旧 SettingsDialog.css 平移） ── */
+
+.settings-content {
+  box-sizing: border-box;
+  padding: 8px 0;
+}
+
+.settings-row > md-outlined-button,
+.settings-row > md-text-button,
+.settings-row > md-filled-button,
+.settings-row > md-filled-tonal-button {
+  flex-shrink: 0;
+}
+
+.settings-section {
+  padding: 12px 0;
+}
+
+.settings-section-header {
+  font-size: 14px;
+  color: var(--md-sys-color-primary);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-row:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.settings-row__start {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-row__label {
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-row__label-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-row__sub {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row__sub--wrap {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  max-width: none;
+}
+
+/* 三态开关（标题栏/明暗）：md-switch 纯展示化，交互由外层
+ * role="switch" 容器接管（见 docs/跟随系统设置项目逻辑.md） */
+.settings-titlebar-switch-area {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.settings-titlebar-switch-area md-switch {
+  pointer-events: none;
+}
+
+/* ── 外观预览固定区（sticky，文件区样例实时跟随应用值） ── */
+
+.settings-preview-fixed {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 -24px;
+  padding: 4px 24px 12px;
+  background: var(--md-sys-color-surface-container-high);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.settings-preview-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 2px 0 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 14px;
+  font-family: inherit;
+  user-select: none;
+}
+
+.settings-view-mode {
+  margin-bottom: 16px;
+}
+
+.settings-view-mode__label {
+  margin-bottom: 8px;
+}
+
+.settings-view-mode__buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-icon-size {
+  margin-bottom: 16px;
+}
+
+.settings-icon-size__header {
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.settings-icon-size__value {
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-select {
+  width: 160px;
+}
+
+.settings-select--compact {
+  width: 128px;
+}
+
+.settings-about-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+
+.settings-about-version {
+  font-size: 14px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 主题二级页入口的种子色色点 */
+.settings-theme-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--md-sys-color-outline);
+  background-color: var(--md-sys-color-primary);
+  flex-shrink: 0;
+}
+
+/* ── 主题页（自 ThemeColorDialog.css 平移；预览卡已删） ── */
+
+.theme-page-dark-row {
+  padding: 4px 0 12px;
+}
+
+.theme-color-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0;
+}
+
+.theme-color-section-header {
+  font-size: 14px;
+  color: var(--md-sys-color-primary);
+  font-weight: 500;
+}
+
+.theme-color-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+}
+
+.theme-color-preset {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px solid var(--md-sys-color-outline-variant);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.theme-color-preset:hover {
+  transform: scale(1.1);
+}
+
+.theme-color-preset--selected {
+  border-color: var(--md-sys-color-on-surface);
+  box-shadow: 0 0 0 2px var(--md-sys-color-surface), 0 0 0 4px var(--md-sys-color-on-surface);
+}
+
+.theme-color-specials {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.theme-color-special {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background-color: var(--md-sys-color-surface-container-low);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background-color 0.1s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.theme-color-special:hover:not(:disabled) {
+  background-color: var(--md-sys-color-surface-container);
+}
+
+.theme-color-special:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.theme-color-special--selected {
+  border-color: var(--md-sys-color-primary);
+  box-shadow: 0 0 0 1px var(--md-sys-color-primary);
+}
+
+.theme-color-special-icon {
+  color: var(--md-sys-color-primary);
+}
+
+.theme-color-special-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface);
+}
+
+.theme-color-special-desc {
+  font-size: 11px;
+  color: var(--md-sys-color-on-surface-variant);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
+}
+
+.theme-color-palette-row {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}

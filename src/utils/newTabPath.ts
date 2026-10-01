@@ -1,5 +1,6 @@
 import { TRASH_VIRTUAL_PREFIX, isValidTrashSubPath } from './trashPath';
 import { expandAddressPath } from './addressPath';
+import { isSettingsPath } from './settingsPath';
 
 /**
  * 自定义新标签页目录（settings.newTabPath）的校验与规范化工具。
@@ -11,7 +12,9 @@ import { expandAddressPath } from './addressPath';
  * - `app://dashboard`（打开仪表盘，内部统一存储形态；`dashboard://`
  *   旧别名仍可输入，归一化为 `app://dashboard`）；
  * - `trash://` 或 `trash://文件夹名`（打开回收站/回收站中的目录，
- *   相对段不得含 `.`/`..`/空段，防止路径逃逸）。
+ *   相对段不得含 `.`/`..`/空段，防止路径逃逸）；
+ * - `settings://`（review 26 设置页——新标签页可直接打开设置页；
+ *   未登记子段由 loadPath 归一为根页，无需在此校验）。
  *
  * 不校验目录存在性：不存在的目录由新标签页打开时的 loadPath 报错提示
  * （与地址栏输入同语义）。
@@ -50,6 +53,7 @@ export function isValidNewTabPath(input: string): boolean {
   if (v.startsWith('/')) return true;
   if (v === '~' || v.startsWith('~/')) return true;
   if (v === DASHBOARD_ALIAS || v === DASHBOARD_INTERNAL) return true;
+  if (isSettingsPath(v)) return true;
   if (v.startsWith(TRASH_VIRTUAL_PREFIX)) {
     return isValidTrashSubPath(v.slice(TRASH_VIRTUAL_PREFIX.length));
   }

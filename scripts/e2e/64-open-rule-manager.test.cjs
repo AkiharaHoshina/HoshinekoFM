@@ -109,23 +109,15 @@ const { ipcMain, app } = require('electron');
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
 
-    // ── 打开设置 → 进入管理对话框 ──
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-    await h.waitDialogAnim();
-
-    const rowIdx = await h.js(
-      win,
-      `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /打开方式配置管理|Open With Configuration/.test(row.textContent ?? ''))`,
-    );
-    if (rowIdx.value < 0) throw new Error('设置里应存在「打开方式配置管理」行');
-    await h.scrollIntoView(win, '.settings-row', rowIdx.value);
+    // ── 设置页 → 文件分类 → 进入管理对话框（review 26 页面化）──
+    await h.openSettingsPage(win, `/文件|Files/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
     const entered = await h.js(
       win,
       `(() => {
-        const row = document.querySelectorAll('.settings-row')[${rowIdx.value}];
-        const btn = row && row.querySelector('md-outlined-button');
+        const rows = [...document.querySelectorAll('.settings-row')];
+        const row = rows.find((r) => /打开方式配置管理|Open With Configuration/.test(r.textContent ?? ''));
+        const btn = row?.querySelector('md-outlined-button');
         if (!btn) return false;
         btn.click();
         return true;

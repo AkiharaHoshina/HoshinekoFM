@@ -10,6 +10,7 @@ import type { IFile } from "../types/files";
 import { createAddressBarDropHandler } from "../utils/addressBarDrop";
 import { isPinReorderDragActive } from "../utils/pinReorderDrag";
 import { isSearchPath, parseSearchPath } from "../utils/searchPath";
+import { isSettingsPath, parseSettingsPath, SETTINGS_CATEGORIES } from "../utils/settingsPath";
 import { isObjectsPath, parseObjectsPath, buildObjectsPath, OBJECTS_CLASS_LABEL } from "../utils/objectsPath";
 import { isObjectSearchPath, parseObjectSearchPath, objectSearchBasePath } from "../utils/objectSearchPath";
 import { t } from "../i18n";
@@ -192,6 +193,13 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
    */
   const isObjectSearchVirtual = isObjectSearchPath(currentPath);
   const parsedObjectSearch = useMemo(() => (isObjectSearchVirtual ? parseObjectSearchPath(currentPath) : null), [isObjectSearchVirtual, currentPath]);
+  /**
+   * 设置页虚拟路径（settings://[类][/子页]，review 26）：地址栏渲染
+   * 「设置胶囊 + 类段 + 子页段」——胶囊回设置根、类段回类页、子页为
+   * 末段。设置页无真实目录，段不接收拖放。
+   */
+  const isSettingsVirtual = isSettingsPath(currentPath);
+  const parsedSettings = useMemo(() => (isSettingsVirtual ? parseSettingsPath(currentPath) : null), [isSettingsVirtual, currentPath]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastRef = useRef<HTMLSpanElement>(null);
 
@@ -264,9 +272,9 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
   }, [currentPath]);
 
   useEffect(() => {
-    // 回收站/搜索态/Object Panel 虚拟路径无真实目录段，跳过软链接检测
-    // （segmentPaths 会是无意义的前缀，如 /trash:）
-    if (isTrashVirtual || isSearchVirtual || isObjectsVirtual || isObjectSearchVirtual) return;
+    // 回收站/搜索态/Object Panel/设置页虚拟路径无真实目录段，跳过软链接
+    // 检测（segmentPaths 会是无意义的前缀，如 /trash:）
+    if (isTrashVirtual || isSearchVirtual || isObjectsVirtual || isObjectSearchVirtual || isSettingsVirtual) return;
     const segmentPaths = parts.map(
       (_, i) => "/" + parts.slice(0, i + 1).join("/"),
     );
@@ -292,7 +300,7 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentPath, parts, isTrashVirtual, isSearchVirtual, isObjectsVirtual, isObjectSearchVirtual]);
+  }, [currentPath, parts, isTrashVirtual, isSearchVirtual, isObjectsVirtual, isObjectSearchVirtual, isSettingsVirtual]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     dropHandler?.handleDragOver(e);
@@ -659,6 +667,65 @@ export const Breadcrumbs: React.FC<BreadcrumbsProps> = ({
               onClick={() => onNavigate(buildObjectsPathLocal(parsedObjects.className, parsedObjects.instanceId))}
             >
               {parsedObjects.instanceId.split('/').pop() || parsedObjects.instanceId}
+            </Button>
+          </React.Fragment>
+        )}
+        {ctxMenuNode}
+      </div>
+    );
+  }
+
+  // 设置页虚拟路径（review 26）：渲染「设置胶囊 + 类段 + 子页段」。胶囊
+  // 点击回设置根，类段点击回类页，子页为末段（加粗）。设置页无真实
+  // 目录，段不接收拖放。所有 hooks 已执行。
+  if (isSettingsVirtual && parsedSettings) {
+    const cat = parsedSettings.cat !== null
+      ? SETTINGS_CATEGORIES.find((c) => c.id === parsedSettings.cat)
+      : null;
+    const subLabel = parsedSettings.sub === 'theme' && parsedSettings.cat === 'display'
+      ? t('settings.cat_theme')
+      : null;
+    return (
+      <div
+        ref={scrollRef}
+        className="breadcrumb-container"
+        onWheel={(e) => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollLeft += e.deltaY;
+          }
+        }}
+      >
+        <Chip
+          title={t('settings.title')}
+          onClick={() => onNavigate('settings://')}
+          className="breadcrumb-chip breadcrumb-settings-chip"
+        >
+          <Icon name="settings" slot="icon" />
+          <span style={{ fontWeight: parsedSettings.cat === null ? 600 : 400 }}>{t('settings.title')}</span>
+        </Chip>
+        {parsedSettings.cat !== null && cat && (
+          <React.Fragment>
+            <span className="breadcrumb-separator">/</span>
+            <Button
+              variant="text"
+              onClick={() => onNavigate(`settings://${parsedSettings.cat}`)}
+              className="breadcrumb-item"
+              style={{ fontWeight: parsedSettings.sub === null ? 600 : 400 }}
+            >
+              {t(cat.labelKey)}
+            </Button>
+          </React.Fragment>
+        )}
+        {parsedSettings.sub !== null && subLabel && (
+          <React.Fragment>
+            <span className="breadcrumb-separator">/</span>
+            <Button
+              variant="text"
+              className="breadcrumb-item"
+              style={{ fontWeight: 600 }}
+              onClick={() => onNavigate(`settings://${parsedSettings.cat}/${parsedSettings.sub}`)}
+            >
+              {subLabel}
             </Button>
           </React.Fragment>
         )}

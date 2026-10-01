@@ -983,20 +983,63 @@ async function escCloseSearch(win) {
  * 对话框常驻 DOM，见 AGENTS.md 坑点；内容区还有视图模式按钮等
  * md-filled-button，故必须限定在 actions 槽内）。
  */
-async function clickSettingsConfirm(win) {
-  const r = await js(
+
+/**
+ * review 26：打开设置页（导航栏最后一个按钮 = 设置 → settings:// 根）。
+ * categoryRe 非空时点击匹配的分类卡片并等待分类页（.settings-page-header）。
+ * 返回后设置页仍留在该标签页（再次点击导航栏按钮 = 重新导航到根）。
+ */
+async function openSettingsPage(win, categoryRe) {
+  // 设置项可能是活动变体（md-filled-icon-button）——标准 md-icon-button
+  // 列表会漏掉它（点击落到上一个按钮）；按「最后一个含按钮的 rail item」
+  // 定位（rail 末尾有无按钮的占位项），与真实点击同链
+  await js(
     win,
     `(() => {
-      const d = [...document.querySelectorAll('md-dialog')].find((x) => x.open === true && !!x.querySelector('.settings-content'));
-      if (!d) return false;
-      const btn = d.querySelector('[slot="actions"] md-filled-button');
+      const items = [...document.querySelectorAll('.m3-navigation-rail__item')];
+      const last = [...items].reverse().find((it) => it.querySelector('md-icon-button, md-filled-icon-button'));
+      const btn = last?.querySelector('md-icon-button, md-filled-icon-button');
       if (!btn) return false;
       btn.click();
       return true;
     })()`,
     true,
   );
-  if (!r.ok || !r.value) throw new Error('clickSettingsConfirm: 未找到打开的设置对话框确定按钮');
+  await waitFor(win, `!!document.querySelector('.settings-page')`, { timeout: 8000 });
+  if (categoryRe) {
+    await waitFor(win, `!!document.querySelector('.settings-category-card')`, { timeout: 8000 });
+    await js(
+      win,
+      `(() => {
+        const cards = [...document.querySelectorAll('.settings-category-card')];
+        const c = cards.find((x) => ${categoryRe}.test(x.textContent ?? ''));
+        if (!c) return false;
+        c.click();
+        return true;
+      })()`,
+      true,
+    );
+    await waitFor(win, `!!document.querySelector('.settings-page-header')`, { timeout: 8000 });
+  }
+}
+
+/**
+ * 设置页内滚动（.settings-page-scroll 为普通滚动容器——review 26 页面化
+ * 后不再有 md-dialog shadow scroller，原生 scrollIntoView 即可）。
+ */
+async function scrollSettingsTo(win, selector, index = 0) {
+  await js(
+    win,
+    `(() => {
+      const els = document.querySelectorAll(${JSON.stringify(selector)});
+      const el = els[${index}] ?? null;
+      if (!el) return false;
+      el.scrollIntoView({ block: 'center' });
+      return true;
+    })()`,
+    true,
+  );
+  await sleep(200);
 }
 
 /**
@@ -1106,10 +1149,11 @@ module.exports = {
   searchViaOmnibar,
   escCloseSearch,
   scrollIntoView,
+  openSettingsPage,
+  scrollSettingsTo,
   selectOption,
   segmentClick,
   waitDialogAnim,
-  clickSettingsConfirm,
   run,
   finish,
   tempDir,

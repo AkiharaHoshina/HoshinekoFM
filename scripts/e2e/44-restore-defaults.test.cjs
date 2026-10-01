@@ -39,112 +39,60 @@ const h = require('./harness.cjs');
       set('settings.uiScale', 150);
       set('settings.locale', 'en-US');
       set('settings.newTabPath', ${JSON.stringify(dir)});
+      set('settings.showDashboard', false);
       return true;
     })(); true`);
     win.webContents.reload();
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
 
-    const btnCount = await h.js(win, `document.querySelectorAll('.m3-navigation-rail__item md-icon-button').length`);
-    const openSettings = async () => {
-      await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: btnCount.value - 1 });
-      await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).some((d) => d.open === true)`);
-      // 打开动画收尾后焦点校正才解除武装——不等动画直接 scrollIntoView
-      // 会与其互搏（滚动被顶回，helper 重试 4s 后抛错）
-      await h.waitDialogAnim();
-    };
     const BUTTONS = 'md-filled-button, md-outlined-button, md-text-button, md-filled-tonal-button';
+    /** 设置页内按文案找行并点击行内开关（review 26 页面化：立即生效） */
+    const toggleRowSwitch = async (re) => {
+      await h.js(
+        win,
+        `(() => {
+          const rows = [...document.querySelectorAll('.settings-row')];
+          const row = rows.find((r) => ${re}.test(r.textContent ?? ''));
+          const sw = row ? row.querySelector('md-switch') : null;
+          if (!sw) return false;
+          sw.click();
+          return true;
+        })()`,
+        true,
+      );
+    };
 
-    // ── 滚动文本开关确认时生效（对话框内切换只改预览）──
+    // ── 滚动文本开关立即生效 ──
     // 预置 marquee=true → 标题栏标题为跑马灯容器（.marquee-container）
     await h.waitFor(win, `!!document.querySelector('.title-bar-title .marquee-container')`, 8000);
-    await openSettings();
-    const marqueeRow = await h.js(
-      win,
-      `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /滚动文本|Marquee text/.test(row.textContent ?? ''))`,
-    );
-    h.assert.ok(marqueeRow.value >= 0, '设置中应存在滚动文本行');
-    await h.scrollIntoView(win, '.settings-row', marqueeRow.value);
-    await h.js(
-      win,
-      `(() => {
-        const row = document.querySelectorAll('.settings-row')[${marqueeRow.value}];
-        const sw = row ? row.querySelector('md-switch') : null;
-        if (!sw) return false;
-        sw.click();
-        return true;
-      })()`,
-      true,
-    );
-    await h.sleep(400);
-    // 未确定：跑马灯仍在（预览未生效）
-    const stillMarquee = await h.js(win, `!!document.querySelector('.title-bar-title .marquee-container')`);
-    h.assert.ok(stillMarquee.value, '滚动文本开关切换后未确定时跑马灯不应立即消失');
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
-    // 确定后生效：跑马灯容器消失（enabled=false 分支无该类）
+    await h.openSettingsPage(win, `/文件|Files/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
+    await toggleRowSwitch(`/滚动文本|Marquee text/`);
+    // 立即生效：跑马灯容器消失（enabled=false 分支无该类）
     await h.waitFor(win, `!document.querySelector('.title-bar-title .marquee-container')`, 8000);
 
-    // ── 文件预览开关确认时生效（对话框内切换只改预览）──
-    // 预置 filePreview=true → 预览面板常驻（未选中时显示目录属性）
+    // ── 文件预览开关立即生效 ──
+    // 预置 filePreview=true：先在文件视图断言预览面板常驻（未选中时显示
+    // 目录属性），再进设置页关闭（立即生效——localStorage 即刻变化），
+    // 回文件视图断言面板消失（设置页独占内容区、面板不渲染）
+    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 1 });
     await h.waitFor(win, `!!document.querySelector('.file-preview-panel')`, 8000);
-    await openSettings();
-    const previewRow = await h.js(
-      win,
-      `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /文件预览|File preview/.test(row.textContent ?? ''))`,
-    );
-    h.assert.ok(previewRow.value >= 0, '设置中应存在文件预览行');
-    await h.scrollIntoView(win, '.settings-row', previewRow.value);
-    await h.js(
-      win,
-      `(() => {
-        const row = document.querySelectorAll('.settings-row')[${previewRow.value}];
-        const sw = row ? row.querySelector('md-switch') : null;
-        if (!sw) return false;
-        sw.click();
-        return true;
-      })()`,
-      true,
-    );
-    await h.sleep(400);
-    // 未确定：预览面板仍在（预览未生效）
-    const stillPreview = await h.js(win, `!!document.querySelector('.file-preview-panel')`);
-    h.assert.ok(stillPreview.value, '文件预览开关切换后未确定时面板不应立即消失');
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
-    // 确定后生效：预览面板消失
+    await h.openSettingsPage(win, `/文件|Files/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
+    await toggleRowSwitch(`/文件预览|File preview/`);
+    await h.waitFor(win, `localStorage.getItem('settings.filePreview') === 'false'`, 8000);
+    await h.clickEl(win, `.m3-navigation-rail__item md-icon-button`, { index: 1 });
     await h.waitFor(win, `!document.querySelector('.file-preview-panel')`, 8000);
 
-    // ── 恢复默认设置：取消不变 / 确认生效（旧预览不盖回）──
-    await openSettings();
-    const restoreRowIdx = async () => {
-      const r = await h.js(
-        win,
-        `Array.from(document.querySelectorAll('.settings-row')).findIndex((row) => /恢复默认设置|Restore Default Settings/.test(row.textContent ?? ''))`,
-      );
-      h.assert.ok(r.value >= 0, '设置底部应存在「恢复默认设置」行');
-      return r.value;
-    };
-    // 先把 UI 缩放预览拖到 200%（对话框内只改预览），恢复后确定（退出）
-    // 不得把该旧预览盖回（恢复后应为 100%）
-    await h.js(
-      win,
-      `(() => {
-        const sl = document.querySelectorAll('.settings-icon-size md-slider')[1];
-        if (!sl) return false;
-        sl.value = 200;
-        sl.dispatchEvent(new Event('input', { bubbles: true }));
-        return true;
-      })()`,
-      true,
-    );
-    await h.waitFor(win, `/200%/.test(document.querySelectorAll('.settings-icon-size__value')[1]?.textContent ?? '')`, 5000);
+    // ── 恢复默认设置：取消不变 / 确认生效 ──
+    await h.openSettingsPage(win, `/默认设置|Defaults/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
     const clickRestoreBtn = async () => {
-      const idx = await restoreRowIdx();
-      await h.scrollIntoView(win, '.settings-row', idx);
       const ok = await h.js(
         win,
         `(() => {
-          const row = document.querySelectorAll('.settings-row')[${idx}];
+          const rows = [...document.querySelectorAll('.settings-row')];
+          const row = rows.find((r) => /恢复默认设置|Restore Default Settings/.test(r.textContent ?? ''));
           const b = row ? Array.from(row.querySelectorAll(${JSON.stringify(BUTTONS)})).find((x) => /恢复默认设置|Restore Default Settings/.test(x.textContent ?? '')) : null;
           if (!b) return false;
           b.click();
@@ -154,7 +102,7 @@ const h = require('./harness.cjs');
       );
       h.assert.ok(ok.value, '应找到恢复默认设置按钮');
     };
-    const confirmDialogOpen = `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length >= 2`;
+    const confirmDialogOpen = `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`;
 
     // 第一次：取消 → 设置不变
     await clickRestoreBtn();
@@ -171,11 +119,11 @@ const h = require('./harness.cjs');
       })()`,
       true,
     );
-    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 1`);
+    await h.waitFor(win, `Array.from(document.querySelectorAll('md-dialog')).filter((d) => d.open === true).length === 0`);
     const vmAfterCancel = await h.js(win, `localStorage.getItem('settings.viewMode')`);
     h.assert.strictEqual(vmAfterCancel.value, '"grid"', '取消恢复后视图模式应保持 grid');
 
-    // 第二次：确认 → 全部重置为默认值
+    // 第二次：确认 → 全部重置为默认值（立即生效）
     await clickRestoreBtn();
     await h.waitFor(win, confirmDialogOpen);
     await h.js(
@@ -190,8 +138,6 @@ const h = require('./harness.cjs');
       })()`,
       true,
     );
-    // 恢复立即生效：设置对话框内图标大小标签回 48px
-    await h.waitFor(win, `/48px/.test(document.querySelector('.settings-icon-size__value')?.textContent ?? '')`, 8000);
     const ls = await h.js(win, `JSON.stringify({
       hidden: localStorage.getItem('settings.showHiddenFiles'),
       view: localStorage.getItem('settings.viewMode'),
@@ -208,6 +154,7 @@ const h = require('./harness.cjs');
       uiScale: localStorage.getItem('settings.uiScale'),
       locale: localStorage.getItem('settings.locale'),
       newTab: localStorage.getItem('settings.newTabPath'),
+      showDashboard: localStorage.getItem('settings.showDashboard'),
     })`);
     const expected = {
       hidden: 'true',
@@ -225,14 +172,9 @@ const h = require('./harness.cjs');
       uiScale: '100',
       locale: '"auto"',
       newTab: '"/"',
+      showDashboard: 'true',
     };
     h.assert.deepStrictEqual(JSON.parse(ls.value), expected, `恢复后设置应为默认值：${ls.value}`);
-    // 确定（点底部确定按钮退出）：恢复前拖到 200% 的 UI 缩放预览不得盖回
-    await h.clickSettingsConfirm(win);
-    await h.waitDialogAnim();
-    await h.sleep(400);
-    const uiScaleAfter = await h.js(win, `localStorage.getItem('settings.uiScale')`);
-    h.assert.strictEqual(uiScaleAfter.value, '100', '恢复后确定（退出）不应把旧 UI 缩放预览盖回');
 
     // ── 选择器语言同步（pickerSettings.locale 注入 + 广播）──
     await h.js(win, `window.electron.setPickerSettings({ searchGroupByDir: true, showFullPathTitle: false, locale: 'en-US' })`);

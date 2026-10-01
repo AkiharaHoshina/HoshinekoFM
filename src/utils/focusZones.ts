@@ -25,6 +25,7 @@ export type KeyboardZoneId =
   | 'dashboard-storage'
   | 'dashboard-pinned'
   | 'dashboard-recent'
+  | 'settings'
   | 'files'
   | 'search-back'
   | 'search-submit'
@@ -79,6 +80,7 @@ const ZONE_ORDER: KeyboardZoneId[] = [
   'dashboard-storage',
   'dashboard-pinned',
   'dashboard-recent',
+  'settings',
   'files',
 ];
 
