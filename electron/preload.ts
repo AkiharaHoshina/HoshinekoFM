@@ -1,5 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+/** 对象写成功广播载荷（review 25 ④；与 src/types/electron.d.ts 的 ObjectWriteEvent 同构） */
+interface ObjectWriteEventPayload {
+  kind: 'write' | 'nice' | 'nice-batch';
+  classId?: string;
+  instanceId?: string;
+  key?: string;
+  value?: number;
+  pid?: number;
+  pids?: number[];
+  nice?: number;
+}
+
 contextBridge.exposeInMainWorld('electron', {
   getThemeCss: () => ipcRenderer.invoke('theme:get-css'),
   readDmsTheme: () => ipcRenderer.invoke('theme:read-dms'),
@@ -260,6 +272,20 @@ contextBridge.exposeInMainWorld('electron', {
   privilegedAuth: () => ipcRenderer.invoke('system:privileged-auth'),
   /** Object Panel：撤销全部特权授权（任一「锁定」按钮——kill 通用特权助手） */
   privilegedLock: () => ipcRenderer.invoke('system:privileged-lock'),
+  /** 特权解锁态查询（review 25：主进程为唯一真相源，助手存活 = 已解锁） */
+  getPrivilegedState: () => ipcRenderer.invoke('system:get-privileged-state'),
+  /** 特权解锁态变化订阅（跨窗口解锁/锁定/助手退出广播，review 25） */
+  onPrivilegedStateChanged: (callback: (state: { active: boolean }) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, state: { active: boolean }) => callback(state);
+    ipcRenderer.on('system:privileged-state-changed', handler);
+    return () => ipcRenderer.removeListener('system:privileged-state-changed', handler);
+  },
+  /** 对象写成功广播订阅（跨窗口滑条进度即时同步，review 25 ④；排除源窗口） */
+  onObjectWriteApplied: (callback: (event: ObjectWriteEventPayload) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, event: ObjectWriteEventPayload) => callback(event);
+    ipcRenderer.on('system:object-write-applied', handler);
+    return () => ipcRenderer.removeListener('system:object-write-applied', handler);
+  },
   /** Object Panel：批量终止进程（多选；逐项聚合结果） */
   processSignalBatch: (pids: number[], signal: 'TERM' | 'KILL') => ipcRenderer.invoke('system:process-signal-batch', pids, signal),
   /** Object Panel：批量调整进程 nice（多选预设档；逐项聚合结果） */

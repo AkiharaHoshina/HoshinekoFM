@@ -62,6 +62,12 @@ interface OmnibarProps {
    * 无菜单（选择器/保存器无固定语义）。
    */
   onSearchContextMenu?: (e: React.MouseEvent) => void;
+  /**
+   * 标签页是否激活（review 25）：主窗口多标签页 DOM 常驻——隐藏标签页
+   * 的地址栏不得响应窗口级 Esc（否则后台标签页被暗中退出编辑/搜索态）。
+   * 默认 true（选择器/保存器单窗口无此问题）。
+   */
+  active?: boolean;
 }
 
 /** 地址栏三种状态：面包屑（只读）→ 编辑（仅路径/schema）→ 搜索（全输入 = query） */
@@ -271,6 +277,7 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
   onSearchContextMenu,
   searchDisabled,
   externalSearchActive = false,
+  active = true,
   common,
 }) => {
   const [mode, setMode] = useState<OmnibarMode>(() =>
@@ -408,6 +415,34 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
       document.querySelector<HTMLElement>('.omnibar-trigger')?.focus();
     }, 80);
   }, [onCloseSearch]);
+
+  /**
+   * review 25：编辑/搜索态 Esc 全局退出——此前 Esc 只挂在输入框
+   * onKeyDown 上，焦点离开输入框（编辑态迷你循环落「进入搜索」按钮、
+   * 搜索态焦点在文件区/筛选器/结果上）时 Esc 无效，状态机卡在编辑/
+   * 搜索态。窗口级监听保证任何焦点下 Esc 都显式退出（编辑 → 面包屑、
+   * 搜索 → closeSearch 导航回进入搜索前的 url）。守卫：对话框/右键菜单
+   * 打开时不劫持（Esc 留给上层组件）；打开中的下拉（筛选 select/排序
+   * 菜单等）不劫持（Esc 只关下拉）；终端内 Esc 已被容器 stopPropagation
+   * 挡住；`.omnibar-input` 自身的 Esc 处理先执行，窗口级再触发幂等
+   * （closeSearch 重复调用导航同一目标）。仅激活标签页挂监听。
+   */
+  useEffect(() => {
+    if (!active || mode === 'breadcrumbs') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (document.querySelector('md-dialog[open], .context-menu, [role="dialog"]')) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.classList?.contains('omnibar-input')) return;
+      // 打开中的下拉（筛选 select/排序菜单等）Esc 只关下拉——组件自身
+      // 处理关闭，不劫持退出搜索（keydown target 经 shadow 重定向为宿主）
+      if (target?.closest?.('md-menu, md-select, md-outlined-select')) return;
+      if (mode === 'search') closeSearch();
+      else setMode('breadcrumbs');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [active, mode, closeSearch]);
 
   /** 迷你循环焦点转移守卫（input blur 复位被吞一次，见 handleKeyDown Tab） */
   const editingNavRef = useRef(false);

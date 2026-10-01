@@ -239,10 +239,11 @@ const { ipcMain } = require('electron');
     }
     h.assert.ok(written === '120', `沙箱 brightness 应写入 120：${written}`);
 
-    // 恢复原值 → 50
-    await h.waitFor(win, `Array.from(document.querySelectorAll('.object-actions--slider > *')).some((x) => /恢复原值|Restore value|元の値に戻す|원래 값으로/.test(x.textContent ?? ''))`, { timeout: 8000 });
+    // 恢复原值 → 50（review 22 起按钮包在 .object-brightness-buttons-group
+    // wrapper 内——须点按钮本身，wrapper 点击无效）
+    await h.waitFor(win, `Array.from(document.querySelectorAll('.object-brightness-buttons-group md-text-button')).some((x) => /恢复原值|Restore value|元の値に戻す|원래 값으로/.test(x.textContent ?? ''))`, { timeout: 8000 });
     await h.js(win, `(() => {
-      const btns = [...document.querySelectorAll('.object-actions--slider > *')];
+      const btns = [...document.querySelectorAll('.object-brightness-buttons-group md-text-button')];
       const b = btns.find((x) => /恢复原值|Restore value|元の値に戻す|원래 값으로/.test(x.textContent ?? ''));
       if (!b) return false;
       b.click();

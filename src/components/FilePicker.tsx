@@ -976,18 +976,12 @@ const FilePicker: React.FC = () => {
         return;
       }
       if (e.key === 'Escape') {
-        // X8-A Esc 合并语义（用户定案）：有搜索退搜索、没搜索取消——
-        // 搜索态（含进行中）Esc 先退出搜索回浏览视图（不关窗）；其余
-        // Esc 才执行既有「取消选择器」（resolvePicker(null) 关窗）。
-        // review 19 P4：退出后焦点落「编辑地址栏按钮」（决策 4——
-        // 面包屑态触发钮，搜索态无此钮、复位后延时聚焦）
-        if (searchActive || searchPending) {
-          void handleCancelSearch();
-          setTimeout(() => {
-            document.querySelector<HTMLElement>('.omnibar-trigger')?.focus();
-          }, 80);
-          return;
-        }
+        // X8-A Esc 合并语义（用户定案）：有搜索退搜索、没搜索取消。
+        // review 25：编辑/搜索态的退出改由地址栏（StateMachineOmnibar）
+        // 窗口级监听统一接管——任何焦点位置都有效，此前仅输入框/文件区
+        // 焦点有效；本分支只在浏览态取消（`.omnibar.editing` = 编辑/搜索
+        // 态，与 Omnibar 状态机同源类标记，避免两处同时退出/取消）。
+        if (document.querySelector('.omnibar.editing')) return;
         cancel();
         return;
       }

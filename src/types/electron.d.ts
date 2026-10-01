@@ -102,6 +102,19 @@ export type SmartInfo =
     | { ok: false; reason: 'NO_TOOL' | 'NEED_ROOT' | 'NOT_SUPPORTED' | 'NO_DEVICE' };
 
 /**
+ * 对象写成功广播载荷（review 25 ④：system:object-write-applied 事件，
+ * 跨窗口/标签页滑条进度即时同步——排除源窗口，源窗口本地乐观更新
+ * 已生效；轮询仍为最终真相源）。
+ * - write：背光亮度 / 充电阈值写入成功；
+ * - nice：单进程 renice 成功；
+ * - nice-batch：批量 nice 的成功 pids（批量滑条与其他窗口实例读数同步）。
+ */
+export type ObjectWriteEvent =
+    | { kind: 'write'; classId: string; instanceId: string; key: string; value: number }
+    | { kind: 'nice'; pid: number; nice: number }
+    | { kind: 'nice-batch'; pids: number[]; nice: number };
+
+/**
  * 后端总线名冲突诊断（portal / FileManager1 注册失败时的探测结果，
  * 主进程 backendInfo.ts 生成）：
  * - state 'outdated'：占名者版本与本进程不同（旧版常驻，建议卸载重装）；
@@ -573,6 +586,15 @@ export interface IElectronAPI {
     privilegedAuth: () => Promise<{ ok: boolean; error?: string }>;
     /** Object Panel：撤销全部特权授权（任一「锁定」按钮——kill 通用特权助手） */
     privilegedLock: () => Promise<{ ok: boolean; error?: string }>;
+    /**
+     * 特权解锁态查询（review 25：主进程为唯一真相源——通用助手存活 =
+     * 已解锁；新窗口/标签页挂载时拉取，跨窗口继承解锁态）
+     */
+    getPrivilegedState: () => Promise<{ active: boolean }>;
+    /** 特权解锁态变化订阅（跨窗口解锁/锁定/助手自然退出广播，review 25） */
+    onPrivilegedStateChanged: (callback: (state: { active: boolean }) => void) => () => void;
+    /** 对象写成功广播订阅（跨窗口滑条进度即时同步，review 25 ④；排除源窗口） */
+    onObjectWriteApplied: (callback: (event: ObjectWriteEvent) => void) => () => void;
     /** Object Panel：批量终止进程（多选；逐项聚合结果） */
     processSignalBatch: (pids: number[], signal: 'TERM' | 'KILL') => Promise<{ ok: boolean; error?: string; results?: { pid: unknown; ok: boolean; error?: string }[] }>;
     /** Object Panel：批量调整进程 nice（多选预设档；逐项聚合结果） */

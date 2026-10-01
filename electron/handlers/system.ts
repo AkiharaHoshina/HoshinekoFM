@@ -1165,6 +1165,16 @@ export async function runIntegrationScript(
   });
 }
 
+/** 特权助手注册表引用（registerSystemHandlers 闭包内赋值——review 25：
+ *  应用退出前经 killAllPrivilegedHelpers 显式终止特权进程，管道 EOF
+ *  自然退出之外的双保险） */
+let privilegedHelpersRef: { killAll: () => void } | null = null;
+
+/** 终止全部持久特权助手（main.ts 的 will-quit/before-quit 调用） */
+export function killAllPrivilegedHelpers(): void {
+  privilegedHelpersRef?.killAll();
+}
+
 /**
  * 注册 system 相关 IPC handler。
  *
@@ -3512,13 +3522,14 @@ export function registerSystemHandlers(
    * AUTH_FAILED（授权取消/超时）/HELPER_FAILED（助手返回 err——进程
    * 消失等）/其余截尾透传。
    */
-  ipcMain.handle('system:process-nice', async (_event, pid: unknown, nice: unknown) => {
+  ipcMain.handle('system:process-nice', async (event, pid: unknown, nice: unknown) => {
     const pidNum = typeof pid === 'number' ? pid : NaN;
     const niceNum = typeof nice === 'number' ? nice : NaN;
     if (!Number.isInteger(pidNum) || pidNum < 1 || pidNum > 4194304) return { ok: false, error: 'INVALID_PID' };
     if (!Number.isInteger(niceNum) || niceNum < -20 || niceNum > 19) return { ok: false, error: 'INVALID_NICE' };
     try {
       await execFileAsync('renice', ['-n', String(niceNum), '-p', String(pidNum)], { timeout: 5000 });
+      broadcastObjectWrite({ kind: 'nice', pid: pidNum, nice: niceNum }, event.sender);
       return { ok: true };
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { ok: false, error: 'NO_TOOL' };
@@ -3528,6 +3539,7 @@ export function registerSystemHandlers(
           const helper = await ensurePrivHelper();
           if (!helper) return { ok: false, error: 'AUTH_FAILED' };
           const wrote = await privilegedHelperWrite(helper, `nice ${niceNum} ${pidNum}`);
+          if (wrote) broadcastObjectWrite({ kind: 'nice', pid: pidNum, nice: niceNum }, event.sender);
           return wrote ? { ok: true, escalated: true } : { ok: false, error: 'HELPER_FAILED' };
         } catch (e2) {
           return { ok: false, error: getExecError(e2).message.slice(0, 200) || 'AUTH_FAILED' };
@@ -3570,7 +3582,8 @@ export function registerSystemHandlers(
    * 就绪；30s 超时）。失败（用户取消/超时/spawn 失败）杀进程并从
    * registry 移除（key 定位，保证表中不留死助手）；调用侧可在下次触发
    * 时重新拉起（再弹一次授权框）。script 为 sh -c 脚本体，name 为 $0，
-   * args 为 $1 起的位置参数。
+   * args 为 $1 起的位置参数。onExit 在助手退出（被杀/自然退出）时回调
+   * （review 25：解锁态广播回锁）。
    */
   async function launchPrivilegedHelper(
     registry: Map<string, PrivilegedHelper>,
@@ -3578,6 +3591,7 @@ export function registerSystemHandlers(
     script: string,
     name: string,
     args: string[],
+    onExit?: () => void,
   ): Promise<PrivilegedHelper | null> {
     const helper: PrivilegedHelper = {
       proc: spawn('pkexec', ['sh', '-c', script, name, ...args], { stdio: ['pipe', 'pipe', 'pipe'] }),
@@ -3615,6 +3629,7 @@ export function registerSystemHandlers(
         // 进程退出：全部挂起写入按失败结算（不悬挂渲染层）
         while (helper.waiters.length > 0) helper.waiters.shift()?.(false);
         if (registry.get(key) === helper) registry.delete(key);
+        onExit?.();
       });
     });
     const ok = await Promise.race([
@@ -3672,6 +3687,45 @@ export function registerSystemHandlers(
    */
   const privHelpers = new Map<string, PrivilegedHelper>();
 
+  /**
+   * 特权解锁态广播（review 25 ②④）：主进程为唯一真相源（通用助手存活
+   * = 已解锁）——解锁/锁定/助手退出时广播到**全部窗口**，各窗口的
+   * ObjectPanel 解锁 UI（nice/背光/充电阈值/批量滑条）同步。多窗口
+   * 间此前各自持有渲染层模块级状态、解锁不互通；同一窗口多标签页
+   * 早已共享模块级 store，本广播补齐窗口间同步。
+   */
+  function broadcastPrivilegedState(active: boolean): void {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('system:privileged-state-changed', { active });
+    }
+  }
+
+  /** 助手存活 = 已解锁（exitCode/signalCode 双 null = 仍在运行） */
+  function privilegedStateActive(): boolean {
+    const helper = privHelpers.get('priv');
+    return !!helper && helper.proc.exitCode === null && helper.proc.signalCode === null;
+  }
+
+  /**
+   * 对象写成功广播（review 25 ④）：其他窗口/标签页打开同一对象详情页
+   * （含批量 nice 滑条）时即时同步调整进度——此前只有发起窗口有乐观
+   * 更新、其余视图等 1–2s 轮询收敛。**排除源窗口**（其本地乐观更新已
+   * 生效，不重复写）。轮询仍为最终真相源（设备拔出/失败回落）。
+   */
+  function broadcastObjectWrite(payload: unknown, except?: Electron.WebContents | null): void {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed() || win.webContents === except) continue;
+      win.webContents.send('system:object-write-applied', payload);
+    }
+  }
+
+  /** 退出清理接线（module 级 ref 赋值为闭包内 killAll） */
+  privilegedHelpersRef = {
+    killAll: () => {
+      for (const [key] of [...privHelpers.entries()]) killPrivilegedHelper(privHelpers, key);
+    },
+  };
+
   /** renice 绝对路径解析（会话内缓存——renice 不会中途消失） */
   let renicePathCache: string | null | undefined;
   async function resolveRenicePath(): Promise<string | null> {
@@ -3701,6 +3755,7 @@ export function registerSystemHandlers(
       'printf "ready\\n"; R="$1"; while IFS= read -r line; do set -- $line; case "$1" in write) printf "%s" "$3" > "$2" && printf "ok\\n" || printf "err\\n";; nice) [ -n "$R" ] && "$R" -n "$2" -p "$3" >/dev/null 2>&1 && printf "ok\\n" || printf "err\\n";; esac; done',
       'hoshineko-priv',
       [renicePath ?? ''],
+      () => broadcastPrivilegedState(false),
     );
   }
 
@@ -3713,11 +3768,18 @@ export function registerSystemHandlers(
   ipcMain.handle('system:privileged-auth', async () => {
     try {
       const helper = await ensurePrivHelper();
-      return helper ? { ok: true } : { ok: false, error: 'AUTH_FAILED' };
+      if (!helper) return { ok: false, error: 'AUTH_FAILED' };
+      // review 25：解锁态广播（含发起窗口——各窗口统一以主进程为真相源）
+      broadcastPrivilegedState(true);
+      return { ok: true };
     } catch (e) {
       return { ok: false, error: getExecError(e).message.slice(0, 200) || 'AUTH_FAILED' };
     }
   });
+
+  /** 特权解锁态查询（review 25：新窗口/新标签页挂载时拉取——助手存活 =
+   *  已解锁，窗口 B 打开时继承窗口 A 的解锁态，无需重新授权） */
+  ipcMain.handle('system:get-privileged-state', () => ({ active: privilegedStateActive() }));
 
   /** 终止持久特权助手（kill 进程；exit 事件会结算挂起写队列并移出 registry） */
   function killPrivilegedHelper(registry: Map<string, PrivilegedHelper>, key: string): void {
@@ -3733,6 +3795,9 @@ export function registerSystemHandlers(
    */
   ipcMain.handle('system:privileged-lock', () => {
     killPrivilegedHelper(privHelpers, 'priv');
+    // review 25：立即广播回锁（助手 exit 事件的 onExit 广播为兜底——kill
+    // 信号异步，exit 未到前 UI 已应回到锁定态）
+    broadcastPrivilegedState(false);
     return { ok: true };
   });
 
@@ -3945,7 +4010,7 @@ export function registerSystemHandlers(
    * 直跑 renice、EPERM（减小 nice 提高优先级）经持久助手回落；聚合
    * 结果（成功/失败逐项）。渲染层在未解锁时不提供该入口。
    */
-  ipcMain.handle('system:process-nice-batch', async (_event, pids: unknown, nice: unknown) => {
+  ipcMain.handle('system:process-nice-batch', async (event, pids: unknown, nice: unknown) => {
     const niceNum = typeof nice === 'number' ? nice : NaN;
     if (!Number.isInteger(niceNum) || niceNum < -20 || niceNum > 19) return { ok: false, error: 'INVALID_NICE' };
     if (!Array.isArray(pids) || pids.length === 0 || pids.length > PROCESS_BATCH_MAX) return { ok: false, error: 'INVALID_PIDS' };
@@ -3982,6 +4047,9 @@ export function registerSystemHandlers(
         }
       }
     }
+    // review 25 ④：批量 nice 成功项广播（其他窗口的批量滑条/实例读数同步）
+    const okPids = results.filter((r) => r.ok).map((r) => r.pid as number);
+    if (okPids.length > 0) broadcastObjectWrite({ kind: 'nice-batch', pids: okPids, nice: niceNum }, event.sender);
     return { ok: true, results };
   });
 
@@ -3993,7 +4061,7 @@ export function registerSystemHandlers(
    * intel_backlight 等）时经持久助手回落（一次 pkexec 授权，拖动不再
    * 重复弹框，见 BacklightHelper 注释）。
    */
-  ipcMain.handle('system:write-object', async (_event, classId: unknown, instanceId: unknown, key: unknown, value: unknown) => {
+  ipcMain.handle('system:write-object', async (event, classId: unknown, instanceId: unknown, key: unknown, value: unknown) => {
     if (typeof instanceId !== 'string' || !SYSFS_ID_RE.test(instanceId)) return { ok: false, error: 'INVALID_ID' };
     let target: string;
     let rangeMax: number | null;
@@ -4020,6 +4088,7 @@ export function registerSystemHandlers(
     if (!Number.isInteger(v) || v < 0 || v > rangeMax) return { ok: false, error: 'OUT_OF_RANGE' };
     try {
       await fs.writeFile(target, String(v));
+      broadcastObjectWrite({ kind: 'write', classId, instanceId, key, value: v }, event.sender);
       return { ok: true, previous, escalated: false };
     } catch (e1) {
       const msg = String((e1 as NodeJS.ErrnoException)?.message ?? e1);
@@ -4031,6 +4100,7 @@ export function registerSystemHandlers(
         const helper = await ensurePrivHelper();
         if (!helper) return { ok: false, error: 'AUTH_FAILED' };
         const wrote = await privilegedHelperWrite(helper, `write ${target} ${v}`);
+        if (wrote) broadcastObjectWrite({ kind: 'write', classId, instanceId, key, value: v }, event.sender);
         return wrote ? { ok: true, previous, escalated: true } : { ok: false, error: 'WRITE_FAILED' };
       } catch (e2) {
         return { ok: false, error: getExecError(e2).message.slice(0, 200) || 'AUTH_FAILED' };

@@ -2626,6 +2626,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
             <Omnibar
               currentPath={displayPath}
               searchStateEnabled
+              active={isActive}
               onNavigate={(p: string) => loadPath(p, true)}
               onSearch={(q: string) => {
                 // 搜索态重搜（标签页已在搜索状态）：沿用本次会话的筛选

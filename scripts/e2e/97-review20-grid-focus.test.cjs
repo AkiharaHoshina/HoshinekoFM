@@ -300,7 +300,16 @@ const { ipcMain } = require('electron');
     await h.sleep(200);
     const backTerm = await h.js(win, `document.activeElement === document.querySelector('.object-detail .object-actions md-outlined-button')`);
     h.assert.ok(backTerm.value, '组内 ← 应回到终止按钮');
-    // 末尾 Tab 放行 → 全局循环下一站（nav）
+    // review 25：Tab 组内逐键停靠——终止 → 强制结束 → 打开位置 → 放行
+    await h.key(win, 'Tab');
+    await h.sleep(300);
+    const tabKill = await h.js(win, `document.activeElement === document.querySelector('.object-detail .object-actions .object-action-danger')`);
+    h.assert.ok(tabKill.value, 'Tab 组内第一步应停到强制结束（review 25 组内逐键）');
+    await h.key(win, 'Tab');
+    await h.sleep(300);
+    const tabLoc = await h.js(win, `document.activeElement === document.querySelector('.object-detail .object-actions md-filled-tonal-button')`);
+    h.assert.ok(tabLoc.value, 'Tab 组内第二步应停到打开位置（review 25 组内逐键）');
+    // 组内走完（打开位置为末控件）→ 末尾 Tab 放行 → 全局循环下一站（nav）
     await h.key(win, 'Tab');
     await h.sleep(300);
     const z = (await zoneOf(win)).value;

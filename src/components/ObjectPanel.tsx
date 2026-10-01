@@ -19,7 +19,7 @@ import type { ContextMenuItem } from './ContextMenu';
 import { useRubberBandSelection } from '../hooks/useRubberBandSelection';
 import { registerKeyboardZone, focusKeyboardTarget } from '../utils/focusZones';
 import { gridNavIndex } from '../utils/gridNav';
-import type { ObjectClassInfo, ObjectInstance, ObjectReading, SmartInfo } from '../types/electron.d';
+import type { ObjectClassInfo, ObjectInstance, ObjectReading, SmartInfo, ObjectWriteEvent } from '../types/electron.d';
 import type { IFile } from '../types/files';
 import './ObjectPanel.css';
 
@@ -32,9 +32,19 @@ import './ObjectPanel.css';
  * true（一次 pkexec 拉起通用助手）、任一锁定按钮置 false（kill 助手）。
  * 模块级 store + useSyncExternalStore：同窗口全部 ObjectPanel 实例
  * （多标签页）共享同一份状态。
+ *
+ * review 25 ②：解锁态以**主进程为唯一真相源**（助手存活 = 已解锁）——
+ * 首次订阅时拉取 system:get-privileged-state（新窗口继承既有解锁态，
+ * 不再各自显示锁定）、订阅 system:privileged-state-changed 广播
+ * （跨窗口解锁/锁定/助手自然退出统一回流）。本地 setter 保留为发起
+ * 窗口的乐观快路径（e2e 假 privileged-auth 无真实助手/无广播时同样
+ * 生效；真实运行时广播随后到达、同值 no-op）。
  */
 let privilegedUnlockedGlobal = false;
 const privilegedUnlockedListeners = new Set<() => void>();
+
+/** 主进程解锁态同步是否已启动（模块级一次） */
+let privilegedStateBootstrapped = false;
 
 /** 设置全局特权解锁态（同一值不通知，防循环） */
 function setPrivilegedUnlockedGlobal(v: boolean): void {
@@ -43,8 +53,24 @@ function setPrivilegedUnlockedGlobal(v: boolean): void {
   for (const listener of privilegedUnlockedListeners) listener();
 }
 
+/**
+ * 启动主进程解锁态同步：拉取当前状态 + 订阅变化广播。幂等（模块级
+ * 守卫）；广播值恒以主进程为准覆盖本地态。
+ */
+function bootstrapPrivilegedState(): void {
+  if (privilegedStateBootstrapped) return;
+  privilegedStateBootstrapped = true;
+  void window.electron.getPrivilegedState().then((s) => {
+    if (s && typeof s.active === 'boolean') setPrivilegedUnlockedGlobal(s.active);
+  });
+  window.electron.onPrivilegedStateChanged((s) => {
+    if (s && typeof s.active === 'boolean') setPrivilegedUnlockedGlobal(s.active);
+  });
+}
+
 /** 订阅全局特权解锁态 */
 function usePrivilegedUnlocked(): boolean {
+  bootstrapPrivilegedState();
   return useSyncExternalStore(
     (onStoreChange) => {
       privilegedUnlockedListeners.add(onStoreChange);
@@ -970,6 +996,43 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     };
   }, [parsed, currentInstance, readingPaused, sparklineWindowSeconds, alertTempC, alertDiskPct]);
 
+  /**
+   * review 25 ④：跨窗口/标签页对象写同步——其他窗口写入成功经主进程
+   * 广播（system:object-write-applied，**源窗口被排除**——其本地乐观更新
+   * 已生效）。匹配当前视图时乐观回写：
+   * - write 匹配当前 类/实例 → 更新读数（背光 brightness+actualBrightness
+   *   同写防仲裁提示误闪、充电阈值 chargeThreshold）；
+   * - nice 匹配当前实例 pid → 更新读数 nice；
+   * - nice-batch 且当前在进程类页 → 同步批量滑条值（batchNiceValue）。
+   * 轮询仍为最终真相源（设备拔出/写入失败回落）。
+   */
+  useEffect(() => {
+    return window.electron.onObjectWriteApplied((ev: ObjectWriteEvent) => {
+      if (ev.kind === 'write') {
+        if (parsed?.className !== ev.classId || parsed?.instanceId !== ev.instanceId) return;
+        setReading((prev) => {
+          if (!prev) return prev;
+          if (ev.classId === 'backlight' && ev.key === 'brightness' && prev.kind === 'backlight') {
+            return { ...prev, brightness: ev.value, actualBrightness: ev.value };
+          }
+          if (ev.classId === 'power' && ev.key === 'chargeThreshold' && prev.kind === 'power') {
+            return { ...prev, chargeThreshold: ev.value };
+          }
+          return prev;
+        });
+        return;
+      }
+      if (ev.kind === 'nice') {
+        if (parsed?.className !== 'process' || parsed?.instanceId !== String(ev.pid)) return;
+        setReading((prev) => (prev?.kind === 'process' ? { ...prev, nice: ev.nice } : prev));
+        return;
+      }
+      if (ev.kind === 'nice-batch') {
+        if (parsed?.className === 'process' && parsed?.instanceId === null) setBatchNiceValue(ev.nice);
+      }
+    });
+  }, [parsed?.className, parsed?.instanceId]);
+
   /** 存储实例页 SMART 一次性拉取（smartctl 慢，绝不进轮询循环；
    *  路径切换的复位在渲染期复位块内） */
   useEffect(() => {
@@ -1064,9 +1127,10 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
           if (!res.ok) continue;
           okCount++;
           backlightUndoRegistry.delete(id);
-          // 当前打开实例恰为恢复对象时乐观回写读数
+          // 当前打开实例恰为恢复对象时乐观回写读数（actualBrightness
+          // 一并假定已生效——同滑条写入，防仲裁提示误闪）
           if (id === parsed?.instanceId) {
-            setReading((prev) => (prev?.kind === 'backlight' ? { ...prev, brightness: initial } : prev));
+            setReading((prev) => (prev?.kind === 'backlight' ? { ...prev, brightness: initial, actualBrightness: initial } : prev));
           }
         }
         showToast(
@@ -1272,7 +1336,10 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     const write = (v: number, optimistic: boolean, onOk?: () => void) => {
       void window.electron.writeObject('backlight', inst.id, 'brightness', v).then((res) => {
         if (res.ok) {
-          if (optimistic) setReading({ ...r, brightness: v });
+          // 乐观更新同时假定 actualBrightness 已生效：仲裁提示只应反映
+          // 轮询读到的真实分叉（双背光设备内核忽略写入），否则乐观态
+          // 的旧 actualBrightness 会在每次调整松手瞬间误闪提示
+          if (optimistic) setReading({ ...r, brightness: v, actualBrightness: v });
           if (backlightInitial !== null) {
             if (v !== backlightInitial) {
               if (!backlightUndoRegistry.has(inst.id)) backlightUndoRegistry.set(inst.id, backlightInitial);
@@ -2419,6 +2486,24 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     if (idx < 0) return;
     if (e.key === 'Tab') {
       const dir = e.shiftKey ? -1 : 1;
+      // review 25：组内逐键停靠——焦点在组内第 i 个可用控件上时先移组内
+      // 相邻可用控件（存在才停，如解锁后的「恢复原值」按钮排在锁定按钮
+      // 之后，此前 Tab 直接跳下一组、该按钮键盘不可达；按钮不存在/禁用
+      // 时 controls 只有锁定一个，行为与旧语义一致）；组内走完才跳组。
+      // 页头组自身可聚焦但不在 DETAIL_CONTROLS 内（ci=-1），直接跳组。
+      const controls = Array.from(groups[idx].querySelectorAll<HTMLElement>(DETAIL_CONTROLS))
+        .filter((el) => !el.hasAttribute('disabled'));
+      const activeEl = document.activeElement as HTMLElement | null;
+      const ci = activeEl ? controls.indexOf(activeEl) : -1;
+      if (ci >= 0) {
+        const ni = ci + dir;
+        if (ni >= 0 && ni < controls.length) {
+          e.preventDefault();
+          e.stopPropagation();
+          controls[ni].focus();
+          return;
+        }
+      }
       let next = idx + dir;
       while (next >= 0 && next < groups.length) {
         const target = firstGroupControl(groups[next]);

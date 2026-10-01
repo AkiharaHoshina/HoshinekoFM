@@ -8,7 +8,7 @@ import { setupPtyHandlers, killAllPty } from './pty';
 import { getThumbnail, detectMime, THUMB_QUEUE_DROPPED } from './fsUtils';
 import { startWatching, stopWatching, stopAllWatching } from './fsWatcher';
 import { registerFsHandlers } from './handlers/fs';
-import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor, startBackendConflictQuery, resetBackendConflictCache, runIntegrationScript } from './handlers/system';
+import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor, startBackendConflictQuery, resetBackendConflictCache, runIntegrationScript, killAllPrivilegedHelpers } from './handlers/system';
 import type { BackendKind } from './handlers/backendInfo';
 import { registerWindowHandlers } from './handlers/window';
 import { registerThemeHandlers, startColorSchemeWatcher, stopColorSchemeWatcher } from './handlers/theme';
@@ -1205,9 +1205,17 @@ app.on('before-quit', (event) => {
   stopColorSchemeWatcher();
   // 清理快照文件实时监听（服务模式）
   stopSnapshotWatcher();
+  // review 25：显式终止特权助手（pkexec 常驻进程）——管道 EOF 自然退出
+  // 的兜底之外的双保险，确保应用关闭后不残留 root 特权进程
+  killAllPrivilegedHelpers();
   // flushStorageData 同步把未落盘的 DOM Storage 写盘（void API，无 Promise）
   for (const win of windows) {
     if (!win.isDestroyed()) win.webContents.session.flushStorageData();
   }
   app.quit();
+});
+
+/** review 25：will-quit 再杀一次特权助手（崩溃/异常退出路径的兜底） */
+app.on('will-quit', () => {
+  killAllPrivilegedHelpers();
 });

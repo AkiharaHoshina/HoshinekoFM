@@ -129,6 +129,13 @@
   outline-offset: 2px;
 }
 
+/* review 25：已选中项圆角长方形高亮（文件区列表模式选中同款——
+ *  secondary-container 背景 + 12px 圆角；check 图标随主色不变） */
+.search-quickadd-item[data-selected="true"] {
+  background-color: var(--md-sys-color-secondary-container);
+  border-radius: 12px;
+}
+
 .search-quickadd-empty {
   padding: 24px;
   text-align: center;

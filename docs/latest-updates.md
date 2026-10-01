@@ -1,5 +1,30 @@
 # 更新日志
 
+## v0.11.50-dev — review 25：Esc 全局退出 / 解锁助手全局化 / 跨窗口滑条同步 / Tab 组内逐键
+
+- **编辑/搜索态 Esc 全局退出（任何焦点）**：StateMachineOmnibar 新
+  `active` prop（主窗口传 isActive）+ window 级 Esc 监听（编辑 → 面包屑、
+  搜索 → closeSearch 回进入搜索前 url；对话框/右键菜单/打开中的下拉
+  md-select/md-menu 不劫持）；FilePicker 的 Esc 合并语义同步改（搜索/编辑
+  态退出统一由地址栏监听接管，浏览态 Esc = 取消不变）
+- **解锁助手全局唯一 + 跨窗口共享（主进程真相源）**：`system:get-privileged-state`
+  查询 + `system:privileged-state-changed` 广播（auth 成功/lock/助手 exit
+  三处）——新窗口挂载继承解锁态、任一窗口锁定全部复锁；本地 setter 保留
+  为发起窗口乐观快路径
+- **退出杀助手**：`killAllPrivilegedHelpers()`（module 级 ref）在 before-quit
+  + will-quit 双处调用（管道 EOF 自然退出之外的双保险）
+- **跨窗口/标签页滑条进度即时同步**：写成功广播 `system:object-write-applied`
+  （write/nice/nice-batch 三形态，排除源窗口）——其他窗口的实例读数与批量
+  nice 滑条即时跟随；轮询仍为最终真相源
+- **详情页 Tab 组内逐键停靠**：「恢复原值」排在锁定按钮后、此前 Tab 跳组
+  键盘不可达——泛化为组内第 i → i+1 可用控件（Shift+Tab 对称），按钮不存在
+  时行为不变；process-actions 组顺带逐键
+- **快捷添加对话框选中项圆角高亮**：secondary-container 背景 + 12px 圆角
+  （文件区选中同款）
+- e2e 102 新增（Esc 全局退出/跨窗口解锁与同步/Tab 组内逐键/选中高亮）；
+  97e 改写（组内逐键两跳）、85c 起手复位、79b 恢复按钮选择器修复（review
+  22 wrapper 拆分遗留，clean HEAD 已挂）；回归 88/96/93/99/85/97/100/101 等全绿
+
 ## v0.11.50-dev — 版本升版（0.11.49 → 0.11.50）
 
 - `package.json` / `package-lock.json` 版本 0.11.49 → 0.11.50。

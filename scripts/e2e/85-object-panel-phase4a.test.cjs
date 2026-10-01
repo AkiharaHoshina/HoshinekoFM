@@ -248,6 +248,9 @@ exit 0
     h.makeFileTree(dir, { 'a.txt': 'x' });
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    // review 25：解锁态以主进程为真相源——85a 末尾真实助手仍存活（解锁态
+    // 残留），本用例用假 privileged-auth 测未解锁分支，必须先锁复位
+    await h.js(win, `window.electron.privilegedLock()`, true);
     await goObjects(win);
     await clickClass(win, `/进程|Process/`);
     await h.waitFor(win, `document.querySelectorAll('.object-row').length === 4`, { timeout: 8000 });
