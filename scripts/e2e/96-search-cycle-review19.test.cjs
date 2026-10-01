@@ -110,7 +110,10 @@ const os = require('os');
     await h.waitFor(win, `!!document.querySelector('.omnibar.mode-edit .omnibar-input')`);
     await h.js(win, `(() => { document.querySelector('.omnibar-enter-search')?.click(); return true; })()`, true);
     await h.waitFor(win, `!!document.querySelector('.omnibar.mode-search .omnibar-input')`);
-    await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 'a');
+    // 查询词用完整文件名 'a.txt'：临时目录随机名可能含字母 a（find -iname
+    // 会命中基准目录本身、成为结果第一项）——完整名（含点）不可能命中
+    // 目录名，保证「结果第一项 = a.txt」确定
+    await h.setReactInput(win, '.omnibar.mode-search .omnibar-input', 'a.txt');
     await h.key(win, 'Enter');
     await h.waitFor(win, `!!document.querySelector('.file-list-item[data-path="${dir}/a.txt"]')`, { timeout: 8000 });
     // 回车落点：文件区容器聚焦 + 选中首结果

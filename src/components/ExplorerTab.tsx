@@ -337,10 +337,20 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   // 最新值引用：搜索过滤控件/右键菜单的稳定回调里读取，避免闭包陈旧
   const searchQueryRef = useRef('');
   const searchOptionsRef = useRef<SearchOptions>({});
+  const searchActiveRef = useRef(false);
+  /**
+   * 回车执行搜索后的落点标记（review 19 决策 4）：handleSearch 文件分支
+   * 置位，下方 effect 在搜索结果提交到 DOM 后消费（选中首结果 + 聚焦
+   * 文件区容器）。ref 而非 state——消费不触发级联渲染（set-state-in-effect
+   * 规则禁止 effect 内同步 setState），effect 靠 files/searchActive 变化触发。
+   */
+  const focusAfterSearchRef = useRef(false);
   // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取
   searchQueryRef.current = searchQuery;
   // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取
   searchOptionsRef.current = searchOptions;
+  // eslint-disable-next-line react-hooks/refs -- 渲染期间同步 ref 供稳定回调读取（落点轮询重试期间检查「仍在搜索态」）
+  searchActiveRef.current = searchActive;
 
   /**
    * 搜索分类生效态（三处同源：分类开关强制锁定、按目录聚簇排序、
@@ -655,10 +665,11 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     if (query.trim() !== '') onFileSearchRecord?.(dir, query);
     await runSearch(dir, query, options);
     // review 19 决策 4：回车执行搜索后焦点落结果第一项（文件区）——
-    // setTimeout 0 等 React 提交结果 DOM 后落点（最小延迟，避免与
-    // 后续交互竞态）
+    // 置位落点标记，由下方 effect 在搜索结果**提交到 DOM 后**执行
+    // （setTimeout 0 与 React 调度竞态——结果提交可能在计时器之后，
+    // 落点回调先于渲染执行、无条目可选中，实测 96d 踩中）
     if (query.trim() !== '') {
-      setTimeout(() => searchResultsFocusRef.current(), 0);
+      focusAfterSearchRef.current = true;
     }
   }, [currentPath, runSearch, onObjectSearchRecord, onFileSearchRecord]);
 
@@ -1422,6 +1433,51 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     if (isObjectsPath(currentPath) || isObjectSearchPath(currentPath)) return;
     return registerKeyboardZone({ id: 'search-results', focus: () => searchResultsFocusRef.current() });
   }, [isActive, currentPath, searchCycleActive]);
+
+  /** 回车执行搜索后的落点（review 19 决策 4）：handleSearch 文件分支
+   *  置位 focusAfterSearchRef，本 effect 待搜索结果提交到 DOM 后把焦点
+   *  落到结果第一项（选中首结果 + 聚焦文件区容器）。不能靠 setTimeout 0
+   *  与 React 调度抢先后：结果提交与 FileList 行挂载都可能晚于计时器
+   *  （AutoSizer 测量后第二次提交才挂行，实测 96d 踩中——落点回调先于
+   *  渲染执行、无条目可选中）。文件区出现条目即落点；无结果（空搜索）
+   *  超时后仍聚焦结果区容器（键盘循环可用）。消费经 ref 清位，不在
+   *  effect 内 setState（set-state-in-effect 规则）。
+   */
+  useEffect(() => {
+    if (!focusAfterSearchRef.current) return;
+    // 已退出搜索（结果迟到/用户已 Esc）：不落点，避免从当前焦点偷焦点
+    if (!searchActive) {
+      focusAfterSearchRef.current = false;
+      return;
+    }
+    const tryFocus = (): boolean => {
+      const container = fileZoneRef.current;
+      return container !== null && container.querySelector('.file-list-item') !== null;
+    };
+    if (tryFocus()) {
+      focusAfterSearchRef.current = false;
+      searchResultsFocusRef.current();
+      return;
+    }
+    // 结果行尚未挂载（react-window 首帧测量/AutoSizer 二次提交）：
+    // 短暂轮询直至出现条目；超时（约 2s，无结果或渲染异常）仍聚焦
+    // 容器。每轮检查「仍在搜索态」——用户 Esc/取消即放弃。
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      attempts += 1;
+      if (!searchActiveRef.current) {
+        window.clearInterval(timer);
+        focusAfterSearchRef.current = false;
+        return;
+      }
+      if (tryFocus() || attempts >= 20) {
+        window.clearInterval(timer);
+        focusAfterSearchRef.current = false;
+        searchResultsFocusRef.current();
+      }
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [files, searchActive]);
 
   /** 对象根页浏览态最近搜索词条（object-recent 站，review 19）：
    *  ←/→ 在词条间微调、Enter 原生激活；Tab 停靠聚焦当前（或第一个）词条。
