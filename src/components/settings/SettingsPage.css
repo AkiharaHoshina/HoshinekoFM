@@ -34,6 +34,13 @@
   padding-top: 32px;
 }
 
+/* review 29.3 追加：主页标题与介绍之间的空隙与对象面板同步——
+ * 对象面板 .object-panel 为 flex 列 gap 12px（标题 → 提示行同样 12px）；
+ * 设置页滚动容器无 flex gap，此处补 margin-top 12px */
+.settings-page .object-panel-hint {
+  margin-top: 12px;
+}
+
 /* ── 根页分类卡片（对象面板卡片同款视觉、独立类名防 e2e 选择器污染） ── */
 
 /* review 29：对象面板类卡片同款长宽与布局（minmax 180px/16px padding/
