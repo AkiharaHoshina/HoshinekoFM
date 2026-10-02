@@ -50,7 +50,10 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 12px;
-  padding: 16px 0;
+  /* 与对象主页类卡片网格同源对齐：对象网格与提示行间距 = .object-panel
+   * flex gap 12px、网格自身无 padding；此处网格 padding-top 12px 使首行
+   * 卡片垂直位置与对象主页完全一致（此前 16px 低 4px） */
+  padding: 12px 0;
 }
 
 .settings-category-card {
