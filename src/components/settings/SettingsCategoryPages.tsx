@@ -30,12 +30,14 @@ export const DashboardSettings: React.FC = () => {
       <SettingsSwitchRow
         icon="dashboard"
         label={t('settings.show_dashboard')}
+        rowId="dashboard-show-dashboard"
         value={s.showDashboard}
         onChange={s.setShowDashboard}
       />
       <SettingsSwitchRow
         icon="home"
         label={t('settings.show_home_storage')}
+        rowId="dashboard-show-home-storage"
         value={s.showHomeStorageUsage}
         onChange={s.setShowHomeStorageUsage}
       />
@@ -121,11 +123,12 @@ export const FilesSettings: React.FC = () => {
         <SettingsSwitchRow
           icon="visibility"
           label={t('settings.show_hidden')}
+          rowId="files-show-hidden"
           value={s.showHiddenFiles}
           onChange={s.setShowHiddenFiles}
         />
 
-        <div className="settings-view-mode">
+        <div className="settings-view-mode" data-settings-row="files-view-mode">
           <div className="settings-view-mode__label">
             {t('settings.view_mode')}
           </div>
@@ -152,6 +155,7 @@ export const FilesSettings: React.FC = () => {
         <SettingsSwitchRow
           icon="favorite"
           label={t('settings.filled_icons')}
+          rowId="files-filled-icons"
           value={s.filledIcons}
           onChange={s.setFilledIcons}
         />
@@ -159,6 +163,7 @@ export const FilesSettings: React.FC = () => {
         <SettingsSwitchRow
           icon="play_arrow"
           label={t('settings.marquee_text')}
+          rowId="files-marquee-text"
           value={s.marqueeEnabled}
           onChange={s.setMarqueeEnabled}
         />
@@ -166,6 +171,7 @@ export const FilesSettings: React.FC = () => {
         <SettingsSwitchRow
           icon="compress"
           label={t('settings.sort_auto_collapse')}
+          rowId="files-sort-auto-collapse"
           value={s.sortControlsAutoCollapse}
           onChange={s.setSortControlsAutoCollapse}
         />
@@ -175,6 +181,7 @@ export const FilesSettings: React.FC = () => {
         <SettingsRow
           icon="tab"
           label={t('settings.new_tab_path')}
+          rowId="files-new-tab-path"
           sub={formatNewTabPath(s.newTabPath)}
         >
           <Button variant="outlined" onClick={() => setNewTabDialogOpen(true)}>
@@ -185,6 +192,7 @@ export const FilesSettings: React.FC = () => {
         <SettingsRow
           icon="open_with"
           label={t('settings.open_rule_manager')}
+          rowId="files-open-rule-manager"
           sub={t('settings.open_rule_manager_desc')}
         >
           <Button variant="outlined" onClick={() => setOpenRuleManagerOpen(true)}>
@@ -195,6 +203,7 @@ export const FilesSettings: React.FC = () => {
         <SettingsRow
           icon="image"
           label={t('settings.thumb_cache')}
+          rowId="files-thumb-cache"
           sub={
             s.thumbCacheInfo && s.thumbCacheInfo.totalBytes > 0
               ? t('settings.thumb_cache_info', s.thumbCacheInfo.fileCount, formatBytes(s.thumbCacheInfo.totalBytes))
@@ -215,12 +224,14 @@ export const FilesSettings: React.FC = () => {
         <SettingsSwitchRow
           icon="preview"
           label={t('settings.file_preview')}
+          rowId="files-file-preview"
           value={s.filePreviewEnabled}
           onChange={s.setFilePreviewEnabled}
         />
         <SettingsSwitchRow
           icon="calculate"
           label={t('settings.calculate_dir_size')}
+          rowId="files-calculate-dir-size"
           sub={t('settings.calculate_dir_size_desc')}
           value={s.calculateDirSize}
           onChange={s.setCalculateDirSize}
@@ -261,6 +272,7 @@ export const DisplaySettings: React.FC<{ onNavigate: (p: string) => void }> = ({
         <SettingsRow
           icon="palette"
           label={t('settings.cat_theme')}
+          rowId="display-theme-entry"
           role="button"
           tabIndex={0}
           onClick={() => onNavigate('settings://display/theme')}
@@ -286,6 +298,7 @@ export const DisplaySettings: React.FC<{ onNavigate: (p: string) => void }> = ({
         <ThreeStateSwitchRow
           icon="web_asset"
           label={t('settings.show_title_bar')}
+          rowId="display-show-title-bar"
           value={s.titleBarMode}
           effective={effectiveTitleBar}
           followSub={s.detectedWm
@@ -296,6 +309,7 @@ export const DisplaySettings: React.FC<{ onNavigate: (p: string) => void }> = ({
         <SettingsSwitchRow
           icon="subdirectory_arrow_right"
           label={t('settings.show_full_path_title')}
+          rowId="display-show-full-path-title"
           value={s.showFullPathTitle}
           onChange={s.setShowFullPathTitle}
         />
@@ -318,7 +332,7 @@ const IconSizeRow: React.FC = () => {
   const s = useSettings();
   const valueRef = useRef<HTMLSpanElement | null>(null);
   return (
-    <div className="settings-icon-size">
+    <div className="settings-icon-size" data-settings-row="files-icon-size">
       <div className="settings-icon-size__header">
         <span>{t('settings.icon_size')}</span>
         <span ref={valueRef} className="settings-icon-size__value">{s.iconSize}px</span>
@@ -348,7 +362,7 @@ const UiScaleRow: React.FC = () => {
   const s = useSettings();
   const valueRef = useRef<HTMLSpanElement | null>(null);
   return (
-    <div className="settings-icon-size">
+    <div className="settings-icon-size" data-settings-row="display-ui-scale">
       <div className="settings-icon-size__header">
         <span>{t('settings.ui_scale')}</span>
         <span ref={valueRef} className="settings-icon-size__value">{s.uiScale}%</span>
@@ -570,6 +584,7 @@ export const SearchSettings: React.FC = () => {
       <SettingsSwitchRow
         icon="account_tree"
         label={t('settings.search_group_by_dir')}
+        rowId="search-group-by-dir"
         sub={t('settings.search_group_by_dir_desc')}
         value={s.searchGroupByDir}
         onChange={s.setSearchGroupByDir}
@@ -580,6 +595,7 @@ export const SearchSettings: React.FC = () => {
       <SettingsRow
         icon="filter_list"
         label={t('settings.search_limit')}
+        rowId="search-limit"
         sub={t('settings.search_invalid_hint')}
       >
         <OutlinedTextField
@@ -592,6 +608,7 @@ export const SearchSettings: React.FC = () => {
       <SettingsRow
         icon="timer"
         label={t('settings.search_timeout')}
+        rowId="search-timeout"
         sub={t('settings.search_invalid_hint')}
       >
         <OutlinedTextField
@@ -604,6 +621,7 @@ export const SearchSettings: React.FC = () => {
       <SettingsRow
         icon="history"
         label={t('settings.search_recent_count')}
+        rowId="search-recent-count"
       >
         <OutlinedSelect
           className="settings-select settings-select--compact"
@@ -634,10 +652,11 @@ export const ObjectsSettings: React.FC = () => {
       <SettingsSwitchRow
         icon="widgets"
         label={t('settings.show_objects')}
+        rowId="objects-show-objects"
         value={s.showObjects}
         onChange={s.setShowObjects}
       />
-      <SettingsRow icon="show_chart" label={t('settings.sparkline_window')}>
+      <SettingsRow icon="show_chart" label={t('settings.sparkline_window')} rowId="objects-sparkline-window">
         <OutlinedSelect
           className="settings-select settings-select--compact"
           value={String(s.sparklineWindowSeconds)}
@@ -653,7 +672,7 @@ export const ObjectsSettings: React.FC = () => {
         </OutlinedSelect>
       </SettingsRow>
 
-      <SettingsRow icon="thermostat" label={t('settings.object_alert_temp')}>
+      <SettingsRow icon="thermostat" label={t('settings.object_alert_temp')} rowId="objects-alert-temp">
         <OutlinedSelect
           className="settings-select settings-select--compact"
           value={String(s.alertTempC)}
@@ -668,7 +687,7 @@ export const ObjectsSettings: React.FC = () => {
         </OutlinedSelect>
       </SettingsRow>
 
-      <SettingsRow icon="hard_drive" label={t('settings.object_alert_disk')}>
+      <SettingsRow icon="hard_drive" label={t('settings.object_alert_disk')} rowId="objects-alert-disk">
         <OutlinedSelect
           className="settings-select settings-select--compact"
           value={String(s.alertDiskPct)}
@@ -715,6 +734,7 @@ export const PortalSettings: React.FC = () => {
       <SettingsSwitchRow
         icon="folder_shared"
         label={t('settings.default_file_manager')}
+        rowId="portal-default-file-manager"
         sub={s.isDefaultFileManager
           ? t('settings.is_default_file_manager')
           : t('settings.default_file_manager_desc')}
@@ -732,6 +752,7 @@ export const PortalSettings: React.FC = () => {
       <SettingsRow
         icon="widgets"
         label={t('settings.system_integration')}
+        rowId="portal-system-integration"
         sub={portalConflictText
           ?? (isIntegrationInstalled
             ? t('settings.system_integration_done')
@@ -756,6 +777,7 @@ export const PortalSettings: React.FC = () => {
       <SettingsRow
         icon="sync"
         label={t('settings.restart_session_bus')}
+        rowId="portal-restart-session-bus"
         sub={t('settings.restart_session_bus_desc')}
       >
         <Button variant="outlined" disabled={s.sessionBusBusy} onClick={s.restartSessionBus}>
@@ -771,10 +793,10 @@ export const PortalSettings: React.FC = () => {
 export const ShortcutSettings: React.FC = () => {
   const s = useSettings();
   /** 单行条目：存在 → 「移除」；不存在 → 「创建」（review 29 #9） */
-  const renderEntryRow = (kind: 'desktop' | 'appmenu', icon: string, label: string, sub: string) => {
+  const renderEntryRow = (kind: 'desktop' | 'appmenu', icon: string, label: string, sub: string, rowId: string) => {
     const exists = s.launcherStatus?.[kind] ?? false;
     return (
-      <SettingsRow icon={icon} label={label} sub={sub}>
+      <SettingsRow icon={icon} label={label} sub={sub} rowId={rowId}>
         {exists ? (
           <Button variant="outlined" onClick={() => s.removeEntry(kind)}>
             {t('settings.remove_entry')}
@@ -789,8 +811,8 @@ export const ShortcutSettings: React.FC = () => {
   };
   return (
     <>
-      {renderEntryRow('desktop', 'desktop_windows', t('settings.desktop_entry'), t('settings.desktop_entry_desc'))}
-      {renderEntryRow('appmenu', 'apps', t('settings.app_menu_entry'), t('settings.app_menu_entry_desc'))}
+      {renderEntryRow('desktop', 'desktop_windows', t('settings.desktop_entry'), t('settings.desktop_entry_desc'), 'shortcut-desktop-entry')}
+      {renderEntryRow('appmenu', 'apps', t('settings.app_menu_entry'), t('settings.app_menu_entry_desc'), 'shortcut-app-menu-entry')}
     </>
   );
 };
@@ -817,7 +839,7 @@ export const I18nSettings: React.FC = () => {
     sel.style.width = `${Math.min(320, max + 48)}px`;
   }, [langOptions]);
   return (
-    <SettingsRow icon="translate" label={t('settings.language')}>
+    <SettingsRow icon="translate" label={t('settings.language')} rowId="i18n-language">
       <span
         ref={measurerRef}
         aria-hidden="true"
@@ -853,6 +875,7 @@ export const DefaultsSettings: React.FC = () => {
       <SettingsRow
         icon="restart_alt"
         label={t('settings.restore_defaults')}
+        rowId="defaults-restore"
         sub={t('settings.restore_defaults_desc')}
       >
         <Button variant="outlined" onClick={() => setConfirmOpen(true)}>
@@ -881,6 +904,7 @@ export const BuiltInTerminalSettings: React.FC = () => {
     <SettingsSwitchRow
       icon="terminal"
       label={t('settings.show_terminal_place')}
+      rowId="terminal-show-place"
       value={s.showTerminalPlace}
       onChange={s.setShowTerminalPlace}
     />

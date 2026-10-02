@@ -9,6 +9,8 @@ import type { IFile, AllDevice } from '../types/files';
 import { getDeviceIcon } from '../utils/deviceUtils';
 import { t as ti } from '../i18n';
 import { readObjectDrag, type ObjectDragPayload } from '../utils/objectDrag';
+import { isSearchSchemaPath } from '../utils/searchSchema';
+import { isSettingsPath } from '../utils/settingsPath';
 import { gridNavTarget, type GridNavKey } from '../utils/gridNav';
 import { useDrag } from '../contexts/DragContext';
 
@@ -71,7 +73,11 @@ interface StorageCard {
 export interface PinnedItem {
     /** 显示名（路径最后一段或默认项名） */
     name: string;
-    /** 绝对路径 */
+    /**
+     * 绝对路径；虚拟路径条目（objects:// / search:// / objectsearch:// /
+     * settings://——固定区互拖迁入或各面板右键固定）点击 = 导航到该
+     * 虚拟页（onNavigate），无文件打开语义。
+     */
     path: string;
     /** 图标名（默认固定项使用，用户自选可为空） */
     icon?: string;
@@ -629,7 +635,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenFile, pi
                 onDrop={(e) => handlePinDrop(e, idx)}
                 onDragEnd={handlePinDragEnd}
                 onClick={() =>
-                  item.path.startsWith('objects://')
+                  item.path.startsWith('objects://') || isSearchSchemaPath(item.path) || isSettingsPath(item.path)
                     ? onNavigate(item.path)
                     : item.isDir === false
                       ? onOpenFile?.(item.path)

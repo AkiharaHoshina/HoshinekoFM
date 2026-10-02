@@ -134,7 +134,7 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!!document.querySelector('.settings-row')`, { timeout: 8000 });
     await h.js(win, `(() => {
       const rows = [...document.querySelectorAll('.settings-row')];
-      const row = rows.find((r) => /在位置中显示仪表盘|Show dashboard in Places/.test(r.textContent ?? ''));
+      const row = rows.find((r) => /显示仪表盘|Show dashboard/.test(r.textContent ?? ''));
       const sw = row?.querySelector('md-switch');
       if (!sw) return false;
       sw.click();
@@ -148,7 +148,7 @@ const { ipcMain } = require('electron');
     // 重新打开 → Places 恢复
     await h.js(win, `(() => {
       const rows = [...document.querySelectorAll('.settings-row')];
-      const row = rows.find((r) => /在位置中显示仪表盘|Show dashboard in Places/.test(r.textContent ?? ''));
+      const row = rows.find((r) => /显示仪表盘|Show dashboard/.test(r.textContent ?? ''));
       row?.querySelector('md-switch')?.click();
       return true;
     })()`, true);
@@ -219,16 +219,22 @@ const { ipcMain } = require('electron');
     await h.clickEl(win, '.tab-item.active .tab-close-btn');
   });
 
-  await h.run('103e 设置页地址栏输搜索词 → toast 拒绝', async () => {
+  await h.run('103e 设置页地址栏输搜索词 → 进入设置搜索视图', async () => {
     const win = await h.createTestWindow({ argv: ['electron', dir] });
     await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
     await h.sleep(600);
-    await h.openSettingsPage(win, `/关于|About/`);
-    // 进入搜索态输入关键词 → handleSearch toast 拒绝（search.disabled）
-    await h.searchViaOmnibar(win, 'anything');
-    await h.waitFor(win, `[...document.querySelectorAll('.toast-message')].some((m) => /不支持搜索|does not support search|поиск не поддерживается|пошук не підтримується|検索に対応|검색을 지원하지/.test(m.textContent ?? ''))`, 8000);
-    // 仍在设置页
-    h.assert.ok((await h.js(win, `!!document.querySelector('.settings-page')`)).value, '搜索被拒绝后应仍在设置页');
+    await h.openSettingsPage(win);
+    // 设置页内搜索：进入搜索态即执行空词搜索（review 3 同款）→ 无匹配词
+    // 显示空态（搜索视图替代卡片网格——旧「toast 拒绝」语义已废弃）
+    await h.searchViaOmnibar(win, 'zzz-no-match');
+    await h.waitFor(win, `!!document.querySelector('.settings-page .object-load-failed')`, 8000);
+    h.assert.ok(
+      (await h.js(win, `!!document.querySelector('.settings-page') && !document.querySelector('.settings-category-grid')`)).value,
+      '搜索后应为搜索视图（无分类卡片网格）',
+    );
+    // Esc 退出回设置根页
+    await h.escCloseSearch(win);
+    await h.waitFor(win, `!!document.querySelector('.settings-category-grid')`, 8000);
   });
 
   await h.run('103f 键盘：settings 站 + 根页卡片方向键网格导航', async () => {
@@ -464,10 +470,10 @@ const { ipcMain } = require('electron');
     await h.waitFor(win, `!document.querySelector('.terminal-panel')`, { timeout: 8000 });
     h.assert.ok((await h.js(win, `!document.querySelector('.sidebar-item--terminal-active')`)).value, '关闭终端后高亮应消失');
 
-    // 在位置中显示内建终端快捷方式开关关闭 → Places 入口消失
+    // 显示内建终端开关关闭 → Places 入口消失
     await h.js(win, `(() => {
       const rows = [...document.querySelectorAll('.settings-row')];
-      const row = rows.find((r) => /在位置中显示内建终端|Show built-in terminal in Places/.test(r.textContent ?? ''));
+      const row = rows.find((r) => /显示内建终端|Show built-in terminal/.test(r.textContent ?? ''));
       row?.querySelector('md-switch')?.click();
       return true;
     })()`, true);
@@ -478,7 +484,7 @@ const { ipcMain } = require('electron');
     // 恢复（避免污染后续用例）
     await h.js(win, `(() => {
       const rows = [...document.querySelectorAll('.settings-row')];
-      const row = rows.find((r) => /在位置中显示内建终端|Show built-in terminal in Places/.test(r.textContent ?? ''));
+      const row = rows.find((r) => /显示内建终端|Show built-in terminal/.test(r.textContent ?? ''));
       row?.querySelector('md-switch')?.click();
       return true;
     })()`, true);
@@ -508,7 +514,7 @@ const { ipcMain } = require('electron');
     }
     const onFirst = await h.js(win, `(() => {
       const rows = [...document.querySelectorAll('.settings-row')];
-      const row = rows.find((r) => /在位置中显示仪表盘|Show dashboard in Places/.test(r.textContent ?? ''));
+      const row = rows.find((r) => /显示仪表盘|Show dashboard/.test(r.textContent ?? ''));
       return document.activeElement === row?.querySelector('md-switch');
     })()`);
     h.assert.ok(onFirst.value, '进站应落在首个控件（显示仪表盘开关）');
@@ -547,10 +553,326 @@ const { ipcMain } = require('electron');
     await h.sleep(200);
     const movedUp = await h.js(win, `(() => {
       const rows = [...document.querySelectorAll('.settings-row')];
-      const row = rows.find((r) => /在位置中显示仪表盘|Show dashboard in Places/.test(r.textContent ?? ''));
+      const row = rows.find((r) => /显示仪表盘|Show dashboard/.test(r.textContent ?? ''));
       return document.activeElement === row?.querySelector('md-switch');
     })()`);
     h.assert.ok(movedUp.value, '↑ 应回到首个控件');
+  });
+
+  await h.run('103j 根页卡片右键菜单（打开/固定到侧边栏/固定到仪表盘）', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await h.sleep(600);
+    await h.openSettingsPage(win);
+    await h.waitFor(win, `document.querySelectorAll('.settings-category-card').length >= 11`, { timeout: 8000 });
+
+    // 菜单项正则（按 index 断言：打开/固定到侧边栏/固定到仪表盘恰三项）
+    const OPEN_RE = /打开|開く|Open/;
+    const PIN_SB_RE = /固定到侧边栏|固定到側邊欄|釘選至側邊欄|サイドバーにピン留め|Pin to Sidebar/;
+    const PIN_DB_RE = /固定到仪表盘|固定到儀表板|釘選到儀表板|コントロールセンターにピン留め|Pin to Dashboard/;
+    const DANGER_RE = /删除|永久删除|Delete|压缩|Compress|解压|Extract/;
+
+    /** 合成 contextmenu 打开指定卡片菜单（86c 手法——软件渲染下坐标右键偶发失手） */
+    const openCardMenu = async (labelRe) => {
+      const ok = await h.js(win, `(() => {
+        const re = new RegExp(${JSON.stringify(labelRe)});
+        const card = [...document.querySelectorAll('.settings-category-card')].find((c) => re.test(c.querySelector('.settings-category-label')?.textContent ?? ''));
+        if (!card) return false;
+        card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 100, clientY: 100 }));
+        return true;
+      })()`, true);
+      h.assert.ok(ok.value, `应找到卡片（${labelRe}）`);
+      await h.waitFor(win, `!!document.querySelector('.context-menu md-list-item')`, { timeout: 8000 });
+    };
+    /** 读最后打开的 context-menu 条目 labels（无菜单回 null） */
+    const menuLabels = () => h.js(win, `(() => {
+      const menus = document.querySelectorAll('.context-menu');
+      const menu = menus[menus.length - 1];
+      if (!menu) return null;
+      return Array.from(menu.querySelectorAll('md-list-item')).map((li) => {
+        const hl = li.querySelector('[slot="headline"]');
+        return (hl ? hl.textContent : li.textContent || '').trim();
+      });
+    })()`);
+    /** js 点击最后菜单第 idx 项并等菜单关闭 */
+    const clickMenuItemAt = async (idx) => {
+      const ok = await h.js(win, `(() => {
+        const menus = document.querySelectorAll('.context-menu');
+        const menu = menus[menus.length - 1];
+        const item = menu?.querySelectorAll('md-list-item')[${idx}];
+        if (!item) return false;
+        item.click();
+        return true;
+      })()`, true);
+      h.assert.ok(ok.value, `应能点击第 ${idx} 项`);
+      await h.waitFor(win, `!document.querySelector('.context-menu')`, { timeout: 8000 });
+    };
+    const tabTitle = () => h.js(win, `document.querySelector('.tab-item.active .tab-title')?.textContent ?? ''`);
+
+    // ① 菜单恰三项且文案/顺序正确
+    await openCardMenu('^(主题和显示|Theme & Display)$');
+    const labels = await menuLabels();
+    h.assert.strictEqual(labels.value.length, 3, `菜单应恰三项（实际：${JSON.stringify(labels.value)}）`);
+    h.assert.ok(OPEN_RE.test(labels.value[0]), `第 0 项应为打开（实际：${labels.value[0]}）`);
+    h.assert.ok(PIN_SB_RE.test(labels.value[1]), `第 1 项应为固定到侧边栏（实际：${labels.value[1]}）`);
+    h.assert.ok(PIN_DB_RE.test(labels.value[2]), `第 2 项应为固定到仪表盘（实际：${labels.value[2]}）`);
+
+    // ② 打开 → 导航到分类页
+    await clickMenuItemAt(0);
+    await h.waitFor(win, `/设置 · 主题和显示|Settings · Theme & Display/.test(document.querySelector('.tab-item.active .tab-title')?.textContent ?? '')`, { timeout: 8000 });
+    h.assert.ok((await tabTitle()).value.length > 0, '打开应导航到分类页');
+
+    // ③ 固定到侧边栏 → 条目出现（title = settings://<cat>、图标 = 卡片图标）
+    await h.clickEl(win, '[data-kb-zone="topbar-up"] md-icon-button');
+    await h.waitFor(win, `!!document.querySelector('.settings-category-grid')`, { timeout: 8000 });
+    await openCardMenu('^(对象面板|Object Panel)$');
+    await clickMenuItemAt(1);
+    await h.waitFor(win, `!!document.querySelector('.sidebar-item[title="settings://objects"]')`, { timeout: 8000 });
+    h.assert.strictEqual(
+      (await h.js(win, `document.querySelector('.sidebar-item[title="settings://objects"] md-icon')?.textContent ?? ''`)).value,
+      'widgets',
+      '固定条目图标应为分类卡片图标（widgets）',
+    );
+
+    // ④ 固定条目右键菜单 = 手写三项（打开/重命名/取消固定），无删除/压缩
+    await h.js(win, `(() => {
+      const el = document.querySelector('.sidebar-item[title="settings://objects"]');
+      el?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+      return !!el;
+    })()`, true);
+    await h.waitFor(win, `!!document.querySelector('.context-menu md-list-item')`, { timeout: 8000 });
+    const pinLabels = await menuLabels();
+    h.assert.strictEqual(pinLabels.value.length, 3, `固定条目菜单应恰三项（实际：${JSON.stringify(pinLabels.value)}）`);
+    h.assert.ok(pinLabels.value.every((l) => !DANGER_RE.test(l)), `固定条目菜单不得含删除/压缩（实际：${JSON.stringify(pinLabels.value)}）`);
+    h.assert.ok(OPEN_RE.test(pinLabels.value[0]), `固定条目第 0 项应为打开（实际：${pinLabels.value[0]}）`);
+
+    // 固定条目「打开」→ 导航到对象面板分类页
+    await clickMenuItemAt(0);
+    await h.waitFor(win, `/设置 · 对象面板|Settings · Object Panel/.test(document.querySelector('.tab-item.active .tab-title')?.textContent ?? '')`, { timeout: 8000 });
+
+    // ⑤ 固定到仪表盘 → 仪表盘条目出现，点击导航到分类页
+    await h.openSettingsPage(win);
+    await h.waitFor(win, `document.querySelectorAll('.settings-category-card').length >= 11`, { timeout: 8000 });
+    await openCardMenu('^(仪表盘|Dashboard)$');
+    await clickMenuItemAt(2);
+    await h.js(win, `[...document.querySelectorAll('.sidebar-item')].find((x) => x.querySelector('md-icon')?.textContent === 'dashboard')?.click()`, true);
+    await h.waitFor(win, `!!document.querySelector('.pinned-name[title="settings://dashboard"], .pinned-name-marquee[title="settings://dashboard"]')`, { timeout: 8000 });
+    await h.js(win, `document.querySelector('.pinned-name[title="settings://dashboard"], .pinned-name-marquee[title="settings://dashboard"]')?.closest('.pinned-item')?.click()`, true);
+    await h.waitFor(win, `/设置 · 仪表盘|Settings · Dashboard/.test(document.querySelector('.tab-item.active .tab-title')?.textContent ?? '')`, { timeout: 8000 });
+  });
+
+  await h.run('103k 设置搜索（分组结构/加亮/深链接/空词全量/类内搜索/标题）', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await h.sleep(600);
+    await h.openSettingsPage(win);
+
+    // ① 根页搜「隐藏」→ 分组视图：组头（文件类）+ 分区小标题（外观）+
+    //    命中行标签加亮 + 结果计数行 + 标签标题「设置搜索 · 关键词」
+    await h.searchViaOmnibar(win, '隐藏');
+    await h.waitFor(win, `!!document.querySelector('.settings-page .object-search-results')`, 8000);
+    const structure = await h.js(win, `(() => {
+      const groups = [...document.querySelectorAll('.settings-page .object-search-group')];
+      return groups.map((g) => ({
+        title: g.querySelector('.object-search-group-title')?.textContent ?? '',
+        sections: [...g.querySelectorAll('.settings-search-section-title')].map((s) => s.textContent ?? ''),
+        names: [...g.querySelectorAll('.object-search-hit-name')].map((n) => n.textContent ?? ''),
+      }));
+    })()`);
+    h.assert.ok(structure.value.some((g) => /文件|Files/.test(g.title)), `应有文件类组头（实际：${JSON.stringify(structure.value)}）`);
+    h.assert.ok(structure.value.some((g) => g.sections.length >= 1 && /外观|Appearance/.test(g.sections[0])), `应有「外观」分区小标题（实际：${JSON.stringify(structure.value)}）`);
+    h.assert.ok(structure.value.some((g) => g.names.some((n) => /隐藏|Hidden/.test(n))), '命中行标签应含「隐藏」');
+    h.assert.ok((await h.js(win, `!!document.querySelector('.settings-page .object-search-mark')`)).value, '命中关键词应加亮');
+    h.assert.ok(
+      (await h.js(win, `/全部设置 · \\d+ 项|All settings · \\d+/.test(document.querySelector('.settings-search-count')?.textContent ?? '')`)).value,
+      '应有结果计数行',
+    );
+    h.assert.ok(
+      /设置搜索 · 隐藏|Settings search · 隐藏|設定搜尋 · 隱藏/.test((await h.js(win, `document.querySelector('.tab-item.active .tab-title')?.textContent ?? ''`)).value),
+      '标签标题应为「设置搜索 · 关键词」',
+    );
+
+    // review 3.30：回车后焦点落**结果容器**（tabIndex=-1 无白框）而非
+    // 第一项命中行——聚焦行会因键盘模态触发 :focus-visible 白框
+    await h.sleep(400);
+    const focusCheck = await h.js(win, `(() => {
+      const a = document.activeElement;
+      const first = document.querySelector('.settings-page .object-search-hit');
+      return {
+        onContainer: !!a && a.classList.contains('object-search-results'),
+        firstFocused: !!first && first === a,
+        firstRing: !!first && first.matches(':focus-visible'),
+      };
+    })()`);
+    h.assert.ok(focusCheck.value.onContainer, '回车后焦点应落结果容器（非命中行）');
+    h.assert.ok(!focusCheck.value.firstFocused && !focusCheck.value.firstRing, '第一项命中行不应被聚焦/加白框');
+
+    // ② 点击命中 → 深链接到分类页 + 目标行短暂高亮（data-settings-row）
+    await h.js(win, `document.querySelector('.settings-page .object-search-hit')?.click()`, true);
+    await h.waitFor(win, `!!document.querySelector('.settings-page [data-settings-row]')`, 8000);
+    await h.waitFor(win, `!!document.querySelector('.settings-page .settings-row--search-focus')`, 8000);
+    const focusRowId = await h.js(win, `document.querySelector('.settings-page .settings-row--search-focus')?.getAttribute('data-settings-row') ?? ''`);
+    h.assert.strictEqual(focusRowId.value, 'files-show-hidden', `深链接应定位到 files-show-hidden 行（实际 ${focusRowId.value}）`);
+
+    // ③ 空词 = 显示全部设置项（索引 33 项全量）
+    await h.openSettingsPage(win);
+    await h.searchViaOmnibar(win, '');
+    await h.waitFor(win, `!!document.querySelector('.settings-page .object-search-results')`, 8000);
+    const total = await h.js(win, `document.querySelectorAll('.settings-page .object-search-hit').length`);
+    h.assert.ok(total.value >= 33, `空词应显示全部设置项（实际 ${total.value}）`);
+
+    // 命中行高度与对象面板搜索结果一致：无副标题行（files-show-hidden）
+    // 与有副标题行（files-open-rule-manager）等高；无副标题行文本**垂直
+    // 居中**（review 3.30：不再以空白占位行顶对齐）
+    const heights = await h.js(win, `(() => {
+      const row = (id) => document.querySelector('.settings-page .object-search-hit[data-row-id="' + id + '"]');
+      const a = row('files-show-hidden');
+      const b = row('files-open-rule-manager');
+      if (!a || !b) return { ok: false, ha: 0, hb: 0, centered: 0, hasSubSpan: true };
+      const ra = a.getBoundingClientRect();
+      const rb = b.getBoundingClientRect();
+      const na = a.querySelector('.object-search-hit-name')?.getBoundingClientRect();
+      const centered = na ? Math.abs((na.top - ra.top) - (ra.bottom - na.bottom)) : -1;
+      return {
+        ok: true,
+        ha: Math.round(ra.height * 100) / 100,
+        hb: Math.round(rb.height * 100) / 100,
+        centered: Math.round(centered * 100) / 100,
+        hasSubSpan: !!a.querySelector('.object-search-hit-sub'),
+      };
+    })()`);
+    h.assert.ok(heights.value.ok, '应能找到无副标题/有副标题两个命中行');
+    h.assert.ok(!heights.value.hasSubSpan, '无副标题命中行不应渲染副标题占位');
+    h.assert.ok(
+      Math.abs(heights.value.ha - heights.value.hb) < 1,
+      `无副标题命中行应与有副标题命中行等高（${heights.value.ha} vs ${heights.value.hb}）`,
+    );
+    h.assert.ok(
+      heights.value.centered >= 0 && heights.value.centered < 3,
+      `无副标题命中行文本应垂直居中（上下差 ${heights.value.centered}px）`,
+    );
+
+    // ④ Esc 退出回设置根页（浏览视图卡片网格恢复）
+    await h.escCloseSearch(win);
+    await h.waitFor(win, `!!document.querySelector('.settings-category-grid')`, 8000);
+
+    // ⑤ 分类页搜索限定该类：文件分类页搜「隐藏」→ 恰一个类组 + 返回上级键
+    await h.openSettingsPage(win, `/文件|Files/`);
+    await h.waitFor(win, `!!document.querySelector('.settings-page .object-panel-header')`, 8000);
+    await h.searchViaOmnibar(win, '隐藏');
+    await h.waitFor(win, `!!document.querySelector('.settings-page .object-search-results')`, 8000);
+    const catScoped = await h.js(win, `(() => {
+      const groups = [...document.querySelectorAll('.settings-page .object-search-group')];
+      return { n: groups.length, titles: groups.map((g) => g.querySelector('.object-search-group-title')?.textContent ?? '') };
+    })()`);
+    h.assert.strictEqual(catScoped.value.n, 1, `分类页搜索应恰一个类组（实际：${JSON.stringify(catScoped.value)}）`);
+    h.assert.ok(/文件|Files/.test(catScoped.value.titles[0] ?? ''), '类组应为文件类');
+    h.assert.ok((await h.js(win, `!!document.querySelector('[data-kb-zone="topbar-up"]')`)).value, '类内搜索应有返回上级键');
+    // 返回上级 = 回基准分类页（退出搜索）
+    await h.escCloseSearch(win);
+    await h.waitFor(win, `!!document.querySelector('.settings-page .object-panel-header')`, 8000);
+
+    // ⑥ 搜索命中 roving：↑/↓ 移动焦点、Enter 打开
+    await h.searchViaOmnibar(win, '隐藏');
+    await h.waitFor(win, `!!document.querySelector('.settings-page .object-search-results')`, 8000);
+    const hit = await h.js(win, `document.querySelector('.settings-page [data-settings-nav]')?.focus(); true`, true);
+    h.assert.ok(hit.value, '应能聚焦命中行');
+    await h.key(win, 'Enter');
+    await h.waitFor(win, `!!document.querySelector('.settings-page [data-settings-row]')`, 8000);
+  });
+
+  await h.run('103l 设置主页最近搜索（词条行/与对象·文件历史分离/清除）', async () => {
+    const win = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win, `!!document.querySelector('.file-list-item')`);
+    await h.sleep(600);
+
+    // ① 设置主页（根）浏览态显示最近搜索词条行（对象面板同款 .search-recent
+    //    样式；此前 103e/103k 已记录 隐藏 与 zzz-no-match）——位于地址栏
+    //    与设置标题之间（与对象面板布局一致）
+    await h.openSettingsPage(win);
+    await h.waitFor(win, `!!document.querySelector('[data-kb-zone="settings-recent"]')`, 8000);
+    // 词条行与地址栏/标题的空隙（与对象面板完全一致——对象面板 =
+    // 顶栏 margin 16 + 面板 padding 16；设置侧 review 3.30 同款补 16/16）
+    const settingsGaps = await h.js(win, `(() => {
+      const topbar = document.querySelector('[data-kb-zone="topbar-omnibar"]')?.parentElement;
+      const row = document.querySelector('[data-kb-zone="settings-recent"]');
+      const title = document.querySelector('.settings-page .object-panel-title');
+      if (!topbar || !row || !title) return null;
+      const tb = topbar.getBoundingClientRect();
+      const r = row.getBoundingClientRect();
+      const t = title.getBoundingClientRect();
+      return { above: Math.round((r.top - tb.bottom) * 10) / 10, below: Math.round((t.top - r.bottom) * 10) / 10 };
+    })()`);
+    h.assert.ok(settingsGaps.value?.above === 16, `词条行与地址栏空隙应为 16px（实际 ${settingsGaps.value?.above}）`);
+    h.assert.ok(settingsGaps.value?.below === 16, `词条行与标题空隙应为 16px（实际 ${settingsGaps.value?.below}）`);
+    const chips = await h.js(win, `[...document.querySelectorAll('[data-kb-zone="settings-recent"] .search-recent-chip')].map((c) => c.textContent ?? '')`);
+    h.assert.ok(chips.value.includes('隐藏'), `设置词条应含 隐藏（实际 ${JSON.stringify(chips.value)}）`);
+    h.assert.ok(chips.value.includes('zzz-no-match'), `设置词条应含 zzz-no-match（实际 ${JSON.stringify(chips.value)}）`);
+    h.assert.strictEqual(chips.value[0], '隐藏', '最近在前（首词条 = 隐藏）');
+
+    // ② 点击词条恢复搜索 → 设置搜索视图；Esc 回根
+    await h.js(win, `[...document.querySelectorAll('[data-kb-zone="settings-recent"] .search-recent-chip')].find((c) => (c.textContent ?? '') === '隐藏')?.click()`, true);
+    await h.waitFor(win, `!!document.querySelector('.settings-page .object-search-results')`, 8000);
+    await h.escCloseSearch(win);
+    await h.waitFor(win, `!!document.querySelector('.settings-category-grid')`, 8000);
+
+    // ③ 与对象搜索历史分离：对象根页搜 objhist-103 → 对象词条只含它、
+    //    不得含设置搜索词
+    await h.js(win, `[...document.querySelectorAll('.sidebar-item')].find((x) => /对象|Objects/.test(x.textContent ?? ''))?.click()`, true);
+    await h.waitFor(win, `!!document.querySelector('.object-panel')`, 8000);
+    await h.searchViaOmnibar(win, 'objhist-103');
+    await h.waitFor(win, `!!document.querySelector('.object-search-filter-bar')`, 8000);
+    await h.escCloseSearch(win);
+    await h.waitFor(win, `!!document.querySelector('.object-panel .object-class-grid')`, 8000);
+    await h.waitFor(win, `!!document.querySelector('.search-recent')`, 8000);
+    const objChips = await h.js(win, `[...document.querySelectorAll('[data-kb-zone="object-recent"] .search-recent-chip')].map((c) => c.textContent ?? '')`);
+    h.assert.ok(objChips.value.includes('objhist-103'), `对象词条应含 objhist-103（实际 ${JSON.stringify(objChips.value)}）`);
+    h.assert.ok(!objChips.value.includes('隐藏'), `对象词条不得含设置搜索词 隐藏（实际 ${JSON.stringify(objChips.value)}）`);
+
+    // 对象面板词条行空隙实测 → 与设置主页完全一致（16/16）
+    const objGaps = await h.js(win, `(() => {
+      const topbar = document.querySelector('[data-kb-zone="topbar-omnibar"]')?.parentElement;
+      const row = document.querySelector('[data-kb-zone="object-recent"]');
+      const title = document.querySelector('.object-panel .object-panel-title');
+      if (!topbar || !row || !title) return null;
+      const tb = topbar.getBoundingClientRect();
+      const r = row.getBoundingClientRect();
+      const t = title.getBoundingClientRect();
+      return { above: Math.round((r.top - tb.bottom) * 10) / 10, below: Math.round((t.top - r.bottom) * 10) / 10 };
+    })()`);
+    h.assert.ok(
+      Math.abs(objGaps.value.above - settingsGaps.value.above) < 1,
+      `设置词条行与地址栏空隙应与对象面板完全一致（${settingsGaps.value.above} vs ${objGaps.value.above}）`,
+    );
+    h.assert.ok(
+      Math.abs(objGaps.value.below - settingsGaps.value.below) < 1,
+      `设置词条行与标题空隙应与对象面板完全一致（${settingsGaps.value.below} vs ${objGaps.value.below}）`,
+    );
+
+    // 设置主页词条不受对象搜索影响
+    await h.openSettingsPage(win);
+    const settingsChips = await h.js(win, `[...document.querySelectorAll('[data-kb-zone="settings-recent"] .search-recent-chip')].map((c) => c.textContent ?? '')`);
+    h.assert.ok(settingsChips.value.includes('隐藏'), '对象搜索后设置词条仍在');
+    h.assert.ok(!settingsChips.value.includes('objhist-103'), `设置词条不得含对象搜索词（实际 ${JSON.stringify(settingsChips.value)}）`);
+
+    // ④ 与文件搜索历史分离：文件视图搜 filehist-103 → 文件词条行只含它，
+    //    设置词条不变
+    const win2 = await h.createTestWindow({ argv: ['electron', dir] });
+    await h.waitFor(win2, `!!document.querySelector('.file-list-item')`);
+    await h.sleep(600);
+    await h.searchViaOmnibar(win2, 'filehist-103');
+    await h.waitFor(win2, `[...document.querySelectorAll('.search-recent-chip')].some((c) => (c.textContent ?? '') === 'filehist-103')`, 8000);
+    h.assert.ok(
+      !(await h.js(win2, `[...document.querySelectorAll('.search-recent-chip')].some((c) => /隐藏|objhist-103/.test(c.textContent ?? ''))`)).value,
+      '文件搜索词条行不得含设置/对象搜索词',
+    );
+    await h.openSettingsPage(win2);
+    const settingsChips2 = await h.js(win2, `[...document.querySelectorAll('[data-kb-zone="settings-recent"] .search-recent-chip')].map((c) => c.textContent ?? '')`);
+    h.assert.ok(!settingsChips2.value.includes('filehist-103'), `设置词条不得含文件搜索词（实际 ${JSON.stringify(settingsChips2.value)}）`);
+
+    // ⑤ 清除按钮 → 设置词条行消失
+    await h.js(win2, `document.querySelector('[data-kb-zone="settings-recent"] .search-recent-clear')?.click()`, true);
+    await h.waitFor(win2, `!document.querySelector('[data-kb-zone="settings-recent"]')`, 8000);
   });
 
   h.finish();

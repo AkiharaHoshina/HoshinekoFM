@@ -606,9 +606,9 @@ export interface IElectronAPI {
     /** Object Panel：设置性能模式（白名单档位；EPERM 经 pkexec 回落） */
     powerProfileSet: (mode: string) => Promise<{ ok: boolean; error?: string; escalated?: boolean }>;
     /** 读取搜索历史（'file' | 'object'；~/.config/HoshinekoFM 落盘） */
-    loadSearchHistory: (kind: 'file' | 'object') => Promise<unknown[]>;
+    loadSearchHistory: (kind: 'file' | 'object' | 'settings') => Promise<unknown[]>;
     /** 保存搜索历史（原子写；逐条校验 + 上限 100） */
-    saveSearchHistory: (kind: 'file' | 'object', entries: unknown[]) => Promise<{ ok: boolean; error?: string }>;
+    saveSearchHistory: (kind: 'file' | 'object' | 'settings', entries: unknown[]) => Promise<{ ok: boolean; error?: string }>;
     /** Object Panel：读取块设备 SMART 健康（smartctl 一次性静态信息） */
     smartInfo: (devicePath: string) => Promise<SmartInfo>;
     /** Object Panel：白名单写（v2 仅 backlight/brightness）；EACCES 经 pkexec 回落；回传旧值供「恢复原值」 */
@@ -668,8 +668,8 @@ export interface IElectronAPI {
     /** 卸载一个 GVfs 会话挂载（gio mount -u） */
     unmountGvfs: (mountpoint: string) => Promise<{ success: boolean; error?: string }>;
     getMountMap: () => Promise<Record<string, { source: string; fstype: string }>>;
-    mountDevice: (devicePath: string) => Promise<{ success: boolean; mountpoint?: string; error?: string }>;
-    unmountDevice: (devicePath: string) => Promise<{ success: boolean; error?: string }>;
+    mountDevice: (devicePath: string) => Promise<{ success: boolean; mountpoint?: string; error?: string; code?: string }>;
+    unmountDevice: (devicePath: string) => Promise<{ success: boolean; error?: string; code?: string }>;
     ejectDevice: (devicePath: string) => Promise<{ success: boolean; error?: string; code?: string }>;
     getSymlinkTarget: (path: string) => Promise<{ isSymlink: boolean; target?: string; targetExists: boolean }>;
     checkSymlinks: (paths: string[]) => Promise<{ path: string; isSymlink: boolean; target?: string }[]>;

@@ -80,7 +80,10 @@ import {
   parseSettingsPath,
   normalizeSettingsPath,
   settingsParentPath,
+  type SettingsPinPayload,
 } from '../utils/settingsPath';
+import { isSettingsSearchPath, parseSettingsSearchPath, buildSettingsSearchPath, settingsSearchBasePath } from '../utils/settingsSearchPath';
+import { isSearchSchemaPath } from '../utils/searchSchema';
 import { parseSearchLimitStr } from '../utils/searchLimit';
 import { SettingsPage } from './settings/SettingsPage';
 import { SearchFilterBar } from './SearchFilterBar';
@@ -175,6 +178,9 @@ interface ExplorerTabProps {
     onUnlockPrivileged?: (onDone?: (ok: boolean) => void) => void;
     /** 右键菜单固定对象投影（host = Places / 仪表盘；App pinObjectProjection 接线） */
     onPinObject?: (host: 'sidebar' | 'dashboard', obj: ObjectDragPayload) => void;
+    /** 设置根页卡片右键菜单固定分类（host = Places / 仪表盘；
+     *  App pinSettingsItem 接线——与对象投影同款导航别名） */
+    onPinSettings?: (host: 'sidebar' | 'dashboard', payload: SettingsPinPayload) => void;
     /**
      * 搜索态地址栏右键菜单回调（review 18 定案）：经 Omnibar 搜索态
      * onContextMenu 上报（App 按 isSearchSchemaPath 守卫后弹「复制地址/
@@ -205,6 +211,13 @@ interface ExplorerTabProps {
     onFileSearchRecord?: (dir: string, query: string) => void;
     /** 清空文件搜索历史 */
     onFileSearchHistoryClear: () => void;
+    /** 设置搜索历史（最近搜索词；App 持久化——与文件/对象历史分离，
+     *  设置主页根页浏览态显示词条行，对象面板同款样式） */
+    settingsSearchHistory: string[];
+    /** 记录设置搜索词（App 去重 + 上限） */
+    onSettingsSearchRecord?: (query: string) => void;
+    /** 清空设置搜索历史 */
+    onSettingsSearchHistoryClear: () => void;
     /** 最近搜索 UI 展示条数（0 = 不显示；设置 → 外观） */
     searchRecentCount: number;
     /** 网络接口 up/down（Object Panel 网络类，App useProcessActions；down L2 确认） */
@@ -256,7 +269,7 @@ interface ExplorerTabProps {
     terminalOpen?: boolean;
 }
 
-export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, searchLimit, searchTimeout, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, sortControlsAutoCollapse, onSortControlsCollapsedChange, sparklineWindowSeconds, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, onUnmountDevice, onEjectDevice, onTerminateProcess, onNiceProcess, onUnlockPrivileged, onPinObject, onSearchContextMenu, onBatchTerminate, onBatchNice, objectClassOrder, onObjectClassOrderChange, alertTempC, alertDiskPct, objectSearchHistory, onObjectSearchRecord, onObjectSearchHistoryClear, fileSearchHistory, onFileSearchRecord, onFileSearchHistoryClear, searchRecentCount, onNetworkToggle, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, onDashboardPinObject, onMovePinAcross, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
+export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onContextMenu, onBgMenuItems, onOpenWithFile, onPropertiesFile, onOpenTerminalAt, onRevealFile, onCreateDialog, onConflictDialog, onConfirmDialog, onDragAction, showHiddenFiles, iconSize, viewMode, filledIcons, sortBy, sortOrder, groupingEnabled, searchGroupByDir, searchLimit, searchTimeout, onSortByChange, onSortOrderChange, onGroupingToggle, onViewModeChange, sortControlsCollapsed, sortControlsAutoCollapse, onSortControlsCollapsedChange, sparklineWindowSeconds, refreshSignal, scrollToFileName, onScrollToComplete, onMountDevice, onUnmountDevice, onEjectDevice, onTerminateProcess, onNiceProcess, onUnlockPrivileged, onPinObject, onPinSettings, onSearchContextMenu, onBatchTerminate, onBatchNice, objectClassOrder, onObjectClassOrderChange, alertTempC, alertDiskPct, objectSearchHistory, onObjectSearchRecord, onObjectSearchHistoryClear, fileSearchHistory, onFileSearchRecord, onFileSearchHistoryClear, settingsSearchHistory, onSettingsSearchRecord, onSettingsSearchHistoryClear, searchRecentCount, onNetworkToggle, marqueeEnabled, pendingDrop, onPendingDropHandled, dashboardPinned, onDashboardPinItem, onDashboardRemovePin, onDashboardReorderPin, onDashboardPinObject, onMovePinAcross, showHomeStorageUsage, filePreviewEnabled, previewWidth, onPreviewWidthChange, pendingPropertiesPath, onPropertiesComplete, terminalOpen = false }: ExplorerTabProps) {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [files, setFiles] = useState<IFile[]>([]);
   const [hoveredFile, setHoveredFile] = useState<IFile | null>(null);
@@ -315,8 +328,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
    */
   const [lastBrowsePath, setLastBrowsePath] = useState('');
   if (
-    !isSearchPath(currentPath) &&
-    !isObjectSearchPath(currentPath) &&
+    !isSearchSchemaPath(currentPath) &&
     lastBrowsePath !== currentPath
   ) {
     setLastBrowsePath(currentPath);
@@ -523,8 +535,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     searchSeqRef.current++; // 丢弃迟到结果
     void window.electron.cancelSearch?.();
     setSearchPending(false);
-    if (isSearchPath(currentPath) || isObjectSearchPath(currentPath)) {
-      if (lastBrowsePath && !isSearchPath(lastBrowsePath) && !isObjectSearchPath(lastBrowsePath)) {
+    if (isSearchSchemaPath(currentPath)) {
+      if (lastBrowsePath && !isSearchSchemaPath(lastBrowsePath)) {
         await loadPathRef.current?.(lastBrowsePath, true);
       } else {
         const home = await window.electron.getHomePath().catch(() => '/');
@@ -620,9 +632,28 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
    * 目录（连续搜索不叠加虚拟路径）。
    */
   const handleSearch = useCallback(async (query: string, options: SearchOptions = {}) => {
-    // 设置页无搜索语义（review 26 用户定案）：toast 拒绝，不发起搜索
-    if (isSettingsPath(currentPath)) {
-      showToast(t('search.disabled'), 'error');
+    // 设置页内搜索（与对象面板 B 方案同款）：根页跨类搜、分类页/子页
+    // 类内搜（限定该分类）——导航到 settingssearch:// 虚拟路径，内容由
+    // SettingsPage 搜索视图渲染（纯客户端即时完成）
+    if (isSettingsPath(currentPath) || isSettingsSearchPath(currentPath)) {
+      const cur = isSettingsSearchPath(currentPath) ? parseSettingsSearchPath(currentPath) : null;
+      const from = isSettingsPath(currentPath) ? parseSettingsPath(currentPath) : null;
+      const cat = (cur?.cat ?? from?.cat) ?? null;
+      loadPathRef.current?.(buildSettingsSearchPath(cat, query));
+      // 记录设置搜索历史（与对象/文件历史分离；空词进入搜索态不记录）
+      if (query.trim() !== '') onSettingsSearchRecord?.(query);
+      // review 19 决策 4 变体（review 3.30 修复）：回车执行搜索后焦点落
+      // **结果容器**而非第一项命中行——聚焦命中行会因键盘模态触发
+      // :focus-visible 白框（设置搜索视图同步渲染、150ms 落点必然命中
+      // 第一行；对象面板因枚举异步落空回容器才无此现象）。首次方向键
+      // 由容器 onKeyDown 落第一行；守卫仍在搜索态（Esc 退出后不再落点）
+      if (query.trim() !== '') {
+        setTimeout(() => {
+          const results = document.querySelector<HTMLElement>('.settings-page .object-search-results');
+          if (!results) return;
+          results.focus();
+        }, 150);
+      }
       return;
     }
     if (isObjectsPath(currentPath) || isObjectSearchPath(currentPath)) {
@@ -676,7 +707,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     if (query.trim() !== '') {
       focusAfterSearchRef.current = true;
     }
-  }, [currentPath, runSearch, onObjectSearchRecord, onFileSearchRecord]);
+  }, [currentPath, runSearch, onObjectSearchRecord, onFileSearchRecord, onSettingsSearchRecord]);
 
   /**
    * 提交筛选变化并重搜（文件类型/二级筛选/临时上限三路共用）：
@@ -726,6 +757,20 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       loadingPathRef.current = normalized;
       setCurrentPath(normalized);
       onPathChange(tabId, normalized);
+      return;
+    }
+
+    // settingssearch:// 虚拟路径（设置搜索的地址栏形态）：解析后登记
+    // 标签页身份，内容由 SettingsPage 搜索视图渲染；非法形态报错。
+    // 刷新/标签页重激活/地址栏手输同语法均可恢复搜索（对象搜索同款）。
+    if (isSettingsSearchPath(path)) {
+      if (!parseSettingsSearchPath(path)) {
+        showToast(t('error.cannot_open_dir', path), 'error');
+        return;
+      }
+      loadingPathRef.current = path;
+      setCurrentPath(path);
+      onPathChange(tabId, path);
       return;
     }
 
@@ -922,7 +967,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       isSearchPath(currentPath) ||
       isObjectsPath(currentPath) ||
       isObjectSearchPath(currentPath) ||
-      isSettingsPath(currentPath)
+      isSettingsPath(currentPath) ||
+      isSettingsSearchPath(currentPath)
     ) return;
     let cancelled = false;
 
@@ -997,7 +1043,8 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
       isSearchPath(currentPath) ||
       isObjectsPath(currentPath) ||
       isObjectSearchPath(currentPath) ||
-      isSettingsPath(currentPath)
+      isSettingsPath(currentPath) ||
+      isSettingsSearchPath(currentPath)
     ) return;
     // Reset on path change so stale mount map from previous dir
     // doesn't trigger a spurious loadPath on the first poll
@@ -1141,6 +1188,15 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     if (isSettingsPath(currentPath)) {
       const parent = settingsParentPath(currentPath);
       if (parent) loadPath(parent, true);
+      return;
+    }
+    // 设置搜索：上级 = 回基准设置页（根/分类页，退出搜索——类搜索
+    // 注册返回键、根搜索无返回键，与对象搜索同款）
+    if (isSettingsSearchPath(currentPath)) {
+      const parsed = parseSettingsSearchPath(currentPath);
+      if (parsed && parsed.cat !== null) {
+        loadPath(settingsSearchBasePath(parsed), true);
+      }
       return;
     }
     if (window.electron && currentPath) {
@@ -1441,7 +1497,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
    * 全局 handler 负责）。仅活动标签页且非仪表盘时注册（仪表盘无文件区）。
    */
   useEffect(() => {
-    if (!isActive || currentPath === 'app://dashboard' || isObjectsPath(currentPath) || isObjectSearchPath(currentPath) || isSettingsPath(currentPath)) return;
+    if (!isActive || currentPath === 'app://dashboard' || isObjectsPath(currentPath) || isObjectSearchPath(currentPath) || isSettingsPath(currentPath) || isSettingsSearchPath(currentPath)) return;
     return registerKeyboardZone({
       id: 'files',
       focus: () => {
@@ -1456,6 +1512,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
    *  新 effect 再设置，顺序天然正确） */
   const searchCycleActive = isSearchPath(currentPath)
     || isObjectSearchPath(currentPath)
+    || isSettingsSearchPath(currentPath)
     || (searchActive && currentPath === 'trash://');
   useEffect(() => {
     if (!isActive) return;
@@ -1463,11 +1520,11 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     return () => setKeyboardCycleMode('browse');
   }, [isActive, searchCycleActive]);
 
-  /** search-results 站（文件侧搜索；对象侧由 ObjectPanel 以同源焦点逻辑
-   *  注册同名站——两处互斥：ObjectPanel 仅在对象视图挂载） */
+  /** search-results 站（文件侧搜索；对象侧由 ObjectPanel、设置侧由
+   *  SettingsPage 以同源焦点逻辑注册同名站——互斥：仅在文件侧搜索挂载） */
   useEffect(() => {
     if (!isActive || !searchCycleActive) return;
-    if (isObjectsPath(currentPath) || isObjectSearchPath(currentPath)) return;
+    if (isObjectsPath(currentPath) || isObjectSearchPath(currentPath) || isSettingsSearchPath(currentPath)) return;
     return registerKeyboardZone({ id: 'search-results', focus: () => searchResultsFocusRef.current() });
   }, [isActive, currentPath, searchCycleActive]);
 
@@ -1558,6 +1615,30 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     return registerKeyboardZone({ id: 'object-recent', focus: () => objectRecentZoneFocusRef.current() });
   }, [isActive, showObjectRecent]);
 
+  /** 设置主页最近搜索词条（settings-recent 站，与 object-recent 同款）：
+   *  ←/→ 在词条间微调、Enter 原生激活；Tab 停靠聚焦当前（或第一个）词条。
+   *  渲染位置 = 地址栏与设置标题之间（设置内容分支、SettingsPage 之上——
+   *  与对象面板布局一致）。chip 元素经 DOM 查询（Button 包装不转发 ref） */
+  const [settingsRecentFocus, setSettingsRecentFocus] = useState(0);
+  const settingsRecentZoneFocusRef = useRef<() => void>(() => {});
+  // eslint-disable-next-line react-hooks/refs -- 渲染期同步命令式回调
+  settingsRecentZoneFocusRef.current = () => {
+    const chips = Array.from(document.querySelectorAll<HTMLElement>('[data-kb-zone="settings-recent"] .search-recent-chip'));
+    if (chips.length === 0) return;
+    const idx = settingsRecentFocus < chips.length ? settingsRecentFocus : 0;
+    chips[idx]?.focus();
+  };
+  /** 词条行显示条件（与渲染处同源——含 isSettingsPath 守卫：设置搜索态/
+   *  分类页/子页不渲染；仅 settings:// 根页浏览态） */
+  const showSettingsRecent = isSettingsPath(currentPath)
+    && parseSettingsPath(currentPath)?.cat === null
+    && settingsSearchHistory.length > 0
+    && searchRecentCount > 0;
+  useEffect(() => {
+    if (!isActive || !showSettingsRecent) return;
+    return registerKeyboardZone({ id: 'settings-recent', focus: () => settingsRecentZoneFocusRef.current() });
+  }, [isActive, showSettingsRecent]);
+
   /** search-recent 站（review 23）：文件搜索态词条行 Tab 停靠——仅词条
    *  行渲染时注册（历史非空且展示条数 > 0）；进站聚焦当前/首词条。
    *  行容器 data-kb-zone 标记 + ←/→ roving（review 21）在渲染处 */
@@ -1588,8 +1669,12 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
     const objectsParsed = isObjectsPath(currentPath)
       ? parseObjectsPath(currentPath)
       : (objSearchParsed ? { className: objSearchParsed.className, instanceId: null } : null);
-    // 设置页（review 26）：根无返回键、子页注册；无排序控件
-    const settingsParsed = isSettingsPath(currentPath) ? parseSettingsPath(currentPath) : null;
+    // 设置页（review 26）：根无返回键、子页注册；无排序控件。
+    // 设置搜索同语义：类搜索注册返回键、根搜索无返回键
+    const settingsSearchParsed = isSettingsSearchPath(currentPath) ? parseSettingsSearchPath(currentPath) : null;
+    const settingsParsed = settingsSearchParsed
+      ? { cat: settingsSearchParsed.cat, sub: null }
+      : (isSettingsPath(currentPath) ? parseSettingsPath(currentPath) : null);
     if (
       currentPath !== 'trash://'
       && !(objectsParsed && objectsParsed.className === null)
@@ -1685,7 +1770,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
    * 会把 trash://… 映射回真实路径做 stat/大小计算）。
    */
   const previewState = useMemo<{ kind: 'hidden' } | { kind: 'directory'; path: string; trashOriginalPath?: string } | { kind: 'multiple' } | { kind: 'file'; file: IFile }>(() => {
-    if (!filePreviewEnabled || currentPath === 'app://dashboard' || isObjectsPath(currentPath) || isObjectSearchPath(currentPath) || isSettingsPath(currentPath)) return { kind: 'hidden' };
+    if (!filePreviewEnabled || currentPath === 'app://dashboard' || isObjectsPath(currentPath) || isObjectSearchPath(currentPath) || isSettingsPath(currentPath) || isSettingsSearchPath(currentPath)) return { kind: 'hidden' };
     const virtualDir = (p: string): string =>
       (trashRoot && p.startsWith(trashRoot) ? realToTrashVirtual(p, trashRoot) : p);
     // 搜索态无选中：不显示预览（决策 D7——currentPath 为 search://
@@ -1954,7 +2039,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
 
   const executePasteAction = useCallback(async () => {
     // Object Panel / 设置页等虚拟页无粘贴语义（与仪表盘/回收站同源守卫）
-    if (isObjectsPath(currentPath) || isObjectSearchPath(currentPath) || isSettingsPath(currentPath)) return;
+    if (isObjectsPath(currentPath) || isObjectSearchPath(currentPath) || isSettingsPath(currentPath) || isSettingsSearchPath(currentPath)) return;
     if (clipboard && clipboard.files.length > 0) {
       // 搜索态粘贴目标 = 发起搜索的目录（与背景落点同语义——
       // search:// 虚拟路径不是真实目录）
@@ -2561,7 +2646,7 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
   useEffect(() => {
     if (!pendingDrop) return;
     // Object Panel / 设置页虚拟页不是真实目录：不接收拖放
-    if (isObjectsPath(currentPathRef.current) || isObjectSearchPath(currentPathRef.current) || isSettingsPath(currentPathRef.current)) {
+    if (isObjectsPath(currentPathRef.current) || isObjectSearchPath(currentPathRef.current) || isSettingsPath(currentPathRef.current) || isSettingsSearchPath(currentPathRef.current)) {
       onPendingDropHandled?.();
       return;
     }
@@ -2639,20 +2724,24 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
             flexWrap: 'wrap',
             alignItems: 'center',
             gap: '8px',
-            marginBottom: isSettingsPath(currentPath) ? 0 : '16px',
+            marginBottom: (isSettingsPath(currentPath) || isSettingsSearchPath(currentPath)) ? 0 : '16px',
             padding: '8px 8px 0',
             paddingBottom: topBarWrapped ? 8 : 0,
             borderBottom: '1px solid',
             borderBottomColor: topBarWrapped ? 'var(--md-sys-color-outline-variant)' : 'transparent',
           }}
         >
-          {currentPath !== 'trash://' && !(isObjectsPath(currentPath) && parseObjectsPath(currentPath)?.className === null) && !(isSettingsPath(currentPath) && parseSettingsPath(currentPath)?.cat === null) && (
-            <span ref={upZoneRef} data-kb-zone="topbar-up" onKeyDown={handleTopBarKeyDown} style={{ display: 'inline-flex', flexShrink: 0 }}>
-              <IconButton onClick={handleUp} variant="standard">
-                <Icon name="arrow_upward" />
-              </IconButton>
-            </span>
-          )}
+          {currentPath !== 'trash://'
+            && !(isObjectsPath(currentPath) && parseObjectsPath(currentPath)?.className === null)
+            && !(isSettingsPath(currentPath) && parseSettingsPath(currentPath)?.cat === null)
+            && !(isSettingsSearchPath(currentPath) && parseSettingsSearchPath(currentPath)?.cat === null)
+            && (
+              <span ref={upZoneRef} data-kb-zone="topbar-up" onKeyDown={handleTopBarKeyDown} style={{ display: 'inline-flex', flexShrink: 0 }}>
+                <IconButton onClick={handleUp} variant="standard">
+                  <Icon name="arrow_upward" />
+                </IconButton>
+              </span>
+            )}
           <div ref={omnibarZoneRef} data-kb-zone="topbar-omnibar" onKeyDown={handleTopBarKeyDown} style={{ flex: 1, overflow: 'hidden', minWidth: effectiveSortCollapsed ? 0 : OMNIBAR_MIN_WIDTH_EXPANDED }}>
             <Omnibar
               currentPath={displayPath}
@@ -2847,16 +2936,67 @@ export function ExplorerTab({ tabId, isActive, initialPath, onPathChange, onCont
             searchQuery={objectSearchQuery}
           />
         </div>
-      ) : isSettingsPath(currentPath) ? (
-        // 设置页（review 26：设置从对话框改为页面，settings:// 虚拟路径）：
-        // 独占内容区（与仪表盘/对象面板同构）；隐藏标签页不渲染内容
-        // （外观预览复用 .file-list-item 等全局选择器常客类，常驻 DOM
-        // 会污染文件区查询——SettingsPage 内部按 isActive 门控）
-        <SettingsPage
-          path={currentPath}
-          isActive={isActive}
-          onNavigate={(p: string) => loadPath(p, true)}
-        />
+      ) : (isSettingsPath(currentPath) || isSettingsSearchPath(currentPath)) ? (
+        // 设置页/设置搜索（review 26 / 设置搜索）：独占内容区（与仪表盘/
+        // 对象面板同构）；隐藏标签页不渲染内容（外观预览复用 .file-list-item
+        // 等全局选择器常客类，常驻 DOM 会污染文件区查询——SettingsPage
+        // 内部按 isActive 门控）
+        <div
+          className="object-view-wrapper settings-view-wrapper"
+          style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}
+        >
+          {/* 最近搜索词条（根页浏览态；点击词条恢复搜索——位于地址栏与
+              设置标题之间，与对象面板布局一致；roving 覆盖词条 + 清除按钮） */}
+          {showSettingsRecent && (
+            <div
+              className="search-recent"
+              data-kb-zone="settings-recent"
+              onKeyDown={(e) => {
+                // review 21 同款：←/→ 在词条 + 「清除历史」按钮间 roving
+                if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                const chips = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('.search-recent-chip'));
+                const clear = e.currentTarget.querySelector<HTMLElement>('.search-recent-clear');
+                const items = clear ? [...chips, clear] : chips;
+                if (items.length === 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const cur = document.activeElement as HTMLElement | null;
+                const idx = cur ? items.indexOf(cur) : -1;
+                const base = idx < 0 ? Math.min(settingsRecentFocus, items.length - 1) : idx;
+                const next = (base + (e.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length;
+                if (next < chips.length) setSettingsRecentFocus(next);
+                items[next]?.focus();
+              }}
+            >
+              <span className="search-recent-label">{t('objects.search_recent')}</span>
+              {settingsSearchHistory.slice(0, searchRecentCount).map((q, idx) => (
+                <Button
+                  key={q}
+                  variant="text"
+                  className="search-recent-chip"
+                  tabIndex={idx === settingsRecentFocus ? 0 : -1}
+                  onClick={() => loadPath(buildSettingsSearchPath(null, q), true)}
+                >
+                  {q}
+                </Button>
+              ))}
+              <Button
+                variant="text"
+                className="search-recent-clear"
+                title={t('objects.search_clear_history')}
+                onClick={onSettingsSearchHistoryClear}
+              >
+                <Icon name="delete" />
+              </Button>
+            </div>
+          )}
+          <SettingsPage
+            path={currentPath}
+            isActive={isActive}
+            onNavigate={(p: string) => loadPath(p, true)}
+            onPinSettings={onPinSettings}
+          />
+        </div>
       ) : (
         // 内置终端打开且预览可见时：内容行向下负外边距 24px（状态栏高度），
         // 预览/文件区延伸贴紧终端标题栏。层级：文件区 < 统计区（z 101）

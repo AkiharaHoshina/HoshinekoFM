@@ -297,9 +297,9 @@ contextBridge.exposeInMainWorld('electron', {
   /** Object Panel：设置性能模式（白名单档位；EPERM 经 pkexec 回落） */
   powerProfileSet: (mode: string) => ipcRenderer.invoke('system:power-profile-set', mode),
   /** 读取搜索历史（'file' | 'object'；~/.config/HoshinekoFM 落盘） */
-  loadSearchHistory: (kind: 'file' | 'object') => ipcRenderer.invoke('system:load-search-history', kind),
+  loadSearchHistory: (kind: 'file' | 'object' | 'settings') => ipcRenderer.invoke('system:load-search-history', kind),
   /** 保存搜索历史（原子写；逐条校验 + 上限 100） */
-  saveSearchHistory: (kind: 'file' | 'object', entries: unknown[]) => ipcRenderer.invoke('system:save-search-history', kind, entries),
+  saveSearchHistory: (kind: 'file' | 'object' | 'settings', entries: unknown[]) => ipcRenderer.invoke('system:save-search-history', kind, entries),
   /** Object Panel：读取块设备 SMART 健康（smartctl 一次性静态信息） */
   smartInfo: (devicePath: string) => ipcRenderer.invoke('system:smart-info', devicePath),
   /** Object Panel：白名单写（v2 仅 backlight/brightness）；回传旧值供「恢复原值」 */

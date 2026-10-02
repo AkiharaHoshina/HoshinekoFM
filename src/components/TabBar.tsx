@@ -11,6 +11,7 @@ import { parseSearchPath } from '../utils/searchPath';
 import { parseObjectsPath } from '../utils/objectsPath';
 import { parseObjectSearchPath } from '../utils/objectSearchPath';
 import { isSettingsPath, settingsPathTitle } from '../utils/settingsPath';
+import { parseSettingsSearchPath } from '../utils/settingsSearchPath';
 import type { IFile } from '../types/files';
 import './TabBar.css';
 
@@ -51,6 +52,7 @@ const isDroppableTab = (tab: Tab): boolean => !tab.path.startsWith('app://');
 const isFileDroppableTab = (tab: Tab): boolean => isDroppableTab(tab)
   && !tab.path.startsWith('search://')
   && !tab.path.startsWith('objectsearch://')
+  && !tab.path.startsWith('settingssearch://')
   && !isSettingsPath(tab.path);
 
 const getTabTitle = (title: string): string => {
@@ -102,6 +104,14 @@ const getTabTitle = (title: string): string => {
     // 二级页 = 「设置 · 子页名」（标题与窗口标题同源 settingsPathTitle；
     // 设置页不接收文件拖放——isFileDroppableTab 已排除）
     if (isSettingsPath(title)) return settingsPathTitle(title);
+    // 设置搜索虚拟路径：显示「设置搜索 · 关键词」；空词无悬空圆点
+    // （review 13 #1.1）
+    if (normalizeTitle.startsWith('settingssearch://')) {
+      const parsed = parseSettingsSearchPath(title);
+      if (parsed) {
+        return parsed.query ? `${t('settings.search_title')} · ${parsed.query}` : t('settings.search_title');
+      }
+    }
     return title;
   }
 };

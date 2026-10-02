@@ -4,6 +4,7 @@ import { promises as fs, watch as fsWatch, existsSync, constants, open as fsOpen
 import os from 'os';
 import { spawn, exec, execFile } from 'child_process';
 import { promisify } from 'util';
+import * as pty from 'node-pty';
 import dbus from 'dbus-next';
 import { getMountMap, invalidateMountMapCache, getExecError } from '../shared';
 import { getThumbnailCacheInfo, clearThumbnailCache, detectMime } from '../fsUtils';
@@ -23,6 +24,88 @@ import {
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
+
+/**
+ * 块设备操作（挂载/卸载/弹出）默认超时。卸载在慢速 USB 盘有脏页写回时
+ * 合法耗时可到几十秒（内核 sync 阻塞），60s 后视为异常返回——
+ * 避免 IPC promise 永久悬挂。udisksd 服务端 job 不因客户端退出而
+ * 取消，超时后操作可能仍在后台继续，前端按「可能仍在进行」提示。
+ */
+const DEVICE_OP_TIMEOUT_MS = 60_000;
+
+/**
+ * 设备操作超时（调用时读取环境变量）：HOSHINEKO_DEVICE_OP_TIMEOUT_MS
+ * 覆盖阈值（e2e 用短超时确定性测 TIMEOUT 路径）。模块加载时读取会被
+ * harness 的 require 顺序锁死，故延迟到 IPC 调用时。
+ */
+function deviceOpTimeoutMs(): number {
+  const override = Number(process.env.HOSHINEKO_DEVICE_OP_TIMEOUT_MS);
+  return Number.isFinite(override) && override > 0 ? override : DEVICE_OP_TIMEOUT_MS;
+}
+
+/**
+ * 判断 exec 错误是否为 timeout 所致：child_process 超时以 SIGTERM
+ * 杀进程，错误对象带 killed=true 与 signal='SIGTERM'。
+ */
+function isExecTimeoutError(e: unknown): boolean {
+  const err = e as { killed?: boolean; signal?: string };
+  return err.killed === true && err.signal === 'SIGTERM';
+}
+
+/**
+ * busy/mounted 类失败时收集占住挂载点的进程列表（`fuser -v -m`）。
+ * fuser 输出走 stderr、无持有者时退出码 1——`2>&1 || true` 保证两态
+ * 都能拿到输出。挂载点来自 /proc/mounts，shell 特殊字符转义后进命令。
+ */
+async function collectBusyHolders(mountpoint: string): Promise<string | null> {
+  try {
+    const safe = mountpoint.replace(/[\\"$`]/g, '\\$&');
+    const { stdout } = await execAsync(`fuser -v -m "${safe}" 2>&1 || true`, { timeout: 5000 });
+    const out = stdout.trim();
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 判断挂载源（/proc/mounts 的 source 字段）是否属于某个磁盘的分区：
+ * `/dev/sda1`、`/dev/nvme0n1p1`、`/dev/mmcblk0p1` 分别属于对应磁盘。
+ * 用「后缀 p?数字」匹配而非前缀 startsWith——后者会把 `/dev/sdab`
+ * 误判为 `/dev/sda` 的分区（多盘环境罕见但存在）。
+ * 磁盘本身被整体挂载时（source === devicePath，rest 为空）不算分区。
+ */
+function isPartitionSourceOf(source: string, diskPath: string): boolean {
+  if (!source.startsWith(diskPath)) return false;
+  const rest = source.slice(diskPath.length);
+  return /^p?\d+$/.test(rest);
+}
+
+/**
+ * 组装卸载/弹出失败的诊断详情：busy/mounted 类错误追加 fuser 占用者
+ * 列表（截尾 400 字符防超长），完整列表写入主进程日志——把「target
+ * is busy」从神秘报错变成可定位的占用报告（应用自身缩略图/预览/终端
+ * 或外部进程如 tracker 索引，一看便知）。
+ * @param includePartitions - 弹出磁盘失败时也为真：占用可能落在该磁盘
+ *   的任一已挂载分区上（如 /dev/sda1），按分区源匹配挂载点。
+ */
+async function withBusyDiagnostics(devicePath: string, detail: string, includePartitions = false): Promise<string> {
+  if (!/busy|mount/i.test(detail)) return detail;
+  const map = await getMountMap(true);
+  const mountpoints: string[] = [];
+  for (const [mountpoint, info] of map) {
+    if (info.source === devicePath || (includePartitions && isPartitionSourceOf(info.source, devicePath))) {
+      mountpoints.push(mountpoint);
+    }
+  }
+  const holders = await Promise.all(mountpoints.map((mp) => collectBusyHolders(mp)));
+  const found = holders.find((h) => h !== null);
+  if (found) {
+    console.error(`[device] busy holders for ${devicePath} (${mountpoints.join(', ')}):\n${found}`);
+    return `${detail}\n${found}`.slice(0, 400);
+  }
+  return detail;
+}
 
 interface LsblkDevice {
   name: string;
@@ -1843,7 +1926,7 @@ export function registerSystemHandlers(
 
   ipcMain.handle('system:mount-device', async (_event, devicePath: string) => {
     try {
-      const { stdout, stderr } = await execAsync(`udisksctl mount -b "${devicePath}"`);
+      const { stdout, stderr } = await execAsync(`udisksctl mount -b "${devicePath}"`, { timeout: deviceOpTimeoutMs() });
       const mountMatch = stdout.match(/Mounted .+ at (.+)/);
       if (mountMatch) {
         invalidateMountMapCache();
@@ -1856,6 +1939,9 @@ export function registerSystemHandlers(
       }
       return { success: false, error: stderr || 'Unknown error' };
     } catch (e) {
+      if (isExecTimeoutError(e)) {
+        return { success: false, code: 'TIMEOUT' };
+      }
       const { stderr } = getExecError(e);
       const alreadyMatch = stderr.match(/already mounted at ['`](.+?)['`]/);
       if (alreadyMatch) {
@@ -1868,27 +1954,18 @@ export function registerSystemHandlers(
 
   ipcMain.handle('system:unmount-device', async (_event, devicePath: string) => {
     try {
-      await execAsync(`udisksctl unmount -b "${devicePath}"`);
+      await execAsync(`udisksctl unmount -b "${devicePath}"`, { timeout: deviceOpTimeoutMs() });
       invalidateMountMapCache();
       return { success: true };
     } catch (e) {
+      if (isExecTimeoutError(e)) {
+        return { success: false, code: 'TIMEOUT' };
+      }
       const { stderr, message } = getExecError(e);
-      return { success: false, error: stderr || message || 'Unmount failed' };
+      const detail = await withBusyDiagnostics(devicePath, stderr || message || 'Unmount failed');
+      return { success: false, error: detail };
     }
   });
-
-  /**
-   * 判断挂载源（/proc/mounts 的 source 字段）是否属于某个磁盘的分区：
-   * `/dev/sda1`、`/dev/nvme0n1p1`、`/dev/mmcblk0p1` 分别属于对应磁盘。
-   * 用「后缀 p?数字」匹配而非前缀 startsWith——后者会把 `/dev/sdab`
-   * 误判为 `/dev/sda` 的分区（多盘环境罕见但存在）。
-   * 磁盘本身被整体挂载时（source === devicePath，rest 为空）不算分区。
-   */
-  function isPartitionSourceOf(source: string, diskPath: string): boolean {
-    if (!source.startsWith(diskPath)) return false;
-    const rest = source.slice(diskPath.length);
-    return /^p?\d+$/.test(rest);
-  }
 
   /**
    * Eject (power off) a device. Fails with a `code` of `PARTITIONS_MOUNTED`
@@ -1907,14 +1984,19 @@ export function registerSystemHandlers(
         }
       }
       try {
-        await execAsync(`udisksctl power-off -b "${devicePath}"`);
+        await execAsync(`udisksctl power-off -b "${devicePath}"`, { timeout: deviceOpTimeoutMs() });
         invalidateMountMapCache();
         return { success: true };
       } catch (e) {
+        if (isExecTimeoutError(e)) {
+          return { success: false, code: 'TIMEOUT' };
+        }
         const { stderr, message } = getExecError(e);
         // 预检通过但 udisks 仍拒绝（竞态/设备占用）：busy/mounted 类
-        // 错误按「分区仍挂载」归类，前端给出同样明确的引导文案。
+        // 错误按「分区仍挂载」归类，前端给出同样明确的引导文案；
+        // 占用者列表仍写入日志供排查。
         if (/mount|busy/i.test(stderr)) {
+          void withBusyDiagnostics(devicePath, stderr || message || 'Eject failed', true);
           return { success: false, code: 'PARTITIONS_MOUNTED' };
         }
         return { success: false, error: stderr || message || 'Eject failed' };
@@ -2865,58 +2947,375 @@ export function registerSystemHandlers(
     return driNodeCache;
   }
 
+  // ── 多厂商枚举（sysfs DRM 卡片）──
+
+  /** PCI vendor id → 厂商（sysfs `device/vendor` 值为 0x8086 形态） */
+  const GPU_PCI_VENDORS: Record<'intel' | 'amd' | 'nvidia', string> = {
+    intel: '0x8086',
+    amd: '0x1002',
+    nvidia: '0x10de',
+  };
+
+  interface DrmCardInfo {
+    /** card 序号（/sys/class/drm/card0 → 0，与 /dev/dri/cardN 编号一致） */
+    index: number;
+    vendorName: 'intel' | 'amd' | 'nvidia';
+    /** PCI 设备目录（/sys/class/drm/cardN/device——vendor/uevent/hwmon 等所在） */
+    deviceDir: string;
+    /** PCI 槽位（PCI_SLOT_NAME，lspci -s 定位用） */
+    slot: string;
+  }
+
   /**
-   * 枚举 GPU 类对象（vendor 工具驱动；检测到工具才显示——SMART 同款
-   * 「检测不到不显示空卡」哲学，根页空类隐藏天然兜底）。解析失败/
-   * 工具挂起（execFile timeout 杀进程）回空数组，不崩。
+   * 枚举 sysfs DRM 卡片：/sys/class/drm/card* 的 device/vendor 判厂商。
+   * 工具无关——核显/独显混装或没有任何 vendor 工具时都能枚举到真实
+   * GPU 清单（Intel 核显无可用一次性枚举工具，这是唯一通用来源）。
+   * e2e 经 `HOSHINEKO_E2E_DRM_DIR` 覆盖（调用时读取，防 require 顺序锁死）。
    */
-  async function listGpuObjects(): Promise<ObjectInstance[]> {
+  async function listDrmCards(): Promise<DrmCardInfo[]> {
+    const drmDir = process.env.HOSHINEKO_E2E_DRM_DIR ?? '/sys/class/drm';
+    const cards: DrmCardInfo[] = [];
     try {
-      const det = await detectGpuTool();
-      if (!det) return [];
-      const dri = await resolveDriNode();
-      const gpuNative = (id: string, name: string, subtitle: string): ObjectInstance => ({
-        id,
-        name,
-        subtitle,
+      const entries = await fs.readdir(drmDir);
+      for (const e of entries) {
+        const m = /^card(\d+)$/.exec(e);
+        if (!m) continue;
+        const deviceDir = path.join(drmDir, e, 'device');
+        try {
+          const vendor = (await fs.readFile(path.join(deviceDir, 'vendor'), 'utf-8')).trim();
+          let vendorName: DrmCardInfo['vendorName'] | null = null;
+          if (vendor === GPU_PCI_VENDORS.intel) vendorName = 'intel';
+          else if (vendor === GPU_PCI_VENDORS.amd) vendorName = 'amd';
+          else if (vendor === GPU_PCI_VENDORS.nvidia) vendorName = 'nvidia';
+          if (!vendorName) continue;
+          let slot = '';
+          try {
+            const uevent = await fs.readFile(path.join(deviceDir, 'uevent'), 'utf-8');
+            slot = uevent.match(/PCI_SLOT_NAME=(\S+)/)?.[1] ?? '';
+          } catch { /* uevent 不可读：slot 留空回落通用名 */ }
+          cards.push({ index: Number(m[1]), vendorName, deviceDir, slot });
+        } catch { /* 非 GPU 卡/不可读 */ }
+      }
+    } catch { /* DRM sysfs 不可用：空 */ }
+    cards.sort((a, b) => a.index - b.index);
+    return cards;
+  }
+
+  /**
+   * 按厂商解析 DRI 节点：sysfs 卡片匹配厂商后取对应 /dev/dri/card<N>。
+   * 混装环境（核显 card0 + 独显 card1）下各厂商实例拖出路径指向**自己的**
+   * 节点——旧实现恒取首个 card*（本机恰好是核显节点，AMD 实例拖出路径
+   * 指错）。无匹配（e2e 沙箱/无 sysfs）回落旧行为（首个 card* → renderD*）。
+   */
+  const driNodeCacheByVendor = new Map<string, string | null>();
+  async function resolveVendorDriNode(vendorName: DrmCardInfo['vendorName']): Promise<string | null> {
+    const cached = driNodeCacheByVendor.get(vendorName);
+    if (cached !== undefined) return cached;
+    let node: string | null = null;
+    if (!process.env.HOSHINEKO_E2E_DRI_DIR) {
+      const cards = await listDrmCards();
+      const match = cards.find((c) => c.vendorName === vendorName);
+      if (match) {
+        const p = path.join('/dev/dri', `card${match.index}`);
+        try {
+          await fs.access(p);
+          node = p;
+        } catch { /* 节点缺失回落 */ }
+      }
+    }
+    node = node ?? await resolveDriNode();
+    driNodeCacheByVendor.set(vendorName, node);
+    return node;
+  }
+
+  /** lspci -s 查询设备显示名（如「Intel Corporation Panther Lake
+   *  [Intel Graphics]」）；工具/设备缺失回 null（调用方回落通用名）。
+   *  输出形如 `00:02.0 VGA compatible controller: <厂商> <型号>`——
+   *  槽位自身含冒号，须剥掉「槽位 + 类别」整段（首个非空 token 之后、
+   *  类别冒号之前的部分），不能按首个冒号切。 */
+  async function lspciDeviceName(slot: string): Promise<string | null> {
+    try {
+      const { stdout } = await execFileAsync('lspci', ['-s', slot], { timeout: 3000 });
+      const m = /^\S+\s+[^:]+:\s*(.+)$/.exec(stdout.trim());
+      return m ? m[1].trim() : null;
+    } catch { return null; }
+  }
+
+  /** NVIDIA 枚举（nvidia-smi 工具驱动，营销名准确；沿用旧实现） */
+  async function listNvidiaGpuObjects(tool: string): Promise<ObjectInstance[]> {
+    const { stdout } = await execFileAsync(
+      gpuToolPath(tool),
+      ['--query-gpu=index,name', '--format=csv,noheader,nounits'],
+      { timeout: 5000, maxBuffer: 1024 * 1024 },
+    );
+    const dri = await resolveVendorDriNode('nvidia');
+    const instances: ObjectInstance[] = [];
+    for (const line of stdout.split('\n')) {
+      const m = /^\s*(\d+)\s*,\s*(.+?)\s*$/.exec(line.trim());
+      if (!m) continue;
+      instances.push({
+        id: `nvidia-${m[1]}`,
+        name: m[2].trim(),
+        subtitle: 'NVIDIA',
         kind: 'gpu',
         icon: 'developer_board',
         ...(dri ? { nativePath: dri, nativeIsDir: false } : {}),
       });
-      if (det.vendor === 'nvidia') {
-        const { stdout } = await execFileAsync(
-          gpuToolPath(det.tool),
-          ['--query-gpu=index,name', '--format=csv,noheader,nounits'],
-          { timeout: 5000, maxBuffer: 1024 * 1024 },
-        );
-        const instances: ObjectInstance[] = [];
-        for (const line of stdout.split('\n')) {
-          const m = /^\s*(\d+)\s*,\s*(.+?)\s*$/.exec(line.trim());
-          if (!m) continue;
-          instances.push(gpuNative(`nvidia-${m[1]}`, m[2].trim(), 'NVIDIA'));
-        }
-        return instances;
+    }
+    return instances;
+  }
+
+  /** AMD 枚举（rocm-smi 工具驱动；--showid 多行去重逻辑见 106 修复） */
+  async function listAmdGpuObjects(tool: string): Promise<ObjectInstance[]> {
+    const { stdout } = await execFileAsync(gpuToolPath(tool), ['--showid'], { timeout: 5000, maxBuffer: 1024 * 1024 });
+    // --showid 对**每块 GPU 打印多行**（Device Name / Device ID /
+    // Device Rev / Subsystem ID / GUID，实测每行都带 GPU[n] 前缀）——
+    // 逐行正则会为同一块卡生成多个幽灵条目（实测 5 个相同 AMDGPU）。
+    // 按索引归组去重：Device Name 行取营销名（如 AMD Radeon RX 7600M XT），
+    // 无该行的旧版输出（如 WSUX: 标识行）回落通用名。
+    const byIndex = new Map<string, string | null>();
+    for (const line of stdout.split('\n')) {
+      const m = /GPU\[(\d+)\]/i.exec(line);
+      if (!m) continue;
+      const nameMatch = /Device Name\s*:\s*(.+)$/i.exec(line);
+      if (nameMatch) {
+        byIndex.set(m[1], nameMatch[1].trim());
+      } else if (!byIndex.has(m[1])) {
+        byIndex.set(m[1], null);
       }
-      if (det.vendor === 'amd') {
-        const { stdout } = await execFileAsync(gpuToolPath(det.tool), ['--showid'], { timeout: 5000, maxBuffer: 1024 * 1024 });
-        const instances: ObjectInstance[] = [];
-        for (const line of stdout.split('\n')) {
-          const m = /GPU\[(\d+)\]/i.exec(line);
-          if (!m) continue;
-          instances.push(gpuNative(`amd-${m[1]}`, `AMD GPU ${m[1]}`, 'AMD'));
-        }
-        return instances;
+    }
+    const dri = await resolveVendorDriNode('amd');
+    return [...byIndex.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+      .map(([idx, name]) => ({
+        id: `amd-${idx}`,
+        name: name ?? `AMD GPU ${idx}`,
+        subtitle: 'AMD',
+        kind: 'gpu',
+        icon: 'developer_board',
+        ...(dri ? { nativePath: dri, nativeIsDir: false } : {}),
+      }));
+  }
+
+  /** Intel 核显枚举（sysfs 卡片 + lspci 命名；工具无关——没有独显/
+   *  没有任何 vendor 工具时核显仍显示；intel_gpu_top 是常驻监控工具
+   *  无枚举输出且读数需 root，不适合做枚举源） */
+  async function listIntelGpuObjects(): Promise<ObjectInstance[]> {
+    const cards = await listDrmCards();
+    const instances: ObjectInstance[] = [];
+    for (const card of cards.filter((c) => c.vendorName === 'intel')) {
+      const name = (card.slot ? await lspciDeviceName(card.slot) : null) ?? `Intel GPU ${card.index}`;
+      const node = path.join('/dev/dri', `card${card.index}`);
+      let nativePath: string | undefined;
+      try {
+        await fs.access(node);
+        nativePath = node;
+      } catch { /* 节点缺失：无原生拖出路径 */ }
+      instances.push({
+        id: `intel-${card.index}`,
+        name,
+        subtitle: 'Intel',
+        kind: 'gpu',
+        icon: 'developer_board',
+        ...(nativePath ? { nativePath, nativeIsDir: false } : {}),
+      });
+    }
+    return instances;
+  }
+
+  /**
+   * 枚举 GPU 类对象（多厂商合并）：NVIDIA/AMD 由 vendor 工具驱动（营销名
+   * 准确、读数可用），Intel 核显由 sysfs 卡片枚举（工具无关）。解析失败/
+   * 工具挂起（execFile timeout 杀进程）回空数组，不崩；空类由根页隐藏
+   * 天然兜底。
+   */
+  async function listGpuObjects(): Promise<ObjectInstance[]> {
+    try {
+      const instances: ObjectInstance[] = [];
+      const det = await detectGpuTool();
+      if (det) {
+        if (det.vendor === 'nvidia') instances.push(...await listNvidiaGpuObjects(det.tool));
+        if (det.vendor === 'amd') instances.push(...await listAmdGpuObjects(det.tool));
       }
-      // intel：intel_gpu_top 无可解析的一次性枚举输出——检测到工具即单实例
-      return [gpuNative('intel-0', 'Intel GPU', 'Intel')];
+      instances.push(...await listIntelGpuObjects());
+      return instances;
     } catch {
       return [];
     }
   }
 
+  /**
+   * 解析 gputop 一次性输出帧的总利用率：gputop 是 ncurses TUI（管道捕获
+   * 为空），帧按「DRM minor N」分段——card<N> 的视图是 minor N（card 节点）
+   * 与 minor 128+N（renderD 节点）两段，行不重复，全部行引擎百分比求和
+   * 即总 GPU 占用（钳 100、1 位小数）。无匹配行回 null。
+   */
+  function parseGputopBusy(raw: string, idx: number): number | null {
+    // ANSI 序列经字符码常量拼接（正则字面量里 \x1b 会触发 no-control-regex）
+    const ESC = String.fromCharCode(27);
+    const clean = raw
+      .replace(new RegExp(`${ESC}\\[[0-9;?]*[A-Za-z]`, 'g'), '')
+      .replace(new RegExp(`${ESC}[()][A-Za-z0-9]*`, 'g'), '');
+    const sections = clean.split(/DRM minor\s+(\d+)/);
+    let sum = 0;
+    let any = false;
+    for (let i = 1; i + 1 < sections.length; i += 2) {
+      const minor = Number(sections[i]);
+      if (minor !== idx && minor !== 128 + idx) continue;
+      const re = /(\d+(?:\.\d+)?)%/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(sections[i + 1])) !== null) {
+        sum += Number(m[1]);
+        any = true;
+      }
+    }
+    if (!any) return null;
+    return Math.min(100, Math.round(sum * 10) / 10);
+  }
+
+  /**
+   * gputop 路径探测（xe 核显专用工具）：`HOSHINEKO_E2E_GPU_TOOLS`
+   * 沙箱时取 `<dir>/gputop`（与其余 GPU 工具同款覆盖），否则 command -v
+   * 走 PATH。xe 驱动机器上 intel_gpu_top 直接报「Detected Xe device which
+   * is not supported」退出 1——gputop 才是可用的读数源（免 root）。
+   * 缓存仅在无沙箱 env 时生效（e2e 按 run 切换工具目录，负缓存会锁死
+   * 前一次结果）；沙箱模式每次现解析。
+   */
+  let gputopPathCache: string | null | undefined;
+  async function resolveGputopPath(): Promise<string | null> {
+    const sandboxed = !!process.env.HOSHINEKO_E2E_GPU_TOOLS;
+    if (!sandboxed && gputopPathCache !== undefined) return gputopPathCache;
+    let found: string | null = null;
+    try {
+      const { stdout } = await execFileAsync('sh', ['-c', `command -v ${gpuToolPath('gputop')}`], { timeout: 3000 });
+      const p = stdout.trim();
+      if (p) found = p;
+    } catch { /* 未安装 */ }
+    if (!sandboxed) gputopPathCache = found;
+    return found;
+  }
+
+  /**
+   * 经 node-pty 起一次性 gputop 会话（-d 采样间隔、-n 1）读取核显总
+   * 利用率。TUI 输出只走 PTY——管道捕获为空。3s 未退出即杀进程回 null；
+   * 解析失败（无行/工具拒绝）回 null，由上层回落下一读数源。
+   */
+  async function readGputopBusy(idx: number): Promise<number | null> {
+    const gputop = await resolveGputopPath();
+    if (!gputop) return null;
+    return await new Promise<number | null>((resolve) => {
+      let p: pty.IPty | null = null;
+      let settled = false;
+      let out = '';
+      const finish = (v: number | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(v);
+      };
+      const timer = setTimeout(() => {
+        try { p?.kill(); } catch { /* 已退出 */ }
+        finish(null);
+      }, 3000);
+      try {
+        p = pty.spawn(gputop, ['-d', '0.4', '-n', '1'], {
+          name: 'xterm-256color',
+          cols: 200,
+          rows: 200,
+          env: process.env as Record<string, string>,
+        });
+      } catch {
+        finish(null);
+        return;
+      }
+      p.onData((d) => { out += d; });
+      p.onExit(() => finish(parseGputopBusy(out, idx)));
+    });
+  }
+
+  /**
+   * 读取 Intel 核显读数（工具无关）：利用率依次回落——sysfs
+   * `gpu_busy_percent`（i915 内核 6.6+ 免 root）→ gputop（xe 核显，
+   * 免 root）→ intel_gpu_top（i915 常驻流式 JSON，需 root）——全部
+   * 失败回 null 字段「—」，不整体判失败。温度：device 下 hwmon 的
+   * temp1_input → /sys/class/hwmon 全局扫描（i915/xe 芯片名）回落——
+   * xe 驱动不注册 device/hwmon 且部分平台芯片挂全局表（本机 Panther
+   * Lake 实测两处皆无，温度回 null 由前端显示「—」）。返回 null 仅当
+   * 卡片已不存在（陈旧 id）。
+   */
+  async function readIntelGpuReading(idx: number): Promise<ObjectReading | null> {
+    const cards = await listDrmCards();
+    const card = cards.find((c) => c.vendorName === 'intel' && c.index === idx);
+    if (!card) return null;
+    let utilizationPct: number | null = null;
+    try {
+      const raw = (await fs.readFile(path.join(card.deviceDir, 'gpu_busy_percent'), 'utf-8')).trim();
+      const v = Number(raw);
+      if (Number.isFinite(v)) utilizationPct = v;
+    } catch { /* 无 sysfs busy 节点：回落工具 */ }
+    if (utilizationPct === null) {
+      utilizationPct = await readGputopBusy(idx);
+    }
+    if (utilizationPct === null) {
+      let stdout: string;
+      try {
+        ({ stdout } = await execFileAsync(
+          gpuToolPath('intel_gpu_top'),
+          ['-J', '-s', '250', '-o', '-'],
+          { timeout: 1500, maxBuffer: 1024 * 1024 },
+        ));
+      } catch (e) {
+        stdout = String((e as { stdout?: string })?.stdout ?? '');
+      }
+      const busy = /"busy":\s*(\d+(?:\.\d+)?)/.exec(stdout);
+      utilizationPct = busy ? Number(busy[1]) : null;
+    }
+    let tempC: number | null = null;
+    try {
+      const hwmons = (await fs.readdir(path.join(card.deviceDir, 'hwmon'))).filter((d) => d.startsWith('hwmon'));
+      for (const h of hwmons) {
+        try {
+          const raw = (await fs.readFile(path.join(card.deviceDir, 'hwmon', h, 'temp1_input'), 'utf-8')).trim();
+          const mC = Number(raw);
+          if (Number.isFinite(mC)) {
+            tempC = Math.round(mC / 1000);
+            break;
+          }
+        } catch { /* 下一个 hwmon */ }
+      }
+    } catch { /* 无 hwmon：回落全局扫描 */ }
+    if (tempC === null) {
+      tempC = await readHwmonChipTemp(['i915', 'xe']);
+    }
+    return { kind: 'gpu', vendor: 'intel', utilizationPct, memUsedBytes: null, memTotalBytes: null, tempC };
+  }
+
+  /**
+   * 从 /sys/class/hwmon 全局扫描指定芯片名读 temp1_input（毫摄氏度 →
+   * °C，取首个有效值）。Intel 核显温度回落源：i915/xe 芯片在部分平台
+   * 未挂到 device/hwmon 下（xe 通常两处皆无——回 null 由前端显示「—」）。
+   * `HOSHINEKO_E2E_HWMON_DIR` 沙箱覆盖（e2e 防依赖真实传感器布局）。
+   */
+  async function readHwmonChipTemp(names: string[]): Promise<number | null> {
+    const root = process.env.HOSHINEKO_E2E_HWMON_DIR ?? path.join(getSysfsRoot(), 'class', 'hwmon');
+    try {
+      const entries = await fs.readdir(root);
+      for (const e of entries) {
+        if (!e.startsWith('hwmon')) continue;
+        try {
+          const name = (await fs.readFile(path.join(root, e, 'name'), 'utf-8')).trim();
+          if (!names.includes(name)) continue;
+          const raw = (await fs.readFile(path.join(root, e, 'temp1_input'), 'utf-8')).trim();
+          const mC = Number(raw);
+          if (Number.isFinite(mC)) return Math.round(mC / 1000);
+        } catch { /* 下一个芯片 */ }
+      }
+    } catch { /* hwmon 目录不可用：null */ }
+    return null;
+  }
+
   /** 读取 GPU 实例读数（利用率/显存/温度）。三厂商工具输出形态差异大，
-   *  尽力而为解析，字段失败回 null（「—」）；intel 工具为常驻流式输出，
-   *  靠 execFile timeout 杀掉后从缓冲里取首个 JSON——失败回 null 字段。 */
+   *  尽力而为解析，字段失败回 null（「—」）。 */
   async function readGpuReading(instanceId: string): Promise<ObjectReading | null> {
     if (!/^[A-Za-z0-9-]+$/.test(instanceId)) return null;
     const dash = instanceId.indexOf('-');
@@ -2929,6 +3328,9 @@ export function registerSystemHandlers(
       return Number.isFinite(v) ? v : null;
     };
     try {
+      // Intel 工具无关（sysfs + intel_gpu_top 回落）——核显在无 vendor
+      // 工具的环境也必须可读（字段回落 null 而非整体失败）
+      if (vendor === 'intel') return await readIntelGpuReading(idx);
       const det = await detectGpuTool();
       if (!det || det.vendor !== vendor) return null;
       if (vendor === 'nvidia') {
@@ -2950,13 +3352,17 @@ export function registerSystemHandlers(
         };
       }
       if (vendor === 'amd') {
+        // 设备选择必须用 -d <索引>：rocm-smi 里 -i/--showid 是布尔标志，
+        // `-i 0` 会被 argparse 拒收（unrecognized arguments）非零退出，
+        // 全部实例「无法读取」。
         const { stdout } = await execFileAsync(
           gpuToolPath(det.tool),
-          ['--showuse', '--showtemp', '-i', String(idx)],
+          ['--showuse', '--showtemp', '-d', String(idx)],
           { timeout: 5000, maxBuffer: 1024 * 1024 },
         );
         const utilMatch = /GPU use\s*\(%\)\s*:\s*(\d+(?:\.\d+)?)/i.exec(stdout);
-        const tempMatch = /Temperature\s*\(Sensor junction\)\s*\(C\)\s*:\s*(\d+(?:\.\d+)?)/i.exec(stdout);
+        const tempMatch = /Temperature\s*\(Sensor junction\)\s*\(C\)\s*:\s*(\d+(?:\.\d+)?)/i.exec(stdout)
+          ?? /Temperature\s*\(Sensor edge\)\s*\(C\)\s*:\s*(\d+(?:\.\d+)?)/i.exec(stdout);
         return {
           kind: 'gpu',
           vendor: 'amd',
@@ -2966,20 +3372,7 @@ export function registerSystemHandlers(
           tempC: tempMatch ? Number(tempMatch[1]) : null,
         };
       }
-      // intel：intel_gpu_top -J 持续输出 JSON——execFile timeout 杀进程后
-      // 从 error.stdout 取缓冲的首个 JSON 块解析 busy 百分比
-      let stdout = '';
-      try {
-        ({ stdout } = await execFileAsync(
-          gpuToolPath(det.tool),
-          ['-J', '-s', '250', '-o', '-'],
-          { timeout: 1500, maxBuffer: 1024 * 1024 },
-        ));
-      } catch (e) {
-        stdout = String((e as { stdout?: string })?.stdout ?? '');
-      }
-      const busy = /"busy":\s*(\d+(?:\.\d+)?)/.exec(stdout);
-      return { kind: 'gpu', vendor: 'intel', utilizationPct: busy ? Number(busy[1]) : null, memUsedBytes: null, memTotalBytes: null, tempC: null };
+      return null;
     } catch {
       return null;
     }
@@ -3921,27 +4314,32 @@ export function registerSystemHandlers(
     }
   });
 
-  // ── 搜索历史（文件/对象；数据非设置，落盘 ~/.config/HoshinekoFM） ──
+  // ── 搜索历史（文件/对象/设置；数据非设置，落盘 ~/.config/HoshinekoFM） ──
+  //   三种历史**分开存储**（search-history-{file,object,settings}.json）——
+  //   设置搜索历史与对象/文件互不混入（用户定案）
 
   /** 单条历史上限（各 100 条；UI 展示条数由设置 searchRecentCount 控制） */
   const SEARCH_HISTORY_MAX = 100;
+
+  /** 搜索历史种类（file = {dir,query} 对；object/settings = 词条串数组） */
+  type SearchHistoryKind = 'file' | 'object' | 'settings';
 
   /** 搜索历史落盘目录（`HOSHINEKO_E2E_CONFIG_DIR` 沙箱覆盖——e2e 防写真实配置） */
   function searchHistoryDir(): string {
     return process.env.HOSHINEKO_E2E_CONFIG_DIR || path.join(os.homedir(), '.config', 'HoshinekoFM');
   }
-  function searchHistoryFile(kind: 'file' | 'object'): string {
+  function searchHistoryFile(kind: SearchHistoryKind): string {
     return path.join(searchHistoryDir(), `search-history-${kind}.json`);
   }
 
   /** 读取搜索历史（损坏/缺失回空数组；逐条校验形态 + 截断上限） */
   ipcMain.handle('system:load-search-history', async (_event, kind: unknown) => {
-    if (kind !== 'file' && kind !== 'object') return [];
+    if (kind !== 'file' && kind !== 'object' && kind !== 'settings') return [];
     try {
       const raw = await fs.readFile(searchHistoryFile(kind), 'utf-8');
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
-      if (kind === 'object') {
+      if (kind !== 'file') {
         return parsed.filter((x): x is string => typeof x === 'string' && !!x).slice(0, SEARCH_HISTORY_MAX);
       }
       return parsed
@@ -3955,13 +4353,13 @@ export function registerSystemHandlers(
 
   /** 保存搜索历史（原子写：临时文件 + rename；逐条校验 + 截断上限） */
   ipcMain.handle('system:save-search-history', async (_event, kind: unknown, entries: unknown) => {
-    if (kind !== 'file' && kind !== 'object') return { ok: false, error: 'INVALID_KIND' };
-    const list = kind === 'object'
-      ? (Array.isArray(entries) ? entries.filter((x): x is string => typeof x === 'string' && !!x).slice(0, SEARCH_HISTORY_MAX) : [])
-      : (Array.isArray(entries)
+    if (kind !== 'file' && kind !== 'object' && kind !== 'settings') return { ok: false, error: 'INVALID_KIND' };
+    const list = kind === 'file'
+      ? (Array.isArray(entries)
         ? entries.filter((x): x is { dir: string; query: string } =>
           !!x && typeof x === 'object' && typeof x.dir === 'string' && typeof x.query === 'string' && !!x.query).slice(0, SEARCH_HISTORY_MAX)
-        : []);
+        : [])
+      : (Array.isArray(entries) ? entries.filter((x): x is string => typeof x === 'string' && !!x).slice(0, SEARCH_HISTORY_MAX) : []);
     try {
       const file = searchHistoryFile(kind);
       await fs.mkdir(path.dirname(file), { recursive: true });

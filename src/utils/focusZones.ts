@@ -15,6 +15,7 @@ export type KeyboardZoneId =
   | 'topbar-up'
   | 'topbar-omnibar'
   | 'object-recent'
+  | 'settings-recent'
   | 'objects'
   | 'object-sortbar'
   | 'object-batch'
@@ -69,6 +70,7 @@ const ZONE_ORDER: KeyboardZoneId[] = [
   'topbar-up',
   'topbar-omnibar',
   'object-recent',
+  'settings-recent',
   'object-sortbar',
   'object-batch',
   'object-batch-slider',
@@ -167,9 +169,10 @@ export function trackKeyboardZoneFocus(el: Element | null): void {
   if (!el || typeof el.closest !== 'function') return;
   const zoneEl = el.closest('[data-kb-zone]');
   let id = (zoneEl?.getAttribute('data-kb-zone') ?? '') as KeyboardZoneId;
-  // 搜索态第二循环：文件区/对象面板容器的 DOM 分区标记仍是 files/objects
-  // ——映射为 search-results 站，保证循环推进不脱轨（review 19）
-  if (cycleMode === 'search' && (id === 'files' || id === 'objects')) {
+  // 搜索态第二循环：文件区/对象面板/设置页容器的 DOM 分区标记仍是
+  // files/objects/settings——映射为 search-results 站，保证循环推进不
+  // 脱轨（review 19；settings 为设置搜索同款，设置搜索轮加入）
+  if (cycleMode === 'search' && (id === 'files' || id === 'objects' || id === 'settings')) {
     id = 'search-results';
   }
   if (ZONE_ORDER.includes(id) || SEARCH_ZONE_ORDER.includes(id)) {
@@ -193,10 +196,10 @@ export function focusNextKeyboardZone(dir: 1 | -1, steps: number = 1): boolean {
   const cur = zones.find((z) => z.id === currentZoneId);
   const activeEl = document.activeElement as Element | null;
   let focusedZone = activeEl?.closest?.('[data-kb-zone]')?.getAttribute('data-kb-zone');
-  // 与 trackKeyboardZoneFocus 同款映射：搜索态 files/objects 容器按
-  // search-results 站计（否则「先落到当前分区」分支在 files 与
+  // 与 trackKeyboardZoneFocus 同款映射：搜索态 files/objects/settings
+  // 容器按 search-results 站计（否则「先落到当前分区」分支在 files 与
   // search-results 间死循环）
-  if (cycleMode === 'search' && (focusedZone === 'files' || focusedZone === 'objects')) {
+  if (cycleMode === 'search' && (focusedZone === 'files' || focusedZone === 'objects' || focusedZone === 'settings')) {
     focusedZone = 'search-results';
   }
   // 焦点不在当前分区内（首次 Tab）：先落到当前分区（默认 files）

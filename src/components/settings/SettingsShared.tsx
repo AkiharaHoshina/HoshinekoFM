@@ -26,6 +26,12 @@ interface SettingsRowProps {
   label: React.ReactNode;
   /** 副标题（可换行） */
   sub?: React.ReactNode;
+  /**
+   * 设置搜索索引行 id（settingsSearchIndex 的 rowId 同值——两处登记
+   * 约定）：挂在 data-settings-row 上，搜索命中点击深链接
+   * （settings://<cat>?focus=<rowId>）滚动高亮定位用。
+   */
+  rowId?: string;
   /** 整行点击（开关行用；按钮行右侧按钮自带 onClick） */
   onClick?: () => void;
   /** 无原生控件的行（色点/导航行）键盘激活用 */
@@ -37,9 +43,9 @@ interface SettingsRowProps {
 
 /** 通用设置行：左侧图标 + 标签（+副标题），右侧任意控件 */
 export const SettingsRow: React.FC<SettingsRowProps> = ({
-  icon, iconFilled, label, sub, onClick, onKeyDown, role, tabIndex, children,
+  icon, iconFilled, label, sub, rowId, onClick, onKeyDown, role, tabIndex, children,
 }) => (
-  <div className="settings-row" onClick={onClick} onKeyDown={onKeyDown} role={role} tabIndex={tabIndex}>
+  <div className="settings-row" data-settings-row={rowId} onClick={onClick} onKeyDown={onKeyDown} role={role} tabIndex={tabIndex}>
     <div className="settings-row__start">
       {icon && <Icon name={icon} filled={iconFilled} />}
       <div className="settings-row__label-col">
@@ -55,16 +61,19 @@ interface SettingsSwitchRowProps {
   icon?: string;
   label: string;
   sub?: React.ReactNode;
+  /** 设置搜索索引行 id（SettingsRow.rowId 透传——两处登记约定） */
+  rowId?: string;
   value: boolean;
   onChange: (v: boolean) => void;
 }
 
 /** 双态开关行：整行点击切换（立即生效） */
-export const SettingsSwitchRow: React.FC<SettingsSwitchRowProps> = ({ icon, label, sub, value, onChange }) => (
+export const SettingsSwitchRow: React.FC<SettingsSwitchRowProps> = ({ icon, label, sub, rowId, value, onChange }) => (
   <SettingsRow
     icon={icon}
     label={label}
     sub={sub}
+    rowId={rowId}
     onClick={() => onChange(!value)}
   >
     <Switch selected={value} onClick={() => onChange(!value)} />
@@ -74,6 +83,8 @@ export const SettingsSwitchRow: React.FC<SettingsSwitchRowProps> = ({ icon, labe
 interface ThreeStateSwitchRowProps {
   icon?: string;
   label: string;
+  /** 设置搜索索引行 id（SettingsRow.rowId 透传——两处登记约定） */
+  rowId?: string;
   /** null = 跟随系统（显示生效值）、true/false = 手动 */
   value: boolean | null;
   /** 跟随系统时的生效值（检测结果） */
@@ -94,7 +105,7 @@ interface ThreeStateSwitchRowProps {
  * 见 docs/跟随系统设置项目逻辑.md。
  */
 export const ThreeStateSwitchRow: React.FC<ThreeStateSwitchRowProps> = ({
-  icon, label, value, effective, followSub, onChange,
+  icon, label, rowId, value, effective, followSub, onChange,
 }) => {
   const switchRef = useRef<MdSwitchElement | null>(null);
   useEffect(() => {
@@ -105,7 +116,7 @@ export const ThreeStateSwitchRow: React.FC<ThreeStateSwitchRowProps> = ({
     onChange(value === null ? !effective : !value);
   };
   return (
-    <div className="settings-row">
+    <div className="settings-row" data-settings-row={rowId}>
       <div className="settings-row__start">
         {icon && <Icon name={icon} />}
         <div className="settings-row__label-col">

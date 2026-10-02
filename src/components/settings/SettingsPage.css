@@ -407,3 +407,51 @@
 .settings-row > md-outlined-button + md-outlined-button {
   margin-left: 8px;
 }
+
+/* ── 设置搜索视图（settingssearch://，界面复用对象面板根页搜索样式） ── */
+
+/* 结果计数行（「全部设置 · N 项」） */
+.settings-search-count {
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  padding: 4px 8px;
+}
+
+/* 类内分区小标题（搜索命中按分区小标题分组） */
+.settings-search-section-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant);
+  padding: 8px 8px 2px 40px;
+}
+
+/* 搜索深链接目标行短暂高亮（settings://<cat>?focus=<rowId> 点击命中后；
+ *  命令式 classList 添加，2.6s 后移除） */
+.settings-row--search-focus,
+.settings-view-mode.settings-row--search-focus,
+.settings-icon-size.settings-row--search-focus {
+  background-color: color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent);
+  border-radius: 12px;
+}
+
+/* ── review 3.30：设置搜索命中行细节 ── */
+
+/* 命中行恒高（= 对象面板名称+副标题两行高：padding 8+8 + name 14px×1.5
+   + 主列 gap 2 + sub 12px×1.5 = 57px；全局 line-height 1.5）——无副标题
+   行以 min-height 撑高、align-items 居中（文本垂直居中，不再以空白占位
+   行顶对齐）；border-box 使 min-height 即总高（全局无 border-box） */
+.settings-page .object-search-hit {
+  box-sizing: border-box;
+  min-height: 57px;
+}
+
+/* 设置主页最近搜索行：与地址栏的空隙和对象面板完全一致——设置页顶栏
+   margin-bottom 归 0（review 29 预览吸顶），由行自身补 16px；行显示时
+   标题 padding 32 → 16（与对象面板 16/16 完全同构；无词条行时标题
+   保持 32px 不变）。行容器在 ExplorerTab 的 .settings-view-wrapper 内 */
+.settings-view-wrapper > .search-recent {
+  margin-top: 16px;
+}
+.settings-view-wrapper > .search-recent + .settings-page .object-panel-header {
+  padding-top: 16px;
+}

@@ -734,11 +734,22 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
    *  inst 为 null（类卡片）时不显示定位项） */
   const [rowMenu, setRowMenu] = useState<{ x: number; y: number; payload: ObjectDragPayload; openPath: string | null; inst: ObjectInstance | null } | null>(null);
 
+  /** 面板背景右键菜单（全部页面：根页/类页/实例页空白处）——只有「刷新」，
+   *  行为 = 刷新当前页面（根/类页 force 重枚举；实例页补一次即时读数）。
+   *  条目自身的右键菜单经 stopPropagation 不冒泡到此处。 */
+  const [bgMenu, setBgMenu] = useState<{ x: number; y: number } | null>(null);
+
   /** 打开对象右键菜单（实例行/类卡片/实例页头共用；inst 供定位项计算） */
   const openObjectRowMenu = useCallback((e: React.MouseEvent, payload: ObjectDragPayload, openPath: string | null, inst: ObjectInstance | null = null) => {
     e.preventDefault();
     e.stopPropagation();
     setRowMenu({ x: e.clientX, y: e.clientY, payload, openPath, inst });
+  }, []);
+
+  /** 打开面板背景右键菜单（容器级；条目菜单 stopPropagation 不会到达） */
+  const openBgMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setBgMenu({ x: e.clientX, y: e.clientY });
   }, []);
 
   /**
@@ -896,6 +907,63 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     () => (parsed?.instanceId ? currentClass?.instances.find((i) => i.id === parsed.instanceId) ?? null : null),
     [currentClass, parsed],
   );
+
+  /**
+   * 实例不存在（陈旧 url——如 GPU 类打开不存在的实例 id、进程退出后
+   * 轮询把实例摘掉）：界面已渲染回落类页，但 currentPath 仍是带实例
+   * 段的旧地址（地址栏虚拟地址不刷新，review 3.30 修复）——枚举落定
+   * （classes/currentClass 就绪）且实例确缺失时把路径归一为类页路径
+   * （onNavigate → loadPath → 地址栏/标签页标题同步刷新）。守卫 ref
+   * 按 className:instanceId 记录已归一目标，防在途导航期间重复触发；
+   * 枚举加载中（classes === null）不判定为缺失。
+   */
+  const instanceFallbackRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!parsed?.instanceId || classes === null || currentClass === null || currentInstance) return;
+    const key = `${parsed.className}:${parsed.instanceId}`;
+    if (instanceFallbackRef.current === key) return;
+    instanceFallbackRef.current = key;
+    // **延后到下一任务**（setTimeout 0）：子组件 effect 先于父组件
+    // ExplorerTab 的 initialPath effect 运行——若在此同步 loadPath，
+    // loadingPathRef 被改成类页路径后，父 effect 仍读到本 commit 的旧
+    // initialPath（带实例段的 url）→ 判定「外部导航在途」把旧路径加载
+    // 回来，归一被回滚（review 3.30 实测）。延后后父 effect 先以一致的
+    // 旧值通过，下一任务再归一，无回滚窗口。
+    const target = buildObjectsPath(parsed.className);
+    setTimeout(() => onNavigate(target), 0);
+  }, [parsed, classes, currentClass, currentInstance, onNavigate]);
+
+  /**
+   * 背景右键「刷新当前页面」执行体：根/类页 force 重枚举（绕过后端
+   * 3s TTL 缓存）；实例页额外补一次即时读数（暂停刷新时也可手动拉，
+   * 不动 readingPaused 状态）。tty 实例走流式通道，跳过即时读。
+   */
+  const refreshCurrentPage = useCallback(() => {
+    setBgMenu(null);
+    void reloadObjects(true);
+    if (parsed?.instanceId && currentInstance && currentInstance.kind !== 'tty') {
+      void window.electron.readObject(parsed.className ?? '', parsed.instanceId)
+        .then((r) => {
+          setReading(r);
+          setReadFailCount((c) => (r ? 0 : c + 1));
+        })
+        .catch(() => { /* 手动刷新失败：轮询仍为真相源 */ });
+    }
+  }, [parsed, currentInstance, reloadObjects]);
+
+  /** 面板背景右键菜单节点（仅「刷新」一项） */
+  const bgMenuNode = bgMenu ? (
+    <ContextMenu
+      x={bgMenu.x}
+      y={bgMenu.y}
+      items={[{
+        label: t('objects.refresh'),
+        icon: 'refresh',
+        action: refreshCurrentPage,
+      }]}
+      onClose={() => setBgMenu(null)}
+    />
+  ) : null;
 
   /** 实例页读数轮询：可见才跑（组件只在 objects:// 视图渲染）、可暂停；
    *  cpu/memory/process/network 1s、存储/thermal/backlight/power 2s；
@@ -1854,12 +1922,13 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
               <span className="object-reading-value">{formatBytes(reading.memUsedBytes)} / {formatBytes(reading.memTotalBytes)}</span>
             </div>
           )}
-          {reading.tempC !== null && (
-            <div className="object-reading-row">
-              <span className="object-reading-label">{t('objects.gpu_temp')}</span>
-              <span className="object-reading-value">{reading.tempC}°C</span>
-            </div>
-          )}
+          {/* review 3.30：温度行恒渲染（tempC null 显示「—」）——此前整行
+              隐藏，核显无温度源（xe 驱动不暴露 hwmon）时「不显示温度」
+              误导为功能坏了；与利用率行同款语义 */}
+          <div className="object-reading-row">
+            <span className="object-reading-label">{t('objects.gpu_temp')}</span>
+            <span className="object-reading-value">{reading.tempC !== null ? `${reading.tempC}°C` : '—'}</span>
+          </div>
         </div>
       );
     }
@@ -2778,7 +2847,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
       : groupedHits;
     const visibleHitCount = visibleGroupedHits.reduce((n, g) => n + g.insts.length, 0);
     return (
-      <div className="object-panel" data-kb-zone="objects">
+      <div className="object-panel" data-kb-zone="objects" onContextMenu={openBgMenu}>
         <div className="object-panel-header">
           <Icon name="widgets" className="object-panel-header-icon" />
           <div className="object-panel-title">{t('objects.title')}</div>
@@ -2895,6 +2964,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
           </>
         )}
         {rowMenuNode}
+        {bgMenuNode}
       </div>
     );
   }
@@ -2904,7 +2974,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     const inst = currentInstance;
     const isPolled = inst.kind !== 'tty';
     return (
-      <div className="object-panel" data-kb-zone="objects" onKeyDown={handleDetailNavKey}>
+      <div className="object-panel" data-kb-zone="objects" onKeyDown={handleDetailNavKey} onContextMenu={openBgMenu}>
         <div
           className="object-panel-header"
           tabIndex={-1}
@@ -2944,6 +3014,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
           {inst.kind === 'network' ? renderNetworkActions(inst) : null}
         </div>
         {rowMenuNode}
+        {bgMenuNode}
       </div>
     );
   }
@@ -2987,7 +3058,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
     return !!el?.closest?.('.object-row, md-text-button, md-outlined-button, md-tonal-button, md-filled-button, md-icon-button, md-outlined-text-field');
   };
   return (
-    <div className={`object-panel${isProcessClass ? ' object-panel--virtual' : ''}`} data-kb-zone="objects">
+    <div className={`object-panel${isProcessClass ? ' object-panel--virtual' : ''}`} data-kb-zone="objects" onContextMenu={openBgMenu}>
       <div className="object-panel-header">
         <Icon name={currentClass?.icon ?? 'widgets'} className="object-panel-header-icon" />
         <div className="object-panel-title">{t(OBJECTS_CLASS_LABEL[parsed?.className ?? ''] ?? 'objects.title')}</div>
@@ -3091,6 +3162,7 @@ export const ObjectPanel: React.FC<ObjectPanelProps> = ({
         </>
       )}
       {rowMenuNode}
+      {bgMenuNode}
     </div>
   );
 };

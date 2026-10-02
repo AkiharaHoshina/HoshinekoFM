@@ -69,11 +69,11 @@ export const FileSystemService = {
     return window.electron.getMountMap();
   },
 
-  async mountDevice(devicePath: string): Promise<{ success: boolean; mountpoint?: string; error?: string }> {
+  async mountDevice(devicePath: string): Promise<{ success: boolean; mountpoint?: string; error?: string; code?: string }> {
     return window.electron.mountDevice(devicePath);
   },
 
-  async unmountDevice(devicePath: string): Promise<{ success: boolean; error?: string }> {
+  async unmountDevice(devicePath: string): Promise<{ success: boolean; error?: string; code?: string }> {
     return window.electron.unmountDevice(devicePath);
   },
 

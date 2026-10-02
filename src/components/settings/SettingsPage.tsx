@@ -1,12 +1,18 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from '../Icon';
 import { t } from '../../i18n';
+import { ContextMenu } from '../ContextMenu';
+import type { ContextMenuItem } from '../ContextMenu';
 import {
   isSettingsPath,
   parseSettingsPath,
   SETTINGS_CATEGORIES,
+  settingsCategoryPath,
   type ParsedSettingsPath,
+  type SettingsPinPayload,
 } from '../../utils/settingsPath';
+import { isSettingsSearchPath, parseSettingsSearchPath } from '../../utils/settingsSearchPath';
+import { searchSettings, settingsSearchTotal } from './settingsSearchIndex';
 import { registerKeyboardZone, focusKeyboardTarget } from '../../utils/focusZones';
 import { gridNavIndex, type GridNavKey } from '../../utils/gridNav';
 import {
@@ -33,6 +39,9 @@ interface SettingsPageProps {
   isActive: boolean;
   /** 虚拟路径导航（分类卡片/主题二级页入口） */
   onNavigate: (p: string) => void;
+  /** 右键菜单固定分类到侧边栏/仪表盘（App pinSettingsItem 接线；
+   *  与对象投影/搜索 schema 固定项同款导航别名） */
+  onPinSettings?: (host: 'sidebar' | 'dashboard', payload: SettingsPinPayload) => void;
 }
 
 /** 分类页标题（根 = null；二级页 = 子页标题） */
@@ -44,6 +53,27 @@ function pageTitleOf(parsed: ParsedSettingsPath): string {
     if (subs) return subs;
   }
   return t(cat.labelKey);
+}
+
+/** 搜索命中关键词加亮（大小写不敏感、逐个匹配片段 <mark>——
+ *  对象面板 highlightMatch 同款） */
+function highlightMatch(text: string, q: string): React.ReactNode {
+  if (!q) return text;
+  const lower = text.toLowerCase();
+  const ql = q.toLowerCase();
+  const nodes: React.ReactNode[] = [];
+  let i = 0;
+  while (true) {
+    const idx = lower.indexOf(ql, i);
+    if (idx < 0) {
+      nodes.push(text.slice(i));
+      break;
+    }
+    if (idx > i) nodes.push(text.slice(i, idx));
+    nodes.push(<mark key={idx} className="object-search-mark">{text.slice(idx, idx + ql.length)}</mark>);
+    i = idx + ql.length;
+  }
+  return nodes;
 }
 
 /**
@@ -71,10 +101,71 @@ const PAGE_CONTROLS =
  *   行内循环）；其余控件按 DOM 序移动（滑条/下拉/文本域原生方向键
  *   语义放行不拦截）。每次移动后滚动跟随保证目标可见。
  */
-export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNavigate }) => {
+export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNavigate, onPinSettings }) => {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  const parsed = isSettingsPath(path) ? parseSettingsPath(path) : null;
+  /** 设置搜索虚拟路径（settingssearch://——搜索视图；与对象搜索同权） */
+  const searchParsed = isSettingsSearchPath(path) ? parseSettingsSearchPath(path) : null;
+  const parsed = !searchParsed && isSettingsPath(path) ? parseSettingsPath(path) : null;
+
+  /** 根页分类卡片右键菜单位置与目标（null = 关闭）——打开 / 固定到
+   *  侧边栏 / 固定到仪表盘 三项，与对象面板类卡片右键菜单同款。 */
+  const [cardMenu, setCardMenu] = useState<{ x: number; y: number; catId: string } | null>(null);
+
+  /** 打开分类卡片右键菜单（卡片级 onContextMenu，stopPropagation 与
+   *  面板背景菜单边界隔离——当前设置页无背景菜单，保留同款防御） */
+  const openCardMenu = useCallback((e: React.MouseEvent, catId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCardMenu({ x: e.clientX, y: e.clientY, catId });
+  }, []);
+
+  /** 分类卡片右键菜单节点：打开（导航到分类页）/ 固定到侧边栏 /
+   *  固定到仪表盘（载荷与固定项同款：path = settings://<cat>，
+   *  name = 本地化分类标题，icon = 卡片图标） */
+  const cardMenuNode = cardMenu ? (() => {
+    const cat = SETTINGS_CATEGORIES.find((c) => c.id === cardMenu.catId);
+    if (!cat) return null;
+    const payload: SettingsPinPayload = {
+      path: settingsCategoryPath(cat.id),
+      name: t(cat.labelKey),
+      icon: cat.icon,
+    };
+    const items: ContextMenuItem[] = [
+      {
+        label: t('context_menu.open'),
+        icon: 'open_in_new',
+        action: () => {
+          setCardMenu(null);
+          onNavigate(payload.path);
+        },
+      },
+      {
+        label: t('context_menu.pin_sidebar'),
+        icon: 'push_pin',
+        action: () => {
+          setCardMenu(null);
+          onPinSettings?.('sidebar', payload);
+        },
+      },
+      {
+        label: t('objects.pin_to_dashboard'),
+        icon: 'dashboard',
+        action: () => {
+          setCardMenu(null);
+          onPinSettings?.('dashboard', payload);
+        },
+      },
+    ];
+    return (
+      <ContextMenu
+        x={cardMenu.x}
+        y={cardMenu.y}
+        items={items}
+        onClose={() => setCardMenu(null)}
+      />
+    );
+  })() : null;
 
   /** 页内全部可聚焦控件（启用态；DOM 序） */
   const pageControls = useCallback((): HTMLElement[] => {
@@ -131,11 +222,88 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
     focusPageControl(el);
   }, [pageControls, focusPageControl]);
 
+  /** 设置搜索命中行 roving 焦点（search-results 站；与对象根页命中行
+   *  同源：当前或第一个 [data-settings-nav]——渲染期同步命令式回调） */
+  const searchResultsFocusRef = useRef<() => void>(() => {});
+  // eslint-disable-next-line react-hooks/refs -- 渲染期同步命令式回调（注册 effect 经 ref 读取最新闭包）
+  searchResultsFocusRef.current = () => {
+    const root = rootRef.current;
+    const items = root ? Array.from(root.querySelectorAll<HTMLElement>('[data-settings-nav]')) : [];
+    if (items.length === 0) return;
+    const active = document.activeElement as HTMLElement | null;
+    (active && items.includes(active) ? active : items[0]).focus();
+  };
+
+  /**
+   * 键盘站注册（与对象面板同款双站）：
+   * - 浏览态注册 `settings` 站（Tab 循环进站聚焦首控件/首卡）；
+   * - 搜索态（settingssearch://）注册 `search-results` 站（search 循环
+   *   第二循环搜索结果站——browse 模式 search-results 不在序内惰性、
+   *   search 模式 settings 不在序内惰性，互不干扰，review 19 同源）。
+   */
   useEffect(() => {
     if (!isActive) return;
-    const unreg = registerKeyboardZone({ id: 'settings', focus: focusSettingsZone });
-    return unreg;
-  }, [isActive, focusSettingsZone]);
+    if (searchParsed !== null) {
+      return registerKeyboardZone({ id: 'search-results', focus: () => searchResultsFocusRef.current() });
+    }
+    return registerKeyboardZone({ id: 'settings', focus: focusSettingsZone });
+  }, [isActive, searchParsed !== null, focusSettingsZone]); // eslint-disable-line react-hooks/exhaustive-deps -- 布尔判定（路径形态）为稳定性依赖，parse 结果仅其派生
+
+  /**
+   * 搜索命中行 roving 键盘（线性：分组列表按 DOM 序 ↑/↓/←/→ 循环）；
+   * Enter/Space 经 click 激活（div 无原生按键激活——对象面板同款，
+   * stopPropagation 防窗口级文件区 Enter 吃掉导航，review 19 实测同源坑）。
+   */
+  const handleSearchHitKey = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
+    const cur = e.currentTarget;
+    const root = rootRef.current;
+    if (!root) return;
+    const items = Array.from(root.querySelectorAll<HTMLElement>('[data-settings-nav]'));
+    const idx = items.indexOf(cur);
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (idx < 0) return;
+      const next = (e.key === 'ArrowDown' || e.key === 'ArrowRight')
+        ? (idx + 1) % items.length
+        : (idx - 1 + items.length) % items.length;
+      items[next]?.focus();
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      cur.click();
+    }
+  }, []);
+
+  /**
+   * 搜索深链接（settings://<cat>?focus=<rowId>）：滚动到目标行并短暂
+   * 高亮（`.settings-row--search-focus`，命令式 classList——React 不管理
+   * 该类的渲染，重渲染不覆盖；2.6s 后或路径变化时清除）。含吸顶预览
+   * 遮挡修正（与 focusPageControl 同款下滚）。
+   */
+  useEffect(() => {
+    if (!parsed?.focus) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const el = root.querySelector<HTMLElement>(`[data-settings-row="${CSS.escape(parsed.focus)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const fixed = root.querySelector<HTMLElement>('.settings-preview-fixed');
+    const sc = root.querySelector<HTMLElement>('.settings-page-scroll');
+    if (fixed && sc) {
+      const r = el.getBoundingClientRect();
+      const f = fixed.getBoundingClientRect();
+      const s = sc.getBoundingClientRect();
+      if (f.top <= s.top + 1 && r.top < f.bottom && r.bottom > f.top) {
+        sc.scrollTop += r.top - f.bottom - 8;
+      }
+    }
+    el.classList.add('settings-row--search-focus');
+    const timer = setTimeout(() => el.classList.remove('settings-row--search-focus'), 2600);
+    return () => {
+      clearTimeout(timer);
+      el.classList.remove('settings-row--search-focus');
+    };
+  }, [path]); // eslint-disable-line react-hooks/exhaustive-deps -- focus 随 path 变化，parsed 由其派生
 
   /** 页内键盘（容器级）：Tab/Shift+Tab 逐控件停靠、方向键移动落点 */
   const handlePageKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -186,7 +354,89 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
   }, [pageControls, focusPageControl]);
 
   // review 26：隐藏标签页不渲染（预览污染守卫，见 props 注释）
-  if (!isActive || !parsed) return null;
+  if (!isActive) return null;
+
+  // ── 设置搜索视图（settingssearch://——界面逻辑与对象面板根页搜索
+  //    同款：类 { 直属行 [小标题(行)] } + 关键词加亮；点击命中经
+  //    settings://<cat>?focus=<rowId> 深链接到分类页目标行） ──
+  if (searchParsed) {
+    const q = searchParsed.query;
+    const groups = searchSettings(q, searchParsed.cat);
+    const total = settingsSearchTotal(groups);
+    return (
+      <div className="settings-page" ref={rootRef} data-kb-zone="settings">
+        <div className="settings-page-scroll">
+          <div className="object-panel-header">
+            <Icon name="search" className="object-panel-header-icon" />
+            <div className="object-panel-title">{t('settings.search_title')}</div>
+          </div>
+          {total === 0 ? (
+            <div className="object-load-failed">{t('settings.search_no_match')}</div>
+          ) : (
+            <div
+              className="object-search-results"
+              tabIndex={-1}
+              onKeyDown={(e) => {
+                // 搜索回车后的落点是**容器**（不聚焦命中行——聚焦行会因
+                // 键盘模态触发 :focus-visible 白框，review 3.30 修复，与
+                // 文件区「白框消失、焦点回容器」同源）；首次方向键从容器
+                // 落第一行，其后由行级 roving 接管
+                if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                const root = rootRef.current;
+                const items = root ? Array.from(root.querySelectorAll<HTMLElement>('[data-settings-nav]')) : [];
+                if (items.length === 0) return;
+                const active = document.activeElement as HTMLElement | null;
+                if (active && items.includes(active)) return;
+                e.preventDefault();
+                e.stopPropagation();
+                items[0]?.focus();
+              }}
+            >
+              {/* 结果计数行（review 11 #2 空词显示全部同语义） */}
+              <div className="settings-search-count">{t('settings.search_all', total)}</div>
+              {groups.map((g) => (
+                <div className="object-search-group" key={g.cat}>
+                  <div className="object-search-group-title">{g.title} · {g.count}</div>
+                  {g.sections.map((sec) => (
+                    <div key={sec.titleKey ?? '__standalone'}>
+                      {sec.titleKey && (
+                        <div className="settings-search-section-title">
+                          {highlightMatch(t(sec.titleKey), q)}
+                        </div>
+                      )}
+                      {sec.hits.map((hit) => (
+                        <div
+                          key={`${g.cat}/${hit.entry.rowId}`}
+                          className="object-search-hit"
+                          data-row-id={hit.entry.rowId}
+                          role="button"
+                          tabIndex={0}
+                          data-settings-nav=""
+                          onKeyDown={handleSearchHitKey}
+                          onClick={() => onNavigate(`settings://${hit.entry.cat}?focus=${hit.entry.rowId}`)}
+                          title={hit.label}
+                        >
+                          <Icon name={hit.entry.icon ?? 'settings'} className="object-row-icon" />
+                          <div className="object-search-hit-main">
+                            <span className="object-search-hit-name">{highlightMatch(hit.label, q)}</span>
+                            {hit.sub !== '' && (
+                              <span className="object-search-hit-sub">{highlightMatch(hit.sub, q)}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (!parsed) return null;
 
   /** 根页卡片 Enter/Space 激活（方向键/Tab 由容器级 handlePageKeyDown 接管） */
   const handleCardKeyDown = (e: React.KeyboardEvent<HTMLElement>, catId: string) => {
@@ -237,6 +487,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
                 role="button"
                 tabIndex={0}
                 onClick={() => onNavigate(`settings://${c.id}`)}
+                onContextMenu={(e) => openCardMenu(e, c.id)}
                 onKeyDown={(e) => handleCardKeyDown(e, c.id)}
               >
                 <Icon name={c.icon} className="settings-category-icon" />
@@ -245,6 +496,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ path, isActive, onNa
               </div>
             ))}
           </div>
+          {cardMenuNode}
         </div>
       ) : (
         <div className="settings-page-scroll">

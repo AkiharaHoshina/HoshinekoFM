@@ -29,7 +29,11 @@ export function useDeviceActions() {
         showToast(t('device.mounted', dev, mp), 'success');
       }
     } else {
-      const msg = t('device.mount_failed', dev, result.error);
+      // 超时：udisksd 服务端 job 不随客户端退出而取消，操作可能仍在
+      // 后台进行——提示用户稍后确认，而不是把慢盘合法耗时报成失败
+      const msg = result.code === 'TIMEOUT'
+        ? t('device.op_timeout', dev)
+        : t('device.mount_failed', dev, result.error);
       if (toastId) {
         finishToast(toastId, msg, 'error');
       } else {
@@ -57,7 +61,11 @@ export function useDeviceActions() {
         showToast(t('device.unmounted', dev), 'success');
       }
     } else {
-      const msg = t('device.unmount_failed', dev, result.error);
+      // 超时同上：操作可能仍在后台进行；其余错误透传诊断详情
+      // （busy 类已由后端追加 fuser 占用者列表）
+      const msg = result.code === 'TIMEOUT'
+        ? t('device.op_timeout', dev)
+        : t('device.unmount_failed', dev, result.error);
       if (toastId) {
         finishToast(toastId, msg, 'error');
       } else {
@@ -84,9 +92,11 @@ export function useDeviceActions() {
         showToast(t('device.unmounted', dev), 'success');
       }
     } else {
-      const msg = result.code === 'PARTITIONS_MOUNTED'
-        ? t('device.eject_partitions_mounted', dev)
-        : t('device.eject_failed', dev, result.error);
+      const msg = result.code === 'TIMEOUT'
+        ? t('device.op_timeout', dev)
+        : result.code === 'PARTITIONS_MOUNTED'
+          ? t('device.eject_partitions_mounted', dev)
+          : t('device.eject_failed', dev, result.error);
       if (toastId) {
         finishToast(toastId, msg, 'error');
       } else {

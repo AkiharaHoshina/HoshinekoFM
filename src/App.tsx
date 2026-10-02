@@ -36,7 +36,8 @@ import { zoomIconSize } from "./utils/iconZoom";
 import { parseSearchPath, SEARCH_DEFAULT_LIMIT, SEARCH_DEFAULT_TIMEOUT } from "./utils/searchPath";
 import { parseObjectsPath } from "./utils/objectsPath";
 import { parseObjectSearchPath } from "./utils/objectSearchPath";
-import { settingsPathTitle } from "./utils/settingsPath";
+import { settingsPathTitle, isSettingsPath, type SettingsPinPayload } from "./utils/settingsPath";
+import { parseSettingsSearchPath } from "./utils/settingsSearchPath";
 import { isObjectProjectionPath, type ObjectDragPayload } from "./utils/objectDrag";
 import { isSearchSchemaPath, searchSchemaDisplayName } from "./utils/searchSchema";
 import type { ThemeConfig } from "./types/theme";
@@ -662,6 +663,37 @@ function AppContent() {
   );
 
   /**
+   * 设置分类固定落点（设置根页卡片右键菜单「固定到侧边栏/固定到仪表盘」）：
+   * 写入投影条目（导航别名，非设置副本），path = settings://<cat> 分类页
+   * 路径——与对象投影/搜索 schema 固定项同款语义，点击 = 导航到分类页。
+   * 重复固定幂等（toast 提示，不重复添加）。
+   */
+  const pinSettingsItem = useCallback(
+    (host: "sidebar" | "dashboard", payload: SettingsPinPayload) => {
+      if (host === "sidebar") {
+        if (pinnedDirs.some((p) => p.path === payload.path)) {
+          showToast(t("sidebar.already_pinned"), "info");
+          return;
+        }
+        setPinnedDirs((prev) => [
+          ...prev,
+          { name: payload.name, path: payload.path, isDir: false, icon: payload.icon },
+        ]);
+      } else {
+        if (dashboardPinned.some((p) => p.path === payload.path)) {
+          showToast(t("dashboard.already_pinned"), "info");
+          return;
+        }
+        setDashboardPinned((prev) => [
+          ...prev,
+          { name: payload.name, path: payload.path, isDir: false, icon: payload.icon },
+        ]);
+      }
+    },
+    [pinnedDirs, setPinnedDirs, dashboardPinned, setDashboardPinned],
+  );
+
+  /**
    * 固定区互拖（侧边栏固定区 ⇄ 仪表盘固定网格）：把源区第 index 项
    * 移动到目标区（insertAt 指定插入位置，缺省末尾追加）。同区不处理
    * （各自区内排序走 onReorderPin）。
@@ -788,6 +820,13 @@ function AppContent() {
    * 落盘 ~/.config/HoshinekoFM；挂载加载、变更写回。
    */
   const [fileSearchHistory, setFileSearchHistory] = useState<{ dir: string; query: string }[]>([]);
+  /**
+   * 设置搜索历史（最近搜索词，最多 100 条、去重、最近在前）。与文件/
+   * 对象搜索历史**分开存储**（search-history-settings.json——用户定案：
+   * 三个区域的历史互不混入）。设置主页（settings:// 根）浏览态显示
+   * 最近搜索词条行（对象面板同款样式）。
+   */
+  const [settingsSearchHistory, setSettingsSearchHistory] = useState<string[]>([]);
   useEffect(() => {
     void window.electron.loadSearchHistory('object').then((list) => {
       setObjectSearchHistory(list.filter((x): x is string => typeof x === 'string' && !!x).slice(0, 100));
@@ -798,6 +837,9 @@ function AppContent() {
           .filter((x) => !!x && typeof x.dir === 'string' && typeof x.query === 'string' && !!x.query)
           .slice(0, 100),
       );
+    });
+    void window.electron.loadSearchHistory('settings').then((list) => {
+      setSettingsSearchHistory(list.filter((x): x is string => typeof x === 'string' && !!x).slice(0, 100));
     });
   }, []);
   /** 记录对象搜索词（去重 + 上限 100 + 原子写回） */
@@ -828,6 +870,19 @@ function AppContent() {
   const clearFileSearchHistory = useCallback(() => {
     setFileSearchHistory([]);
     void window.electron.saveSearchHistory('file', []);
+  }, []);
+  /** 记录设置搜索词（去重 + 上限 100 + 原子写回——与对象/文件历史分离） */
+  const recordSettingsSearch = useCallback((query: string) => {
+    const q = query.trim();
+    if (!q) return;
+    const next = [q, ...settingsSearchHistory.filter((x) => x !== q)].slice(0, 100);
+    setSettingsSearchHistory(next);
+    void window.electron.saveSearchHistory('settings', next);
+  }, [settingsSearchHistory]);
+  /** 清空设置搜索历史 */
+  const clearSettingsSearchHistory = useCallback(() => {
+    setSettingsSearchHistory([]);
+    void window.electron.saveSearchHistory('settings', []);
   }, []);
   /** 最近搜索 UI 展示条数（默认 5；0 = 不显示） */
   const [searchRecentCount, setSearchRecentCount] = useLocalStorage<number>(
@@ -1514,7 +1569,8 @@ function AppContent() {
     activeTabPath.startsWith('search://') ||
     activeTabPath.startsWith('objects://') ||
     activeTabPath.startsWith('objectsearch://') ||
-    activeTabPath.startsWith('settings://');
+    activeTabPath.startsWith('settings://') ||
+    activeTabPath.startsWith('settingssearch://');
   const windowTitle = useMemo(() => {
     if (activeTabPath === 'app://dashboard') return 'Hoshineko Nya~';
     if (activeTabPath === 'trash://') return t('nav.trash');
@@ -1549,6 +1605,16 @@ function AppContent() {
     }
     // 设置页虚拟路径（review 26）：与标签页标题同源（settingsPathTitle）
     if (activeTabPath.startsWith('settings://')) return settingsPathTitle(activeTabPath);
+    // 设置搜索虚拟路径：与标签页标题同源「设置搜索 · 关键词」；空词无
+    // 悬空圆点（review 13 #1.1 同款）
+    if (activeTabPath.startsWith('settingssearch://')) {
+      const parsedSettingsSearch = parseSettingsSearchPath(activeTabPath);
+      if (parsedSettingsSearch) {
+        return parsedSettingsSearch.query
+          ? `${t('settings.search_title')} · ${parsedSettingsSearch.query}`
+          : t('settings.search_title');
+      }
+    }
     return activeTabPath === '/'
       ? '/'
       : activeTabPath.split('/').filter(Boolean).pop() || '/';
@@ -1637,8 +1703,14 @@ function AppContent() {
     void window.electron?.setThemeSnapshot(themeConfig, darkMode);
   }, [themeConfig, darkMode]);
 
+  /**
+   * 窗口默认启动页：仅当无显式启动路径（argv 目录/文件、FileManager1
+   * ShowItems 定位提示）时经此落点。仪表盘入口被关闭（settings.showDashboard
+   * =false）时落到自定义新标签页目录（settings.newTabPath，与 Ctrl+T 同
+   * 语义——用户显式把新标签页目录配成仪表盘时仍进仪表盘）；否则进仪表盘。
+   */
   const loadHome = () => {
-    handleAddTab("app://dashboard");
+    handleAddTab(showDashboard ? "app://dashboard" : newTabPath);
   };
 
   /**
@@ -2417,13 +2489,13 @@ function AppContent() {
       const { item } = pinnedDirMenu;
       const index = pinnedDirs.findIndex((p) => p.path === item.path);
       // 投影条目（对象投影 objects:// + 搜索 schema search:// /
-      // objectsearch://，review 18 定案）：目录菜单条目对虚拟路径无语义
-      // （删除/永久删除/压缩等会把虚拟 url 当真实路径打到后端）——
-      // 手写「打开 + 重命名 + 取消固定」三项；搜索 schema 判定走通用
-      // 谓词 isSearchSchemaPath（未来新增搜索 schema 自动同款，见
-      // searchSchema.ts 文件头）。重命名经 useRenameDialog 第三参只改
-      // 显示名不动 url。
-      if (isObjectProjectionPath(item.path) || isSearchSchemaPath(item.path)) {
+      // objectsearch:// + 设置分类 settings://，review 18 定案）：目录菜单
+      // 条目对虚拟路径无语义（删除/永久删除/压缩等会把虚拟 url 当真实
+      // 路径打到后端）——手写「打开 + 重命名 + 取消固定」三项；搜索
+      // schema 判定走通用谓词 isSearchSchemaPath（未来新增搜索 schema
+      // 自动同款，见 searchSchema.ts 文件头）。重命名经 useRenameDialog
+      // 第三参只改显示名不动 url。
+      if (isObjectProjectionPath(item.path) || isSearchSchemaPath(item.path) || isSettingsPath(item.path)) {
         return [
           {
             label: t("context_menu.open"),
@@ -2748,6 +2820,7 @@ function AppContent() {
                     onNiceProcess={niceProcess}
                     onUnlockPrivileged={unlockPrivileged}
                     onPinObject={(host, obj) => pinObjectProjection(host, obj)}
+                    onPinSettings={(host, payload) => pinSettingsItem(host, payload)}
                     onSearchContextMenu={handleSearchContextMenu}
                     onBatchTerminate={batchTerminate}
                     onBatchNice={batchNice}
@@ -2759,6 +2832,9 @@ function AppContent() {
                     fileSearchHistory={fileSearchHistory}
                     onFileSearchRecord={recordFileSearch}
                     onFileSearchHistoryClear={clearFileSearchHistory}
+                    settingsSearchHistory={settingsSearchHistory}
+                    onSettingsSearchRecord={recordSettingsSearch}
+                    onSettingsSearchHistoryClear={clearSettingsSearchHistory}
                     searchRecentCount={searchRecentCount}
                     onNetworkToggle={toggleNetwork}
                     onSortByChange={setSortBy}

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { renameFile as renameFileOp } from '../utils/fileOperations';
 import { isObjectProjectionPath } from '../utils/objectDrag';
 import { isSearchSchemaPath } from '../utils/searchSchema';
+import { isSettingsPath } from '../utils/settingsPath';
 import type { IFile } from '../types/files';
 
 /**
@@ -32,10 +33,10 @@ export function useRenameDialog(
   const handleRename = useCallback(async () => {
     if (renameFile && newName && newName !== renameFile.name) {
       // 投影条目（objects:// 对象投影 / search:// 与 objectsearch:// 等搜索
-      // schema 固定项）无文件系统语义——只改固定项显示名不落盘。搜索
-      // schema 判定走通用谓词 isSearchSchemaPath（未来新增搜索 schema
-      // 只需在 searchSchema.ts 登记，见其文件头）。
-      if (isObjectProjectionPath(renameFile.path) || isSearchSchemaPath(renameFile.path)) {
+      // schema 固定项 / settings:// 设置分类固定项）无文件系统语义——只改
+      // 固定项显示名不落盘。搜索 schema 判定走通用谓词 isSearchSchemaPath
+      // （未来新增搜索 schema 只需在 searchSchema.ts 登记，见其文件头）。
+      if (isObjectProjectionPath(renameFile.path) || isSearchSchemaPath(renameFile.path) || isSettingsPath(renameFile.path)) {
         onRenameProjection?.(renameFile.path, newName);
       } else {
         const lastSlashIndex = renameFile.path.lastIndexOf("/");

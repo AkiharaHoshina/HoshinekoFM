@@ -11,21 +11,22 @@
 import { t } from '../i18n';
 import { isSearchPath, parseSearchPath } from './searchPath';
 import { isObjectSearchPath, parseObjectSearchPath } from './objectSearchPath';
+import { isSettingsSearchPath, parseSettingsSearchPath } from './settingsSearchPath';
 
 /**
- * 是否为任一搜索 schema 虚拟路径（当前：search:// 文件搜索与
- * objectsearch:// 对象搜索）。jsdoc 见文件头——未来新增搜索 schema
- * 必须在此登记。
+ * 是否为任一搜索 schema 虚拟路径（当前：search:// 文件搜索、
+ * objectsearch:// 对象搜索与 settingssearch:// 设置搜索）。jsdoc 见
+ * 文件头——未来新增搜索 schema 必须在此登记。
  */
 export function isSearchSchemaPath(p: string | null | undefined): boolean {
-  return isSearchPath(p) || isObjectSearchPath(p);
+  return isSearchPath(p) || isObjectSearchPath(p) || isSettingsSearchPath(p);
 }
 
 /**
  * 搜索固定项默认显示名（与标签页标题同源语义，review 13 定案：有词
- * 「搜索: 关键词」/「对象搜索 · 关键词」、空词裸标签无悬空分隔符）。
- * 仅在 isSearchSchemaPath(p) 为 true 时返回本地化名称，其余回原串
- * （调用方先行守卫，此处仅防御）。
+ * 「搜索: 关键词」/「对象搜索 · 关键词」/「设置搜索 · 关键词」、空词
+ * 裸标签无悬空分隔符）。仅在 isSearchSchemaPath(p) 为 true 时返回
+ * 本地化名称，其余回原串（调用方先行守卫，此处仅防御）。
  */
 export function searchSchemaDisplayName(p: string): string {
   if (isSearchPath(p)) {
@@ -38,6 +39,14 @@ export function searchSchemaDisplayName(p: string): string {
       return parsed.query
         ? `${t('objects.object_search')} · ${parsed.query}`
         : t('objects.object_search');
+    }
+  }
+  if (isSettingsSearchPath(p)) {
+    const parsed = parseSettingsSearchPath(p);
+    if (parsed) {
+      return parsed.query
+        ? `${t('settings.search_title')} · ${parsed.query}`
+        : t('settings.search_title');
     }
   }
   return p;

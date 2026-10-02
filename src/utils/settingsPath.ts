@@ -53,28 +53,71 @@ export interface ParsedSettingsPath {
   cat: string | null;
   /** 二级子页 id；无子页为 null */
   sub: string | null;
+  /**
+   * 搜索深链接目标行 id（`?focus=<rowId>`，设置搜索命中点击后导航到
+   * 分类页并滚动高亮目标行——rowId 与 settingsSearchIndex 的登记同值，
+   * 行挂 `data-settings-row`）；无 focus 段为 null。
+   */
+  focus: string | null;
 }
 
-/** 解析设置路径：非法段（未登记的 cat/sub）静默归一为根页 */
+/**
+ * 设置分类固定载荷（设置根页卡片右键菜单「固定到侧边栏/固定到仪表盘」）：
+ * 条目 path = settings://<cat> 分类页路径（固定条目点击 = 导航到此，
+ * 与对象投影/搜索 schema 固定项同款导航别名）。
+ */
+export interface SettingsPinPayload {
+  /** 分类页路径（settings://<cat>） */
+  path: string;
+  /** 显示名（分类标题，本地化后的文案） */
+  name: string;
+  /** 图标名（Material Symbols，取分类卡片图标） */
+  icon: string;
+}
+
+/** 解析设置路径：非法段（未登记的 cat/sub）静默归一为根页。
+ *  `?focus=<rowId>` 搜索深链接段（设置搜索命中点击携带）解析进
+ *  focus——query 不参与 cat/sub 归一（focus 值自由透传） */
 export function parseSettingsPath(p: string): ParsedSettingsPath | null {
   if (!isSettingsPath(p)) return null;
-  const segs = p.slice('settings://'.length).split('/').filter(Boolean);
-  if (segs.length === 0) return { cat: null, sub: null };
+  const qIdx = p.indexOf('?');
+  const pathPart = qIdx >= 0 ? p.slice('settings://'.length, qIdx) : p.slice('settings://'.length);
+  const segs = pathPart.split('/').filter(Boolean);
+  let focus: string | null = null;
+  if (qIdx >= 0) {
+    for (const part of p.slice(qIdx + 1).split('&')) {
+      if (!part) continue;
+      const eq = part.indexOf('=');
+      if (eq <= 0) continue;
+      if (part.slice(0, eq) === 'focus') {
+        try {
+          focus = decodeURIComponent(part.slice(eq + 1));
+        } catch {
+          focus = null;
+        }
+        break;
+      }
+      // 未知键忽略（容错）
+    }
+  }
+  if (segs.length === 0) return { cat: null, sub: null, focus };
   const cat = SETTINGS_CATEGORIES.find((c) => c.id === segs[0]);
-  if (!cat) return { cat: null, sub: null };
-  if (segs.length === 1) return { cat: cat.id, sub: null };
+  if (!cat) return { cat: null, sub: null, focus };
+  if (segs.length === 1) return { cat: cat.id, sub: null, focus };
   const subs = SETTINGS_SUBPAGES[cat.id] ?? [];
   const sub = subs.find((s) => s.id === segs[1]);
-  return { cat: cat.id, sub: sub ? sub.id : null };
+  return { cat: cat.id, sub: sub ? sub.id : null, focus };
 }
 
-/** 归一化：未登记段整体回落根页（防坏 url 停留） */
+/** 归一化：未登记段整体回落根页（防坏 url 停留）。focus 段（搜索
+ *  深链接）随 cat/sub 归一结果保留——分类合法即保留深链接目标 */
 export function normalizeSettingsPath(p: string): string {
   const parsed = parseSettingsPath(p);
   if (!parsed) return 'settings://';
-  if (parsed.cat === null) return 'settings://';
-  if (parsed.sub !== null) return `settings://${parsed.cat}/${parsed.sub}`;
-  return `settings://${parsed.cat}`;
+  const focusSuffix = parsed.focus ? `?focus=${parsed.focus}` : '';
+  if (parsed.cat === null) return `settings://${focusSuffix}`;
+  if (parsed.sub !== null) return `settings://${parsed.cat}/${parsed.sub}${focusSuffix}`;
+  return `settings://${parsed.cat}${focusSuffix}`;
 }
 
 /** 上级路径：子页 → 分类页 → 根 → null（根无上级） */

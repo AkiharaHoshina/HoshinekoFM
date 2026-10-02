@@ -10,7 +10,9 @@ import { createAddressBarDropHandler } from "../utils/addressBarDrop";
 import { t } from "../i18n";
 import { expandAddressPath, looksLikePathInput } from "../utils/addressPath";
 import { isSearchPath, parseSearchPath } from "../utils/searchPath";
-import { isObjectSearchPath, parseObjectSearchPath } from "../utils/objectSearchPath";
+import { parseObjectSearchPath } from "../utils/objectSearchPath";
+import { parseSettingsSearchPath } from "../utils/settingsSearchPath";
+import { isSearchSchemaPath } from "../utils/searchSchema";
 import { isObjectsPath } from "../utils/objectsPath";
 import { isSettingsPath } from "../utils/settingsPath";
 import { registerKeyboardZone, focusNextKeyboardZone, setCurrentKeyboardZone } from "../utils/focusZones";
@@ -86,8 +88,7 @@ interface OmnibarCtxMenuState {
  */
 function isVirtualAddressInput(v: string): boolean {
   return (
-    isSearchPath(v) ||
-    isObjectSearchPath(v) ||
+    isSearchSchemaPath(v) ||
     isObjectsPath(v) ||
     isSettingsPath(v) ||
     v === 'trash://' ||
@@ -99,7 +100,7 @@ function isVirtualAddressInput(v: string): boolean {
 
 /** 搜索虚拟路径内记录的关键词（搜索态编辑框只显示 query 文本而非完整 url） */
 function searchQueryOf(p: string): string {
-  return parseSearchPath(p)?.query ?? parseObjectSearchPath(p)?.query ?? '';
+  return parseSearchPath(p)?.query ?? parseObjectSearchPath(p)?.query ?? parseSettingsSearchPath(p)?.query ?? '';
 }
 
 /** 面包屑态公共部分：拖放落点 / 软链接检测与右键菜单 / 渲染（两种入口模式共用） */
@@ -157,8 +158,7 @@ function useOmnibarCommon({
     // 无真实目录段，跳过软链接检测
     if (
       currentPath.startsWith('trash://') ||
-      isSearchPath(currentPath) ||
-      isObjectSearchPath(currentPath) ||
+      isSearchSchemaPath(currentPath) ||
       isObjectsPath(currentPath) ||
       isSettingsPath(currentPath)
     ) return;
@@ -284,9 +284,9 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
   common,
 }) => {
   const [mode, setMode] = useState<OmnibarMode>(() =>
-    (isSearchPath(currentPath) || isObjectSearchPath(currentPath)) ? 'search' : 'breadcrumbs');
+    (isSearchSchemaPath(currentPath)) ? 'search' : 'breadcrumbs');
   const [inputValue, setInputValue] = useState(() =>
-    (isSearchPath(currentPath) || isObjectSearchPath(currentPath))
+    (isSearchSchemaPath(currentPath))
       ? searchQueryOf(currentPath)
       : currentPath);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -310,7 +310,7 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
   if (prevPathForMode !== currentPath || prevExtSearch !== externalSearchActive) {
     setPrevPathForMode(currentPath);
     setPrevExtSearch(externalSearchActive);
-    if (isSearchPath(currentPath) || isObjectSearchPath(currentPath)) {
+    if (isSearchSchemaPath(currentPath)) {
       setMode('search');
       setInputValue(searchQueryOf(currentPath));
     } else if (stayEditingAfterClose) {
@@ -343,7 +343,7 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
     // 禁用搜索入口（D4/review 10 #2，X8-B）：经 url 进入搜索同样拒绝
     // ——单 flag 门控（见 OmnibarProps.searchDisabled jsdoc，将来语义
     // 变化只改此分支）
-    if (searchDisabled && (isSearchPath(trimmed) || isObjectSearchPath(trimmed))) {
+    if (searchDisabled && isSearchSchemaPath(trimmed)) {
       showToast(t('search.disabled'), 'error');
       return;
     }
@@ -399,7 +399,7 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
    * 搜索态。
    */
   const backToAddress = useCallback(() => {
-    if (isSearchPath(currentPath) || isObjectSearchPath(currentPath)) {
+    if (isSearchSchemaPath(currentPath)) {
       setStayEditingAfterClose(true);
     } else {
       setMode('edit');

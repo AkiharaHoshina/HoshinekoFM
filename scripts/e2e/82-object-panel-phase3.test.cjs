@@ -19,10 +19,15 @@
  */
 const h = require('./harness.cjs');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 const { ipcMain } = require('electron');
 
 (async () => {
+  // DRM sysfs 沙箱：本机真实 Intel 核显（/sys/class/drm/card0）会经
+  // sysfs 多厂商枚举混进 GPU 类，破坏 82d 的「2 行 nvidia」「挂起时空
+  // 类」断言——空沙箱隔离（调用时读取，与 GPU 工具沙箱同款手法）
+  process.env.HOSHINEKO_E2E_DRM_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'hoshineko-e2e-drm82-'));
   await h.setupApp();
 
   await h.run('82a 走势图时间范围设置（确定生效 + 点数上限收缩）', async () => {
