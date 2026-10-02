@@ -24,8 +24,66 @@ const DU_TIMEOUT_MS = 10_000;
  * 当前活跃的 du 子进程（全局同一时刻只允许一个）。
  * requestId 为渲染进程可选的请求标识（团体属性对话框生成，用于
  * 关闭对话框时定向取消统计——避免误杀其他窗口刚发起的 du）。
+ * targetPath 为 du 实际统计的目标路径（设备卸载前按挂载点前缀
+ * 取消统计用）；finish 为该请求的落定函数——cancelDirectorySizeUnder
+ * 杀进程后立即以 KILLED 落定，不等待可能延迟到位的 close 事件
+ * （慢速盘上 du 处于 D 状态时 SIGKILL 被内核挂起、close 迟迟不来）。
  */
-let activeDu: { child: ChildProcess; requestId?: string } | null = null;
+let activeDu: {
+  child: ChildProcess;
+  targetPath: string;
+  requestId?: string;
+  finish: (r: DirSizeResult) => void;
+} | null = null;
+
+/**
+ * 所有曾 spawn 的 du 进程（pid → 目标路径）：含已超时/切换被杀但仍
+ * 存活于进程表的残留进程（D 状态 SIGKILL 挂起期间 close 未触发、
+ * activeDu 已清空——此类进程的文件 fd 仍会 pin 挂载点导致 umount
+ * EBUSY）。设备卸载前 cancelDirectorySizeUnder 按前缀逐个追杀；
+ * 进程真正退出时由 close 事件移除条目。
+ */
+const duProcesses = new Map<number, string>();
+
+/**
+ * 取消目标路径位于挂载点 prefix 下的全部目录大小统计（设备卸载/弹出
+ * 前由 main.ts releaseDevicePins 调用）：du 打开的目录 fd 会 pin 挂载
+ * 点，不杀则 umount 报 target is busy——用户反馈：属性对话框发起的
+ * du 卡在慢速 U 盘上导致设备无法卸载（du 处于 D 状态时 10s 超时的
+ * SIGKILL 被内核挂起、进程残留数分钟持续占用设备）。
+ *
+ * - activeDu：杀进程并立即以 KILLED 落定请求（不等待可能延迟的
+ *   close 事件，防渲染层 promise 悬挂）；
+ * - duProcesses：按 pid 追杀已超时/切换清出 activeDu 的残留进程
+ *   （D 状态 SIGKILL 挂起期间 close 未触发，只能凭登记表按 pid 补杀）。
+ * 幂等：重复调用、进程已退出均静默。
+ *
+ * @param prefix - 挂载点路径（匹配该路径本身与其下任意深度子路径）
+ */
+export function cancelDirectorySizeUnder(prefix: string): void {
+  const isUnder = (p: string): boolean => {
+    if (p === prefix) return true;
+    const base = prefix.endsWith(path.sep) ? prefix : prefix + path.sep;
+    return p.startsWith(base);
+  };
+  if (activeDu && isUnder(activeDu.targetPath)) {
+    try {
+      activeDu.child.kill('SIGKILL');
+    } catch {
+      // 子进程已退出
+    }
+    activeDu.finish({ success: false, code: 'KILLED' });
+  }
+  for (const [pid, target] of duProcesses) {
+    if (pid > 0 && isUnder(target)) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        // 进程已退出
+      }
+    }
+  }
+}
 
 /** system:get-directory-size 的返回结构 */
 type DirSizeResult =
@@ -1570,7 +1628,6 @@ export function registerFsHandlers() {
       const child = stallMs > 0
         ? spawn('sh', ['-c', `sleep ${stallMs / 1000}; exec du -sb "$1"`, 'sh', targetPath], { stdio: ['ignore', 'pipe', 'ignore'] })
         : spawn('du', ['-sb', targetPath], { stdio: ['ignore', 'pipe', 'ignore'] });
-      activeDu = { child, requestId };
 
       let out = '';
       let settled = false;
@@ -1581,6 +1638,8 @@ export function registerFsHandlers() {
         if (activeDu?.child === child) activeDu = null;
         resolve(r);
       };
+      activeDu = { child, targetPath, requestId, finish };
+      duProcesses.set(child.pid ?? 0, targetPath);
 
       // 超时 10s（可经环境变量覆盖）：杀掉 du，返回 TIMEOUT
       const timer = setTimeout(() => {
@@ -1600,6 +1659,7 @@ export function registerFsHandlers() {
         finish({ success: false, code: 'FAILED' });
       });
       child.on('close', (code, signal) => {
+        duProcesses.delete(child.pid ?? 0);
         clearTimeout(timer);
         if (signal !== null || code !== 0) {
           // 被信号杀掉（本 handler 的超时/切换，或外部）或 du 自身失败

@@ -9,6 +9,9 @@
  *   先跳回仪表盘再卸载（inotify 监听随导航释放）；
  * - 109d 缩略图取消：排队项撤出 + 进行中 convert 被杀（假 convert
  *   sleep 占位，PATH 影子化——绝不真实 convert）+ 无孤儿进程。
+ * - 109e du 取消：cancelDirectorySizeUnder 按挂载点前缀杀掉目录大小
+ *   统计的 du 并以 KILLED 落定请求（用户反馈：属性对话框发起的 du
+ *   卡在慢速 U 盘上导致设备无法卸载）。
  */
 const h = require('./harness.cjs');
 const fs = require('fs');
@@ -175,6 +178,40 @@ exit 0
       try { process.kill(Number(pid), 0); return true; } catch { return false; }
     });
     h.assert.strictEqual(alive.length, 0, `convert 不应有孤儿进程（存活 ${alive.join(',')}）`);
+  });
+
+  await h.run('109e du 取消：按挂载点前缀追杀目录大小统计并以 KILLED 落定', async () => {
+    // 主进程接线：releaseDevicePins 在卸载前调用 cancelDirectorySizeUnder
+    // （harness 侧 releasePinCalls 只记录不释放——此处直接测 fs.js 共享
+    // 编译模块的取消语义：du 打开的目录 fd 会 pin 挂载点，取消后请求
+    // 快速以 KILLED 落定、进程被杀）
+    const { cancelDirectorySizeUnder } = require(path.join(h.DIST_ELECTRON, 'handlers', 'fs.js'));
+    const duRoot = h.tempDir();
+    h.makeFileTree(duRoot, { 'a.txt': 'x' });
+
+    // stall 30s + 长超时：确保取消发生时 du 仍在运行（stall 的 sh 处于
+    // sleep，SIGKILL 立即生效；D 状态残留进程由 duProcesses 登记表按
+    // pid 追杀覆盖，真机慢速盘场景无法在沙箱确定性复刻）
+    process.env.HOSHINEKO_DU_STALL_MS = '30000';
+    process.env.HOSHINEKO_DU_TIMEOUT_MS = '60000';
+    const win = await h.createTestWindow({ argv: ['electron', duRoot] });
+    await h.waitFor(win, `document.querySelectorAll('.file-list-item').length >= 1`);
+    await h.js(
+      win,
+      `window.__duRes = null; window.electron.getDirectorySize(${JSON.stringify(duRoot)}).then((r) => { window.__duRes = r; }); 'fired'`,
+    );
+    await h.sleep(300);
+
+    cancelDirectorySizeUnder(duRoot);
+
+    await h.waitFor(win, `window.__duRes !== null`, { timeout: 5000 });
+    const res = await h.js(win, `window.__duRes`);
+    h.assert.ok(
+      res.value && res.value.success === false && res.value.code === 'KILLED',
+      `取消后请求应以 KILLED 落定，实际 ${JSON.stringify(res.value)}`,
+    );
+    delete process.env.HOSHINEKO_DU_STALL_MS;
+    delete process.env.HOSHINEKO_DU_TIMEOUT_MS;
   });
 
   h.finish();

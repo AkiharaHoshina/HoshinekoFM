@@ -7,7 +7,7 @@ import { Readable } from 'stream';
 import { setupPtyHandlers, killAllPty } from './pty';
 import { getThumbnail, detectMime, THUMB_QUEUE_DROPPED, cancelThumbnailJobsUnder } from './fsUtils';
 import { startWatching, stopWatching, stopAllWatching, stopWatchingUnder } from './fsWatcher';
-import { registerFsHandlers } from './handlers/fs';
+import { registerFsHandlers, cancelDirectorySizeUnder } from './handlers/fs';
 import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor, startBackendConflictQuery, resetBackendConflictCache, runIntegrationScript, killAllPrivilegedHelpers } from './handlers/system';
 import type { BackendKind } from './handlers/backendInfo';
 import { registerWindowHandlers } from './handlers/window';
@@ -1000,7 +1000,10 @@ const reRegisterBackends = () => {
  * - 窗口监听登记表同步清理：不清的话下次 watchDirectory 会因
  *   `listeners.has(dir)` 早退、watcher 永远不重建（监听静默失效）；
  * - 缩略图队列：进行中 convert 打开的源图 fd 同样 pin——排队项撤出、
- *   进行中杀进程并清理半成品缓存（详见 fsUtils.cancelThumbnailJobsUnder）。
+ *   进行中杀进程并清理半成品缓存（详见 fsUtils.cancelThumbnailJobsUnder）；
+ * - 目录大小统计 du：属性对话框发起的 du 打开的目录 fd 同样 pin——
+ *   慢速盘上 du 处于 D 状态时 10s 超时的 SIGKILL 被内核挂起、进程
+ *   残留数分钟持续占用设备（详见 fs.cancelDirectorySizeUnder）。
  */
 const releaseDevicePins = async (mountpoints: string[]) => {
   for (const mp of mountpoints) {
@@ -1014,6 +1017,7 @@ const releaseDevicePins = async (mountpoints: string[]) => {
       }
     }
     cancelThumbnailJobsUnder(mp);
+    cancelDirectorySizeUnder(mp);
   }
 };
 registerSystemHandlers(reRegisterBackends, reRegisterBackends, releaseDevicePins);
