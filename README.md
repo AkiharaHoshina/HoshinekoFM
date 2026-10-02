@@ -1,51 +1,56 @@
 [简体中文](README-zh.md)
-
 <p align="center">
   <img src="HoshinekoAkihara.png" alt="Hoshineko" width="28%">
 </p>
 
-# Hoshineko File Manager
+# Hoshineko Explorer
+
+- "An advanced Material 3 designed file manager"
+
 <p align="center">
   <img src="Screenshot_for_HoshinekoFM1.png" alt="Hoshineko">
 </p>
 
-Hoshineko File Manager is a modern, "Performance-First" file manager built using Material 3 Design, Electron, and React.
-The Hoshineko file explorer is a modification and reconstruction of [bhimio1](https://github.com/bhimio1)'s [material-3-file-explorer](https://github.com/bhimio1/material-3-file-explorer) project. This project was initiated because the original repository is no longer actively maintained, and we aimed to develop a file manager fully compliant with Material 3 Design standards.
+Hoshineko Explorer is a modern file manager built on the Material 3 design language, Electron, and React frameworks.
+This project is a modification and refactoring based on the [material-3-file-explorer](https://github.com/bhimio1/material-3-file-explorer) project by [bhimio1](https://github.com/bhimio1). Since the original project has ceased updates and maintenance, and we are committed to developing a file manager that complies with Material 3 design standards while adding advanced features, this refactoring project was initiated.
+
+## "Performance Concerns First"
+
+- Although we have implemented file lists based on virtual scrolling (react-window), supporting grid/list dual views (one-click toggle in the top right), semantic grouping, and multi-dimensional sorting; as well as optimizations like image caching, you still need to know—frankly speaking—that before using a damn Electron app, you must first worry about performance.
 
 ## Features
 
-- **Material Design 3 Interface**: sleek, modern UI with dynamic theming.
-- **Performance First**: a virtualized file list (react-window) in grid/list views (one-click toggle at the top right), semantic grouping, and multi-key sorting; icon size adjustable 16–128px (settings slider or Ctrl+scroll over the file area).
-- **Tabs**: tabbed navigation with virtual paths (`app://dashboard`, `trash://`), per-tab independent state.
-- **Omnibar**: unified address bar and search (`find -iname`, limited to 100 results) with advanced filters (type, min/max size); right-click a search result to "locate it in its folder" (jumps to the parent directory and selects the entry).
-- **Built-in Terminal**: embedded terminal (xterm.js + node-pty, per-window sessions), "open in the system default terminal" for directories and executables (7-level terminal detection chain), and a custom terminal defined in `~/.config/HoshinekoFM/terminal.conf` (takes priority over the whole detection chain).
-- **Trash (freedesktop spec)**: `trash://` view with restore, permanent delete, empty trash, and automatic refresh on external changes.
-- **Multi-Window**: all windows share one backend; single-instance lock opens new windows; cross-window clipboard (persisted across restarts) and cross-window language sync.
-- **Auto-created launcher entries**: a desktop shortcut and an application-menu entry (two independent toggles in Settings → Behavior, enabled by default, applied on confirm) — **turned on and confirmed → created** (created on first launch; created once only — manual deletion is respected, existing entries are never overwritten); **turned off and confirmed → deleted** (turning back on and confirming creates them again). Exec prefers the AppImage path, the icon is copied to `~/.local/share/icons/hicolor/`; GNOME needs the "Desktop Icons" extension to see the desktop shortcut.
-- **Devices**: full `lsblk` device tree, mount/unmount/eject via `udisksctl`, UDisks2 hot-plug monitoring (with polling fallback), and MTP phones / PTP cameras via GVfs (mount-on-click, USB address-drift handling).
-- **Drag & Drop**: native OS drag (LocalSend and other apps receive real files); same-window drops onto folders, breadcrumb chips, the omnibar (current directory), tabs, and sidebar places/devices; M3 move/copy/cancel dialogs with conflict resolution (skip/auto-rename/manual rename/cancel); Wayland synthetic-drop fallback and edge auto-scroll.
-- **Batch Operations**: copy/move/trash/delete via a job pipeline with progress toasts, cancellation, and partial-failure reporting; cross-device moves (EXDEV) fall back to copy+delete.
-- **Batch Rename**: find & replace / prefix / suffix / numbering modes with a live preview and per-entry conflict detection.
-- **Compression**: create zip / tar.gz archives from the context menu (`zip -r` / `tar -czf`); existing archives are never overwritten.
-- **Properties & Permissions**: view location, size, modification time, permissions (`drwxr-xr-x`) and owner; edit permissions in place (3-digit octal chmod). Directory sizes are computed on demand via `du -sb` with a 10-second timeout and single-flight cancellation (switching away kills the running `du` and shows "size unavailable"), and can be turned off entirely in Settings → Behavior (frequent traversal is disk-intensive).
-- **Pinned Items**: pin files and folders to the dashboard (drag-to-reorder) and pin folders to the sidebar — via the system file picker, the folder context menu, or dragging a folder onto the pin button. Sidebar pins are also drag-to-reorder (insert before/after by the drop item's upper/lower half, live placeholder indicator, other areas don't accept); the order syncs live across main windows, and open picker/saver windows follow it in real time while keeping their own sidebar read-only.
-- **Built-in File Picker**: a separate picker window used throughout the app — mode declaration (file/folder/items/save), file-type filters with a bottom dropdown ("All files" plus declared types, labels generated from the MIME description system), initial directory, and concurrently independent instances. **Save-mode name-conflict confirmation** — saving onto an existing entry pops an overwrite/auto-rename/manual-rename dialog (auto-rename shows an "original → new name" preview). The picker/saver **syncs personalization with the main window** (view mode/icons/sorting/search grouping/full-path title/language — in service mode the main process injects them from the GUI's snapshots and broadcasts live, since the resident's userData is isolated), and you can **zoom icons with Ctrl+scroll or toggle grid/list at the top right inside the picker/saver too** (two-way synced with the main window). Also available as an **xdg-desktop-portal FileChooser backend**, so external apps (GTK/Qt) can open it through the standard portal interface (OpenFile with filters; SaveFile with current-name/accept-label and name-conflict confirmation; multi-file SaveFiles unsupported; opt-in via portal config — see docs/portal-filechooser.md).
-- **Dashboard**: greeting, a unified storage region (system `/`, home, and hot-plugged external devices as clickable list items), pinned items, and recent files.
-- **Theming**: theme color system with 12 Material 3 preset palettes, a custom color picker (HCT), wallpaper color extraction (matugen + nativeImage fallback), matugen theme import, DMS system-theme inheritance, and a dark-mode switch (follow system / force dark / force light, applied across all windows).
-- **File Preview**: optional, persistent side panel (Settings → Behavior, off by default) squeezed in on the right — shows the current directory's read-only properties when nothing is selected, and a selected folder's properties when a single folder is selected (shared properties grid with the context-menu dialog, permissions read-only); when a single file is selected: images, audio, videos (mp4/webm/ogg/mkv, with seeking), PDFs (pdf.js, first 5 pages with a "N pages total" notice), archive listings (zip/tar/7z), Markdown (rendered, with local relative images resolved against the document's directory), and text/code (512 KiB cap); previews refresh automatically when the file changes on disk (e.g. saved from an external editor); a draggable divider resizes the panel (20%–60%, persisted); multi-selection shows a "cannot preview" placeholder; the panel shares the terminal squeeze with the file list.
-- **UI Zoom**: whole-page zoom (50%–200%) synced across all windows, including the file picker.
-- **Custom M3 Title Bar** (optional, default follows the system): frameless window with minimize / maximize-restore / close buttons, a "v" window menu, and a live window title (dashboard → "Hoshineko Nya~", trash, or the directory name / full path) synced to the taskbar — hidden automatically on tiling WMs (niri/hyprland/i3/sway), shown on stacking DEs, with manual override; F12 devtools preserved.
-- **Smart Context Menu**: menu items generated dynamically per item type (files/folders/devices/trash/background), with touch long-press support.
-- **Selection & Shortcuts**: Ctrl/Shift multi-select, Ctrl+A, rubber-band selection (4 modes with edge auto-scroll), **Ctrl+scroll to zoom file-area icons**, and a full keyboard-navigation system — Tab cycles focus zones (nav rail → places → tab bar → up button → omnibar → grouping/view toggle/sort controls → file area, and back; dashboard zones: storage/pinned/recent), Enter/Space activate controls, arrows move within each zone; in the file area arrows move the selection (list view along the display order; grid view two-dimensionally with column clamping — no wrap at edges, minimal auto-scroll into view), Shift+arrows / Shift+click = range selection (the grid rectangle spans groups, with the **anchor row as the baseline** — rows shorter than the anchor's span take all their items), Home/End, PageUp/PageDown, Ctrl+arrows, Space toggles selection, type-ahead jumps to a name; dialogs keep their native Tab order (e.g. "Open With": search → first app → Cancel → Open, arrows fine-select apps) with minimal-scroll focus correction; Delete/Shift+Delete/Ctrl+C/X/V, F5, Ctrl+T/W/Tab.
-- **Internationalization**: 12 languages, apply-on-confirm with cross-window sync (the picker/saver follows too).
-- **Settings**: full personalization with sensible first-run defaults (list view, 48px icons, search grouped by directory, etc.); "Defaults" section at the bottom of settings with a one-click "Restore Default Settings" (confirmed via a dialog).
+- **Material Design 3 Interface**: A modern interface with dynamic theming.
+- **Tabs**: Multi-tab navigation supporting virtual paths (`app://dashboard`, `trash://`), with independent state for each tab.
+- **Address Bar**: Integrated unified search and address bar, supporting advanced filtering (type, min/max size); right-clicking search results allows you to "Open File Location" (jumps to the parent directory and selects the item).
+- **Built-in Terminal**: Embedded terminal (xterm.js + node-pty, sessions isolated by window).
+- **Open in Terminal**: Supports "Open in System Default Terminal" for directories and executable files (7-level terminal detection chain), or specifying a custom terminal via `~/.config/HoshinekoFM/terminal.conf` (prioritized over the entire detection chain).
+- **Trash**: Implements `trash://` view according to freedesktop specifications—restore, permanently delete, empty, auto-refreshing on external changes.
+- **Multi-Window**: All windows share the same backend; single-instance lock opens a new window on secondary launch; cross-window clipboard (pasteable after restart) and cross-window language synchronization.
+- **Create Launcher Entry**: Settings for this can be found in Settings-Shortcuts, allowing manual creation of a .desktop file on the desktop or adding Hoshineko to the application menu.
+- **Device Management**: Full `lsblk` device tree, `udisksctl` mount/unmount/eject, UDisks2 hotplug listening (with polling fallback), supports MTP phones / PTP cameras (GVfs, click to auto-mount, USB address drift handling).
+- **Drag and Drop System**: Native OS drag and drop (external apps like LocalSend can receive real files); supports dragging to folders, breadcrumb pills, address bar (current directory), tabs, sidebar locations, and devices within the same window; M3 move/copy/cancel dialogs + conflict resolution (skip/auto-rename/manual rename/cancel); Wayland synthetic drop fallback and edge auto-scrolling.
+- **Batch Tasks**: Copy/move/trash/permanently delete run through a task pipeline (progress toasts, cancelable, partial failure prompts); cross-device moving (EXDEV) automatically falls back to copy+delete.
+- **Batch Rename**: Find and replace / Prefix / Suffix / Sequential numbering modes, with real-time preview + item-by-item conflict detection.
+- **Archive & Compress**: Right-click to create zip / tar.gz (`zip -r` / `tar -czf`); existing archives are never overwritten.
+- **Properties and Permissions**: View location, size, modified time, permission bits (`drwxr-xr-x`), and owner, with in-place permission modification (3-digit octal chmod). Directory sizes are calculated on-demand via `du -sb`—10-second timeout + global singleton (switching directories kills the running `du` and shows "Unable to get"); can also be globally disabled in Settings → Behavior (frequent traversal of large directories is bad for the disk).
+- **Pinned Items**: The dashboard can pin files and folders (supports drag-and-drop sorting), and the sidebar can pin directories (also supports drag sorting—insert before/after based on upper/lower half of the target item, showing empty placeholder boundaries during drag, other areas reject drops)—supports three methods: file manager selection, directory right-click menu, and dragging folders to the pin button; sidebar pin order synchronizes in real-time across main windows.
+- **Built-in File Picker**: Independent picker window throughout the app—optional item type declaration (file/folder/all/save), file type filtering (bottom dropdown: "All Files" + declared types, labels generated by MIME description system), initial directory, and independent concurrent instances; **Save Mode Naming Conflict Confirmation**—pops up an overwrite/auto-rename/manual rename dialog when saving to an existing identically named item (auto-rename includes "original name → new name" preview); picker/saver **synchronizes personalization settings** with the main window (view mode/icons/sorting/search categorization/full path in title bar/language; in service mode, the main process injects from a GUI snapshot and broadcasts in real-time, as the resident process's userData is isolated from the GUI), and supports **direct Ctrl+Scroll to zoom icons or top-right view switching** within the picker/saver (bidirectional sync with the main window); can also serve as an **xdg-desktop-portal FileChooser backend**—external programs (GTK/Qt) open this picker via standard portal interfaces (OpenFile includes filters; SaveFile dialog supports current-name/accept-label and naming conflict confirmation; multi-file SaveFiles is not supported; requires installing portal configuration to enable, see docs/portal-filechooser.md).
+- **Dashboard**: Greeting, unified storage areas (system `/`, home, hotplug external devices, list items clickable to jump), pinned items, recently accessed.
+- **Theming System**: 12 Material 3 preset color palettes, custom color palettes (HCT), wallpaper color extraction (matugen + nativeImage fallback), importing matugen themes, system theme (DMS) inheritance, and dark theme switch (follow system/force dark/force light, takes effect instantly across all windows).
+- **File Preview**: Optional and persistent side panel (Settings → Behavior, disabled by default)—appears by "squeezing" the right side of the file area; shows read-only properties of the current directory when no item is selected, shows read-only properties of the directory when a single directory is selected (shares the property grid with the right-click properties dialog, permissions are read-only); selecting a single file supports images, audio, video (mp4/webm/ogg/mkv, draggable progress bar), PDF (pdf.js, first 5 pages + "Total N pages" note when exceeding), archive content lists (zip/tar/7z), Markdown rendering (local relative images parsed and displayed according to the document's directory), and text/code (512 KiB limit); content auto-refreshes after external editing and saving; divider draggable to adjust ratio (20%–60%, persisted); multi-selection shows "Unable to preview" placeholder; squeezes together with the file area when the built-in terminal is opened.
+- **Interface Zooming**: Page zoom 50%–200%, synchronized in real-time across all windows (including the file picker).
+- **Title Bar**: Users can specify whether to enable the title bar or not, along with a follow-system feature. Tiling window manager users will have the title bar automatically hidden due to the follow-system behavior.
+- **Selection and Shortcuts**: Ctrl/Shift multi-selection, Ctrl+A, rubber-band selection (4 modes + edge auto-scrolling), **Ctrl+Scroll wheel to zoom file area icons**, and **Full keyboard navigation system**—Tab cycles through partitions: "Action bar → places → tabs → go up key → address bar → category switch/view toggle/sort mode → file area" (reverse with Shift+Tab; dashboard has Storage / Pinned Items / Recent Access sub-partitions). Arrow keys move within partitions, Enter/Space to activate; File area arrow keys = movement selection (list follows display order, grid moves 2D and clamps columns—edges don't wrap, out-of-bounds minimal scroll), Shift+Arrow / Shift+Click = range selection (grid rectangle spans categories continuously, based on **anchor behavior**—rows shorter than the baseline select all), Home/End, PageUp/PageDown, Ctrl+Arrow, Space toggles selection, type-ahead to locate; Dialogs maintain native Tab order (e.g., "Open With": search box → first item in program list → cancel → open, arrow keys finely select apps) and correct to minimal scroll; Delete/Shift+Delete/Ctrl+C/X/V, F5, Ctrl+T/W/Tab.
+- **Internationalization**: 12 languages.
+- **Settings**: Full personalization of language/appearance/behavior (comes with reasonable defaults on first use: list view, 48px icons, search categorized by directory, etc.); default configuration → "Restore Default Settings" one-click reset (with confirmation dialog).
 
-## Refactoring and modification of core functionalities from material-3-file-explorer project
+## Refactoring and Changes from the Original Project
 
-- **Free for Multi Selection**: features multi-selection capabilities, with optimized drag-and-drop transmission for applications such as LocalSend.
-- **Better File Categorization**: refactored file categorization mechanism to support a wider range of file types; includes icon display for specific device types within the `/dev` directory.
-- **Convenient and Smart Right-Click Menu**: refactored the context menu architecture to dynamically display specific menu items based on the selected item type, while extending menu features; the menu design is optimized for long-press gestures on touchscreen devices.
-- **The rest includes a massive amount of refactoring and completion relative to the [material-3-file-explorer](https://github.com/bhimio1/material-3-file-explorer) project, equipping it with the characteristics of a modern file manager.**
+- **Free Multi-selection**: Equipped with multi-selection capabilities, and optimized for drag-and-drop transfer for applications like LocalSend.
+- **Better File Categorization**: Adjusted the file categorization mechanism, expanding the range of categorizable file types; supports displaying corresponding device type icons under the `/dev` directory.
+- **Convenient and Smart Right-click Menu**: Adjusted the right-click menu architecture to dynamically display corresponding menu items based on the different types of selected items, and expanded menu functions; this menu design is also adapted for long-press operations on touch screen devices.
+- **Carried out multiple architectural refactorings and feature expansions on the [material-3-file-explorer](https://github.com/bhimio1/material-3-file-explorer) project to meet the standards and characteristics of a modern file manager.**
 
 ## Internationalization
 
@@ -72,33 +77,30 @@ None at the moment.
 
 ## Not Yet Implemented
 
-- Favorites/bookmarks (superseded by dashboard/sidebar pinning).
-- Formatting devices without a filesystem (intentionally left to dedicated disk tools).
-- Automatic updates.
-- Cross-platform support (Linux only; relies on inotify, udisks2, dbus-next, gvfs, and GNU coreutils).
+- Auto-update.
 
 ## Theming
 
-The theme color system lives in Settings → Appearance → Theme Colors. It generates the full set of Material 3 dark/light roles from a single seed color: presets and custom colors use the HCT engine (`@material/material-color-utilities`), while wallpaper extraction uses the matugen CLI with a `nativeImage` histogram fallback (for machines without matugen).
+The theme color system is located in Settings → Appearance → Theme Color: Generates a full set of Material 3 light/dark roles from a single seed color—presets and custom colors use the HCT engine (`@material/material-color-utilities`), wallpaper color extraction uses the matugen CLI (falls back to `nativeImage` histogram when matugen is not installed).
 
-### Color sources
+### Color Sources
 
-1. **12 Material 3 presets** — built-in seed color palettes.
-2. **Custom color picker** — hue slider + saturation/value square + hex input (HCT).
-3. **Wallpaper extraction** — a seed color extracted from your wallpaper.
-4. **Import matugen theme** — reads `~/.config/matugen/theme.css`.
-5. **System theme (DMS)** — inherits your desktop environment's color scheme (`dms-colors.json`); disabled when DMS is not installed.
+1. **12 Material 3 Preset Palettes**—Built-in seed color palettes.
+2. **Custom Palette**—Hue slider + saturation/lightness square + hex input (HCT).
+3. **Wallpaper Color Extraction**—Extracts seed colors from the wallpaper.
+4. **Import Matugen Theme**—Reads `~/.config/matugen/theme.css`.
+5. **System Theme (DMS)**—Inherits desktop environment color scheme (`dms-colors.json`); disabled when DMS is not installed.
 
-### Dark mode
+### Dark Theme
 
-- **Follow system** (default) — the app's own detection chain (DMS via the appearance portal → GNOME → KDE, falling back to dark) resolves the current mode and applies it explicitly through Electron `nativeTheme`. This matters because Chromium's `'system'` source does not read the portal's color-scheme on Linux (DMS only writes gsettings), so it would show light in a dark-DMS environment; the system scheme is also watched live (a `gsettings monitor` plus a 30-second re-detect fallback) so all windows follow changes instantly.
-- **Force dark / Force light** — applied through Electron `nativeTheme`, synced instantly across all windows (including the file picker).
+- **Follow System** (Default)—Parses the current mode via the app's own detection chain (DMS via appearance portal → GNOME → KDE, falls back to dark if undetected) and applies it explicitly via Electron's `nativeTheme`. The reason for not using Chromium's `'system'`: It doesn't read the portal's color-scheme on Linux (DMS only writes gsettings), and will misjudge as light in a dark DMS environment; system light/dark changes have separate real-time monitoring (`gsettings monitor` + 30-second timer re-check fallback), instantly followed by all windows.
+- **Force Dark / Force Light**—Applied via Electron's `nativeTheme`, instantly synchronized across all windows (including the file picker).
 
-Changes apply on "Apply"/"OK" and are persisted in `settings.theme` (synced across windows).
+Takes effect instantly, persisted in `settings.theme` (synchronized across windows).
 
-### Matugen CLI (optional)
+### Matugen CLI (Optional)
 
-Without a saved theme color configuration, the app falls back to the Matugen-generated theme file at startup.
+When no theme color configuration is saved, it will fall back to reading the theme file generated by Matugen on startup.
 
 1. Install [Matugen](https://github.com/InioX/matugen).
 2. Generate the theme file at `~/.config/matugen/theme.css`.
@@ -111,19 +113,16 @@ mkdir -p ~/.config/matugen
 matugen image --type scheme-tonal-spot /path/to/bg/backgrounda.jpg > ~/.config/matugen/theme.css
 ```
 
-Where `--type` specifies the color scheme mode, options include:
+Where `--type` specifies the color palette mode. There are:
 
-1. scheme-tonal-spot (Default): Classic Material 3 palette, with relatively restrained and harmonious colors.
-
-2. scheme-vibrant: High saturation, with more vibrant colors.
-
-3. scheme-expressive: Richer mixed colors, with distinct contrast.
-
-4. scheme-monochrome: Monochrome / grayscale.
+1. `scheme-tonal-spot` (default): Classic Material 3 palette, with relatively restrained and harmonious colors.
+2. `scheme-vibrant`: High saturation, more vibrant colors.
+`scheme-expressive`: Richer mixed colors, obvious contrast.
+`scheme-monochrome`: Monochrome / black, white, and gray tones.
 
 ## Installation
 
-Please switch to "Releases" page
+Please switch to the "Releases" page.
 
 ### Manual Build
 
@@ -151,35 +150,35 @@ Please switch to "Releases" page
 
 ## Testing
 
-End-to-end tests live in `scripts/e2e/` (39 suites, no test framework — Electron itself drives the real build via `sendInputEvent`/`executeJavaScript`):
+End-to-End (E2E) tests are located in `scripts/e2e/` (39 suites, no testing framework—Electron natively drives the real build, `sendInputEvent` simulates input, `executeJavaScript` asserts):
 
 ```bash
-npm run e2e                # builds first, then runs every scripts/e2e/*.test.cjs
-npx electron scripts/e2e/01-file-list.test.cjs   # run a single suite
+npm run e2e                # Build first, then run scripts/e2e/*.test.cjs sequentially
+npx electron scripts/e2e/01-file-list.test.cjs   # Run a single suite
 ```
 
-A display session is required; on headless CI use `xvfb-run -a npm run e2e`. Known pitfalls (React controlled inputs, double-click semantics, dialog serialization delays, session-shared zoom) are documented in `AGENTS.md` and `scripts/e2e/harness.cjs`.
+Requires a graphical session; headless CI uses `xvfb-run -a npm run e2e`. Known pitfalls (React controlled inputs, double-click semantics, dialog serialization delays, session-level shared zoom) are documented in `AGENTS.md` and `scripts/e2e/harness.cjs`.
 
 ## System Integration
 
-### Set as the default file manager
+### Set as Default File Manager
 
-Settings → Behavior → "Default file manager" → "Set as default" (or "Restore system default"). This writes a user-level desktop entry (`~/.local/share/applications/HoshinekoFM.desktop`) and associates `inode/directory` via `xdg-mime` — apps that open folders (e.g. `xdg-open ~`, "open containing folder" fallbacks) launch HoshinekoFM. It never takes over file-type associations. Verify:
+Settings → Behavior → "Default File Manager" → "Set as Default" (or "Restore System Default"). This operation writes a user-level desktop entry (`~/.local/share/applications/HoshinekoFM.desktop`) and associates `inode/directory` via `xdg-mime`—apps opening folders (like `xdg-open ~`, "Open File Location" fallback chain) will invoke HoshinekoFM; it **absolutely never hijacks** the open-with behavior for any file type. Verification:
 
 ```bash
 gio mime inode/directory     # → HoshinekoFM.desktop
-xdg-open ~                   # opens HoshinekoFM at that directory
+xdg-open ~                   # Open this directory with HoshinekoFM
 ```
 
-Third-party "show in file manager" calls go through the standard `org.freedesktop.FileManager1` D-Bus interface (OpenFolders / ShowItems / ShowItemProperties). HoshinekoFM registers this name while running; the name is single-owner — if another file manager (e.g. Nautilus) already owns it, it wins and HoshinekoFM degrades silently (quit it with `nautilus -q`). Optional auto-activation:
+Third-party programs' "Show in File Manager" calls use the standard `org.freedesktop.FileManager1` D-Bus interface (OpenFolders / ShowItems / ShowItemProperties). HoshinekoFM registers this name while running; this name is held as a single instance—if another file manager (like Nautilus) already holds it, it wins, and this program silently downgrades (you can use `nautilus -q` to exit Nautilus and release it). Optional installation for auto-activation:
 
 ```bash
 sudo install -m 644 packaging/dbus/org.freedesktop.FileManager1.service /usr/share/dbus-1/services/
 ```
 
-### File dialogs via xdg-desktop-portal (external apps)
+### File Dialogs via xdg-desktop-portal (External Programs)
 
-HoshinekoFM can serve as the `org.freedesktop.impl.portal.FileChooser` backend, so GTK/Qt apps' open dialogs use the built-in picker. The easiest way is the one-click installer in Settings → Behavior → "System integration" → "Install portal integration" (asks for authorization via pkexec). It installs the portal config, both D-Bus activation files, the version marker file (`hoshineko.version`), writes the preferred-backend entry (`portals.conf`) and restarts the portal service. Alternatively, do it manually:
+HoshinekoFM can serve as the `org.freedesktop.impl.portal.FileChooser` backend—the "Open" dialog of GTK/Qt applications is handled by the built-in picker. Simplest method: Settings → Behavior → "System Integration" → "Install Portal Integration" completes in one click (authorized via pkexec), automatically installing the portal config, two D-Bus activation files, a version file (`hoshineko.version`), writing the preferred entry (portals.conf), and restarting the portal service. You can also execute it manually:
 
 ```bash
 sudo install -m 644 packaging/portals/hoshineko.portal /usr/share/xdg-desktop-portal/portals/
@@ -190,13 +189,13 @@ printf '[preferred]\norg.freedesktop.impl.portal.FileChooser=hoshineko\n' >> ~/.
 systemctl --user restart xdg-desktop-portal.service
 ```
 
-(Or run `scripts/system-integration/install.sh` from the repository — same effect, root parts via pkexec.)
+(Or just run `scripts/system-integration/install.sh` in the repository, same effect, root portion authorized via pkexec.)
 
-**Backend conflict diagnosis & recovery**: when portal/FileManager1 backend registration fails, the name holder is probed for its version — an outdated resident suggests uninstall+reinstall, a zombie name (process dead but bus connection unreleased) suggests restarting the session bus; conflicts are surfaced in a backdrop-masked popup (once per session) with persistent details in the Settings → Behavior → System Integration row, and a permanently visible "Restart session bus" button (`systemctl --user restart dbus-broker/dbus.service`, backends re-register automatically on success).
+**Backend Conflict Diagnosis and Recovery**: When portal/FileManager1 backend registration fails, it automatically detects the name holder's version—if it's an old version persisting, it prompts to uninstall and reinstall; if it's a zombie name hold (process dead but bus connection unreleased), it prompts to restart the session bus; conflicts are notified by an overlaid modal (once per session), with persistent details in the Settings → Behavior → System Integration row, and a persistent "Restart Session Bus" button (`systemctl --user restart dbus-broker/dbus.service`, automatically re-registering the backend upon success).
 
-**Portal version check**: the installer writes a version marker (`hoshineko.version`) next to the portal config. At startup the app compares it with its own version — on a mismatch (e.g. after an AppImage upgrade) a backdrop-masked popup offers **Cancel** or **Reinstall now** (one-click reinstall: `scripts/system-integration/reinstall.sh` runs uninstall + install behind a single pkexec prompt, then asks you to restart the app). The popup is skipped when the portal isn't installed at all or the version marker is missing (leftover from an incomplete/older-flow install). In development builds the dialog is single-button and shows the portal runtime diagnostics instead (in packaged builds, press PgDn in the popup to reveal the same diagnostics). Results of install/uninstall/reinstall/session-bus-restart are reported in backdrop-masked dialogs rather than toasts.
+**Portal Version Check**: The installation script writes a version file (`hoshineko.version`) next to the portal config. On startup, the app compares it with its own version—if inconsistent (e.g., after upgrading an AppImage), it pops up an overlaid modal offering to **Cancel** or **One-click Reinstall** (`scripts/system-integration/reinstall.sh` combines uninstall + install into a single pkexec authorization, prompting to restart the app upon completion). It won't pop up if the portal isn't installed or the version file is missing (leftover from old workflow / incomplete installation). In the development build, the popup has a single button and displays portal runtime diagnostic details (in the packaged build, press PgDn inside the popup to view the same details). Portal-related operation results like install/uninstall/reinstall/restart session bus are reported via overlaid dialogs rather than toasts.
 
-Firefox: in `about:config` set `widget.use-xdg-desktop-portal.file-picker` to `1` (some versions use `widget.use-xdg-desktop-portal`) — this cannot be automated from the settings. **Limitation**: only single-file save (`SaveFile`) is implemented — multi-file save (`SaveFiles`) returns NotSupported. See docs/portal-filechooser.md for details and a gdbus verification command.
+Firefox: In `about:config`, set `widget.use-xdg-desktop-portal.file-picker` to `1` (or `widget.use-xdg-desktop-portal` in some versions)—this step cannot be automated from settings. **Limitation**: Only single file save (`SaveFile`) is implemented—multi-file save (`SaveFiles`) returns NotSupported. See docs/portal-filechooser.md for details (including gdbus verification commands).
 
 ## License
 
