@@ -293,6 +293,8 @@ const zhTW = {
   'settings.restore_defaults_confirm': '確定要恢復默認設定嗎？目前所有個人化設定將被覆蓋。',
   'settings.about': '關於',
   'settings.version': '版本',
+  'settings.contributors': '貢獻者',
+  'settings.project_url': '專案網址',
 
   // ── Toast 訊息 ──
   'toast.copied_items': (n: number) => `已複製 ${n} 個項目`,

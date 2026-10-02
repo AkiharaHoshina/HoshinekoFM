@@ -294,6 +294,8 @@ const zhAC = {
   'settings.restore_defaults_confirm': '确定要恢复默认设置吗？当前所有个性化设置将被覆盖。',
   'settings.about': '关于',
   'settings.version': '版本',
+  'settings.contributors': '贡献者',
+  'settings.project_url': '项目地址',
 
 
   // ── Toast 消息 ──

@@ -14,6 +14,10 @@ import { THEME_PRESETS, type ThemeConfig } from '../../types/theme';
 import { showToast } from '../../utils/toast';
 import { useSettings } from '../../contexts/SettingsContext';
 import { SettingsSection, SettingsRow, SettingsSwitchRow, ThreeStateSwitchRow } from './SettingsShared';
+/** 贡献者头像（仓库根 assets/ 资源经 Vite 导入；关于页圆形按钮内铺满显示） */
+import hoshinaAvatar from '../../../assets/hoshina.jpg';
+import sbchildAvatar from '../../../assets/sbchild.jpg';
+import bhimio1Avatar from '../../../assets/bhimio1.jpg';
 
 // ══════════════════════════════════════════════════════════════════════
 // review 26 设置页面化：各分类页（settings://<cat>）。全部设置立即生效。
@@ -916,6 +920,13 @@ export const BuiltInTerminalSettings: React.FC = () => {
 /** GitHub 项目仓库地址 */
 const GITHUB_REPO_URL = 'https://github.com/AkiharaHoshina/Hoshineko_Explorer';
 
+/** 贡献者条目：头像资源 + 个人主页地址（点击打开） */
+const CONTRIBUTORS: ReadonlyArray<{ name: string; avatar: string; url: string }> = [
+  { name: 'AkiharaHoshina', avatar: hoshinaAvatar, url: 'https://github.com/AkiharaHoshina' },
+  { name: 'sb-child', avatar: sbchildAvatar, url: 'https://github.com/sb-child' },
+  { name: 'bhimio1', avatar: bhimio1Avatar, url: 'https://github.com/bhimio1' },
+];
+
 export const AboutSettings: React.FC = () => {
   const [version, setVersion] = useState<string>('-');
   useEffect(() => {
@@ -933,6 +944,29 @@ export const AboutSettings: React.FC = () => {
       <div className="settings-about-row">
         <span className="settings-row__label">{t('settings.version')}</span>
         <span className="settings-about-version">{version}</span>
+      </div>
+      {/* 贡献者：行标签 + 行下圆形头像按钮（图片铺满、可 Tab 聚焦，
+          点击打开贡献者 GitHub 主页） */}
+      <div className="settings-about-row">
+        <span className="settings-row__label">{t('settings.contributors')}</span>
+      </div>
+      <div className="settings-about-contributors">
+        {CONTRIBUTORS.map((c) => (
+          <button
+            key={c.name}
+            type="button"
+            className="settings-about-avatar"
+            title={c.name}
+            aria-label={c.name}
+            onClick={() => { void window.electron.openExternal(c.url); }}
+          >
+            <img src={c.avatar} alt={c.name} draggable={false} />
+          </button>
+        ))}
+      </div>
+      {/* 项目地址：行标签 + 行下 GitHub 按钮 */}
+      <div className="settings-about-row">
+        <span className="settings-row__label">{t('settings.project_url')}</span>
       </div>
       <div className="settings-about-row">
         <Button

@@ -293,6 +293,8 @@ const jaJP = {
   'settings.restore_defaults_confirm': 'すべての設定をデフォルトに戻しますか？現在のカスタマイズは上書きされます。',
   'settings.about': 'アプリについて',
   'settings.version': 'バージョン',
+  'settings.contributors': '貢献者',
+  'settings.project_url': 'プロジェクト URL',
 
   // ── Toast 消息 ──
   'toast.copied_items': (n: number) => `${n} 個の項目をコピーしました`,

@@ -335,6 +335,8 @@ const ruUA = {
   'settings.restore_defaults_confirm': 'Восстановить все настройки по умолчанию? Текущие изменения будут перезаписаны.',
   'settings.about': 'О приложении',
   'settings.version': 'Версия',
+  'settings.contributors': 'Участники',
+  'settings.project_url': 'Адрес проекта',
 
   // ── Toast 消息 ──
   'toast.copied_items': (n: number) => plural(n, 'Скопирован {n} элемент', 'Скопировано {n} элемента', 'Скопировано {n} элементов'),

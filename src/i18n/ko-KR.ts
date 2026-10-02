@@ -294,6 +294,8 @@ const koKR = {
   'settings.restore_defaults_confirm': '모든 설정을 기본값으로 복원하시겠습니까? 현재 개인 설정이 덮어써집니다.',
   'settings.about': '정보',
   'settings.version': '버전',
+  'settings.contributors': '기여자',
+  'settings.project_url': '프로젝트 주소',
 
   // ── Toast 메시지 ──
   'toast.copied_items': (n: number) => `${n}개 항목을 복사했습니다`,

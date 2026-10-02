@@ -304,6 +304,8 @@ const enUS = {
   'settings.restore_defaults_confirm': 'Restore all settings to defaults? Your current customization will be overwritten.',
   'settings.about': 'About',
   'settings.version': 'Version',
+  'settings.contributors': 'Contributors',
+  'settings.project_url': 'Project URL',
 
   // ── Toast 消息 ──
   'toast.copied_items': (n: number) => n === 1 ? 'Copied 1 item' : `Copied ${n} items`,

@@ -332,6 +332,8 @@ const ukUA = {
   'settings.restore_defaults_confirm': 'Відновити всі налаштування до стандартних? Поточні зміни буде перезаписано.',
   'settings.about': 'Про застосунок',
   'settings.version': 'Версія',
+  'settings.contributors': 'Автори',
+  'settings.project_url': 'Адреса проєкту',
 
   // ── Toast 消息 ──
   'toast.copied_items': (n: number) => plural(n, 'Скопійовано {n} елемент', 'Скопійовано {n} елементи', 'Скопійовано {n} елементів'),

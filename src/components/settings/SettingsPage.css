@@ -272,6 +272,50 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 关于页贡献者：行下圆形头像按钮组（图片铺满、可 Tab 聚焦 + 焦点环） */
+.settings-about-contributors {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.settings-about-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  /* 图片经绝对定位铺满整个按钮（border 会挤占 1px 内容区、产生内圈
+   * 白边——改用 box-shadow 外圈描边，不占布局且绘制在图片之上） */
+  position: relative;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px var(--md-sys-color-outline-variant);
+  transition: transform 0.1s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.settings-about-avatar:hover {
+  transform: scale(1.1);
+}
+
+.settings-about-avatar:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+.settings-about-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 50%;
+}
+
 /* 主题二级页入口的种子色色点 */
 .settings-theme-dot {
   width: 20px;
