@@ -1266,10 +1266,15 @@ export function killAllPrivilegedHelpers(): void {
  * @param onIntegrationChanged - 系统集成安装/卸载/重装成功后的回调
  *   （main.ts 注入：脚本已清理旧常驻，立即重新注册后端让本窗口接管
  *   总线名——无需重启应用即用新版本应答；e2e harness 不注入）
+ * @param onReleaseDevicePin - 卸载/弹出执行**之前**释放本应用对目标
+ *   挂载点的占用回调（main.ts 注入：目录监听 inotify fd + 缩略图
+ *   convert 子进程都会 pin vfsmount——不先释放 umount 必 EBUSY；
+ *   e2e harness 注入计数回调测接线）
  */
 export function registerSystemHandlers(
   onSessionBusRestarted?: () => void,
   onIntegrationChanged?: () => void,
+  onReleaseDevicePin?: (mountpoints: string[]) => void | Promise<void>,
 ) {
   /** 窗口管理器类型检测（自定义标题栏跟随系统模式） */
   ipcMain.handle('system:detect-window-manager', () => detectWindowManager());
@@ -1952,19 +1957,58 @@ export function registerSystemHandlers(
     }
   });
 
-  ipcMain.handle('system:unmount-device', async (_event, devicePath: string) => {
-    try {
-      await execAsync(`udisksctl unmount -b "${devicePath}"`, { timeout: deviceOpTimeoutMs() });
-      invalidateMountMapCache();
-      return { success: true };
-    } catch (e) {
-      if (isExecTimeoutError(e)) {
-        return { success: false, code: 'TIMEOUT' };
-      }
-      const { stderr, message } = getExecError(e);
-      const detail = await withBusyDiagnostics(devicePath, stderr || message || 'Unmount failed');
-      return { success: false, error: detail };
+  /**
+   * 卸载失败为 busy/mounted 类错误时的重试参数：延迟与最大尝试次数。
+   * 挂载后的短暂占用（缩略图收尾/桌面自动索引）在数秒内自然消失，
+   * 重试给它们收尾窗口；首次尝试前已由 onReleaseDevicePin 释放本应用
+   * 自己的 pin（监听/缩略图）。TIMEOUT 不重试（慢盘合法耗时）。
+   */
+  const BUSY_RETRY_DELAY_MS = 1500;
+  const BUSY_RETRY_MAX_ATTEMPTS = 3;
+
+  /** 收集 devicePath 当前的挂载点（/proc/mounts，绕 TTL 缓存） */
+  const mountedPointsOf = async (devicePath: string): Promise<string[]> => {
+    const map = await getMountMap(true);
+    const points: string[] = [];
+    for (const [mountpoint, info] of map) {
+      if (info.source === devicePath) points.push(mountpoint);
     }
+    return points;
+  };
+
+  ipcMain.handle('system:unmount-device', async (_event, devicePath: string) => {
+    // 先释放本应用对挂载点的占用（inotify 监听 + 缩略图 convert 均会
+    // pin 挂载点——不释放必 EBUSY；释放后停留在盘内的标签页监听退化
+    // 为「切回时重建」，正确性不受影响）
+    try {
+      const points = await mountedPointsOf(devicePath);
+      await onReleaseDevicePin?.(points);
+    } catch {
+      // 释放失败不阻断卸载（busy 重试仍可兜底）
+    }
+
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < BUSY_RETRY_MAX_ATTEMPTS; attempt++) {
+      try {
+        await execAsync(`udisksctl unmount -b "${devicePath}"`, { timeout: deviceOpTimeoutMs() });
+        invalidateMountMapCache();
+        return { success: true };
+      } catch (e) {
+        if (isExecTimeoutError(e)) {
+          return { success: false, code: 'TIMEOUT' };
+        }
+        lastError = e;
+        const { stderr, message } = getExecError(e);
+        if (attempt < BUSY_RETRY_MAX_ATTEMPTS - 1 && /busy|mount/i.test(stderr || message)) {
+          await new Promise((r) => setTimeout(r, BUSY_RETRY_DELAY_MS));
+          continue;
+        }
+        break;
+      }
+    }
+    const { stderr, message } = getExecError(lastError);
+    const detail = await withBusyDiagnostics(devicePath, stderr || message || 'Unmount failed');
+    return { success: false, error: detail };
   });
 
   /**
@@ -1983,19 +2027,39 @@ export function registerSystemHandlers(
           return { success: false, code: 'PARTITIONS_MOUNTED' };
         }
       }
+      // 预检通过：同样先释放本应用占用（竞态挂载/监听残留）再断电
       try {
-        await execAsync(`udisksctl power-off -b "${devicePath}"`, { timeout: deviceOpTimeoutMs() });
-        invalidateMountMapCache();
-        return { success: true };
-      } catch (e) {
-        if (isExecTimeoutError(e)) {
-          return { success: false, code: 'TIMEOUT' };
+        const points = await mountedPointsOf(devicePath);
+        await onReleaseDevicePin?.(points);
+      } catch {
+        // 释放失败不阻断
+      }
+
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < BUSY_RETRY_MAX_ATTEMPTS; attempt++) {
+        try {
+          await execAsync(`udisksctl power-off -b "${devicePath}"`, { timeout: deviceOpTimeoutMs() });
+          invalidateMountMapCache();
+          return { success: true };
+        } catch (e) {
+          if (isExecTimeoutError(e)) {
+            return { success: false, code: 'TIMEOUT' };
+          }
+          lastError = e;
+          const { stderr, message } = getExecError(e);
+          if (attempt < BUSY_RETRY_MAX_ATTEMPTS - 1 && /busy|mount/i.test(stderr || message)) {
+            await new Promise((r) => setTimeout(r, BUSY_RETRY_DELAY_MS));
+            continue;
+          }
+          break;
         }
-        const { stderr, message } = getExecError(e);
+      }
+      {
+        const { stderr, message } = getExecError(lastError);
         // 预检通过但 udisks 仍拒绝（竞态/设备占用）：busy/mounted 类
         // 错误按「分区仍挂载」归类，前端给出同样明确的引导文案；
         // 占用者列表仍写入日志供排查。
-        if (/mount|busy/i.test(stderr)) {
+        if (/busy|mount/i.test(stderr || message)) {
           void withBusyDiagnostics(devicePath, stderr || message || 'Eject failed', true);
           return { success: false, code: 'PARTITIONS_MOUNTED' };
         }

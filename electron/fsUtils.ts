@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import { writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
 import path from 'path';
 import os from 'os';
-import { execFile } from 'child_process';
+import { execFile, spawn, type ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
 import { EXT_TO_MIME, ZIP_CONTAINER_EXTS, EXT_PREFERRED, BASENAME_TO_MIME, DOTFILE_TO_MIME } from './mimeMap';
@@ -840,6 +840,8 @@ const thumbInFlight = new Map<string, { promise: Promise<string | null>; epoch: 
 /** 等待队列项：key 用于去重命中时重排；start 启动生成；drop 在淘汰时 resolve null */
 interface ThumbQueueEntry {
   key: string;
+  /** 源文件绝对路径（取消按挂载点前缀匹配） */
+  filePath: string;
   epoch: number;
   seq: number;
   start: () => void;
@@ -852,6 +854,44 @@ const thumbQueue: ThumbQueueEntry[] = [];
 let thumbActive = 0;
 /** 全局到达序号（同世代内 FIFO 依据） */
 let thumbSeq = 0;
+
+/** 进行中的 convert 子进程（按源文件路径键控）：卸载前可 kill 释放 pin */
+interface ActiveThumbChild {
+  child: ChildProcess;
+  cachePng: string;
+  cacheJpg: string;
+  /** 是否被 cancelThumbnailJobsUnder 取消（取消时不回落 nativeImage） */
+  cancelled: boolean;
+}
+const activeThumbChildren = new Map<string, ActiveThumbChild>();
+
+/** 取消哨兵错误（与 THUMB_QUEUE_DROPPED 语义一致：不回落、不写缓存） */
+const CANCEL_THUMB_ERR = new Error('__hoshineko_thumb_cancelled__');
+
+/**
+ * 取消源文件位于指定前缀（目录或文件）下的全部缩略图任务：
+ * - 排队中的直接撤出（resolve 占位哨兵）；
+ * - 进行中的 convert 以 SIGKILL 杀掉并清理可能写了一半的缓存文件
+ *   （无内容戳的半成品下次请求会重新生成，不会当作新鲜缓存命中）。
+ *
+ * 设备卸载前调用（releaseDevicePins）——convert 打开的源图 fd 会 pin
+ * 挂载点（umount EBUSY），杀进程即释放。
+ */
+export function cancelThumbnailJobsUnder(prefix: string): void {
+  const match = (p: string) => p === prefix || p.startsWith(prefix + '/');
+  for (let i = thumbQueue.length - 1; i >= 0; i--) {
+    if (match(thumbQueue[i].filePath)) thumbQueue[i].drop();
+  }
+  for (const [filePath, rec] of activeThumbChildren) {
+    if (!match(filePath)) continue;
+    rec.cancelled = true;
+    try { rec.child.kill('SIGKILL'); } catch { /* 已退出 */ }
+    for (const cache of [rec.cachePng, rec.cacheJpg]) {
+      // 异步 unlink：拒绝（文件本就不存在）静默吞掉，不产生未处理拒绝
+      void fs.unlink(cache).catch(() => {});
+    }
+  }
+}
 
 /** 取出队首任务直到并发满（队首 = 最高世代、同世代最早到达） */
 function pumpThumbQueue(): void {
@@ -943,16 +983,44 @@ async function generateThumbnailUncached(
     }
     dlog('convert-spawn', path.basename(filePath), `size=${maxSize}`);
     ensureImTmpDir();
-    await execFileAsync('convert', args, {
-      timeout: 90_000,
+    // spawn 化（保留 child 句柄）：设备卸载前 cancelThumbnailJobsUnder
+    // 可杀掉进行中的 convert——其打开源图的 fd 会 pin 挂载点导致
+    // umount EBUSY（execFileAsync 拿不到句柄无法取消）
+    const child = spawn('convert', args, {
       // 像素缓存写真实磁盘（~/.cache/hoshineko-fm/im-tmp）而非 /tmp
       // tmpfs：巨图 + 128MiB limit 强制磁盘缓存，/tmp 配额耗尽会让
       // convert 失败并触发主进程同步 nativeImage 解码（卡死 UI）
       env: { ...process.env, TMPDIR: IM_TMP_DIR, MAGICK_TMPDIR: IM_TMP_DIR },
     });
+    const rec: ActiveThumbChild = { child, cachePng, cacheJpg, cancelled: false };
+    activeThumbChildren.set(filePath, rec);
+    const killTimer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* 已退出 */ }
+    }, 90_000);
+    let stderrBuf = '';
+    child.stderr?.on('data', (d: Buffer) => { stderrBuf += String(d); });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        child.on('error', (err) => reject(err));
+        child.on('exit', (code, signal) => {
+          if (code === 0) { resolve(); return; }
+          // 被 cancelThumbnailJobsUnder 取消：不再回落 nativeImage
+          // （回落会重新打开挂载点源图、制造新占用）
+          if (signal === 'SIGKILL' && rec.cancelled) {
+            reject(CANCEL_THUMB_ERR);
+            return;
+          }
+          reject(new Error(stderrBuf || `convert exited ${code ?? 'signal'}`));
+        });
+      });
+    } finally {
+      clearTimeout(killTimer);
+      activeThumbChildren.delete(filePath);
+    }
     dlog('convert-done', path.basename(filePath), `${Date.now() - convertAt}ms`);
     if (existsSync(cachePath)) return cachePath;
-  } catch {
+  } catch (e) {
+    if (e === CANCEL_THUMB_ERR) return THUMB_QUEUE_DROPPED;
     dlog('convert-FAILED', path.basename(filePath));
     // Fall through to nativeImage
   }
@@ -1025,6 +1093,7 @@ function scheduleThumbnailGeneration(
     };
     const entry: ThumbQueueEntry = {
       key: cacheKeyBase,
+      filePath,
       epoch,
       seq,
       start: () => {

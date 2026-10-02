@@ -467,16 +467,22 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
       }
     }
     if (e.key === "Tab" && mode === 'edit') {
-      // review 19 编辑态迷你循环：输入框 Tab → 「进入搜索」按钮 →
-      // 再 Tab 回输入框（两点往返，不进第一循环；决策 3）。
-      // 置位 editingNavRef 吞掉本次 input blur——否则焦点移到按钮时
-      // input 的 onBlur 会把模式复位回面包屑、按钮随渲染卸载
-      e.preventDefault();
-      if (document.activeElement === inputRef.current) {
+      // 编辑态 Tab（用户反馈修复）：此前输入框 ⇄ 「进入搜索」按钮
+      // 两点往返（review 19 决策 3），页面 Tab 循环被困在迷你循环里
+      // 到不了页内控件（关于页「卡在贡献者按钮之前」）。改为：
+      // - 输入框前向 Tab 仍单步到「进入搜索」按钮（置位 editingNavRef
+      //   吞掉本次 input blur——否则焦点移到按钮时 onBlur 把模式复位
+      //   回面包屑、按钮随渲染卸载）；
+      // - 其余 Tab/Shift+Tab 放行全局分区循环（App 的 Tab 拦截接管），
+      //   并复位回面包屑——React 批处理延迟渲染，全局拦截的焦点移动
+      //   先完成，卸载输入框不抢焦点。
+      const atInput = document.activeElement === inputRef.current;
+      if (atInput && !e.shiftKey) {
+        e.preventDefault();
         editingNavRef.current = true;
         document.querySelector<HTMLElement>('.omnibar-enter-search')?.focus();
       } else {
-        inputRef.current?.focus();
+        setMode('breadcrumbs');
       }
     }
   };
@@ -566,11 +572,14 @@ const StateMachineOmnibar: React.FC<OmnibarProps & { common: OmnibarCommon }> = 
             <span
               style={{ display: 'inline-flex' }}
               onKeyDown={(e) => {
-                // 迷你循环：从按钮 Tab 回输入框（输入框侧的 Tab 已在
-                // handleKeyDown 拦截）——preventDefault 阻止 App 全局接管
+                // 编辑态 Tab（用户反馈修复）：此前从「进入搜索」按钮 Tab
+                // 回输入框（与输入框侧构成两点往返、页面 Tab 循环被困在
+                // 迷你循环里）；现在放行全局分区循环并复位回面包屑——
+                // 不 preventDefault，App 全局 Tab 拦截接管焦点移动；
+                // React 批处理延迟渲染，焦点移动先完成、卸载不抢焦点
                 if (e.key === 'Tab') {
-                  e.preventDefault();
-                  inputRef.current?.focus();
+                  setMode('breadcrumbs');
+                  return;
                 }
               }}
             >

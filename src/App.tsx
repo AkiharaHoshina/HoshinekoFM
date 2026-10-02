@@ -186,6 +186,25 @@ function AppContent() {
     handleGvfsUnmount(volume);
   }, [currentPath, handleSidebarNavigate, handleGvfsUnmount]);
 
+  /**
+   * 卸载块设备；若活动标签页正停留于该设备挂载点（含子目录），先跳回
+   * 仪表盘再卸载——目录 inotify 监听随导航释放，卸载不再被本应用自身
+   * pin 报 busy（后端另有 onReleaseDevicePin 兜底清理监听与缩略图）。
+   * 挂载点经 /proc/mounts 反查（getMountMap），查不到时直接卸载。
+   */
+  const handleDeviceUnmountWithNav = useCallback(async (devicePath: string) => {
+    try {
+      const map = await FileSystemService.getMountMap();
+      const mountpoint = Object.entries(map).find(([, v]) => v.source === devicePath)?.[0];
+      if (mountpoint && (currentPath === mountpoint || currentPath.startsWith(mountpoint + '/'))) {
+        handleSidebarNavigate("app://dashboard");
+      }
+    } catch {
+      // 反查失败不阻断卸载（后端释放 + busy 重试兜底）
+    }
+    void handleDeviceUnmount(devicePath);
+  }, [currentPath, handleSidebarNavigate, handleDeviceUnmount]);
+
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalCwd, setTerminalCwd] = useState<string | undefined>(undefined);
   /**
@@ -2350,7 +2369,7 @@ function AppContent() {
             label: t("device.unmount"),
             icon: "eject",
             action: () => {
-              handleDeviceUnmount(devPath);
+              void handleDeviceUnmountWithNav(devPath);
               closeContextMenu();
             },
           });
@@ -2741,7 +2760,7 @@ function AppContent() {
             currentPath={currentPath}
             onDeviceContextMenu={handleDeviceContextMenu}
             onDeviceMount={handleDeviceMount}
-            onDeviceUnmount={handleDeviceUnmount}
+            onDeviceUnmount={handleDeviceUnmountWithNav}
             onDeviceEject={handleDeviceEject}
             onGvfsMount={handleGvfsMount}
             onGvfsUnmount={handleGvfsUnmountWithNav}
@@ -2814,7 +2833,7 @@ function AppContent() {
                     searchGroupByDir={searchGroupByDir}
                     searchLimit={searchLimit}
                     searchTimeout={searchTimeout}
-                    onUnmountDevice={handleDeviceUnmount}
+                    onUnmountDevice={handleDeviceUnmountWithNav}
                     onEjectDevice={handleDeviceEject}
                     onTerminateProcess={confirmTerminate}
                     onNiceProcess={niceProcess}
@@ -2950,7 +2969,7 @@ function AppContent() {
                       label: t("device.unmount"),
                       icon: "eject",
                       action: () => {
-                        handleDeviceUnmount(d.devicePath);
+                        void handleDeviceUnmountWithNav(d.devicePath);
                         closeDeviceContextMenu();
                       },
                     });

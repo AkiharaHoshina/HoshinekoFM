@@ -83,6 +83,20 @@ export function stopWatching(dir: string, onChange?: (changedDir: string) => voi
   watchers.delete(normalized);
 }
 
+/**
+ * 按前缀批量停止监听（设备卸载前释放挂载点内的 inotify fd——
+ * inotify watch 会 pin vfsmount，是 umount EBUSY 的持续占用源）。
+ * 匹配「前缀本身及其全部子目录」；前缀为根目录时全清。
+ */
+export function stopWatchingUnder(prefix: string): void {
+  const normalized = normalizeDir(prefix);
+  for (const dir of [...watchers.keys()]) {
+    if (normalized === '/' || dir === normalized || dir.startsWith(normalized + '/')) {
+      stopWatching(dir);
+    }
+  }
+}
+
 export function stopAllWatching(): void {
   for (const [dir] of watchers) {
     stopWatching(dir);

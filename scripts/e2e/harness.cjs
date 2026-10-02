@@ -91,6 +91,8 @@ const startupSelectByWindow = new WeakMap();
 const pickerConfigByWindow = new WeakMap();
 /** 每窗口目录监听（fs:watch-dir/unwatch-dir，与 main.ts 同步） */
 const watchListenersByWindow = new WeakMap();
+/** 设备卸载/弹出前的释放回调记录（与 main.ts 的 releaseDevicePins 同位置接线） */
+const releasePinCalls = [];
 /** 固定项快照缓存与文件（与 main.ts 的 app:set-pinned-dirs / loadPinnedSnapshot 同步） */
 let pinnedSnapshotCache = null;
 const pinnedSnapshotFile = () => path.join(app.getPath('userData'), 'sidebar-pinned.json');
@@ -227,7 +229,15 @@ async function setupApp() {
 function registerIpc() {
   // 编译产物注册段（与 main.ts 相同的模块集合）
   require(path.join(DIST_ELECTRON, 'handlers', 'fs.js')).registerFsHandlers();
-  require(path.join(DIST_ELECTRON, 'handlers', 'system.js')).registerSystemHandlers();
+  // 第三参 = 与 main.ts 的 releaseDevicePins 同位置接线：e2e 只记录
+  // 收到的挂载点列表（释放语义由真实 main.ts 实现；e2e 109 断言接线）
+  require(path.join(DIST_ELECTRON, 'handlers', 'system.js')).registerSystemHandlers(
+    undefined,
+    undefined,
+    async (mountpoints) => {
+      releasePinCalls.push([...mountpoints]);
+    },
+  );
   require(path.join(DIST_ELECTRON, 'handlers', 'window.js')).registerWindowHandlers(
     getWindows,
     // 与 main.ts 同款接线：标题栏 v 菜单「新建窗口」工厂
@@ -1154,6 +1164,8 @@ module.exports = {
   E2E_FM1_BUS_NAME,
   /** await 本进程后端注册结果（{ portal: boolean; fileManager1: boolean }） */
   getBackendRegistration: () => backendRegistrationPromise,
+  /** 读取卸载/弹出前的释放回调记录（e2e 109：每次调用收到的挂载点数组） */
+  getReleasePinCalls: () => releasePinCalls,
   setupApp,
   createTestWindow,
   setPickerSnapshotInjection,

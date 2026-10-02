@@ -5,8 +5,8 @@ import os from 'os';
 import { promises as fs, createReadStream, watch, type FSWatcher } from 'fs';
 import { Readable } from 'stream';
 import { setupPtyHandlers, killAllPty } from './pty';
-import { getThumbnail, detectMime, THUMB_QUEUE_DROPPED } from './fsUtils';
-import { startWatching, stopWatching, stopAllWatching } from './fsWatcher';
+import { getThumbnail, detectMime, THUMB_QUEUE_DROPPED, cancelThumbnailJobsUnder } from './fsUtils';
+import { startWatching, stopWatching, stopAllWatching, stopWatchingUnder } from './fsWatcher';
 import { registerFsHandlers } from './handlers/fs';
 import { registerSystemHandlers, setupUdisks2Monitor, setupGvfsMonitor, startBackendConflictQuery, resetBackendConflictCache, runIntegrationScript, killAllPrivilegedHelpers } from './handlers/system';
 import type { BackendKind } from './handlers/backendInfo';
@@ -991,7 +991,32 @@ const reRegisterBackends = () => {
   resetBackendConflictCache();
   void registerBackends().then(handleBackendsResult);
 };
-registerSystemHandlers(reRegisterBackends, reRegisterBackends);
+/**
+ * 设备卸载/弹出前释放本应用对挂载点的占用（system:unmount-device /
+ * system:eject-device 执行 udisksctl 之前回调）：
+ * - inotify 目录监听：fs.watch 的 inotify fd 会 pin vfsmount——停在
+ *   盘内目录时卸载必 EBUSY；按挂载点前缀全量释放（各标签页切回该
+ *   目录时由 fs:watch-dir 重新建立）；
+ * - 窗口监听登记表同步清理：不清的话下次 watchDirectory 会因
+ *   `listeners.has(dir)` 早退、watcher 永远不重建（监听静默失效）；
+ * - 缩略图队列：进行中 convert 打开的源图 fd 同样 pin——排队项撤出、
+ *   进行中杀进程并清理半成品缓存（详见 fsUtils.cancelThumbnailJobsUnder）。
+ */
+const releaseDevicePins = async (mountpoints: string[]) => {
+  for (const mp of mountpoints) {
+    stopWatchingUnder(mp);
+    for (const win of getWindows()) {
+      if (!win || win.isDestroyed()) continue;
+      const listeners = watchListenersByWindow.get(win.webContents);
+      if (!listeners) continue;
+      for (const dir of [...listeners.keys()]) {
+        if (dir === mp || dir.startsWith(mp + path.sep)) listeners.delete(dir);
+      }
+    }
+    cancelThumbnailJobsUnder(mp);
+  }
+};
+registerSystemHandlers(reRegisterBackends, reRegisterBackends, releaseDevicePins);
 registerWindowHandlers(getWindows, () => {
   void createWindow();
 });

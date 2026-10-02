@@ -12,33 +12,23 @@ import type { GvfsVolume } from '../types/files';
 export function useDeviceActions() {
   const handleDeviceMount = useCallback(async (devicePath: string) => {
     const dev = shortPath(devicePath);
-    let toastId: ReturnType<typeof showProgressToast> | null = null;
-    const timer = setTimeout(() => {
-      toastId = showProgressToast(t('device.mounting', dev));
-    }, 500);
+    // 进度提示立即出现（用户拍板：点击瞬间就开始显示「正在挂载」，
+    // 不再等 500ms——挂载在慢速盘上可能数秒，无反馈会让用户误以为
+    // 点击无效）；快挂载时 progress → success 原地替换同一 toast，无闪烁
+    const toastId = showProgressToast(t('device.mounting', dev));
 
     const result = await FileSystemService.mountDevice(devicePath);
 
-    clearTimeout(timer);
-
     if (result.success) {
       const mp = shortPath(result.mountpoint || '');
-      if (toastId) {
-        finishToast(toastId, t('device.mounted', dev, mp), 'success');
-      } else {
-        showToast(t('device.mounted', dev, mp), 'success');
-      }
+      finishToast(toastId, t('device.mounted', dev, mp), 'success');
     } else {
       // 超时：udisksd 服务端 job 不随客户端退出而取消，操作可能仍在
       // 后台进行——提示用户稍后确认，而不是把慢盘合法耗时报成失败
       const msg = result.code === 'TIMEOUT'
         ? t('device.op_timeout', dev)
         : t('device.mount_failed', dev, result.error);
-      if (toastId) {
-        finishToast(toastId, msg, 'error');
-      } else {
-        showToast(msg, 'error');
-      }
+      finishToast(toastId, msg, 'error');
     }
     return result;
   }, []);
@@ -147,10 +137,8 @@ export function useDeviceActions() {
    */
   const handleGvfsMount = useCallback(async (volume: GvfsVolume): Promise<{ success: boolean; mountpoint?: string }> => {
     const name = volume.name;
-    let toastId: ReturnType<typeof showProgressToast> | null = null;
-    const timer = setTimeout(() => {
-      toastId = showProgressToast(t('device.mounting', name));
-    }, 500);
+    // 同块设备挂载：进度提示点击瞬间出现（慢设备数秒无反馈的观感修复）
+    const toastId = showProgressToast(t('device.mounting', name));
 
     const result = await FileSystemService.mountGvfs(volume.deviceId ?? '', name);
 
@@ -170,26 +158,16 @@ export function useDeviceActions() {
       }
     }
 
-    clearTimeout(timer);
-
     if (final.success) {
       const msg = t('device.mounted', name, final.mountpoint ? shortPath(final.mountpoint) : '…');
-      if (toastId) {
-        finishToast(toastId, msg, 'success');
-      } else {
-        showToast(msg, 'success');
-      }
+      finishToast(toastId, msg, 'success');
     } else {
       const msg = final.code === 'TIMEOUT'
         ? t('device.mount_timeout', name)
         : (final.code === 'NO_SUCH_DEVICE' || final.code === 'INVALID_DEVICE')
           ? t('device.mount_no_device', name)
           : t('device.mount_failed', name, final.error);
-      if (toastId) {
-        finishToast(toastId, msg, 'error');
-      } else {
-        showToast(msg, 'error');
-      }
+      finishToast(toastId, msg, 'error');
     }
     return { success: final.success, mountpoint: final.mountpoint };
   }, []);
