@@ -925,10 +925,10 @@ export const AboutSettings: React.FC = () => {
   }, []);
   return (
     <>
-      {/* review 29.2：测试阶段（Beta）行位于版本之前，UI 与版本号行一致 */}
+      {/* review 29.2：测试阶段（Caprice）行位于版本之前，UI 与版本号行一致 */}
       <div className="settings-about-row">
         <span className="settings-row__label">{t('settings.beta_stage')}</span>
-        <span className="settings-about-version">Beta</span>
+        <span className="settings-about-version">Caprice</span>
       </div>
       <div className="settings-about-row">
         <span className="settings-row__label">{t('settings.version')}</span>
