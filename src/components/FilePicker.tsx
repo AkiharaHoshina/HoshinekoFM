@@ -22,7 +22,7 @@ import { useUiZoom } from '../hooks/useUiZoom';
 import { useTitleBar } from '../hooks/useTitleBar';
 import { DragProvider } from '../contexts/DragContext';
 import { TitleBar } from './TitleBar';
-import { showToast, shortPath } from '../utils/toast';
+import { showToast } from '../utils/toast';
 import { sortFiles, sortFilesByDir } from '../utils/fileSort';
 import { zoomIconSize } from '../utils/iconZoom';
 import { ConflictDialog } from './ConflictDialog';
@@ -1563,14 +1563,12 @@ const FilePicker: React.FC = () => {
       </div>
 
       <footer className="picker-footer">
-        {/* 路径提示仅选择模式显示——保存模式的目标绝对路径已由文件名
-            输入框承载，右下角不再重复展示（用户定案：删除保存器右下角
-            的绝对路径显示） */}
-        {!isSave && (
+        {/* 左下角目录显示已删除（用户定案：删除选择器左下角的目录
+            显示）——选择模式仅在有选中时显示已选数量；保存模式的目标
+            绝对路径已由文件名输入框承载，右下角不再重复展示 */}
+        {!isSave && selected.size > 0 && (
           <span className="picker-hint">
-            {selected.size > 0
-              ? t('picker.selected_count', selected.size)
-              : shortPath(currentPath)}
+            {t('picker.selected_count', selected.size)}
           </span>
         )}
         {/* 文件类型过滤（与设置语言选择同款 OutlinedSelect）：

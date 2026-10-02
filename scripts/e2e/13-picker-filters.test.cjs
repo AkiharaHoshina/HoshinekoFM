@@ -54,7 +54,8 @@ const path = require('path');
 
     // 底部下拉：3 个选项（所有文件 + 2 类型），默认选中 docx。
     // 注意：md-select-option 是宿主元素的**轻 DOM** 子节点（非 shadow）；
-    // 下拉位于路径提示右侧（footer 子节点顺序：hint → select）
+    // 左下角目录显示已删除（用户定案）——未选中时无 picker-hint，
+    // footer 首子节点即过滤下拉
     await h.waitFor(picker, `!!document.querySelector('.picker-filter-select')`);
     const selState = await h.js(picker, `(() => {
       const el = document.querySelector('.picker-filter-select');
@@ -62,17 +63,22 @@ const path = require('path');
       return {
         value: el.value,
         options: Array.from(el.querySelectorAll('md-select-option')).map((o) => o.value),
-        orderOk: footer.children[0].className === 'picker-hint' && footer.children[1].className === 'picker-filter-select',
+        noHint: !document.querySelector('.picker-hint') && footer.children[0].className === 'picker-filter-select',
       };
     })()`);
     h.assert.strictEqual(selState.value.value, 'docx');
     h.assert.deepStrictEqual(selState.value.options, ['', 'docx', 'img']);
-    h.assert.ok(selState.value.orderOk, '过滤下拉应位于路径提示右侧');
+    h.assert.ok(selState.value.noHint, '未选中时左下角不得显示目录（无 picker-hint）');
 
     // docx 过滤生效：a.txt 不显示（过滤只显示匹配文件 + 全部目录）、b.docx 可选
     await h.waitFor(picker, `document.querySelectorAll('.file-list-item[data-path="${dir}/a.txt"]').length === 0`);
     await h.clickEl(picker, `.file-list-item[data-path="${dir}/b.docx"]`);
     await h.waitFor(picker, `document.querySelector('.file-list-item[data-path="${dir}/b.docx"]').className.includes('selected')`);
+    // 有选中时左下角显示已选数量，且不得再显示目录路径
+    await h.waitFor(picker, `!!document.querySelector('.picker-hint')`);
+    const hintText = await h.js(picker, `document.querySelector('.picker-hint').textContent`);
+    h.assert.ok(/\d/.test(hintText.value ?? ''), `选中后 hint 应显示数量，实际 ${JSON.stringify(hintText.value)}`);
+    h.assert.ok(!(hintText.value ?? '').includes(dir), 'hint 不得再显示目录路径');
 
     // 切换到 img 过滤：b.docx 不显示（失效选中随隐藏被清除），c.png 可选。
     // md-select 的 select() 是静默的，harness.selectOption 会补派发 input 事件
