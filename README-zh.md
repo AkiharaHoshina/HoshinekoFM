@@ -14,7 +14,7 @@
 Hoshineko Explorer一款基于 Material 3 设计语言、Electron 和 React 框架构建的现代文件管理器。
 该项目基于 [bhimio1](https://github.com/bhimio1) 的 [material-3-file-explorer](https://github.com/bhimio1/material-3-file-explorer) 项目进行修改与重构。由于原项目已停止更新维护，且我们致力于开发一款符合 Material 3 设计标准的文件管理器，并附加进阶功能，因此发起了此重构项目。
 
-##“性能忧先”
+## “性能忧先”
 
 - 虽然我们有基于虚拟列表（react-window）的文件列表，支持网格/列表双视图（右上角一键切换）、语义分组与多维排序；还有图片缓存等优化，但是您仍然需要知道，开诚布公地讲，使用一个该死的Electron应用以前，首先要担忧性能。
 
