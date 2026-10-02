@@ -914,7 +914,7 @@ export const BuiltInTerminalSettings: React.FC = () => {
 // ── 关于（settings://about） ──
 
 /** GitHub 项目仓库地址 */
-const GITHUB_REPO_URL = 'https://github.com/AkiharaHoshina/HoshinekoFM';
+const GITHUB_REPO_URL = 'https://github.com/AkiharaHoshina/Hoshineko_Explorer';
 
 export const AboutSettings: React.FC = () => {
   const [version, setVersion] = useState<string>('-');

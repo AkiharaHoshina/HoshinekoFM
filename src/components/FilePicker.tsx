@@ -1563,13 +1563,16 @@ const FilePicker: React.FC = () => {
       </div>
 
       <footer className="picker-footer">
-        <span className="picker-hint">
-          {isSave
-            ? (fileName.trim() ? joinPath(currentPath, fileName.trim()) : shortPath(currentPath))
-            : selected.size > 0
+        {/* 路径提示仅选择模式显示——保存模式的目标绝对路径已由文件名
+            输入框承载，右下角不再重复展示（用户定案：删除保存器右下角
+            的绝对路径显示） */}
+        {!isSave && (
+          <span className="picker-hint">
+            {selected.size > 0
               ? t('picker.selected_count', selected.size)
               : shortPath(currentPath)}
-        </span>
+          </span>
+        )}
         {/* 文件类型过滤（与设置语言选择同款 OutlinedSelect）：
             常驻显示——未声明 filters 时仅「所有文件」一项；
             声明则「所有文件」+ 各类型。位于路径提示右侧，宽度自适应内容。
